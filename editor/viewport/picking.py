@@ -5,18 +5,147 @@ from core.math3d import Vec3
 from editor.viewport.projection import screen_to_ray
 
 
+def _ray_aabb_min(ox: float, oy: float, oz: float,
+                  dx: float, dy: float, dz: float,
+                  bmin_x: float, bmin_y: float, bmin_z: float,
+                  bmax_x: float, bmax_y: float, bmax_z: float) -> float:
+    tmin = -1e30
+    tmax = 1e30
+    if abs(dx) > 1e-30:
+        t1 = (bmin_x - ox) / dx
+        t2 = (bmax_x - ox) / dx
+        if t1 > t2:
+            t1, t2 = t2, t1
+        if t1 > tmin:
+            tmin = t1
+        if t2 < tmax:
+            tmax = t2
+    elif ox < bmin_x or ox > bmax_x:
+        return -1.0
+    if abs(dy) > 1e-30:
+        t1 = (bmin_y - oy) / dy
+        t2 = (bmax_y - oy) / dy
+        if t1 > t2:
+            t1, t2 = t2, t1
+        if t1 > tmin:
+            tmin = t1
+        if t2 < tmax:
+            tmax = t2
+    elif oy < bmin_y or oy > bmax_y:
+        return -1.0
+    if abs(dz) > 1e-30:
+        t1 = (bmin_z - oz) / dz
+        t2 = (bmax_z - oz) / dz
+        if t1 > t2:
+            t1, t2 = t2, t1
+        if t1 > tmin:
+            tmin = t1
+        if t2 < tmax:
+            tmax = t2
+    elif oz < bmin_z or oz > bmax_z:
+        return -1.0
+    if tmin > tmax:
+        return -1.0
+    return tmin if tmin > 0.0 else (tmax if tmax > 0.0 else -1.0)
+
+
+def _world_aabb_of(entity) -> tuple | None:
+    from core.components.transform import Transform
+    from core.components.rendering.mesh_filter import MeshFilter
+    from core.components.rendering.mesh_renderer import MeshRenderer
+    from core.components.physics.box_collider import BoxCollider
+    from core.components.physics.sphere_collider import SphereCollider
+    t = entity.get_component(Transform)
+    if not t:
+        return None
+    wp = t.position
+    bmin = np.array([wp.x, wp.y, wp.z])
+    bmax = np.array([wp.x, wp.y, wp.z])
+    expanded = False
+    mf = entity.get_component(MeshFilter)
+    mr = entity.get_component(MeshRenderer)
+    if mf and mr and mr.enabled:
+        mesh_name = mf.mesh_name or "cube"
+        mesh = _get_mesh_for(entity, mesh_name, mf.mesh_path)
+        if mesh is not None:
+            wm = t.world_matrix._d
+            for cx in (mesh.aabb_min[0], mesh.aabb_max[0]):
+                for cy in (mesh.aabb_min[1], mesh.aabb_max[1]):
+                    for cz in (mesh.aabb_min[2], mesh.aabb_max[2]):
+                        p = np.array([cx, cy, cz, 1.0]) @ wm
+                        bmin = np.minimum(bmin, p[:3])
+                        bmax = np.maximum(bmax, p[:3])
+            expanded = True
+    bc = entity.get_component(BoxCollider)
+    if bc:
+        half = Vec3(bc.size.x * 0.5, bc.size.y * 0.5, bc.size.z * 0.5)
+        wm = t.world_matrix._d
+        for cx in (-half.x, half.x):
+            for cy in (-half.y, half.y):
+                for cz in (-half.z, half.z):
+                    p = np.array([cx, cy, cz, 1.0]) @ wm
+                    bmin = np.minimum(bmin, p[:3])
+                    bmax = np.maximum(bmax, p[:3])
+        expanded = True
+    sc = entity.get_component(SphereCollider)
+    if sc:
+        r = sc.radius
+        wm = t.world_matrix._d
+        center = (np.array([0.0, 0.0, 0.0, 1.0]) @ wm)[:3]
+        bmin = np.minimum(bmin, center - r)
+        bmax = np.maximum(bmax, center + r)
+        expanded = True
+    for child in entity.children:
+        child_box = _world_aabb_of(child)
+        if child_box:
+            bmin = np.minimum(bmin, child_box[0])
+            bmax = np.maximum(bmax, child_box[1])
+            expanded = True
+    if not expanded:
+        s = t.local_scale
+        half = max(max(abs(s.x), abs(s.y), abs(s.z)) * 0.5, 0.5)
+        bmin = np.array([wp.x - half, wp.y - half, wp.z - half])
+        bmax = np.array([wp.x + half, wp.y + half, wp.z + half])
+    return (bmin, bmax)
+
+
+def _get_mesh_for(entity, mesh_name: str, mesh_path: str):
+    from core.engine import Engine
+    engine = Engine.instance()
+    if not engine:
+        return None
+    renderer = getattr(engine, '_renderer', None)
+    if renderer is None:
+        vp = getattr(engine, 'viewport', None)
+        if vp:
+            renderer = getattr(vp, '_renderer', None)
+    if renderer is None:
+        return None
+    meshes = renderer._meshes
+    if not meshes:
+        return None
+    mesh = meshes.get(mesh_name)
+    if mesh is not None:
+        return mesh
+    if mesh_path:
+        mesh = meshes.get(mesh_path)
+        if mesh is not None:
+            return mesh
+        for key, m in meshes.items():
+            if key == mesh_path or key.startswith(mesh_path + "|"):
+                return m
+    if mesh_name and mesh_name != "cube":
+        for key, m in meshes.items():
+            if key.startswith(mesh_name + "|"):
+                return m
+    return meshes.get("cube")
+
+
 def pick_entity(vp, sx: int, sy: int):
     scene = vp._engine.scene
     if not scene:
         return None
     ray_origin, ray_dir = screen_to_ray(vp, sx, sy)
-    from core.components.transform import Transform
-    from core.components.rendering.mesh_filter import MeshFilter
-    from core.components.rendering.mesh_renderer import MeshRenderer
-    from core.components.physics.mesh_collider import MeshCollider
-    from core.components.physics.box_collider import BoxCollider
-    from core.components.physics.sphere_collider import SphereCollider
-    from core.math_helpers import ray_mesh_intersect, ray_aabb_intersect
     ro = np.array([ray_origin.x, ray_origin.y, ray_origin.z, 1.0], dtype=np.float64)
     rd = np.array([ray_dir.x, ray_dir.y, ray_dir.z, 0.0], dtype=np.float64)
     all_ents = scene.get_all_entities()
@@ -25,97 +154,65 @@ def pick_entity(vp, sx: int, sy: int):
     for entity in all_ents:
         if not entity.active:
             continue
+        from core.components.transform import Transform
+        from core.components.rendering.mesh_filter import MeshFilter
+        from core.components.rendering.mesh_renderer import MeshRenderer
+        from core.components.physics.mesh_collider import MeshCollider
+        from core.components.physics.box_collider import BoxCollider
+        from core.components.physics.sphere_collider import SphereCollider
+        from core.math_helpers import ray_mesh_intersect
         t = entity.get_component(Transform)
         if not t:
             continue
         mf = entity.get_component(MeshFilter)
         mr = entity.get_component(MeshRenderer)
         mesh = None
+        has_mesh = False
         if mf:
             mesh_name = mf.mesh_name or "cube"
-            mesh = vp._renderer._meshes.get(mesh_name) if vp._renderer else None
-            if mesh is None and mf.mesh_path and vp._renderer:
-                mesh = vp._renderer._meshes.get(mf.mesh_path)
-            if mesh is None and vp._renderer:
-                mesh = vp._renderer._meshes.get("cube")
-        if mesh and mr and mr.enabled:
-            inv_world = t.world_matrix.inverted()
-            inv_d = inv_world._d
-            local_o = inv_d @ ro
-            local_d = inv_d @ rd
-            if abs(local_o[3]) > 1e-10:
-                local_o = local_o / local_o[3]
+            mesh = _get_mesh_for(entity, mesh_name, mf.mesh_path)
+            has_mesh = bool(mesh and mr and mr.enabled)
+        if has_mesh:
+            wm = t.world_matrix._d
+            wm_inv = np.linalg.inv(wm)
+            local_o = ro @ wm_inv
+            local_d = rd @ wm_inv
             if mesh.indices is not None and len(mesh.indices) > 0:
                 d = ray_mesh_intersect(local_o[0], local_o[1], local_o[2],
                                        local_d[0], local_d[1], local_d[2],
                                        mesh.vertices, mesh.indices)
             else:
-                d = ray_aabb_intersect(local_o[0], local_o[1], local_o[2],
-                                       local_d[0], local_d[1], local_d[2],
-                                       mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2],
-                                       mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2])
+                d = _ray_aabb_min(local_o[0], local_o[1], local_o[2],
+                                  local_d[0], local_d[1], local_d[2],
+                                  mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2],
+                                  mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2])
             if d > 0 and d < best_dist:
                 best_dist = d
                 best_entity = entity
-                continue
+            continue
         mc = entity.get_component(MeshCollider)
         if mc:
             mf2 = entity.get_component(MeshFilter)
             if mf2:
-                mesh2 = vp._renderer._meshes.get(mf2.mesh_name or "cube") if vp._renderer else None
-                if mesh2 and mesh2.indices is not None and len(mesh2.indices) > 0:
-                    inv_world = t.world_matrix.inverted()
-                    inv_d = inv_world._d
-                    local_o = inv_d @ ro
-                    local_d = inv_d @ rd
-                    if abs(local_o[3]) > 1e-10:
-                        local_o = local_o / local_o[3]
+                mesh2 = _get_mesh_for(entity, mf2.mesh_name or "cube", mf2.mesh_path)
+                if mesh2 is not None and mesh2.indices is not None and len(mesh2.indices) > 0:
+                    wm = t.world_matrix._d
+                    wm_inv = np.linalg.inv(wm)
+                    local_o = ro @ wm_inv
+                    local_d = rd @ wm_inv
                     d = ray_mesh_intersect(local_o[0], local_o[1], local_o[2],
                                            local_d[0], local_d[1], local_d[2],
                                            mesh2.vertices, mesh2.indices)
                     if d > 0 and d < best_dist:
                         best_dist = d
                         best_entity = entity
-                        continue
-        bc = entity.get_component(BoxCollider)
-        if bc:
-            half = Vec3(bc.size.x * 0.5, bc.size.y * 0.5, bc.size.z * 0.5)
-            inv_world = t.world_matrix.inverted()
-            inv_d = inv_world._d
-            local_o = inv_d @ ro
-            local_d = inv_d @ rd
-            if abs(local_o[3]) > 1e-10:
-                local_o = local_o / local_o[3]
-            d = ray_aabb_intersect(local_o[0], local_o[1], local_o[2],
-                                   local_d[0], local_d[1], local_d[2],
-                                   -half.x, -half.y, -half.z, half.x, half.y, half.z)
-            if d > 0 and d < best_dist:
-                best_dist = d
-                best_entity = entity
-                continue
-        sc_comp = entity.get_component(SphereCollider)
-        if sc_comp:
-            pos = t.position
-            oc = ray_origin - pos
-            b = oc.dot(ray_dir)
-            r2 = sc_comp.radius * sc_comp.radius
-            c = oc.dot(oc) - r2
-            disc = b * b - c
-            if disc > 0:
-                d = -b - disc ** 0.5
-                if d > 0 and d < best_dist:
-                    best_dist = d
-                    best_entity = entity
                     continue
-        pos = t.position
-        sc = t.local_scale
-        radius = max(sc.x, sc.y, sc.z) * 0.5
-        oc = ray_origin - pos
-        b = oc.dot(ray_dir)
-        c = oc.dot(oc) - radius * radius
-        disc = b * b - c
-        if disc > 0:
-            d = -b - disc ** 0.5
+        box = _world_aabb_of(entity)
+        if box is not None:
+            d = _ray_aabb_min(ray_origin.x, ray_origin.y, ray_origin.z,
+                              ray_dir.x, ray_dir.y, ray_dir.z,
+                              box[0][0], box[0][1], box[0][2],
+                              box[1][0], box[1][1], box[1][2])
             if d > 0 and d < best_dist:
                 best_dist = d
                 best_entity = entity

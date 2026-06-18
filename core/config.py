@@ -104,7 +104,7 @@ def get_global_config() -> Config:
                 "font_size": 12,
                 "language": "en",
                 "auto_save": True,
-                "auto_save_interval": 300
+                "auto_save_interval": 300,
             },
             "camera": {
                 "fov": 70.0,
@@ -161,7 +161,12 @@ def get_global_config() -> Config:
                 "smooth_snap": True,
                 "smooth_snap_speed": 0.25,
                 "show_icons": True,
-                "icon_scale": 5.0
+                "icon_scale": 5.0,
+                "selection_bounds": True,
+                "selection_bounds_speed": 8.0,
+                "selection_bounds_color_r": 0.25,
+                "selection_bounds_color_g": 0.55,
+                "selection_bounds_color_b": 1.0
             },
             "console": {
                 "font_size": 10,

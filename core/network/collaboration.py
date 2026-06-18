@@ -62,6 +62,7 @@ class CollaborationManager:
         self._peers: dict[str, RemotePeer] = {}
         self._own_name: str = "User"
         self._scene_snapshot_callback: Optional[Callable] = None
+        self._on_scene_sync: Optional[Callable[[dict], bool]] = None
         self._peer_joined_callback: Optional[Callable] = None
         self._peer_left_callback: Optional[Callable] = None
         self._entity_synced_ids: dict[str, str] = {}
@@ -119,6 +120,9 @@ class CollaborationManager:
     def set_scene_snapshot_callback(self, cb: Callable):
         self._scene_snapshot_callback = cb
 
+    def set_on_scene_sync(self, cb: Callable[[dict], bool]):
+        self._on_scene_sync = cb
+
     def set_peer_joined_callback(self, cb: Callable):
         self._peer_joined_callback = cb
 
@@ -152,6 +156,8 @@ class CollaborationManager:
     def connect(self, host: str = "127.0.0.1", port: int = 9876, name: str = "User"):
         if self._client:
             self.stop()
+        if self._server and self._engine.scene:
+            self.update_server_scene(self._engine.scene)
         self._own_name = name
         self._as_host = False
         self._client = CollabClient()
@@ -407,23 +413,10 @@ class CollaborationManager:
         scene = self._engine.scene
         if not scene:
             return
-        entities_data = scene_data.get("entities", scene_data if isinstance(scene_data, dict) and "entities" in scene_data else {})
-        if isinstance(entities_data, dict) and "entities" in entities_data:
-            entities_data = entities_data["entities"]
-        if not isinstance(entities_data, dict):
-            return
-        registry = ComponentRegistry
-        for eid, ed in entities_data.items():
-            if eid not in scene._entities:
-                e = Entity.deserialize(ed, registry)
-                scene.add_entity(e)
-        for eid, ed in entities_data.items():
-            pid = ed.get("parent")
-            if pid and pid in scene._entities:
-                e = scene._entities.get(eid)
-                parent = scene._entities.get(pid)
-                if e and parent:
-                    e.set_parent(parent)
+        if self._on_scene_sync:
+            if not self._on_scene_sync(scene_data):
+                return
+        self._engine.load_scene_from_data(scene_data)
 
     def _create_remote_entity(self, entity_data: dict):
         scene = self._engine.scene

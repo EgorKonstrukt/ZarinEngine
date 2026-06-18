@@ -2,7 +2,8 @@ from __future__ import annotations
 from typing import Optional
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QPushButton, QLineEdit, QSpinBox,
-                              QListWidget, QListWidgetItem, QFrame)
+                              QListWidget, QListWidgetItem, QFrame,
+                              QMessageBox, QFileDialog)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QFont
 
@@ -19,6 +20,35 @@ class CollaborationPanel(QDockWidget):
 
     def set_collaboration_manager(self, mgr):
         self._collab = mgr
+        self._collab.set_on_scene_sync(self._on_scene_sync)
+
+    def _on_scene_sync(self, scene_data: dict) -> bool:
+        scene = self._engine.scene
+        if scene and scene.dirty:
+            btn = QMessageBox.question(
+                self, "Scene Not Saved",
+                "The current scene has unsaved changes.\n"
+                "Save before syncing with the collaborator's scene?",
+                QMessageBox.StandardButton.Save |
+                QMessageBox.StandardButton.Discard |
+                QMessageBox.StandardButton.Cancel
+            )
+            if btn == QMessageBox.StandardButton.Cancel:
+                return False
+            if btn == QMessageBox.StandardButton.Save:
+                if scene.path:
+                    self._engine.save_scene()
+                else:
+                    path, _ = QFileDialog.getSaveFileName(
+                        self, "Save Scene", "scenes/", "Scenes (*.zpes)"
+                    )
+                    if path:
+                        if not path.endswith(".zpes"):
+                            path += ".zpes"
+                        self._engine.save_scene(path)
+                    else:
+                        return False
+        return True
 
     def _setup_ui(self):
         container = QWidget()

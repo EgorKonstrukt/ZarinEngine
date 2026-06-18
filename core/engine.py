@@ -303,6 +303,21 @@ class Engine:
         except Exception as e:
             Logger.error(f"Failed to load scene '{path}': {e}", e)
             return None
+    def load_scene_from_data(self, data: dict) -> Optional[Scene]:
+        try:
+            if self._scene:
+                self._plugin_manager.notify_scene_unloaded(self._scene)
+            from core.components.rendering.graphics_effect import GraphicsEffect
+            GraphicsEffect.cleanup_registry()
+            self._scene = Scene.deserialize(data, self._component_registry)
+            self._scene.mark_clean()
+            self._plugin_manager.notify_scene_loaded(self._scene)
+            Logger.info(f"Scene synced: {self._scene.name}")
+            self._emit_event("scene_loaded", self._scene)
+            return self._scene
+        except Exception as e:
+            Logger.error(f"Failed to load synced scene: {e}", e)
+            return None
     def save_scene(self, path: Optional[str] = None):
         if not self._scene: return
         save_path = path or self._scene.path

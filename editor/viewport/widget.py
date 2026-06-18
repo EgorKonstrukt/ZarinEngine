@@ -32,6 +32,7 @@ from editor.viewport.rendering import (
     render_audio_source_gizmos,
     render_reverb_zone_gizmos,
     render_script_gizmos,
+    render_selection_bounds,
 )
 from editor.viewport.component_icons import render_component_icons_gl
 from editor.viewport.collaboration import (
@@ -61,6 +62,7 @@ class SceneViewport(QOpenGLWidget):
         self._gizmo: Gizmo = Gizmo()
         self._selected_entities: list = []
         self._last_frame_time: float = time.perf_counter()
+        self._last_dt: float = 0.016
         self._fps: float = 0.0
         self._fps_accum: float = 0.0
         self._fps_frames: int = 0
@@ -300,7 +302,17 @@ class SceneViewport(QOpenGLWidget):
             Logger.error(f"OpenGL init error: {e}", e)
 
     def _on_scene_loaded(self, scene):
-        pass
+        Logger.info(f"_on_scene_loaded: selected={len(self._selected_entities)} scene_entities={len(scene._entities)}")
+        old_ids = [e.id for e in self._selected_entities]
+        resolved = [scene.get_entity(eid) for eid in old_ids if scene.get_entity(eid)]
+        Logger.info(f"_on_scene_loaded: resolved {len(old_ids)} -> {len(resolved)}")
+        self._selected_entities = resolved
+        self._gizmo.entity = self._selected_entities[0] if self._selected_entities else None
+        if hasattr(self, '_sel_bounds_state'):
+            self._sel_bounds_state = [None, None]
+        if hasattr(self, '_sel_bounds_peers'):
+            self._sel_bounds_peers.clear()
+        self.entities_selected.emit(self._selected_entities)
 
     def resizeGL(self, w: int, h: int):
         dpr = self.devicePixelRatio()
@@ -369,6 +381,7 @@ class SceneViewport(QOpenGLWidget):
                     render_script_gizmos(self, vp_mat)
                 if in_frame:
                     prof.stop("gizmo_wireframes")
+                render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
                 if in_frame:
                     prof.start("gizmo_icons")
                 try:
@@ -410,6 +423,7 @@ class SceneViewport(QOpenGLWidget):
         now = time.perf_counter()
         dt = now - self._last_frame_time
         self._last_frame_time = now
+        self._last_dt = dt
         prof.start("input_handling")
         if self._im:
             self._im.new_frame()
