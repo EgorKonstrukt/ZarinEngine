@@ -23,15 +23,25 @@ class Transform(Component):
         self._local_rot: Quat = Quat.identity()
         self._local_scale: Vec3 = Vec3.one()
         self._world_matrix: Mat4 = Mat4.identity()
+        self._world_target: Mat4 | None = None
         self._dirty: bool = True
     def _mark_dirty(self):
+        if self._dirty:
+            return
         self._dirty = True
         if self._entity:
+            scene = self._entity._scene
+            if scene:
+                scene._dirty_roots.add(self)
             for child in self._entity.children:
                 ct = child.get_component_by_name("Transform")
-                if ct: ct._mark_dirty()
+                if ct:
+                    ct._mark_dirty()
     def _update_world_matrix(self):
         if not self._dirty: return
+        if self._world_target is not None:
+            self._resolve_world_target()
+            return
         local = self._build_local_matrix()
         parent_entity = self._entity.parent if self._entity else None
         if parent_entity:
@@ -43,6 +53,27 @@ class Transform(Component):
                 self._world_matrix = local
         else:
             self._world_matrix = local
+        self._dirty = False
+
+    def _resolve_world_target(self):
+        parent_entity = self._entity.parent if self._entity else None
+        if parent_entity:
+            pt = parent_entity.get_component_by_name("Transform")
+            if pt:
+                pt._update_world_matrix()
+                inv = mat4_inv_fast(pt._world_matrix._d)
+                local = Mat4(mat4_mul_fast(self._world_target._d, inv))
+                pos, rot, scale = local.decompose()
+                self._local_pos = pos
+                self._local_rot = rot
+                self._local_scale = scale
+        else:
+            pos, rot, scale = self._world_target.decompose()
+            self._local_pos = pos
+            self._local_rot = rot
+            self._local_scale = scale
+        self._world_matrix = self._world_target
+        self._world_target = None
         self._dirty = False
     def _build_local_matrix(self) -> Mat4:
         t = mat4_translation(self._local_pos.x, self._local_pos.y, self._local_pos.z)
@@ -104,6 +135,11 @@ class Transform(Component):
     def world_matrix(self) -> Mat4:
         self._update_world_matrix()
         return self._world_matrix
+
+    @world_matrix.setter
+    def world_matrix(self, m: Mat4):
+        self._world_target = Mat4(m._d.copy()) if isinstance(m, Mat4) else Mat4(m)
+        self._dirty = True
     @property
     def forward(self) -> Vec3:
         self._update_world_matrix()
@@ -156,6 +192,11 @@ class Transform(Component):
         from core.math_helpers import mat4_mul_fast, mat4_from_quaternion, mat4_translation, mat4_scale_mat
         n = len(transforms)
         if n == 0: return
+        id_to_idx = {}
+        for i, t in enumerate(transforms):
+            e = t._entity
+            if e:
+                id_to_idx[e.id] = i
         pos_x = np.zeros(n, dtype=FLOAT_TYPE)
         pos_y = np.zeros(n, dtype=FLOAT_TYPE)
         pos_z = np.zeros(n, dtype=FLOAT_TYPE)
@@ -168,6 +209,7 @@ class Transform(Component):
         sc_z = np.zeros(n, dtype=FLOAT_TYPE)
         has_parent = np.zeros(n, dtype=np.int32)
         parent_idx = np.zeros(n, dtype=np.int32)
+        parent_outside = [None] * n
         for i, t in enumerate(transforms):
             p = t._local_pos
             q = t._local_rot
@@ -176,11 +218,16 @@ class Transform(Component):
             rot_x[i] = q.x; rot_y[i] = q.y; rot_z[i] = q.z; rot_w[i] = q.w
             sc_x[i] = s.x; sc_y[i] = s.y; sc_z[i] = s.z
             if t._entity and t._entity.parent:
-                for j, ot in enumerate(transforms):
-                    if ot._entity and ot._entity.id == t._entity.parent.id:
+                pi = id_to_idx.get(t._entity.parent.id)
+                if pi is not None:
+                    has_parent[i] = 1
+                    parent_idx[i] = pi
+                else:
+                    pt = t._entity.parent.get_component_by_name("Transform")
+                    if pt is not None:
                         has_parent[i] = 1
-                        parent_idx[i] = j
-                        break
+                        parent_idx[i] = -1
+                        parent_outside[i] = pt._world_matrix._d
         local_mats = np.zeros((n, 4, 4), dtype=FLOAT_TYPE)
         for i in range(n):
             tm = mat4_translation(pos_x[i], pos_y[i], pos_z[i])
@@ -188,25 +235,15 @@ class Transform(Component):
             sm = mat4_scale_mat(sc_x[i], sc_y[i], sc_z[i])
             local_mats[i] = mat4_mul_fast(mat4_mul_fast(sm, rm), tm)
         world_mats = np.zeros((n, 4, 4), dtype=FLOAT_TYPE)
-        order = []
-        visited = set()
-        def _collect(idx):
-            if idx in visited: return
-            visited.add(idx)
-            if has_parent[idx]:
-                pi = parent_idx[idx]
-                if pi not in visited:
-                    _collect(pi)
-            order.append(idx)
-        for i in range(n):
-            if not has_parent[i]:
-                _collect(i)
         for i in range(n):
             if not has_parent[i]:
                 world_mats[i] = local_mats[i].copy()
-            else:
-                pi = parent_idx[i]
+            elif parent_idx[i] >= 0:
+                pi = int(parent_idx[i])
                 world_mats[i] = mat4_mul_fast(local_mats[i], world_mats[pi])
+            else:
+                world_mats[i] = mat4_mul_fast(local_mats[i], parent_outside[i])
         for i, t in enumerate(transforms):
             t._world_matrix = Mat4(world_mats[i])
+            t._world_target = None
             t._dirty = False

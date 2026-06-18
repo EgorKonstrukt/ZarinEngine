@@ -2,6 +2,7 @@ from __future__ import annotations
 import uuid
 import json
 import time
+from collections import deque
 from typing import Any, Type, TypeVar, Iterator, Optional
 from dataclasses import dataclass, field
 T = TypeVar("T", bound="Component")
@@ -176,8 +177,6 @@ class Entity:
     def set_parent(self, parent: Optional[Entity], preserve_world: bool = True):
         t = self.get_component_by_name("Transform")
         if t and preserve_world:
-            from core.math3d import Mat4
-            from core.math_helpers import mat4_inv_fast, mat4_mul_fast
             world = t.world_matrix
         else:
             world = None
@@ -192,22 +191,8 @@ class Entity:
         if parent is not None:
             parent._children.append(self)
         if world is not None:
-            if parent:
-                pt = parent.get_component_by_name("Transform")
-                if pt:
-                    pt._update_world_matrix()
-                    inv = mat4_inv_fast(pt._world_matrix._d)
-                    local_mat = Mat4(mat4_mul_fast(world._d, inv))
-                    pos, rot, scale = local_mat.decompose()
-                    t._local_pos = pos
-                    t._local_rot = rot
-                    t._local_scale = scale
-                    t._mark_dirty()
-                    return
-            pos, rot, scale = world.decompose()
-            t._local_pos = pos
-            t._local_rot = rot
-            t._local_scale = scale
+            t.world_matrix = world
+        if t is not None:
             t._mark_dirty()
 
     def _invalidate_transform_cache(self):
@@ -506,6 +491,8 @@ class Scene:
         self._fixed_list_cache: list[Component] = []
         self._update_cache_valid: bool = False
         self._fixed_cache_valid: bool = False
+        self._dirty_roots: set = set()
+        self._depth_cache: dict[str, int] = {}
 
     def _invalidate_update_cache(self):
         self._update_cache_valid = False
@@ -555,6 +542,46 @@ class Scene:
 
     def mark_dirty(self): self._dirty = True
     def mark_clean(self): self._dirty = False
+
+    def _get_entity_depth(self, e: Entity) -> int:
+        cached = self._depth_cache.get(e.id)
+        if cached is not None:
+            return cached
+        depth = 0
+        p = e.parent
+        while p:
+            depth += 1
+            p = p.parent
+        self._depth_cache[e.id] = depth
+        return depth
+
+    def flush_transforms(self):
+        if not self._dirty_roots:
+            return 0
+        collected = []
+        visited = set()
+        q = deque()
+        for root in list(self._dirty_roots):
+            if root._dirty and root._entity and id(root) not in visited:
+                visited.add(id(root))
+                q.append(root)
+        while q:
+            t = q.popleft()
+            collected.append(t)
+            for child in t._entity.children:
+                ct = child.get_component_by_name("Transform")
+                if ct and ct._dirty and id(ct) not in visited:
+                    visited.add(id(ct))
+                    q.append(ct)
+        if not collected:
+            self._dirty_roots.clear()
+            return 0
+        collected.sort(key=lambda t: self._get_entity_depth(t._entity))
+        from core.components.transform import Transform
+        Transform.batch_update_world_matrices(collected)
+        self._dirty_roots.clear()
+        self._depth_cache.clear()
+        return len(collected)
 
     def create_entity(self, name: str = "Entity",
                       prefab_guid: Optional[str] = None) -> Entity:

@@ -369,6 +369,8 @@ class Engine:
         Logger.info("Play mode stopped.")
     def tick(self):
         if not self._play_mode: return
+        if self._scene:
+            self._scene.flush_transforms()
         now = _perf_counter()
         raw_dt = now - self._last_time
         self._last_time = now

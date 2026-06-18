@@ -360,6 +360,7 @@ void main() {
                      cam_near: float = 0.01, cam_far: float = 1000.0, cam_fov: float = 60.0):
         if not self._initialized:
             return
+        scene.flush_transforms()
         _render_t0 = time.perf_counter()
         eng = Engine.instance()
         prof = eng._profiler if eng and hasattr(eng, '_profiler') else None
