@@ -883,7 +883,35 @@ class SceneViewport(QOpenGLWidget):
     def _copy_selected_entities(self):
         if not self._selected_entities:
             return
-        self._entity_clipboard = [copy.deepcopy(e.serialize()) for e in self._selected_entities]
+        seen = set()
+        to_serialize = []
+        for e in self._selected_entities:
+            if e.id in seen:
+                continue
+            stack = [(e, True)]
+            while stack:
+                current, is_top = stack.pop()
+                if current.id in seen:
+                    continue
+                seen.add(current.id)
+                to_serialize.append((current, is_top))
+                for child in current.children:
+                    stack.append((child, False))
+        self._entity_clipboard = []
+        for e, is_top in to_serialize:
+            data = copy.deepcopy(e.serialize())
+            if is_top:
+                data["parent"] = None
+            t = e.get_component_by_name("Transform")
+            if t:
+                world_pos, world_rot, world_scale = t.world_matrix.decompose()
+                for comp_data in data.get("components", []):
+                    if comp_data.get("_key") == "Transform":
+                        comp_data["local_position"] = world_pos.to_list()
+                        comp_data["local_rotation"] = world_rot.to_list()
+                        comp_data["local_scale"] = world_scale.to_list()
+                        break
+            self._entity_clipboard.append(data)
 
     def _paste_entities(self):
         from core.engine import Engine
@@ -893,21 +921,23 @@ class SceneViewport(QOpenGLWidget):
             return
         cmd = PasteEntitiesCommand(self._engine.scene, self._entity_clipboard, registry)
         get_history().execute(cmd)
-        new_entities = []
+        top_entities = []
+        for eid in cmd.spawned_ids:
+            e = self._engine.scene.get_entity(eid)
+            if e and e.parent is None:
+                top_entities.append(e)
+        self._selected_entities = top_entities
+        self._gizmo.entity = top_entities[0] if top_entities else None
+        from editor.viewport.collaboration import send_collab_entity_create, send_collab_selection
         for eid in cmd.spawned_ids:
             e = self._engine.scene.get_entity(eid)
             if e:
-                new_entities.append(e)
-        self._selected_entities = new_entities
-        self._gizmo.entity = new_entities[0] if new_entities else None
-        from editor.viewport.collaboration import send_collab_entity_create, send_collab_selection
-        for e in new_entities:
-            send_collab_entity_create(self, e.serialize())
+                send_collab_entity_create(self, e.serialize())
         send_collab_selection(self)
         self.scene_modified.emit()
         self.entities_selected.emit(self._selected_entities)
-        if new_entities:
-            self.entity_selected.emit(new_entities[0])
+        if top_entities:
+            self.entity_selected.emit(top_entities[0])
 
     def enterEvent(self, event):
         self._focused = True

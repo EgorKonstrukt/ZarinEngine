@@ -733,10 +733,39 @@ class HierarchyPanel(QDockWidget):
                     selected.append(e)
         if not selected:
             return
+        seen = set()
+        to_serialize = []
+        for e in selected:
+            if e.id in seen:
+                continue
+            stack = [(e, True)]
+            while stack:
+                current, is_top = stack.pop()
+                if current.id in seen:
+                    continue
+                seen.add(current.id)
+                to_serialize.append((current, is_top))
+                for child in current.children:
+                    stack.append((child, False))
+        clipboard = []
+        for e, is_top in to_serialize:
+            data = copy.deepcopy(e.serialize())
+            if is_top:
+                data["parent"] = None
+            t = e.get_component_by_name("Transform")
+            if t:
+                world_pos, world_rot, world_scale = t.world_matrix.decompose()
+                for comp_data in data.get("components", []):
+                    if comp_data.get("_key") == "Transform":
+                        comp_data["local_position"] = world_pos.to_list()
+                        comp_data["local_rotation"] = world_rot.to_list()
+                        comp_data["local_scale"] = world_scale.to_list()
+                        break
+            clipboard.append(data)
         mw = self.parent()
         viewport = getattr(mw, '_viewport', None)
         if viewport:
-            viewport._entity_clipboard = [copy.deepcopy(e.serialize()) for e in selected]
+            viewport._entity_clipboard = clipboard
     def _on_paste(self):
         mw = self.parent()
         viewport = getattr(mw, '_viewport', None)

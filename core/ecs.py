@@ -173,7 +173,9 @@ class Entity:
     def is_prefab_instance(self) -> bool:
         return self._prefab_guid is not None
 
-    def set_parent(self, parent: Optional[Entity]):
+    def set_parent(self, parent: Optional[Entity], preserve_world: bool = True):
+        t = self.get_component_by_name("Transform")
+        old_world_pos = t.position if t and preserve_world else None
         old = self._parent
         if old is not None:
             ch = old._children
@@ -184,9 +186,8 @@ class Entity:
         self._parent = parent
         if parent is not None:
             parent._children.append(self)
-        t = self.get_component_by_name("Transform")
-        if t:
-            t._update_world_matrix()
+        if old_world_pos is not None:
+            t.position = old_world_pos
 
     def _invalidate_transform_cache(self):
         d_pop = dict.pop

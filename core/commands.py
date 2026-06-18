@@ -319,7 +319,7 @@ class PasteEntitiesCommand(Command):
                 child = self._scene.get_entity(child_id)
                 parent = self._scene.get_entity(parent_id)
                 if child and parent:
-                    child.set_parent(parent)
+                    child.set_parent(parent, preserve_world=False)
         if self._spawned_ids:
             self._entity_id = self._spawned_ids[0]
     @property
