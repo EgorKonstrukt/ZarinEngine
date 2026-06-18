@@ -1,0 +1,474 @@
+from __future__ import annotations
+
+import os
+
+from PyQt6.QtWidgets import QMessageBox, QFileDialog
+from PyQt6.QtCore import Qt, QTimer
+
+from core.math3d import Vec3
+from core.logger import Logger
+from editor.splash import SplashScreen
+
+
+def on_entity_selected(mw, entity):
+    from core.commands import get_history
+    get_history().set_current_selection(entity)
+    mw._hierarchy.set_selected_entity(entity)
+    mw._inspector.set_entity(entity)
+    mw._viewport.set_selected_entity(entity)
+
+
+def on_entities_selected(mw, entities):
+    mw._viewport.set_selected_entities(entities)
+    if entities:
+        mw._inspector.set_selected_entities(entities)
+
+
+def on_entity_selected_from_viewport(mw, entity):
+    from core.commands import get_history
+    get_history().set_current_selection(entity)
+    mw._inspector.set_entity(entity)
+    mw._hierarchy.set_selected_entity(entity)
+
+
+def on_entities_selected_from_viewport(mw, entities):
+    if entities:
+        mw._inspector.set_selected_entities(entities)
+        mw._hierarchy.set_selected_entities(entities)
+    else:
+        mw._inspector.set_entity(None)
+        mw._hierarchy.set_selected_entity(None)
+
+
+def on_entity_double_clicked(mw, eid: str):
+    if not mw._engine.scene:
+        return
+    entity = mw._engine.scene.get_entity(eid)
+    if not entity:
+        return
+    t = entity.get_component_by_name("Transform")
+    if t:
+        mw._viewport.camera.frame_bounds(t.position)
+
+
+def reset_camera(mw):
+    mw._viewport.camera._position = Vec3(0.0, 3.0, 10.0)
+    mw._viewport.camera._yaw = 0.0
+    mw._viewport.camera._pitch = -15.0
+    mw._viewport.camera._focus_active = False
+
+
+def on_project_file_double_clicked(mw, path: str):
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".zpep":
+        instantiate_prefab(mw, path)
+
+
+def on_open_prefab_editor(mw, path: str):
+    mw._prefab_editor.open_prefab(path)
+    mw._prefab_editor.show()
+    mw._prefab_editor.raise_()
+
+
+def instantiate_prefab(mw, path: str, world_pos=None):
+    if not mw._engine.scene:
+        return
+    from core.prefab import PrefabLibrary
+    from core.commands import InstantiatePrefabCommand, get_history
+    pref = PrefabLibrary.load(path)
+    if not pref:
+        return
+    cmd = InstantiatePrefabCommand(mw._engine.scene, pref, mw._engine._component_registry)
+    get_history().execute(cmd)
+    spawned = [mw._engine.scene.get_entity(eid) for eid in cmd._spawned_ids]
+    spawned = [e for e in spawned if e]
+    if spawned and world_pos is not None:
+        t = spawned[0].get_component_by_name("Transform")
+        if t:
+            t.local_position = world_pos
+    if spawned:
+        on_entity_selected(mw, spawned[0])
+    mw._hierarchy.refresh()
+
+
+def on_entity_dropped(mw, path_or_type: str, world_pos):
+    if not mw._engine.scene:
+        return
+    ext = os.path.splitext(path_or_type)[1].lower()
+    if ext == ".zpep":
+        instantiate_prefab(mw, path_or_type, world_pos)
+    else:
+        from core.components import Transform, MeshFilter, MeshRenderer
+        e = mw._engine.scene.create_entity(os.path.basename(path_or_type) or "Dropped Object")
+        t = Transform()
+        if world_pos:
+            t.local_position = world_pos
+        e.add_component(t)
+        model_exts = {".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz"}
+        if ext in model_exts:
+            mf = MeshFilter()
+            mf.mesh_name = os.path.splitext(os.path.basename(path_or_type))[0]
+            root = mw._engine.project_root
+            try:
+                rel = os.path.relpath(path_or_type, root)
+                mf.mesh_path = rel.replace("\\", "/") if not rel.startswith("..") else os.path.abspath(path_or_type)
+            except ValueError:
+                mf.mesh_path = os.path.abspath(path_or_type)
+            e.add_component(mf)
+            e.add_component(MeshRenderer())
+        mw._hierarchy.refresh()
+        on_entity_selected(mw, e)
+
+
+def on_scene_loaded(mw, scene):
+    name = scene.name if scene else "None"
+    mw._status_scene_lbl.setText(f"Scene: {name}")
+    mw.setWindowTitle(f"Zarin Engine Editor - {name}")
+    if hasattr(mw, '_viewport') and mw._viewport and hasattr(mw._viewport, 'renderer') and mw._viewport.renderer:
+        mw._viewport.renderer.clear_scene_caches()
+
+
+def on_gizmo_mode_changed(mw, mode):
+    mw._viewport.gizmo.mode = mode
+
+
+def on_gizmo_space_changed(mw, space):
+    mw._viewport.gizmo.space = space
+
+
+def on_grid_toggled(mw, enabled: bool):
+    if mw._viewport.renderer:
+        mw._viewport.renderer.show_grid = enabled
+    mw._scene_toolbar.save_state()
+
+
+def on_snap_toggled(mw, enabled: bool):
+    mw._viewport.gizmo.snap_enabled = enabled
+    mw._scene_toolbar.save_state()
+
+
+def on_gizmo_vis_toggled(mw, checked: bool):
+    mw._viewport._gizmo_visible = checked
+    mw._viewport._gizmo_icons_visible = checked
+    mw._viewport.update()
+
+
+def on_snap_t_changed(mw, val: float):
+    mw._viewport.gizmo.snap_translate = val
+    mw._scene_toolbar.save_state()
+
+
+def on_snap_r_changed(mw, val: float):
+    mw._viewport.gizmo.snap_rotate = val
+    mw._scene_toolbar.save_state()
+
+
+def on_snap_s_changed(mw, val: float):
+    mw._viewport.gizmo.snap_scale = val
+    mw._scene_toolbar.save_state()
+
+
+def on_render_mode_changed(mw, mode):
+    if mw._viewport.renderer:
+        mw._viewport.renderer.render_mode = mode
+
+
+def on_skybox_toggled(mw, enabled: bool):
+    if mw._viewport.renderer:
+        mw._viewport.renderer.skybox_enabled = enabled
+    play = getattr(mw, '_play_dock', None)
+    if play and hasattr(play, '_viewport') and play._viewport._renderer:
+        play._viewport._renderer.skybox_enabled = enabled
+    mw._scene_toolbar.save_state()
+
+
+def on_effects_toggled(mw, enabled: bool):
+    if mw._viewport.renderer:
+        mw._viewport.renderer.set_effects_enabled(enabled)
+    play = getattr(mw, '_play_dock', None)
+    if play and hasattr(play, '_viewport') and play._viewport._renderer:
+        play._viewport._renderer.set_effects_enabled(enabled)
+    mw._scene_toolbar.save_state()
+
+
+def on_camera_projection_changed(mw):
+    mw._viewport.camera.toggle_projection()
+    is_ortho = mw._viewport.camera.is_orthographic
+    mw._scene_toolbar._cam_persp_btn.setChecked(not is_ortho)
+
+
+def on_camera_type_changed(mw):
+    is_ortho = mw._viewport.camera.is_orthographic
+    mw._scene_toolbar._cam_persp_btn.setText("Ortho" if is_ortho else "Perspective")
+
+
+def on_camera_2d_toggled(mw):
+    mw._viewport.camera.toggle_2d_mode()
+    on_camera_2d_changed(mw)
+
+
+def on_camera_2d_changed(mw):
+    is_2d = mw._viewport.camera.is_2d_mode
+    mw._scene_toolbar._cam_2d_btn.setChecked(is_2d)
+    is_ortho = mw._viewport.camera.is_orthographic
+    mw._scene_toolbar._cam_persp_btn.setText("Ortho" if is_ortho else "Perspective")
+
+
+def on_play_start(mw, _):
+    mw._play_btn.setText("Stop")
+    mw._pause_btn.setEnabled(True)
+    mw._status_mode_lbl.setText("Play Mode")
+    if hasattr(mw, '_gui_editor_widget') and mw._gui_editor_widget.canvas:
+        canvas = mw._gui_editor_widget.canvas
+        mw._viewport._overlay_canvas = canvas
+        if hasattr(mw, '_play_dock') and hasattr(mw._play_dock, '_viewport'):
+            mw._play_dock._viewport.show_overlay(canvas)
+            if mw._viewport.renderer:
+                mw._play_dock._viewport._renderer.skybox_enabled = mw._viewport.renderer.skybox_enabled
+                mw._play_dock._viewport._renderer.set_effects_enabled(mw._viewport.renderer.effects_enabled)
+        canvas.edit_mode = False
+
+
+def on_play_stop(mw, _):
+    mw._play_btn.setText("Play")
+    mw._pause_btn.setEnabled(False)
+    mw._status_mode_lbl.setText("Edit Mode")
+    if hasattr(mw, '_viewport'):
+        mw._viewport._overlay_canvas = None
+    if hasattr(mw, '_play_dock') and hasattr(mw._play_dock, '_viewport'):
+        mw._play_dock._viewport.hide_overlay()
+    if hasattr(mw, '_gui_editor_widget'):
+        mw._gui_editor_widget.canvas.edit_mode = True
+
+
+def toggle_play_stop(mw):
+    if mw._engine.play_mode:
+        mw._engine.stop_play()
+        mw._viewport_dock.raise_()
+        if mw._scene_snapshot and mw._engine.scene:
+            from core.components.rendering.graphics_effect import GraphicsEffect
+            GraphicsEffect.cleanup_registry()
+            from core.ecs import Scene as S
+            from core.engine import Engine as Eng
+            restored = S.deserialize(mw._scene_snapshot, Eng.instance()._component_registry)
+            restored.path = mw._engine.scene.path
+            mw._engine._scene = restored
+            mw._engine._plugin_manager.notify_scene_loaded(restored)
+            mw._engine._emit_event("scene_loaded", restored)
+            mw._scene_snapshot = None
+        if hasattr(mw, "_pre_play_selected_id") and mw._pre_play_selected_id:
+            e = mw._engine.scene.get_entity(mw._pre_play_selected_id)
+            if e:
+                on_entity_selected(mw, e)
+    else:
+        sel = getattr(mw._hierarchy, "_selected_entity", None)
+        mw._pre_play_selected_id = sel.id if sel else None
+        if mw._engine.scene:
+            mw._scene_snapshot = mw._engine.scene.serialize()
+        mw._engine.start_play()
+        mw._play_dock.raise_()
+
+
+def toggle_pause(mw):
+    if mw._play_dock:
+        mw._play_dock._toggle_pause()
+    if mw._scene_snapshot and mw._engine.scene:
+        from core.components.rendering.graphics_effect import GraphicsEffect
+        GraphicsEffect.cleanup_registry()
+        from core.ecs import Scene as S
+        from core.engine import Engine as Eng
+        restored = S.deserialize(mw._scene_snapshot, Eng.instance()._component_registry)
+        restored.path = mw._engine.scene.path
+        mw._engine._scene = restored
+        mw._engine._plugin_manager.notify_scene_loaded(restored)
+        mw._engine._emit_event("scene_loaded", restored)
+        mw._scene_snapshot = None
+    if hasattr(mw, "_pre_play_selected_id") and mw._pre_play_selected_id:
+        e = mw._engine.scene.get_entity(mw._pre_play_selected_id)
+        if e:
+            on_entity_selected(mw, e)
+
+
+def new_scene(mw):
+    if not _confirm_discard_dirty(mw):
+        return
+    mw._engine.new_scene("NewScene")
+    if hasattr(mw, '_viewport') and mw._viewport and hasattr(mw._viewport, 'renderer') and mw._viewport.renderer:
+        mw._viewport.renderer.release_all_caches()
+    mw._hierarchy.refresh()
+    on_entity_selected(mw, None)
+
+
+def open_scene(mw):
+    if not _confirm_discard_dirty(mw):
+        return
+    path, _ = QFileDialog.getOpenFileName(mw, "Open Scene", "scenes/", "Scenes (*.zpes)")
+    if path:
+        _do_open_scene(mw, path)
+
+
+def _confirm_discard_dirty(mw) -> bool:
+    if mw._engine.scene and mw._engine.scene.dirty:
+        reply = QMessageBox.question(mw, "Unsaved Changes", "Save current scene?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
+        if reply == QMessageBox.StandardButton.Cancel:
+            return False
+        if reply == QMessageBox.StandardButton.Yes:
+            mw._engine.save_scene()
+    return True
+
+
+def _do_open_scene(mw, path):
+    try:
+        scene = mw._engine.load_scene(path)
+        if scene is None:
+            Logger.error(f"Failed to load scene: {path}")
+            return
+        if hasattr(mw, '_viewport') and mw._viewport and hasattr(mw._viewport, 'renderer') and mw._viewport.renderer:
+            mw._viewport.renderer.release_all_caches()
+        mw._hierarchy.refresh()
+        on_entity_selected(mw, None)
+    except Exception as e:
+        Logger.error(f"Error opening scene: {e}", e)
+
+
+def save_scene(mw):
+    if not mw._engine.scene:
+        return
+    if not mw._engine.scene.path:
+        save_scene_as(mw)
+    else:
+        mw._engine.save_scene()
+
+
+def save_scene_as(mw):
+    if not mw._engine.scene:
+        return
+    path, _ = QFileDialog.getSaveFileName(mw, "Save Scene", "scenes/", "Scenes (*.zpes)")
+    if path:
+        if not path.endswith(".zpes"):
+            path += ".zpes"
+        mw._engine.save_scene(path)
+
+
+def sync_after_undo(mw):
+    from core.commands import get_history
+    h = get_history()
+    sel = h.last_affected_entity or h.current_selection
+    mw._hierarchy.blockSignals(True)
+    if sel:
+        mw._hierarchy.set_selected_entity(sel)
+        mw._inspector.setUpdatesEnabled(False)
+        mw._inspector.set_entity(sel)
+        mw._inspector.setUpdatesEnabled(True)
+        mw._viewport.set_selected_entity(sel)
+    else:
+        mw._hierarchy.refresh()
+        sel_ent = mw._hierarchy._selected_entity
+        mw._inspector.set_entity(sel_ent if sel_ent else None)
+        mw._viewport.set_selected_entity(sel_ent if sel_ent else None)
+    mw._hierarchy.blockSignals(False)
+    if mw._engine.scene:
+        mw._engine.scene.mark_dirty()
+
+
+def undo(mw):
+    from core.commands import get_history
+    get_history().undo()
+    sync_after_undo(mw)
+
+
+def redo(mw):
+    from core.commands import get_history
+    get_history().redo()
+    sync_after_undo(mw)
+
+
+def on_undo_history_navigated(mw):
+    sync_after_undo(mw)
+
+
+def on_file_selected(mw, path: str):
+    mw._inspector.show_import_settings(path)
+
+
+def on_import_model(mw, path: str):
+    if not mw._engine.scene:
+        return
+    from core.components import Transform, MeshFilter, MeshRenderer
+    name = os.path.splitext(os.path.basename(path))[0]
+    e = mw._engine.scene.create_entity(name)
+    e.add_component(Transform())
+    mf = MeshFilter()
+    mf.mesh_name = os.path.splitext(os.path.relpath(path, "."))[0].replace("\\", "/")
+    root = mw._engine.project_root
+    try:
+        rel = os.path.relpath(path, root)
+        mf.mesh_path = rel.replace("\\", "/") if not rel.startswith("..") else os.path.abspath(path)
+    except ValueError:
+        mf.mesh_path = os.path.abspath(path)
+    e.add_component(mf)
+    e.add_component(MeshRenderer())
+    mw._hierarchy.refresh()
+    on_entity_selected(mw, e)
+
+
+def open_scene_by_path(mw, path: str):
+    if not os.path.exists(path):
+        return
+    if not _confirm_discard_dirty(mw):
+        return
+    _do_open_scene(mw, path)
+
+
+def open_global_settings(mw):
+    from core.config import get_global_config
+    from editor.settings_dialog import SettingsDialog
+    cfg = get_global_config()
+    dlg = SettingsDialog("Global Settings", cfg, mw)
+    dlg.config_changed.connect(lambda key, value: on_global_config_changed(mw, key, value))
+    dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    dlg.show()
+
+
+def on_global_config_changed(mw, key: str, value):
+    from core.config import get_global_config
+    cfg = get_global_config()
+    mw._viewport.load_config(cfg)
+    mw._viewport.camera.load_config(cfg)
+    mw._viewport.gizmo.load_config(cfg)
+    if mw._viewport.renderer:
+        mw._viewport.renderer.load_config(cfg)
+    mw._hierarchy.load_config(cfg)
+    mw._inspector.load_config(cfg)
+    mw._console.load_config(cfg)
+    mw._profiler.load_config(cfg)
+    mw._project.load_config(cfg)
+    mw._prefab_editor.load_config(cfg)
+    if hasattr(mw, '_terminal'):
+        mw._terminal.load_config(cfg)
+
+
+def open_project_settings(mw):
+    from core.config import get_project_config
+    from editor.settings_dialog import SettingsDialog
+    path = getattr(mw._engine, "_project_path", ".")
+    cfg = get_project_config(path)
+    dlg = SettingsDialog("Project Settings", cfg, mw)
+    dlg.config_changed.connect(lambda key, value: on_project_config_changed(mw, key, value))
+    dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    dlg.show()
+
+
+def on_project_config_changed(mw, key: str, value):
+    pass
+
+
+def show_build_dialog(mw):
+    from editor.build_dialog import show_build_dialog as _show_build_dialog
+    _show_build_dialog(mw)
+
+
+def show_about(mw):
+    QMessageBox.about(mw, "About Zarin Engine",
+                      "Zarin Engine v0.1.0\n\nPython 3.13, ModernGL, PyQt6\n64-bit ECS 3D Engine\n\nPlugin-based architecture")

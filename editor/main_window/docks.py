@@ -1,0 +1,225 @@
+from __future__ import annotations
+import os
+
+from PyQt6.QtWidgets import QDockWidget
+from PyQt6.QtCore import Qt
+
+from editor.scene_viewport import SceneViewport
+from editor.panels.hierarchy_panel import HierarchyPanel
+from editor.panels.inspector_panel import InspectorPanel
+from editor.panels.console_panel import ConsolePanel
+from editor.panels.profiler_panel import ProfilerPanel
+from editor.panels.plugin_manager_panel import PluginManagerPanel
+from editor.panels.project_panel import ProjectPanel
+from editor.panels.prefab_editor_panel import PrefabEditorPanel
+from editor.panels.play_window import PlayDockPanel
+from editor.panels.terminal_panel import TerminalPanel
+from editor.panels.undo_history_panel import UndoHistoryPanel
+from editor.panels.collaboration_panel import CollaborationPanel
+from editor.gui_editor.gui_viewport import GuiEditorViewport
+
+_AREA_MAP = {
+    "left": Qt.DockWidgetArea.LeftDockWidgetArea,
+    "right": Qt.DockWidgetArea.RightDockWidgetArea,
+    "top": Qt.DockWidgetArea.TopDockWidgetArea,
+    "bottom": Qt.DockWidgetArea.BottomDockWidgetArea,
+}
+
+
+def _make_dock(mw, title: str, widget, obj_name: str = "") -> QDockWidget:
+    dock = QDockWidget(title, mw)
+    if obj_name:
+        dock.setObjectName(obj_name)
+    dock.setWidget(widget)
+    dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    dock.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    return dock
+
+
+def setup_docks(mw):
+    mw._docks: list[QDockWidget] = []
+    register_default_docks(mw)
+    register_plugin_docks(mw)
+    add_all_docks(mw)
+    state = mw._settings.value("windowState")
+    if state is not None and mw.restoreState(state):
+        mw._layout_restored = True
+    else:
+        mw._layout_restored = False
+        build_dock_layout(mw)
+
+
+def register_dock(mw, dock: QDockWidget, area: Qt.DockWidgetArea) -> QDockWidget:
+    mw._docks.append(dock)
+    return dock
+
+
+def register_default_docks(mw):
+    from core.config import get_global_config
+    mw._viewport = SceneViewport(mw._engine, mw)
+    mw._engine.viewport = mw._viewport
+    mw._viewport.load_config(get_global_config())
+    mw._viewport.camera.load_config(get_global_config())
+    mw._viewport.gizmo.load_config(get_global_config())
+    mw._viewport_dock = QDockWidget("Viewport", mw)
+    mw._viewport_dock.setObjectName("ViewportDock")
+    mw._viewport_dock.setWidget(mw._viewport)
+    mw._viewport_dock.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    mw._viewport_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._viewport_dock.setContentsMargins(0, 0, 0, 0)
+    mw._viewport_dock.setStyleSheet(
+        "QDockWidget { border: none; } QDockWidget::title { background: #2d2d2d; padding: 2px 6px; font-size: 11px; }")
+    register_dock(mw, mw._viewport_dock, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._hierarchy = HierarchyPanel(mw._engine, mw)
+    mw._hierarchy.load_config(get_global_config())
+    mw._hierarchy.setObjectName("HierarchyDock")
+    mw._hierarchy.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._hierarchy.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._hierarchy, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._inspector = InspectorPanel(mw._engine, mw)
+    mw._inspector.load_config(get_global_config())
+    mw._inspector.setObjectName("InspectorDock")
+    mw._inspector.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._inspector.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._inspector, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._console = ConsolePanel(mw)
+    mw._console.load_config(get_global_config())
+    mw._console.setObjectName("ConsoleDock")
+    mw._console.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._console.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._console, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._profiler = ProfilerPanel(mw._engine, mw)
+    mw._profiler.load_config(get_global_config())
+    mw._profiler.setObjectName("ProfilerDock")
+    mw._profiler.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._profiler.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._profiler, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._plugin_mgr = PluginManagerPanel(mw._engine, mw)
+    mw._plugin_mgr.setObjectName("PluginManagerDock")
+    mw._plugin_mgr.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._plugin_mgr.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._plugin_mgr, Qt.DockWidgetArea.LeftDockWidgetArea)
+    _assets_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "assets"))
+    mw._project = ProjectPanel(mw._engine, _assets_root, mw)
+    mw._project.load_config(get_global_config())
+    mw._project.setObjectName("ProjectDock")
+    mw._project.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._project.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._project, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._prefab_editor = PrefabEditorPanel(mw._engine, mw)
+    mw._prefab_editor.load_config(get_global_config())
+    register_dock(mw, mw._prefab_editor, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._play_dock = PlayDockPanel(mw._engine, mw)
+    register_dock(mw, mw._play_dock, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._terminal = TerminalPanel(mw)
+    mw._terminal.setObjectName("TerminalDock")
+    mw._terminal.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    register_dock(mw, mw._terminal, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._gui_editor_widget = GuiEditorViewport(mw._engine, mw)
+    mw._gui_editor = QDockWidget("GUI Editor", mw)
+    mw._gui_editor.setObjectName("GuiEditorDock")
+    mw._gui_editor.setWidget(mw._gui_editor_widget)
+    mw._gui_editor.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._gui_editor.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._gui_editor, Qt.DockWidgetArea.LeftDockWidgetArea)
+    from editor.main_window.handlers import on_entity_selected
+    mw._gui_editor_widget.entity_selected.connect(lambda e: on_entity_selected(mw, e))
+    mw._undo_history = UndoHistoryPanel(mw)
+    mw._undo_history.setObjectName("UndoHistoryDock")
+    mw._undo_history.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._undo_history.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._undo_history, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._collab_panel = CollaborationPanel(mw._engine, mw)
+    mw._collab_panel.setObjectName("CollaborationDock")
+    mw._collab_panel.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    if mw._engine.collab_manager:
+        mw._collab_panel.set_collaboration_manager(mw._engine.collab_manager)
+    register_dock(mw, mw._collab_panel, Qt.DockWidgetArea.LeftDockWidgetArea)
+
+
+def register_plugin_docks(mw):
+    registry = mw._engine.plugin_ui_registry
+    for info in registry["docks"]:
+        try:
+            widget = info["widget_factory"]()
+            if widget is None:
+                continue
+            title = info["title"]
+            area_name = info.get("area", "left")
+            area = _AREA_MAP.get(area_name, Qt.DockWidgetArea.LeftDockWidgetArea)
+            plugin_name = info.get("plugin", "plugin")
+            obj_name = f"PluginDock_{plugin_name}_{title.replace(' ', '_')}"
+            dock = _make_dock(mw, title, widget, obj_name)
+            register_dock(mw, dock, area)
+        except Exception as e:
+            from core.logger import Logger
+            Logger.error(f"Failed to create plugin dock '{info.get('title', '?')}': {e}")
+
+
+def add_all_docks(mw):
+    area = Qt.DockWidgetArea.LeftDockWidgetArea
+    mw.addDockWidget(area, mw._hierarchy)
+    mw.addDockWidget(area, mw._viewport_dock)
+    mw.addDockWidget(area, mw._inspector)
+    mw.addDockWidget(area, mw._play_dock)
+    mw.addDockWidget(area, mw._gui_editor)
+    mw.addDockWidget(area, mw._prefab_editor)
+    mw.addDockWidget(area, mw._console)
+    mw.addDockWidget(area, mw._profiler)
+    mw.addDockWidget(area, mw._project)
+    mw.addDockWidget(area, mw._terminal)
+    mw.addDockWidget(area, mw._undo_history)
+    mw.addDockWidget(area, mw._plugin_mgr)
+    mw.addDockWidget(area, mw._collab_panel)
+    for dock in mw._docks:
+        if dock not in (mw._hierarchy, mw._viewport_dock, mw._inspector,
+                        mw._play_dock, mw._gui_editor, mw._prefab_editor,
+                        mw._console, mw._profiler, mw._project,
+                        mw._terminal, mw._undo_history, mw._plugin_mgr,
+                        mw._collab_panel):
+            mw.addDockWidget(area, dock)
+
+
+def build_dock_layout(mw):
+    mw.tabifyDockWidget(mw._viewport_dock, mw._play_dock)
+    mw.tabifyDockWidget(mw._viewport_dock, mw._gui_editor)
+    mw.tabifyDockWidget(mw._viewport_dock, mw._prefab_editor)
+    mw.tabifyDockWidget(mw._inspector, mw._console)
+    mw.tabifyDockWidget(mw._inspector, mw._profiler)
+    mw.tabifyDockWidget(mw._inspector, mw._project)
+    mw.tabifyDockWidget(mw._inspector, mw._terminal)
+    mw.tabifyDockWidget(mw._inspector, mw._undo_history)
+    mw.tabifyDockWidget(mw._inspector, mw._plugin_mgr)
+    mw._viewport_dock.raise_()
+    mw._hierarchy.raise_()
+    mw._inspector.raise_()

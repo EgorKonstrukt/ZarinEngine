@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%">
+      <stop offset="0%" stop-color="#6A6A9E"/>
+      <stop offset="20%" stop-color="#3E3E64"/>
+      <stop offset="55%" stop-color="#262648"/>
+      <stop offset="100%" stop-color="#181830"/>
+    </radialGradient>
+    <radialGradient id="p" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#FFB347"/>
+      <stop offset="50%" stop-color="#FF8C00"/>
+      <stop offset="100%" stop-color="#CC7000"/>
+    </radialGradient>
+    <radialGradient id="o" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="50%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#A00020"/>
+    </radialGradient>
+    <radialGradient id="f" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#C5E1A5"/>
+      <stop offset="50%" stop-color="#8BC34A"/>
+      <stop offset="100%" stop-color="#5A8A2E"/>
+    </radialGradient>
+    <radialGradient id="c" cx="35%" cy="30%">
+      <stop offset="0%" stop-color="#CFD8DC"/>
+      <stop offset="50%" stop-color="#78909C"/>
+      <stop offset="100%" stop-color="#546E7A"/>
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="innerShadow" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <polygon points="234,120 177,218.7 63,218.7 6,120 63,21.3 177,21.3" fill="url(#bg)" stroke="#7A7AB0" stroke-width="3" filter="url(#dropShadow)"/>
+
+  <polygon points="228,120 174.5,211 65.5,211 12,120 65.5,29 174.5,29" fill="none" stroke="rgba(0,0,0,0.6)" stroke-width="12" filter="url(#innerShadow)"/>
+
+  <polygon points="228,120 174.5,211 65.5,211 12,120 65.5,29 174.5,29" fill="none" stroke="rgba(0,0,0,0.3)" stroke-width="8" filter="url(#innerShadow)"/>
+
+  <g transform="rotate(20, 120, 120)">
+    <line x1="120" y1="120" x2="120" y2="42" stroke="#8BC34A" stroke-width="32" stroke-linecap="round"/>
+    <line x1="120" y1="120" x2="42" y2="120" stroke="#DC143C" stroke-width="32" stroke-linecap="round"/>
+    <line x1="120" y1="113" x2="198" y2="113" stroke="#DC143C" stroke-width="10" stroke-linecap="round"/>
+    <line x1="120" y1="127" x2="198" y2="127" stroke="#DC143C" stroke-width="10" stroke-linecap="round"/>
+    <line x1="120" y1="120" x2="120" y2="198" stroke="#78909C" stroke-width="32" stroke-linecap="round"/>
+
+    <circle cx="120" cy="120" r="38" fill="url(#p)" filter="url(#glow)"/>
+    <circle cx="120" cy="42" r="32" fill="url(#f)" filter="url(#glow)"/>
+    <circle cx="42" cy="120" r="32" fill="url(#o)" filter="url(#glow)"/>
+    <circle cx="198" cy="120" r="32" fill="url(#o)" filter="url(#glow)"/>
+    <circle cx="120" cy="198" r="32" fill="url(#c)" filter="url(#glow)"/>
+  </g>
+</svg>

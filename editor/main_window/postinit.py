@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+import os
+
+from PyQt6.QtCore import Qt, QTimer
+
+from core.logger import Logger
+from editor.project_manager import _get_recent_projects
+from editor.splash import SplashScreen
+
+
+def post_init(mw):
+    try:
+        recent = _get_recent_projects(1)
+        if recent:
+            project_path = recent[0].get("path", "")
+            if os.path.isdir(project_path):
+                from editor.main_window.project import switch_project
+                switch_project(mw, project_path)
+                QTimer.singleShot(0, lambda: initial_dock_sizes(mw))
+                QTimer.singleShot(100, lambda: load_renderer_config(mw))
+                return
+        SplashScreen.show_message("Creating sample scene...")
+        scene = mw._engine.new_scene("SampleScene")
+        from core.components import Transform, MeshFilter, MeshRenderer, Light, LightType, Camera
+        from core.components.rendering.sky import Sky
+        from core.components.rendering.clouds import Cloud
+        from core.math3d import Vec3
+        dir_light = scene.create_entity("Directional Light")
+        t = Transform()
+        t.local_euler_angles = Vec3(45, 45, 0)
+        dir_light.add_component(t)
+        l = Light()
+        l.light_type = LightType.DIRECTIONAL
+        l.intensity = 1.0
+        dir_light.add_component(l)
+        cube = scene.create_entity("Cube")
+        ct = Transform()
+        cube.add_component(ct)
+        mf = MeshFilter()
+        mf.mesh_name = "cube"
+        cube.add_component(mf)
+        cube.add_component(MeshRenderer())
+        cam = scene.create_entity("Main Camera")
+        cam_t = Transform()
+        cam_t.local_position = Vec3(0, 2, 8)
+        cam.add_component(cam_t)
+        cam.add_component(Camera())
+        sky_ent = scene.create_entity("Sky")
+        sky_ent.add_component(Sky())
+        cloud_ent = scene.create_entity("Clouds")
+        cloud_ent.add_component(Cloud())
+        mw._hierarchy.refresh()
+        QTimer.singleShot(0, lambda: initial_dock_sizes(mw))
+        from core.config import get_global_config
+        if mw._viewport.renderer:
+            mw._viewport.renderer.load_config(get_global_config())
+        else:
+            QTimer.singleShot(100, lambda: load_renderer_config(mw))
+        Logger.info("Zarin Engine Editor started. Welcome!")
+    except Exception as e:
+        Logger.error(f"_post_init error: {e}")
+
+
+def initial_dock_sizes(mw):
+    if mw._layout_restored:
+        return
+    mw.resizeDocks(
+        [mw._hierarchy, mw._viewport_dock, mw._inspector],
+        [180, 500, 300], Qt.Orientation.Vertical)
+
+
+def load_renderer_config(mw):
+    from core.config import get_global_config
+    if mw._viewport.renderer:
+        mw._viewport.renderer.load_config(get_global_config())

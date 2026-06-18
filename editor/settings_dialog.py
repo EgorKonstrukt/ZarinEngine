@@ -1,0 +1,664 @@
+from __future__ import annotations
+from typing import Optional, Any
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
+                              QWidget, QFormLayout, QLineEdit, QDoubleSpinBox,
+                              QSpinBox, QCheckBox, QPushButton, QListWidgetItem,
+                              QStackedWidget, QFrame, QScrollArea, QLabel,
+                              QSlider, QStyle, QApplication)
+from PyQt6.QtCore import Qt, pyqtSignal
+from core.config import Config
+
+SECTION_ICONS = {
+    "editor": QStyle.StandardPixmap.SP_FileDialogDetailedView,
+    "camera": QStyle.StandardPixmap.SP_ComputerIcon,
+    "rendering": QStyle.StandardPixmap.SP_FileDialogListView,
+    "gizmo": QStyle.StandardPixmap.SP_ArrowUp,
+    "viewport": QStyle.StandardPixmap.SP_DesktopIcon,
+    "console": QStyle.StandardPixmap.SP_FileDialogContentsView,
+    "terminal": QStyle.StandardPixmap.SP_DriveHDIcon,
+    "profiler": QStyle.StandardPixmap.SP_FileDialogInfoView,
+    "hierarchy": QStyle.StandardPixmap.SP_DirIcon,
+    "inspector": QStyle.StandardPixmap.SP_FileDialogListView,
+    "project": QStyle.StandardPixmap.SP_FileIcon,
+    "engine": QStyle.StandardPixmap.SP_ComputerIcon,
+    "collab": QStyle.StandardPixmap.SP_FileDialogEnd,
+    "undo": QStyle.StandardPixmap.SP_ArrowBack,
+    "input": QStyle.StandardPixmap.SP_FileDialogStart,
+    "physics": QStyle.StandardPixmap.SP_DriveCDIcon,
+    "audio": QStyle.StandardPixmap.SP_MediaVolume,
+    "toolbar": QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton,
+    "file_assoc": QStyle.StandardPixmap.SP_FileDialogStart,
+}
+
+SECTION_DESCRIPTIONS = {
+    "editor": "Editor appearance and behavior",
+    "camera": "Viewport camera settings",
+    "rendering": "Graphics and rendering quality",
+    "gizmo": "Transform gizmo appearance and behavior",
+    "viewport": "Viewport display settings",
+    "console": "Console log settings",
+    "terminal": "Embedded terminal settings",
+    "profiler": "Performance profiler settings",
+    "hierarchy": "Hierarchy panel settings",
+    "inspector": "Inspector panel settings",
+    "project": "Project browser settings",
+    "engine": "Engine time and physics settings",
+    "collab": "Collaboration network settings",
+    "undo": "Undo history settings",
+    "input": "Input axis and sensitivity",
+    "physics": "Physics simulation settings",
+    "audio": "Audio volume settings",
+    "toolbar": "Toolbar toggle states",
+    "file_assoc": "File type associations in Windows",
+}
+
+FIELD_TOOLTIPS = {
+    "editor.theme": "Editor color theme (restart required)",
+    "editor.font_size": "Base font size in the editor (restart required)",
+    "editor.language": "Editor UI language (restart required)",
+    "editor.auto_save": "Automatically save the current scene",
+    "editor.auto_save_interval": "Auto-save interval in seconds",
+    "camera.fov": "Camera field of view in degrees",
+    "camera.near": "Near clipping plane distance",
+    "camera.far": "Far clipping plane distance",
+    "camera.move_speed": "Camera movement speed",
+    "camera.fast_mult": "Speed multiplier when holding Shift",
+    "camera.rotate_speed": "Camera orbit rotation speed",
+    "camera.zoom_speed": "Camera zoom speed",
+    "camera.pan_speed": "Camera pan speed",
+    "camera.zoom_strength": "Zoom strength multiplier",
+    "camera.damping": "Camera smooth movement damping",
+    "camera.acceleration": "Camera movement acceleration",
+    "camera.transition_speed": "Camera transition animation speed",
+    "camera.zoom_smooth_speed": "Zoom smooth interpolation speed",
+    "camera.use_ortho_in_2d": "Use orthographic projection in 2D mode",
+    "camera.speed_boost_enabled": "Enable camera speed boost",
+    "camera.speed_boost_mult": "Speed boost multiplier",
+    "camera.speed_boost_ramp_time": "Time to reach full boost speed (seconds)",
+    "rendering.vsync": "Enable vertical synchronization",
+    "rendering.target_fps": "Target frame rate (0 = unlimited)",
+    "rendering.shadow_resolution": "Shadow map resolution",
+    "rendering.show_grid": "Show the reference grid in the viewport",
+    "rendering.grid_size": "Reference grid cell size",
+    "rendering.grid_world_size": "Reference grid total world size",
+    "rendering.ambient_r": "Ambient light red channel",
+    "rendering.ambient_g": "Ambient light green channel",
+    "rendering.ambient_b": "Ambient light blue channel",
+    "rendering.selection_outline_r": "Selection outline red channel",
+    "rendering.selection_outline_g": "Selection outline green channel",
+    "rendering.selection_outline_b": "Selection outline blue channel",
+    "rendering.selection_outline_a": "Selection outline opacity",
+    "rendering.selection_outline_thickness": "Selection outline thickness",
+    "rendering.max_lights": "Maximum number of dynamic lights",
+    "gizmo.handle_size": "Gizmo handle size in world units",
+    "gizmo.base_axis_length": "Length of gizmo axis arrows",
+    "gizmo.plane_handle_size": "Size of plane translation handles",
+    "gizmo.pick_threshold": "Gizmo click pick threshold in pixels",
+    "gizmo.arrow_size_ratio": "Size ratio of arrowheads",
+    "gizmo.center_handle_size": "Size of the center (scale all) handle",
+    "gizmo.screen_axis_length": "Length of screen-space axis overlay",
+    "gizmo.line_width": "Gizmo line width",
+    "gizmo.show_delta_label": "Show delta value label during drag",
+    "gizmo.smooth_snap": "Enable smooth snap interpolation",
+    "gizmo.smooth_snap_speed": "Smooth snap interpolation speed",
+    "gizmo.show_icons": "Show component icons in the viewport",
+    "gizmo.icon_scale": "Scale of component icons",
+    "viewport.clear_r": "Viewport clear color red",
+    "viewport.clear_g": "Viewport clear color green",
+    "viewport.clear_b": "Viewport clear color blue",
+    "viewport.no_scene_r": "No-scene background red",
+    "viewport.no_scene_g": "No-scene background green",
+    "viewport.no_scene_b": "No-scene background blue",
+    "viewport.update_interval": "Viewport update interval (ms)",
+    "viewport.grid_step": "Grid step size for snapping",
+    "console.font_size": "Console font size",
+    "console.font_family": "Console font family name",
+    "console.max_blocks": "Maximum console log blocks",
+    "console.refresh_interval": "Console refresh interval (ms)",
+    "terminal.font_size": "Terminal font size",
+    "terminal.font_family": "Terminal font family name",
+    "profiler.enabled": "Enable the performance profiler",
+    "profiler.update_interval": "Profiler update interval (seconds)",
+    "profiler.max_samples": "Maximum profiler samples to keep",
+    "profiler.refresh_interval": "Profiler UI refresh interval (ms)",
+    "hierarchy.refresh_interval": "Hierarchy panel refresh interval (ms)",
+    "inspector.refresh_interval": "Inspector panel refresh interval (ms)",
+    "project.thumb_size": "Project browser thumbnail size",
+    "engine.time_scale": "Global time scale factor",
+    "engine.fixed_update_dt": "Fixed update timestep (seconds)",
+    "collab.cursor_rate": "Collaboration cursor sync rate (Hz)",
+    "collab.camera_rate": "Collaboration camera sync rate (Hz)",
+    "collab.transform_rate": "Collaboration transform sync rate (Hz)",
+    "collab.gizmo_rate": "Collaboration gizmo sync rate (Hz)",
+    "collab.ping_interval": "Collaboration ping interval (seconds)",
+    "collab.poll_interval": "Collaboration poll interval (seconds)",
+    "undo.max_stack": "Maximum undo history steps",
+    "input.horizontal": "Horizontal input axis bindings",
+    "input.vertical": "Vertical input axis bindings",
+    "input.mouse_sensitivity": "Mouse look sensitivity",
+    "physics.gravity_x": "Global gravity X component",
+    "physics.gravity_y": "Global gravity Y component",
+    "physics.gravity_z": "Global gravity Z component",
+    "physics.fixed_time_step": "Physics fixed timestep (seconds)",
+    "physics.num_sub_steps": "Physics solver sub-steps per frame",
+    "physics.solver_iterations": "Physics constraint solver iterations",
+    "physics.erp": "Physics error reduction parameter",
+    "physics.contact_erp": "Physics contact error reduction parameter",
+    "physics.friction_erp": "Physics friction error reduction parameter",
+    "physics.contact_breaking_threshold": "Contact breaking threshold",
+    "physics.restitution": "Default restitution (bounciness)",
+    "physics.linear_damping": "Default linear damping",
+    "physics.angular_damping": "Default angular damping",
+    "physics.max_contacts_per_body": "Maximum contacts per rigid body",
+    "physics.solver": "Physics solver backend (pybullet or physx)",
+    "audio.master_volume": "Master audio volume",
+    "audio.sfx_volume": "Sound effects volume",
+    "audio.music_volume": "Music volume",
+    "project.name": "Project display name",
+    "project.version": "Project version string",
+    "project.default_scene": "Default scene path on play",
+    "rendering.render_pipeline": "Active render pipeline",
+    "rendering.anti_aliasing": "Anti-aliasing mode",
+    "rendering.shadow_distance": "Maximum shadow rendering distance",
+    "toolbar.grid": "Show grid in viewport",
+    "toolbar.snap": "Enable snapping",
+    "toolbar.snap_translate": "Translate snap increment",
+    "toolbar.snap_rotate": "Rotate snap increment (degrees)",
+    "toolbar.snap_scale": "Scale snap increment",
+    "toolbar.skybox": "Show skybox in viewport",
+    "toolbar.effects": "Enable post-processing effects",
+}
+
+_FIELD_RANGES = {
+    "editor.font_size": (8, 72),
+    "editor.auto_save_interval": (10, 600),
+    "camera.fov": (1, 179),
+    "camera.near": (0.001, 10.0),
+    "camera.far": (10.0, 50000.0),
+    "camera.move_speed": (0.1, 100.0),
+    "camera.fast_mult": (1.0, 20.0),
+    "camera.rotate_speed": (0.01, 5.0),
+    "camera.zoom_speed": (0.1, 50.0),
+    "camera.pan_speed": (0.0001, 1.0),
+    "camera.zoom_strength": (0.01, 5.0),
+    "camera.damping": (0.1, 50.0),
+    "camera.acceleration": (0.1, 50.0),
+    "camera.transition_speed": (0.1, 20.0),
+    "camera.zoom_smooth_speed": (0.1, 50.0),
+    "camera.speed_boost_mult": (1.0, 20.0),
+    "camera.speed_boost_ramp_time": (0.1, 10.0),
+    "rendering.target_fps": (0, 360),
+    "rendering.shadow_resolution": (256, 4096),
+    "rendering.show_grid": None,
+    "rendering.grid_size": (0.1, 100.0),
+    "rendering.grid_world_size": (10.0, 10000.0),
+    "rendering.ambient_r": (0.0, 1.0),
+    "rendering.ambient_g": (0.0, 1.0),
+    "rendering.ambient_b": (0.0, 1.0),
+    "rendering.selection_outline_r": (0.0, 1.0),
+    "rendering.selection_outline_g": (0.0, 1.0),
+    "rendering.selection_outline_b": (0.0, 1.0),
+    "rendering.selection_outline_a": (0.0, 1.0),
+    "rendering.selection_outline_thickness": (0.0, 0.5),
+    "rendering.max_lights": (1, 64),
+    "gizmo.handle_size": (0.01, 2.0),
+    "gizmo.base_axis_length": (0.1, 10.0),
+    "gizmo.plane_handle_size": (0.02, 2.0),
+    "gizmo.pick_threshold": (1.0, 100.0),
+    "gizmo.arrow_size_ratio": (0.01, 1.0),
+    "gizmo.center_handle_size": (0.01, 2.0),
+    "gizmo.screen_axis_length": (10.0, 500.0),
+    "gizmo.line_width": (0.5, 10.0),
+    "gizmo.smooth_snap_speed": (0.01, 2.0),
+    "gizmo.icon_scale": (0.5, 20.0),
+    "viewport.clear_r": (0.0, 1.0),
+    "viewport.clear_g": (0.0, 1.0),
+    "viewport.clear_b": (0.0, 1.0),
+    "viewport.no_scene_r": (0.0, 1.0),
+    "viewport.no_scene_g": (0.0, 1.0),
+    "viewport.no_scene_b": (0.0, 1.0),
+    "viewport.update_interval": (1, 500),
+    "viewport.grid_step": (0.1, 100.0),
+    "console.font_size": (6, 72),
+    "console.max_blocks": (100, 10000),
+    "console.refresh_interval": (16, 2000),
+    "terminal.font_size": (6, 72),
+    "profiler.update_interval": (0.05, 5.0),
+    "profiler.max_samples": (50, 5000),
+    "profiler.refresh_interval": (16, 2000),
+    "hierarchy.refresh_interval": (50, 5000),
+    "inspector.refresh_interval": (16, 2000),
+    "project.thumb_size": (16, 256),
+    "engine.time_scale": (0.0, 10.0),
+    "engine.fixed_update_dt": (0.001, 1.0),
+    "collab.cursor_rate": (1.0, 120.0),
+    "collab.camera_rate": (1.0, 120.0),
+    "collab.transform_rate": (1.0, 120.0),
+    "collab.gizmo_rate": (1.0, 120.0),
+    "collab.ping_interval": (0.5, 60.0),
+    "collab.poll_interval": (1, 120),
+    "undo.max_stack": (10, 2000),
+    "input.mouse_sensitivity": (0.01, 10.0),
+    "physics.gravity_x": (-100.0, 100.0),
+    "physics.gravity_y": (-100.0, 100.0),
+    "physics.gravity_z": (-100.0, 100.0),
+    "physics.fixed_time_step": (0.001, 1.0),
+    "physics.num_sub_steps": (1, 16),
+    "physics.solver_iterations": (1, 50),
+    "physics.erp": (0.0, 1.0),
+    "physics.contact_erp": (0.0, 1.0),
+    "physics.friction_erp": (0.0, 1.0),
+    "physics.contact_breaking_threshold": (0.0, 1.0),
+    "physics.restitution": (0.0, 1.0),
+    "physics.linear_damping": (0.0, 10.0),
+    "physics.angular_damping": (0.0, 10.0),
+    "physics.max_contacts_per_body": (1, 256),
+    "audio.master_volume": (0.0, 1.0),
+    "audio.sfx_volume": (0.0, 1.0),
+    "audio.music_volume": (0.0, 1.0),
+    "rendering.shadow_distance": (1.0, 500.0),
+    "toolbar.snap_translate": (0.001, 100.0),
+    "toolbar.snap_rotate": (0.1, 360.0),
+    "toolbar.snap_scale": (0.001, 100.0),
+}
+
+
+class SliderSpinBox(QWidget):
+    valueChanged = pyqtSignal(object)
+
+    def __init__(self, key: str, value, is_float: bool, slider_range, parent=None):
+        super().__init__(parent)
+        self._key = key
+        self._is_float = is_float
+        self._updating = False
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider.setMinimumWidth(120)
+        if slider_range:
+            lo, hi = slider_range
+            if is_float:
+                self._slider.setRange(int(lo * 1000), int(hi * 1000))
+            else:
+                self._slider.setRange(lo, hi)
+        else:
+            if is_float:
+                self._slider.setRange(-999999000, 999999000)
+            else:
+                self._slider.setRange(-999999, 999999)
+        if is_float:
+            self._spin = QDoubleSpinBox()
+            self._spin.setDecimals(4)
+            self._spin.setRange(-999999.0, 999999.0)
+            self._spin.setValue(float(value))
+        else:
+            self._spin = QSpinBox()
+            self._spin.setRange(-999999, 999999)
+            self._spin.setValue(int(value))
+        self._spin.setFixedWidth(100)
+        if slider_range:
+            lo, hi = slider_range
+            if is_float:
+                self._slider.setValue(int(float(value) * 1000))
+            else:
+                self._slider.setValue(int(value))
+        else:
+            if is_float:
+                self._slider.setValue(int(float(value) * 1000))
+            else:
+                self._slider.setValue(int(value))
+        self._slider.valueChanged.connect(self._on_slider)
+        self._spin.valueChanged.connect(self._on_spin)
+        layout.addWidget(self._slider)
+        layout.addWidget(self._spin)
+
+    def _on_slider(self, val: int):
+        if self._updating:
+            return
+        self._updating = True
+        if self._is_float:
+            v = val / 1000.0
+            self._spin.setValue(v)
+        else:
+            self._spin.setValue(val)
+        self._updating = False
+        self.valueChanged.emit(self._spin.value())
+
+    def _on_spin(self, val):
+        if self._updating:
+            return
+        self._updating = True
+        if self._is_float:
+            self._slider.setValue(int(val * 1000))
+        else:
+            self._slider.setValue(int(val))
+        self._updating = False
+        self.valueChanged.emit(val)
+
+
+class SettingsDialog(QDialog):
+    config_changed = pyqtSignal(str, object)
+
+    def __init__(self, title: str, config: Config, parent=None):
+        super().__init__(parent)
+        self._config = config
+        self.setWindowTitle(title)
+        self.setMinimumSize(800, 520)
+        self.resize(900, 580)
+        self._config.on_changed(self._on_config_changed)
+        self._setup_ui()
+        if self._list_widget.count() > 0:
+            self._list_widget.setCurrentRow(0)
+
+    def _on_config_changed(self, key: str, value: Any):
+        self.config_changed.emit(key, value)
+
+    def _setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(8, 4, 8, 4)
+        title_label = QLabel(self.windowTitle())
+        title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("Search settings...")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.setFixedWidth(200)
+        self._search_edit.textChanged.connect(self._on_search)
+        header_layout.addWidget(self._search_edit)
+        main_layout.addWidget(header)
+
+        content = QWidget()
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+
+        self._list_widget = QListWidget()
+        self._list_widget.setFixedWidth(180)
+        self._list_widget.setFrameShape(QFrame.Shape.StyledPanel)
+        self._list_widget.currentRowChanged.connect(self._on_list_row_changed)
+
+        sections = [(k, v) for k, v in self._config.to_dict().items() if isinstance(v, dict)]
+        sections.sort(key=lambda x: x[0])
+
+        self._sections = [s[0] for s in sections]
+        self._pages: dict[str, QWidget] = {}
+
+        self._stack = QStackedWidget()
+
+        for section, values in sections:
+            sp = SECTION_ICONS.get(section)
+            item = QListWidgetItem()
+            if sp is not None:
+                item.setIcon(QApplication.style().standardIcon(sp))
+            item.setText(section.replace("_", " ").title())
+            self._list_widget.addItem(item)
+            scroll = self._build_page(section, values)
+            self._pages[section] = scroll
+            self._stack.addWidget(scroll)
+
+        content_layout.addWidget(self._list_widget)
+        content_layout.addWidget(self._stack, 1)
+        main_layout.addWidget(content, 1)
+
+        bottom_bar = QWidget()
+        bar_layout = QHBoxLayout(bottom_bar)
+        bar_layout.setContentsMargins(8, 4, 8, 4)
+        restore_btn = QPushButton("Restore Defaults")
+        restore_btn.clicked.connect(self._on_restore)
+        close_btn = QPushButton("Close")
+        close_btn.setFixedWidth(80)
+        close_btn.clicked.connect(self.close)
+        bar_layout.addWidget(restore_btn)
+        bar_layout.addStretch()
+        bar_layout.addWidget(close_btn)
+        main_layout.addWidget(bottom_bar)
+
+    def _on_list_row_changed(self, row: int):
+        if 0 <= row < len(self._sections):
+            self._stack.setCurrentIndex(row)
+
+    def _on_search(self, text: str):
+        text = text.lower().strip()
+        for i in range(self._stack.count()):
+            self._stack.widget(i).setVisible(True)
+
+        for i, section in enumerate(self._sections):
+            item = self._list_widget.item(i)
+            if not text:
+                item.setHidden(False)
+                self._pages[section].setVisible(True)
+            else:
+                matches = text in section.lower() or text in SECTION_DESCRIPTIONS.get(section, "").lower()
+                matches = matches or any(
+                    text in k.lower() or text in FIELD_TOOLTIPS.get(f"{section}.{k}", "").lower()
+                    for k in self._config.to_dict().get(section, {}) if not isinstance(self._config.to_dict().get(section, {})[k], dict)
+                )
+                item.setHidden(not matches)
+                self._pages[section].setVisible(matches)
+
+    def _build_page(self, prefix: str, data: dict) -> QWidget:
+        if prefix == "file_assoc":
+            return self._build_file_assoc_page(prefix)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        container = QWidget()
+        outer_layout = QVBoxLayout(container)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        header_text = prefix.replace("_", " ").title()
+        desc_text = SECTION_DESCRIPTIONS.get(prefix, "")
+        if desc_text:
+            header_text += f"  \u2014  {desc_text}"
+        hlabel = QLabel(header_text)
+        hlabel.setStyleSheet("font-size: 14px; font-weight: bold; padding: 10px 16px;")
+        outer_layout.addWidget(hlabel)
+
+        form_container = QWidget()
+        form = QFormLayout(form_container)
+        form.setContentsMargins(16, 8, 16, 8)
+        form.setSpacing(6)
+
+        keys = sorted(data.keys())
+        for key in keys:
+            value = data[key]
+            full_key = f"{prefix}.{key}"
+            if isinstance(value, dict):
+                continue
+            widget = self._create_widget(full_key, value)
+            if widget:
+                label_text = key.replace("_", " ").title()
+                restart = self._config.is_restart_key(full_key)
+                if restart:
+                    label_text += " [restart]"
+                label = QLabel(label_text)
+                tooltip = FIELD_TOOLTIPS.get(full_key, "")
+                if restart:
+                    label.setStyleSheet("color: orange;")
+                    label.setToolTip("Restart required" + ("\n" + tooltip if tooltip else ""))
+                if tooltip:
+                    label.setToolTip(tooltip)
+                    widget.setToolTip(tooltip)
+                form.addRow(label, widget)
+
+        outer_layout.addWidget(form_container)
+        outer_layout.addStretch()
+        scroll.setWidget(container)
+        return scroll
+
+    def _build_file_assoc_page(self, prefix: str) -> QWidget:
+        from editor.file_associations import register, unregister, status, EXTENSIONS
+        import os
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        container = QWidget()
+        outer_layout = QVBoxLayout(container)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        header_text = "File Associations"
+        desc_text = SECTION_DESCRIPTIONS.get(prefix, "")
+        if desc_text:
+            header_text += f"  \u2014  {desc_text}"
+        hlabel = QLabel(header_text)
+        hlabel.setStyleSheet("font-size: 14px; font-weight: bold; padding: 10px 16px;")
+        outer_layout.addWidget(hlabel)
+
+        info_label = QLabel(
+            "Register Zarin Engine file extensions with Windows Explorer.\n"
+            "This allows opening .zpes and .zpep files by double-clicking."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("padding: 4px 16px 8px 16px; color: #aaa;")
+        outer_layout.addWidget(info_label)
+
+        status_group = QWidget()
+        status_layout = QVBoxLayout(status_group)
+        status_layout.setContentsMargins(16, 8, 16, 8)
+        status_layout.setSpacing(4)
+
+        self._assoc_status_labels = {}
+        for ext, info in EXTENSIONS.items():
+            row = QHBoxLayout()
+            lbl = QLabel(f"{ext}  \u2014  {info['description']}")
+            lbl.setStyleSheet("font-size: 13px;")
+            status_lbl = QLabel("unknown")
+            status_lbl.setStyleSheet("color: gray; font-weight: bold;")
+            self._assoc_status_labels[ext] = status_lbl
+            row.addWidget(lbl)
+            row.addStretch()
+            row.addWidget(status_lbl)
+            status_layout.addLayout(row)
+
+        outer_layout.addWidget(status_group)
+
+        btn_group = QWidget()
+        btn_layout = QHBoxLayout(btn_group)
+        btn_layout.setContentsMargins(16, 8, 16, 8)
+        btn_layout.setSpacing(12)
+
+        register_btn = QPushButton("Register File Associations")
+        register_btn.setFixedHeight(32)
+        register_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 4px 16px; }")
+        register_btn.clicked.connect(self._on_register_assoc)
+        btn_layout.addWidget(register_btn)
+
+        unregister_btn = QPushButton("Unregister File Associations")
+        unregister_btn.setFixedHeight(32)
+        unregister_btn.setStyleSheet("QPushButton { padding: 4px 16px; }")
+        unregister_btn.clicked.connect(self._on_unregister_assoc)
+        btn_layout.addWidget(unregister_btn)
+
+        btn_layout.addStretch()
+        outer_layout.addWidget(btn_group)
+
+        self._assoc_refresh_btn = QPushButton("Refresh Status")
+        self._assoc_refresh_btn.setFixedWidth(120)
+        self._assoc_refresh_btn.clicked.connect(self._refresh_assoc_status)
+        br_layout = QHBoxLayout()
+        br_layout.setContentsMargins(16, 4, 16, 12)
+        br_layout.addWidget(self._assoc_refresh_btn)
+        br_layout.addStretch()
+        outer_layout.addLayout(br_layout)
+
+        outer_layout.addStretch()
+        scroll.setWidget(container)
+        self._refresh_assoc_status()
+        return scroll
+
+    def _refresh_assoc_status(self):
+        from editor.file_associations import status
+        try:
+            st = status()
+        except Exception:
+            st = {}
+        for ext, lbl in self._assoc_status_labels.items():
+            registered = st.get(ext, False)
+            if registered:
+                lbl.setText("Registered")
+                lbl.setStyleSheet("color: #4CAF50; font-weight: bold;")
+            else:
+                lbl.setText("Not registered")
+                lbl.setStyleSheet("color: #f44336; font-weight: bold;")
+
+    def _on_register_assoc(self):
+        from editor.file_associations import register
+        import os
+        svg_path = os.path.join(os.path.dirname(__file__), "..", "zarin_icon.svg")
+        svg_path = os.path.abspath(svg_path)
+        if not os.path.exists(svg_path):
+            svg_path = os.path.join(os.path.dirname(__file__), "..", "assets", "zarin_icon.svg")
+            svg_path = os.path.abspath(svg_path)
+        if not os.path.exists(svg_path):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Error", "zarin_icon.svg not found")
+            return
+        result = register(svg_path)
+        self._refresh_assoc_status()
+        from PyQt6.QtWidgets import QMessageBox
+        if result:
+            QMessageBox.information(self, "Success",
+                f"Registered: {', '.join(result)}")
+        else:
+            QMessageBox.warning(self, "Error", "Failed to register file associations")
+
+    def _on_unregister_assoc(self):
+        from editor.file_associations import unregister
+        result = unregister()
+        self._refresh_assoc_status()
+        from PyQt6.QtWidgets import QMessageBox
+        if result:
+            QMessageBox.information(self, "Success",
+                f"Unregistered: {', '.join(result)}")
+
+    def _create_widget(self, key: str, value) -> Optional[QWidget]:
+        if isinstance(value, bool):
+            cb = QCheckBox()
+            cb.setChecked(self._config.get(key, value))
+            cb.toggled.connect(lambda checked, k=key: self._on_value_changed(k, checked))
+            return cb
+        elif isinstance(value, (int, float)):
+            val = self._config.get(key, value)
+            slider_range = _FIELD_RANGES.get(key)
+            is_float = isinstance(value, float)
+            w = SliderSpinBox(key, val, is_float, slider_range)
+            w.valueChanged.connect(lambda v, k=key: self._on_value_changed(k, v))
+            return w
+        elif isinstance(value, str):
+            le = QLineEdit(self._config.get(key, value))
+            le.setFixedWidth(220)
+            le.textChanged.connect(lambda t, k=key: self._on_value_changed(k, t))
+            return le
+        return None
+
+    def _on_value_changed(self, key: str, value):
+        self._config.set(key, value, notify=True)
+        self._config.save()
+
+    def _on_restore(self):
+        row = self._list_widget.currentRow()
+        if row < 0 or row >= len(self._sections):
+            return
+        section = self._sections[row]
+        self._config.reset(section)
+        self._config.save()
+        old = self._pages[section]
+        self._stack.removeWidget(old)
+        old.deleteLater()
+        values = self._config.to_dict().get(section, {})
+        scroll = self._build_page(section, values)
+        self._pages[section] = scroll
+        self._stack.insertWidget(row, scroll)
+        self._stack.setCurrentIndex(row)

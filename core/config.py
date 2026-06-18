@@ -1,0 +1,262 @@
+from __future__ import annotations
+import json
+import os
+from pathlib import Path
+from typing import Any, Optional
+from core.logger import Logger
+class Config:
+    def __init__(self, path: str, defaults: Optional[dict] = None):
+        self._path = path
+        self._data: dict = dict(defaults or {})
+        self._defaults: dict = dict(defaults or {})
+        self._restart_keys: set = set()
+        self._listeners: list = []
+        self._load()
+    @property
+    def path(self) -> str: return self._path
+    def mark_restart(self, key: str):
+        self._restart_keys.add(key)
+    def is_restart_key(self, key: str) -> bool:
+        return key in self._restart_keys
+    def on_changed(self, callback):
+        self._listeners.append(callback)
+    def _notify(self, key: str, value: Any):
+        for cb in self._listeners:
+            try:
+                cb(key, value)
+            except Exception:
+                pass
+    def get(self, key: str, default: Any = None) -> Any:
+        keys = key.split(".")
+        d = self._data
+        for k in keys:
+            if isinstance(d, dict):
+                d = d.get(k)
+            else:
+                return default
+        return d if d is not None else default
+    def set(self, key: str, value: Any, notify: bool = True):
+        keys = key.split(".")
+        d = self._data
+        for k in keys[:-1]:
+            if k not in d or not isinstance(d[k], dict):
+                d[k] = {}
+            d = d[k]
+        d[keys[-1]] = value
+        if notify:
+            self._notify(key, value)
+    def has(self, key: str) -> bool:
+        return self.get(key, self) is not self
+    def reset(self, key: Optional[str] = None):
+        if key is None:
+            self._data = dict(self._defaults)
+            return
+        keys = key.split(".")
+        d = self._data
+        dd = self._defaults
+        for k in keys[:-1]:
+            if isinstance(d, dict):
+                d = d.get(k, {})
+            else:
+                return
+            if isinstance(dd, dict):
+                dd = dd.get(k, {})
+            else:
+                dd = {}
+        if keys[-1] in dd:
+            d[keys[-1]] = dd[keys[-1]]
+        elif keys[-1] in d:
+            del d[keys[-1]]
+    def to_dict(self) -> dict:
+        return dict(self._data)
+    def update(self, data: dict):
+        self._deep_update(self._data, data)
+    def _deep_update(self, target: dict, source: dict):
+        for k, v in source.items():
+            if k in target and isinstance(target[k], dict) and isinstance(v, dict):
+                self._deep_update(target[k], v)
+            else:
+                target[k] = v
+    def save(self):
+        try:
+            Path(self._path).parent.mkdir(parents=True, exist_ok=True)
+            with open(self._path, "w") as f:
+                json.dump(self._data, f, indent=2)
+        except Exception as e:
+            Logger.error(f"Failed to save config to {self._path}: {e}")
+    def _load(self):
+        try:
+            if os.path.exists(self._path):
+                with open(self._path) as f:
+                    loaded = json.load(f)
+                    self._deep_update(self._data, loaded)
+        except Exception as e:
+            Logger.warning(f"Failed to load config from {self._path}: {e}")
+_global_config: Optional[Config] = None
+_project_config: Optional[Config] = None
+def get_global_config() -> Config:
+    global _global_config
+    if _global_config is None:
+        path = os.path.join(str(Path.home()), ".zarin", "settings.json")
+        _global_config = Config(path, {
+            "editor": {
+                "theme": "dark",
+                "font_size": 12,
+                "language": "en",
+                "auto_save": True,
+                "auto_save_interval": 300
+            },
+            "camera": {
+                "fov": 70.0,
+                "near": 0.01,
+                "far": 1000.0,
+                "move_speed": 5.0,
+                "fast_mult": 3.0,
+                "rotate_speed": 0.3,
+                "zoom_speed": 4.0,
+                "pan_speed": 0.01,
+                "zoom_strength": 0.3,
+                "damping": 8.0,
+                "acceleration": 12.0,
+                "transition_speed": 2.5,
+                "zoom_smooth_speed": 15.0,
+                "use_ortho_in_2d": True,
+                "speed_boost_enabled": True,
+                "speed_boost_mult": 3.0,
+                "speed_boost_ramp_time": 2.0
+            },
+            "profiler": {
+                "enabled": True,
+                "update_interval": 0.5,
+                "max_samples": 200,
+                "refresh_interval": 200
+            },
+            "rendering": {
+                "vsync": True,
+                "target_fps": 60,
+                "shadow_resolution": 1024,
+                "show_grid": True,
+                "grid_size": 10.0,
+                "grid_world_size": 2000.0,
+                "ambient_r": 0.05,
+                "ambient_g": 0.05,
+                "ambient_b": 0.05,
+                "selection_outline_r": 0.8,
+                "selection_outline_g": 0.5,
+                "selection_outline_b": 0.1,
+                "selection_outline_a": 1.0,
+                "selection_outline_thickness": 0.03,
+                "max_lights": 8
+            },
+            "gizmo": {
+                "handle_size": 0.1,
+                "base_axis_length": 1.0,
+                "plane_handle_size": 0.22,
+                "pick_threshold": 30.0,
+                "arrow_size_ratio": 0.2,
+                "center_handle_size": 0.14,
+                "screen_axis_length": 100.0,
+                "line_width": 2.5,
+                "show_delta_label": True,
+                "smooth_snap": True,
+                "smooth_snap_speed": 0.25,
+                "show_icons": True,
+                "icon_scale": 5.0
+            },
+            "console": {
+                "font_size": 10,
+                "font_family": "Segoe UI",
+                "max_blocks": 2000,
+                "refresh_interval": 100
+            },
+            "terminal": {
+                "font_size": 10,
+                "font_family": "Segoe UI"
+            },
+            "viewport": {
+                "clear_r": 0.18,
+                "clear_g": 0.18,
+                "clear_b": 0.18,
+                "no_scene_r": 0.12,
+                "no_scene_g": 0.12,
+                "no_scene_b": 0.12,
+                "update_interval": 16,
+                "grid_step": 10.0
+            },
+            "collab": {
+                "cursor_rate": 30.0,
+                "camera_rate": 15.0,
+                "transform_rate": 20.0,
+                "gizmo_rate": 10.0,
+                "ping_interval": 3.0,
+                "poll_interval": 8
+            },
+            "undo": {
+                "max_stack": 200
+            },
+            "engine": {
+                "time_scale": 1.0,
+                "fixed_update_dt": 0.02
+            },
+            "hierarchy": {
+                "refresh_interval": 500
+            },
+            "inspector": {
+                "refresh_interval": 100
+            },
+            "project": {
+                "thumb_size": 64
+            },
+            "file_assoc": {
+                "registered_extensions": ""
+            }
+        })
+        _global_config._data.pop("physics", None)
+        for _rk in ["editor.theme", "editor.font_size", "editor.language"]:
+            _global_config.mark_restart(_rk)
+    return _global_config
+def get_project_config(project_path: str) -> Config:
+    global _project_config
+    if _project_config is None or _project_config.path != os.path.join(project_path, "ProjectSettings.json"):
+        path = os.path.join(project_path, "ProjectSettings.json")
+        _project_config = Config(path, {
+            "project": {
+                "name": "Untitled",
+                "version": "1.0.0",
+                "default_scene": ""
+            },
+            "input": {
+                "horizontal": "a,d",
+                "vertical": "w,s",
+                "mouse_sensitivity": 1.0
+            },
+            "rendering": {
+                "render_pipeline": "forward",
+                "anti_aliasing": "none",
+                "shadow_distance": 50.0
+            },
+            "physics": {
+                "solver": "pybullet",
+                "physx_device": "cpu",
+                "gravity_x": 0.0,
+                "gravity_y": -9.81,
+                "gravity_z": 0.0,
+                "fixed_time_step": 0.02,
+                "num_sub_steps": 2,
+                "solver_iterations": 10,
+                "erp": 0.2,
+                "contact_erp": 0.2,
+                "friction_erp": 0.0,
+                "contact_breaking_threshold": 0.02,
+                "restitution": 0.0,
+                "linear_damping": 0.04,
+                "angular_damping": 0.04,
+                "max_contacts_per_body": 64
+            },
+            "audio": {
+                "master_volume": 1.0,
+                "sfx_volume": 1.0,
+                "music_volume": 0.8
+            }
+        })
+    return _project_config

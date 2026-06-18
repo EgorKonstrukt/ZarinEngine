@@ -1,0 +1,413 @@
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
+if TYPE_CHECKING:
+    from core.ecs import Entity, Scene
+class Command:
+    def execute(self): raise NotImplementedError
+    def undo(self): raise NotImplementedError
+    def redo(self):
+        self.execute()
+    def merge(self, other: Command) -> bool:
+        return False
+    @property
+    def description(self) -> str:
+        return self.__class__.__name__
+class CompoundCommand(Command):
+    def __init__(self, commands: list[Command], description: str = "Compound"):
+        self._commands = commands
+        self._desc = description
+    def execute(self):
+        for c in self._commands:
+            c.execute()
+    def undo(self):
+        for c in reversed(self._commands):
+            c.undo()
+    @property
+    def description(self) -> str:
+        return self._desc
+class CreateEntityCommand(Command):
+    def __init__(self, scene: Scene, name: str = "Entity"):
+        self._scene = scene
+        self._name = name
+        self._entity_id: Optional[str] = None
+        self._entity_data: Optional[dict] = None
+    def execute(self):
+        from core.ecs import Entity
+        e = self._scene.create_entity(self._name)
+        self._entity_id = e.id
+    def undo(self):
+        if self._entity_id is not None:
+            e = self._scene.get_entity(self._entity_id)
+            if e:
+                self._entity_data = e.serialize()
+            self._scene.remove_entity(self._entity_id)
+    def redo(self):
+        if self._entity_data is not None:
+            from core.engine import Engine
+            from core.ecs import Entity
+            reg = Engine.instance()._component_registry
+            e = Entity.deserialize(self._entity_data, reg)
+            self._scene.add_entity(e)
+            self._entity_id = e.id
+        else:
+            self.execute()
+    @property
+    def description(self): return f"Create '{self._name}'"
+class DeleteEntityCommand(Command):
+    def __init__(self, scene: Scene, entity_id: str):
+        self._scene = scene
+        self._entity_id = entity_id
+        self._entity_data: Optional[dict] = None
+    def execute(self):
+        e = self._scene.get_entity(self._entity_id)
+        if e:
+            self._entity_data = e.serialize()
+            self._scene.remove_entity(self._entity_id)
+    def undo(self):
+        if self._entity_data:
+            from core.engine import Engine
+            from core.ecs import Entity
+            reg = Engine.instance()._component_registry
+            e = Entity.deserialize(self._entity_data, reg)
+            self._scene.add_entity(e)
+    @property
+    def description(self): return f"Delete Entity #{self._entity_id}"
+class SetComponentCommand(Command):
+    def __init__(self, entity, component_type, prop_name: str, old_value, new_value):
+        self._entity = entity
+        self._component_type = component_type
+        self._prop = prop_name
+        self._old = old_value
+        self._new = new_value
+    def execute(self):
+        comp = self._entity.get_component(self._component_type)
+        if comp and hasattr(comp, self._prop):
+            setattr(comp, self._prop, self._new)
+    def undo(self):
+        comp = self._entity.get_component(self._component_type)
+        if comp and hasattr(comp, self._prop):
+            setattr(comp, self._prop, self._old)
+    @property
+    def description(self):
+        ename = getattr(self._entity, "name", "") or getattr(self._entity, "id", "?")
+        return f"{ename}: {self._component_type.__name__}.{self._prop}"
+class AddComponentCommand(Command):
+    def __init__(self, entity, component_cls, component_data: dict = None, key: str = None):
+        self._entity = entity
+        self._component_cls = component_cls
+        self._component_data = component_data
+        self._key = key
+        self._added_key: Optional[str] = None
+    def execute(self):
+        comp = self._component_cls()
+        if self._component_data:
+            for k, v in self._component_data.items():
+                if hasattr(comp, k):
+                    setattr(comp, k, v)
+        self._entity.add_component(comp, key=self._key)
+        for k, c in self._entity._components.items():
+            if c is comp:
+                self._added_key = k
+                break
+    def undo(self):
+        if self._added_key:
+            self._entity.remove_component_by_key(self._added_key)
+        else:
+            self._entity.remove_component(self._component_cls)
+        self._component_data = None
+    @property
+    def description(self): return f"Add {self._component_cls.__name__}"
+class RemoveComponentCommand(Command):
+    def __init__(self, entity, component_cls, component_key: str = None):
+        self._entity = entity
+        self._component_cls = component_cls
+        self._component_key = component_key
+        self._component_data = None
+        self._removed_key: Optional[str] = None
+    def execute(self):
+        if self._component_key:
+            comp = self._entity._components.get(self._component_key)
+            if comp:
+                self._component_data = {k: getattr(comp, k) for k in vars(comp) if not k.startswith("_")}
+                self._removed_key = self._component_key
+                self._entity.remove_component_by_key(self._component_key)
+        else:
+            comp = self._entity.get_component(self._component_cls)
+            if comp:
+                self._component_data = {k: getattr(comp, k) for k in vars(comp) if not k.startswith("_")}
+                for k, c in list(self._entity._components.items()):
+                    if c is comp:
+                        self._removed_key = k
+                        break
+                self._entity.remove_component(self._component_cls)
+    def undo(self):
+        if self._component_data is not None:
+            comp = self._component_cls()
+            for k, v in self._component_data.items():
+                if hasattr(comp, k):
+                    setattr(comp, k, v)
+            self._entity.add_component(comp, key=self._removed_key)
+    @property
+    def description(self):
+        base = f"Remove {self._component_cls.__name__}"
+        if self._component_key:
+            base += f" ({self._component_key})"
+        return base
+class InstantiatePrefabCommand(Command):
+    def __init__(self, scene, prefab, registry, parent=None, position=None):
+        self._scene = scene
+        self._prefab = prefab
+        self._registry = registry
+        self._parent = parent
+        self._position = position
+        self._spawned_ids: list[str] = []
+    def execute(self):
+        from core.prefab import Prefab
+        spawned = self._prefab.instantiate(self._scene, self._registry, self._parent)
+        self._spawned_ids = [e.id for e in spawned]
+    def undo(self):
+        for eid in self._spawned_ids:
+            e = self._scene.get_entity(eid)
+            if e:
+                self._scene.remove_entity(eid)
+        self._spawned_ids.clear()
+    def redo(self):
+        self.execute()
+    @property
+    def description(self): return f"Instantiate '{self._prefab.name}'"
+class RevertPrefabInstanceCommand(Command):
+    def __init__(self, scene, root_entities: list, registry=None):
+        self._scene = scene
+        self._roots = root_entities
+        self._registry = registry
+        self._old_data: list[tuple[str, dict]] = []
+    def _collect(self, entity) -> list[tuple[str, dict]]:
+        items = [(entity.id, entity.serialize())]
+        for c in entity.children:
+            items.extend(self._collect(c))
+        return items
+    def execute(self):
+        if self._registry is None:
+            from core.engine import Engine
+            self._registry = Engine.instance()._component_registry
+        self._old_data.clear()
+        for root in self._roots:
+            self._old_data.extend(self._collect(root))
+            self._revert_entity(root)
+    def _revert_entity(self, entity):
+        if not entity._prefab_data:
+            return
+        snap = entity._prefab_data
+        entity._name = snap.get("name", entity._name)
+        entity._active = snap.get("active", entity._active)
+        entity._tags = set(snap.get("tags", []))
+        entity._layer = snap.get("layer", entity._layer)
+        comp_types_to_remove = list(entity._components.keys())
+        for ct in comp_types_to_remove:
+            comp = entity._components[ct]
+            comp.on_destroy()
+        entity._components.clear()
+        for cd in snap.get("components", []):
+            ctype = cd.get("type")
+            comp_cls = self._registry.get(ctype)
+            if comp_cls:
+                comp = comp_cls.deserialize(cd)
+                entity.add_component(comp)
+        for child in list(entity.children):
+            self._revert_entity(child)
+    def undo(self):
+        for eid, data in self._old_data:
+            e = self._scene.get_entity(eid)
+            if e:
+                for ct in list(e._components.keys()):
+                    c = e._components[ct]
+                    c.on_destroy()
+                e._components.clear()
+                for cd in data.get("components", []):
+                    ctype = cd.get("type")
+                    comp_cls = self._registry.get(ctype)
+                    if comp_cls:
+                        comp = comp_cls.deserialize(cd)
+                        e.add_component(comp)
+                e._name = data.get("name", e._name)
+                e._active = data.get("active", e._active)
+                e._tags = set(data.get("tags", []))
+                e._layer = data.get("layer", e._layer)
+    @property
+    def description(self): return "Revert Prefab"
+class UnpackPrefabCommand(Command):
+    def __init__(self, scene, root_entities: list):
+        self._scene = scene
+        self._roots = root_entities
+        self._old_links: list[tuple[str, Optional[str], Optional[dict]]] = []
+    def execute(self):
+        self._old_links.clear()
+        def unpack(e):
+            self._old_links.append((e.id, e._prefab_guid, e._prefab_data))
+            e._prefab_guid = None
+            e._prefab_data = None
+            for c in e.children:
+                unpack(c)
+        for root in self._roots:
+            unpack(root)
+    def undo(self):
+        for eid, guid, data in self._old_links:
+            e = self._scene.get_entity(eid)
+            if e:
+                e._prefab_guid = guid
+                e._prefab_data = data
+    @property
+    def description(self): return "Unpack Prefab"
+class CommandHistory:
+    def __init__(self, max_size: int = 100):
+        self._undo_stack: list[Command] = []
+        self._redo_stack: list[Command] = []
+        self._undo_sel: list = []
+        self._redo_sel: list = []
+        self._max_size = max_size
+        self._saved_index: int = 0
+        self._last_affected_entity = None
+        self._current_selection = None
+        self._recording = True
+    @property
+    def can_undo(self) -> bool: return len(self._undo_stack) > 0
+    @property
+    def can_redo(self) -> bool: return len(self._redo_stack) > 0
+    @property
+    def is_dirty(self) -> bool:
+        return len(self._undo_stack) != self._saved_index
+    @property
+    def last_affected_entity(self):
+        return self._last_affected_entity
+    @staticmethod
+    def _extract_entity(cmd):
+        e = getattr(cmd, "_entity", None)
+        if e is not None:
+            return e
+        eid = getattr(cmd, "_entity_id", None)
+        if eid is not None:
+            scene = getattr(cmd, "_scene", None)
+            if scene:
+                e = scene.get_entity(eid)
+                if e:
+                    return e
+        cmds = getattr(cmd, "_commands", None)
+        if cmds:
+            for c in cmds:
+                e = CommandHistory._extract_entity(c)
+                if e is not None:
+                    return e
+        return None
+    @property
+    def undo_text(self) -> str:
+        if self._undo_stack:
+            return f"Undo {self._undo_stack[-1].description}"
+        return "Can't Undo"
+    @property
+    def redo_text(self) -> str:
+        if self._redo_stack:
+            return f"Redo {self._redo_stack[-1].description}"
+        return "Can't Redo"
+    def set_current_selection(self, sel):
+        self._current_selection = sel
+    @property
+    def current_selection(self):
+        return self._current_selection
+    def execute(self, command: Command):
+        if self._recording:
+            self._undo_sel.append(self._current_selection)
+        command.execute()
+        self._undo_stack.append(command)
+        self._redo_stack.clear()
+        self._redo_sel.clear()
+        if len(self._undo_stack) > self._max_size:
+            self._undo_stack.pop(0)
+            if self._undo_sel:
+                self._undo_sel.pop(0)
+            if self._saved_index > 0:
+                self._saved_index -= 1
+    def undo(self):
+        if not self._undo_stack:
+            return
+        was_recording = self._recording
+        self._recording = False
+        cmd = self._undo_stack.pop()
+        pre_sel = self._undo_sel.pop() if self._undo_sel else None
+        self._redo_sel.append(self._current_selection)
+        cmd.undo()
+        self._redo_stack.append(cmd)
+        self._current_selection = pre_sel
+        self._last_affected_entity = self._extract_entity(cmd) or pre_sel
+        self._recording = was_recording
+    def redo(self):
+        if not self._redo_stack:
+            return
+        was_recording = self._recording
+        self._recording = False
+        cmd = self._redo_stack.pop()
+        post_sel = self._redo_sel.pop() if self._redo_sel else None
+        self._undo_sel.append(self._current_selection)
+        cmd.redo()
+        self._undo_stack.append(cmd)
+        self._current_selection = post_sel
+        self._last_affected_entity = self._extract_entity(cmd) or post_sel
+        self._recording = was_recording
+    @property
+    def undo_count(self) -> int:
+        return len(self._undo_stack)
+    @property
+    def redo_count(self) -> int:
+        return len(self._redo_stack)
+    def get_undo_descriptions(self) -> list[str]:
+        return [c.description for c in self._undo_stack]
+    def get_redo_descriptions(self) -> list[str]:
+        return [c.description for c in self._redo_stack]
+    def seek(self, target_head: int):
+        total = len(self._undo_stack) + len(self._redo_stack)
+        target_head = max(0, min(target_head, total))
+        current = len(self._undo_stack)
+        if current == target_head:
+            return
+        was_recording = self._recording
+        self._recording = False
+        if current > target_head:
+            n = current - target_head
+            for _ in range(n):
+                cmd = self._undo_stack.pop()
+                pre_sel = self._undo_sel.pop() if self._undo_sel else None
+                self._redo_sel.append(self._current_selection)
+                cmd.undo()
+                self._redo_stack.append(cmd)
+                self._current_selection = pre_sel
+            self._last_affected_entity = (
+                self._extract_entity(self._redo_stack[-1])
+                if self._redo_stack else None
+            ) or pre_sel
+        else:
+            n = target_head - current
+            for _ in range(n):
+                cmd = self._redo_stack.pop()
+                post_sel = self._redo_sel.pop() if self._redo_sel else None
+                self._undo_sel.append(self._current_selection)
+                cmd.redo()
+                self._undo_stack.append(cmd)
+                self._current_selection = post_sel
+            self._last_affected_entity = (
+                self._extract_entity(self._undo_stack[-1])
+                if self._undo_stack else None
+            ) or post_sel
+        self._recording = was_recording
+    def mark_saved(self):
+        self._saved_index = len(self._undo_stack)
+    def clear(self):
+        self._undo_stack.clear()
+        self._redo_stack.clear()
+        self._undo_sel.clear()
+        self._redo_sel.clear()
+        self._saved_index = 0
+_history: Optional[CommandHistory] = None
+def get_history() -> CommandHistory:
+    global _history
+    if _history is None:
+        _history = CommandHistory()
+    return _history

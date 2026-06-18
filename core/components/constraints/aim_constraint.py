@@ -1,0 +1,140 @@
+from __future__ import annotations
+import math
+from core.ecs import Component, ComponentRegistry
+from core.math3d import Vec3, Quat, Mat4
+from core.components.inspector_meta import FieldType, InspectorField, ListElementField
+
+
+@ComponentRegistry.register
+class AimConstraint(Component):
+    _icon = "AimConstraint.png"
+
+    @classmethod
+    def _inspector_fields(cls) -> list[InspectorField]:
+        return [
+            InspectorField("is_active", "Active", FieldType.BOOL),
+            InspectorField(
+                "sources",
+                "Sources",
+                FieldType.LIST,
+                element_fields=[
+                    ListElementField("entity_id", "Source", FieldType.GAMEOBJECT),
+                    ListElementField("weight", "Weight", FieldType.FLOAT, 0.0, 1.0, 0.01, 2),
+                ]
+            ),
+            InspectorField("aim_position_weight", "Aim Position Weight", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
+            InspectorField("world_up_weight", "World Up Weight", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
+            InspectorField("local_euler_axis_x", "Local Euler Axis X", FieldType.BOOL),
+            InspectorField("local_euler_axis_y", "Local Euler Axis Y", FieldType.BOOL),
+            InspectorField("local_euler_axis_z", "Local Euler Axis Z", FieldType.BOOL),
+        ]
+
+    def __init__(self):
+        super().__init__()
+        self.is_active = True
+        self.sources: list[dict] = []
+        self.aim_position_weight = 1.0
+        self.world_up_weight = 1.0
+        self.local_euler_axis_x = False
+        self.local_euler_axis_y = False
+        self.local_euler_axis_z = True
+
+    def add_source(self, entity=None, weight: float = 1.0):
+        self.sources.append({
+            "entity_id": entity.id if entity else None,
+            "weight": weight
+        })
+
+    def remove_source(self, index: int):
+        if 0 <= index < len(self.sources):
+            self.sources.pop(index)
+
+    def _get_source_transform(self, src_data: dict):
+        scene = self._entity._scene if self._entity else None
+        if not scene or not src_data.get("entity_id"):
+            return None
+        entity = scene.get_entity(src_data["entity_id"])
+        if not entity:
+            return None
+        return entity.get_component_by_name("Transform")
+
+    def _compute_target_position(self) -> Vec3 | None:
+        valid = [s for s in self.sources if s.get("weight", 0.0) > 1e-6]
+        if not valid:
+            return None
+
+        total_weight = sum(s["weight"] for s in valid)
+        if total_weight < 1e-8:
+            return None
+
+        px, py, pz = 0.0, 0.0, 0.0
+        for s in valid:
+            st = self._get_source_transform(s)
+            if not st:
+                continue
+            wp = st.position
+            w = s["weight"] / total_weight
+            px += wp.x * w
+            py += wp.y * w
+            pz += wp.z * w
+
+        return Vec3(px, py, pz)
+
+    def on_update(self, dt: float):
+        if not self.is_active or not self.transform:
+            return
+
+        target_pos = self._compute_target_position()
+        if target_pos is None:
+            return
+
+        t = self.transform
+        current_pos = t.position
+        direction = (target_pos - current_pos).normalized()
+        if direction.length() < 1e-8:
+            return
+
+        world_up = Vec3.up()
+        effective_up = world_up * self.world_up_weight + current_pos * (1.0 - self.world_up_weight)
+        if effective_up.length() < 1e-6:
+            effective_up = world_up
+
+        aim_quat = Quat.look_rotation(direction, effective_up)
+        current_euler = t.local_rotation.to_euler()
+        target_euler = aim_quat.to_euler()
+
+        new_x = current_euler.x if not self.local_euler_axis_x else target_euler.x
+        new_y = current_euler.y if not self.local_euler_axis_y else target_euler.y
+        new_z = current_euler.z if not self.local_euler_axis_z else target_euler.z
+
+        lerped_x = current_euler.x + (new_x - current_euler.x) * self.aim_position_weight
+        lerped_y = current_euler.y + (new_y - current_euler.y) * self.aim_position_weight
+        lerped_z = current_euler.z + (new_z - current_euler.z) * self.aim_position_weight
+
+        t.local_euler_angles = Vec3(lerped_x, lerped_y, lerped_z)
+
+    def serialize(self) -> dict:
+        d = super().serialize()
+        d.update({
+            "is_active": self.is_active,
+            "sources": self.sources,
+            "aim_position_weight": self.aim_position_weight,
+            "world_up_weight": self.world_up_weight,
+            "local_euler_axis_x": self.local_euler_axis_x,
+            "local_euler_axis_y": self.local_euler_axis_y,
+            "local_euler_axis_z": self.local_euler_axis_z,
+        })
+        return d
+
+    @classmethod
+    def deserialize(cls, data: dict) -> AimConstraint:
+        inst = cls()
+        inst.enabled = data.get("enabled", True)
+        inst.is_active = data.get("is_active", True)
+        inst.sources = data.get("sources", [])
+        inst.aim_position_weight = data.get("aim_position_weight", 1.0)
+        inst.world_up_weight = data.get("world_up_weight", 1.0)
+        inst.local_euler_axis_x = data.get("local_euler_axis_x", False)
+        inst.local_euler_axis_y = data.get("local_euler_axis_y", False)
+        inst.local_euler_axis_z = data.get("local_euler_axis_z", True)
+        return inst

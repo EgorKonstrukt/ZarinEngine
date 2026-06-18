@@ -1,0 +1,212 @@
+from __future__ import annotations
+import numpy as np
+from core.ecs import Component, ComponentRegistry
+from core.math3d import Vec3, Quat, Mat4, FLOAT_TYPE
+from core.math_helpers import mat4_mul_fast, mat4_from_quaternion, mat4_translation, mat4_scale_mat, mat4_inv_fast
+from core.components.inspector_meta import FieldType, InspectorField, ComponentInspectorMeta
+@ComponentRegistry.register
+class Transform(Component):
+    _icon = "Transform.png"
+    _show_gizmo_icon: bool = False
+
+    @classmethod
+    def _inspector_fields(cls) -> list[InspectorField]:
+        return [
+            InspectorField("local_position", "Position", FieldType.VEC3),
+            InspectorField("local_euler_angles", "Rotation", FieldType.VEC3),
+            InspectorField("local_scale", "Scale", FieldType.VEC3),
+        ]
+
+    def __init__(self):
+        super().__init__()
+        self._local_pos: Vec3 = Vec3.zero()
+        self._local_rot: Quat = Quat.identity()
+        self._local_scale: Vec3 = Vec3.one()
+        self._world_matrix: Mat4 = Mat4.identity()
+        self._dirty: bool = True
+    def _mark_dirty(self):
+        self._dirty = True
+        if self._entity:
+            for child in self._entity.children:
+                ct = child.get_component_by_name("Transform")
+                if ct: ct._mark_dirty()
+    def _update_world_matrix(self):
+        if not self._dirty: return
+        local = self._build_local_matrix()
+        parent_entity = self._entity.parent if self._entity else None
+        if parent_entity:
+            pt = parent_entity.get_component_by_name("Transform")
+            if pt:
+                pt._update_world_matrix()
+                self._world_matrix = local * pt._world_matrix
+            else:
+                self._world_matrix = local
+        else:
+            self._world_matrix = local
+        self._dirty = False
+    def _build_local_matrix(self) -> Mat4:
+        t = mat4_translation(self._local_pos.x, self._local_pos.y, self._local_pos.z)
+        r = mat4_from_quaternion(self._local_rot.x, self._local_rot.y, self._local_rot.z, self._local_rot.w)
+        s = mat4_scale_mat(self._local_scale.x, self._local_scale.y, self._local_scale.z)
+        return Mat4(mat4_mul_fast(mat4_mul_fast(s, r), t))
+    @property
+    def local_position(self) -> Vec3: return self._local_pos
+    @local_position.setter
+    def local_position(self, v: Vec3):
+        if isinstance(v, (tuple, list)):
+            self._local_pos = Vec3(*v)
+        else:
+            self._local_pos = v
+        self._mark_dirty()
+    @property
+    def local_rotation(self) -> Quat: return self._local_rot
+    @local_rotation.setter
+    def local_rotation(self, v: Quat):
+        self._local_rot = v.normalized()
+        self._mark_dirty()
+    @property
+    def local_scale(self) -> Vec3: return self._local_scale
+    @local_scale.setter
+    def local_scale(self, v: Vec3):
+        if isinstance(v, (tuple, list)):
+            self._local_scale = Vec3(*v)
+        else:
+            self._local_scale = v
+        self._mark_dirty()
+    @property
+    def local_euler_angles(self) -> Vec3: return self._local_rot.to_euler()
+    @local_euler_angles.setter
+    def local_euler_angles(self, v: Vec3):
+        self._local_rot = Quat.from_euler(v.x, v.y, v.z)
+        self._mark_dirty()
+    @property
+    def position(self) -> Vec3:
+        self._update_world_matrix()
+        return self._world_matrix.get_translation()
+    @position.setter
+    def position(self, world_pos: Vec3):
+        if isinstance(world_pos, (tuple, list)):
+            world_pos = Vec3(*world_pos)
+        parent_entity = self._entity.parent if self._entity else None
+        if parent_entity:
+            pt = parent_entity.get_component_by_name("Transform")
+            if pt:
+                pt._update_world_matrix()
+                inv = mat4_inv_fast(pt._world_matrix._d)
+                world_arr = np.array([world_pos.x, world_pos.y, world_pos.z, 1.0], dtype=FLOAT_TYPE)
+                local_arr = world_arr @ inv.T
+                self._local_pos = Vec3(float(local_arr[0]), float(local_arr[1]), float(local_arr[2]))
+                self._mark_dirty()
+                return
+        self._local_pos = world_pos
+        self._mark_dirty()
+    @property
+    def world_matrix(self) -> Mat4:
+        self._update_world_matrix()
+        return self._world_matrix
+    @property
+    def forward(self) -> Vec3:
+        self._update_world_matrix()
+        m = self._world_matrix._d
+        return Vec3(-float(m[2,0]), -float(m[2,1]), -float(m[2,2])).normalized()
+    @property
+    def right(self) -> Vec3:
+        self._update_world_matrix()
+        m = self._world_matrix._d
+        return Vec3(float(m[0,0]), float(m[0,1]), float(m[0,2])).normalized()
+    @property
+    def up(self) -> Vec3:
+        self._update_world_matrix()
+        m = self._world_matrix._d
+        return Vec3(float(m[1,0]), float(m[1,1]), float(m[1,2])).normalized()
+    def translate(self, delta: Vec3, world_space: bool = False):
+        if world_space:
+            self.position = self.position + delta
+        else:
+            self.local_position = self._local_pos + delta
+    def rotate(self, euler: Vec3):
+        dq = Quat.from_euler(euler.x, euler.y, euler.z)
+        self.local_rotation = (self._local_rot * dq).normalized()
+    def look_at(self, target: Vec3, up: Vec3 = None):
+        if up is None: up = Vec3.up()
+        fwd = (target - self.position).normalized()
+        self.local_rotation = Quat.look_rotation(fwd, up)
+    def serialize(self) -> dict:
+        d = super().serialize()
+        d.update({
+            "local_position": self._local_pos.to_list(),
+            "local_rotation": self._local_rot.to_list(),
+            "local_scale": self._local_scale.to_list()
+        })
+        return d
+    @classmethod
+    def deserialize(cls, data: dict) -> Transform:
+        t = cls()
+        t.enabled = data.get("enabled", True)
+        p = data.get("local_position", [0,0,0])
+        r = data.get("local_rotation", [0,0,0,1])
+        s = data.get("local_scale", [1,1,1])
+        t._local_pos = Vec3(*p)
+        t._local_rot = Quat(r[0],r[1],r[2],r[3])
+        t._local_scale = Vec3(*s)
+        return t
+
+    @staticmethod
+    def batch_update_world_matrices(transforms: list):
+        from core.math_helpers import mat4_mul_fast, mat4_from_quaternion, mat4_translation, mat4_scale_mat
+        n = len(transforms)
+        if n == 0: return
+        pos_x = np.zeros(n, dtype=FLOAT_TYPE)
+        pos_y = np.zeros(n, dtype=FLOAT_TYPE)
+        pos_z = np.zeros(n, dtype=FLOAT_TYPE)
+        rot_x = np.zeros(n, dtype=FLOAT_TYPE)
+        rot_y = np.zeros(n, dtype=FLOAT_TYPE)
+        rot_z = np.zeros(n, dtype=FLOAT_TYPE)
+        rot_w = np.zeros(n, dtype=FLOAT_TYPE)
+        sc_x = np.zeros(n, dtype=FLOAT_TYPE)
+        sc_y = np.zeros(n, dtype=FLOAT_TYPE)
+        sc_z = np.zeros(n, dtype=FLOAT_TYPE)
+        has_parent = np.zeros(n, dtype=np.int32)
+        parent_idx = np.zeros(n, dtype=np.int32)
+        for i, t in enumerate(transforms):
+            p = t._local_pos
+            q = t._local_rot
+            s = t._local_scale
+            pos_x[i] = p.x; pos_y[i] = p.y; pos_z[i] = p.z
+            rot_x[i] = q.x; rot_y[i] = q.y; rot_z[i] = q.z; rot_w[i] = q.w
+            sc_x[i] = s.x; sc_y[i] = s.y; sc_z[i] = s.z
+            if t._entity and t._entity.parent:
+                for j, ot in enumerate(transforms):
+                    if ot._entity and ot._entity.id == t._entity.parent.id:
+                        has_parent[i] = 1
+                        parent_idx[i] = j
+                        break
+        local_mats = np.zeros((n, 4, 4), dtype=FLOAT_TYPE)
+        for i in range(n):
+            tm = mat4_translation(pos_x[i], pos_y[i], pos_z[i])
+            rm = mat4_from_quaternion(rot_x[i], rot_y[i], rot_z[i], rot_w[i])
+            sm = mat4_scale_mat(sc_x[i], sc_y[i], sc_z[i])
+            local_mats[i] = mat4_mul_fast(mat4_mul_fast(sm, rm), tm)
+        world_mats = np.zeros((n, 4, 4), dtype=FLOAT_TYPE)
+        order = []
+        visited = set()
+        def _collect(idx):
+            if idx in visited: return
+            visited.add(idx)
+            if has_parent[idx]:
+                pi = parent_idx[idx]
+                if pi not in visited:
+                    _collect(pi)
+            order.append(idx)
+        for i in range(n):
+            if not has_parent[i]:
+                _collect(i)
+        for i in range(n):
+            if not has_parent[i]:
+                world_mats[i] = local_mats[i].copy()
+            else:
+                pi = parent_idx[i]
+                world_mats[i] = mat4_mul_fast(local_mats[i], world_mats[pi])
+        for i, t in enumerate(transforms):
+            t._world_matrix = Mat4(world_mats[i])
+            t._dirty = False

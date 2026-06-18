@@ -1,0 +1,140 @@
+import sys
+import os
+import traceback
+
+from core.logger import Logger
+
+if (
+    "wayland" in os.environ.get("XDG_SESSION_TYPE", "").lower()
+    and "QT_QPA_PLATFORM" not in os.environ
+):
+    print(
+        "[Zarin Engine] Wayland detected. Falling back to XCB for OpenGL compatibility.",
+        file=sys.stderr,
+    )
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
+    os.environ["QT_XCB_GL_INTEGRATION"] = "glx"
+elif os.environ.get("QT_QPA_PLATFORM", "") == "wayland":
+    print(
+        "[Zarin Engine] Note: running on Wayland with Qt6+OpenGL may cause window visibility issues.",
+        file=sys.stderr,
+    )
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _SCRIPT_DIR)
+os.chdir(_SCRIPT_DIR)
+def excepthook(exc_type, exc_value, exc_traceback):
+    from core.logger import Logger
+    tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    Logger.error(f"Unhandled exception: {exc_value}\n{tb_str}")
+    print(f"[Zarin Engine] Unhandled exception:\n{tb_str}", file=sys.stderr)
+sys.excepthook = excepthook
+
+def run_headless_mcp():
+    os.environ["ZARIN_MCP_MODE"] = "stdio"
+    import os as _os
+    _orig_stdout = sys.stdout
+    sys.stdout.flush()
+    _orig_fd1 = _os.dup(1)
+    _os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    try:
+        from core.engine import Engine
+        engine = Engine()
+        engine._mcp_mode = "stdio"
+        engine.initialize()
+        for fname in sorted(os.listdir("plugins")):
+            fpath = os.path.join("plugins", fname)
+            if fname.endswith(".py") and not fname.startswith("_"):
+                engine.plugin_manager.load_from_file(fpath)
+        engine.plugin_manager.load_directory("plugins/user")
+        engine.new_scene("Scene")
+    finally:
+        sys.stdout.flush()
+        _os.dup2(_orig_fd1, 1)
+        _os.close(_orig_fd1)
+        sys.stdout = _orig_stdout
+    engine.plugin_manager.load_package("plugins/zarin_mcp")
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Zarin Engine")
+    parser.add_argument("--mcp", action="store_true", help="Run in headless MCP stdio server mode")
+    parser.add_argument("file", nargs="?", default=None, help="Scene file to open")
+    args, _ = parser.parse_known_args()
+    if args.mcp:
+        run_headless_mcp()
+        return
+    if args.file:
+        from editor.ipc_server import send_file_to_running_instance
+        if send_file_to_running_instance(args.file):
+            print(f"[Zarin Engine] Sent '{args.file}' to running editor instance.")
+            return
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import Qt, QTimer
+    from PyQt6.QtGui import QSurfaceFormat, QIcon
+    fmt = QSurfaceFormat()
+    fmt.setDepthBufferSize(24)
+    fmt.setVersion(3, 3)
+    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    QSurfaceFormat.setDefaultFormat(fmt)
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    app = QApplication(sys.argv)
+    app.setApplicationName("Zarin")
+    app.setOrganizationName("Zarin")
+    app.setStyle("Fusion")
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zarin_icon.svg")
+    app.setWindowIcon(QIcon(icon_path))
+    from editor.splash import SplashScreen
+    splash = SplashScreen()
+    splash.set_total_steps(8)
+    splash.show()
+    app.processEvents()
+    from core.engine import Engine
+    splash.advance("Initializing engine core...")
+    engine = Engine()
+    splash.advance("Running engine subsystems...")
+    engine.initialize()
+    splash.advance("Loading plugins...")
+    engine.plugin_manager.load_directory("plugins")
+    splash.advance("Loading user plugins...")
+    engine.plugin_manager.load_directory("plugins/user")
+    splash.advance("Setting up collaboration...")
+    from core.network.collaboration import CollaborationManager
+    engine.collab_manager = CollaborationManager(engine)
+    splash.advance("Building editor window...")
+    from editor.main_window import EditorMainWindow
+    splash.advance("Initializing editor panels...")
+    window = EditorMainWindow(engine)
+    engine.viewport = window._viewport
+    if not window._restored_geometry_once:
+        screen = app.primaryScreen()
+        if screen:
+            sg = screen.availableGeometry()
+            window.resize(1280, 720)
+            window.move((sg.width() - 1280) // 2, (sg.height() - 720) // 2)
+    splash.advance("Ready!")
+    app.processEvents()
+    from editor.ipc_server import IpcServer
+    def _open_file_from_ipc(path: str):
+        from editor.main_window.handlers import open_scene_by_path
+        def _do():
+            open_scene_by_path(window, path)
+        QTimer.singleShot(0, _do)
+    ipc_server = IpcServer(_open_file_from_ipc)
+    ipc_server.try_bind()
+    window.destroyed.connect(ipc_server.stop)
+
+    if args.file and os.path.exists(args.file):
+        from editor.main_window.handlers import open_scene_by_path
+        open_scene_by_path(window, args.file)
+
+    window.showNormal()
+    SplashScreen.hide_splash()
+    window.raise_()
+    window.activateWindow()
+    QTimer.singleShot(200, window.raise_)
+    QTimer.singleShot(500, window.activateWindow)
+    sys.exit(app.exec())
+if __name__ == "__main__":
+    main()

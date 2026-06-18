@@ -1,0 +1,60 @@
+from __future__ import annotations
+from core.ecs import Component, ComponentRegistry
+from core.math3d import Vec2
+from core.components.inspector_meta import FieldType, InspectorField
+@ComponentRegistry.register
+class BoxCollider2D(Component):
+    _icon = "BoxCollider2D.png"
+    _gizmo_icon_color = (200, 80, 80)
+    _gizmo_icon_label = "C2"
+    _show_gizmo_icon: bool = False
+
+    @classmethod
+    def _inspector_fields(cls) -> list[InspectorField]:
+        return [
+            InspectorField("offset", "Offset", FieldType.VEC2),
+            InspectorField("size", "Size", FieldType.VEC2),
+            InspectorField("is_trigger", "Is Trigger", FieldType.BOOL),
+        ]
+
+    def __init__(self):
+        super().__init__()
+        self.offset: Vec2 = Vec2.zero()
+        self.size: Vec2 = Vec2.one()
+        self.is_trigger: bool = False
+        self.material_friction: float = 0.6
+        self.material_bounciness: float = 0.0
+
+    @property
+    def scaled_size(self) -> Vec2:
+        tr = self.transform
+        s = tr.local_scale if tr else Vec2.one()
+        sz = self.size if isinstance(self.size, Vec2) else Vec2(self.size.x, self.size.y)
+        return Vec2(sz.x * s.x, sz.y * s.y)
+
+    @property
+    def scaled_offset(self) -> Vec2:
+        tr = self.transform
+        s = tr.local_scale if tr else Vec2.one()
+        o = self.offset if isinstance(self.offset, Vec2) else Vec2(self.offset.x, self.offset.y)
+        return Vec2(o.x * s.x, o.y * s.y)
+
+    def serialize(self) -> dict:
+        d = super().serialize()
+        d.update({
+            "offset": self.offset.to_list(), "size": self.size.to_list(),
+            "is_trigger": self.is_trigger, "friction": self.material_friction,
+            "bounciness": self.material_bounciness,
+        })
+        return d
+
+    @classmethod
+    def deserialize(cls, data: dict) -> BoxCollider2D:
+        bc = cls()
+        bc.enabled = data.get("enabled", True)
+        bc.offset = Vec2(*data.get("offset", [0, 0]))
+        bc.size = Vec2(*data.get("size", [1, 1]))
+        bc.is_trigger = data.get("is_trigger", False)
+        bc.material_friction = data.get("friction", 0.6)
+        bc.material_bounciness = data.get("bounciness", 0.0)
+        return bc
