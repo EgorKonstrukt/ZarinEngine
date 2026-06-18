@@ -258,6 +258,74 @@ class UnpackPrefabCommand(Command):
                 e._prefab_data = data
     @property
     def description(self): return "Unpack Prefab"
+class PasteEntitiesCommand(Command):
+    def __init__(self, scene, clipboard_data: list[dict], registry):
+        self._scene = scene
+        self._clipboard_data = clipboard_data
+        self._registry = registry
+        self._spawned_ids: list[str] = []
+        self._entity_datas: list[dict] = []
+        self._entity_id: Optional[str] = None
+    @property
+    def spawned_ids(self) -> list[str]:
+        return list(self._spawned_ids)
+    def execute(self):
+        import copy, uuid
+        from core.ecs import Entity
+        id_map: dict[str, str] = {}
+        self._spawned_ids.clear()
+        self._entity_datas.clear()
+        self._entity_id = None
+        for data in self._clipboard_data:
+            d = copy.deepcopy(data)
+            old_id = d["id"]
+            new_id = str(uuid.uuid4())
+            d["id"] = new_id
+            id_map[old_id] = new_id
+            e = Entity.deserialize(d, self._registry)
+            self._scene.add_entity(e)
+            self._spawned_ids.append(e.id)
+        for data in self._clipboard_data:
+            parent_id = data.get("parent")
+            if parent_id and parent_id in id_map:
+                child_id = id_map[data["id"]]
+                new_parent_id = id_map[parent_id]
+                child = self._scene.get_entity(child_id)
+                new_parent = self._scene.get_entity(new_parent_id)
+                if child and new_parent:
+                    child.set_parent(new_parent)
+        for eid in self._spawned_ids:
+            e = self._scene.get_entity(eid)
+            if e:
+                self._entity_datas.append(e.serialize())
+        if self._spawned_ids:
+            self._entity_id = self._spawned_ids[0]
+    def undo(self):
+        for eid in self._spawned_ids:
+            e = self._scene.get_entity(eid)
+            if e:
+                self._scene.remove_entity(eid)
+    def redo(self):
+        from core.ecs import Entity
+        self._spawned_ids.clear()
+        for d in self._entity_datas:
+            e = Entity.deserialize(d, self._registry)
+            self._scene.add_entity(e)
+            self._spawned_ids.append(e.id)
+        for d in self._entity_datas:
+            parent_id = d.get("parent")
+            if parent_id:
+                child_id = d["id"]
+                child = self._scene.get_entity(child_id)
+                parent = self._scene.get_entity(parent_id)
+                if child and parent:
+                    child.set_parent(parent)
+        if self._spawned_ids:
+            self._entity_id = self._spawned_ids[0]
+    @property
+    def description(self):
+        n = len(self._clipboard_data)
+        return f"Paste {n} entit{'y' if n == 1 else 'ies'}"
 class CommandHistory:
     def __init__(self, max_size: int = 100):
         self._undo_stack: list[Command] = []

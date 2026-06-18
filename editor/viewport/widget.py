@@ -720,6 +720,10 @@ class SceneViewport(QOpenGLWidget):
                 return
         if self._im:
             vk = self._qt_key_to_vk(event.key())
+            if vk is None:
+                nvk = event.nativeVirtualKey()
+                if 65 <= nvk <= 90:
+                    vk = nvk
             if vk is not None:
                 self._im.feed_key(vk, True)
             if mods & Qt.KeyboardModifier.ShiftModifier:
@@ -734,6 +738,10 @@ class SceneViewport(QOpenGLWidget):
         if self._im:
             mods = event.modifiers()
             vk = self._qt_key_to_vk(event.key())
+            if vk is None:
+                nvk = event.nativeVirtualKey()
+                if 65 <= nvk <= 90:
+                    vk = nvk
             if vk is not None:
                 self._im.feed_key(vk, False)
             if not (mods & Qt.KeyboardModifier.ShiftModifier):
@@ -746,17 +754,16 @@ class SceneViewport(QOpenGLWidget):
 
     @staticmethod
     def _qt_key_to_vk(qt_key: int) -> Optional[int]:
-        from PyQt6.QtCore import Qt as QtCore
         mapping = {
-            QtCore.Key.Key_W: KEY_W, QtCore.Key.Key_A: KEY_A,
-            QtCore.Key.Key_S: KEY_S, QtCore.Key.Key_D: KEY_D,
-            QtCore.Key.Key_Q: KEY_Q, QtCore.Key.Key_E: KEY_E,
-            QtCore.Key.Key_R: KEY_R, QtCore.Key.Key_F: KEY_F,
-            QtCore.Key.Key_Shift: KEY_SHIFT,
-            QtCore.Key.Key_Control: KEY_CTRL,
-            QtCore.Key.Key_Alt: KEY_ALT,
-            QtCore.Key.Key_Delete: KEY_DELETE,
-            QtCore.Key.Key_Space: KEY_SPACE,
+            Qt.Key.Key_W: KEY_W, Qt.Key.Key_A: KEY_A,
+            Qt.Key.Key_S: KEY_S, Qt.Key.Key_D: KEY_D,
+            Qt.Key.Key_Q: KEY_Q, Qt.Key.Key_E: KEY_E,
+            Qt.Key.Key_R: KEY_R, Qt.Key.Key_F: KEY_F,
+            Qt.Key.Key_Shift: KEY_SHIFT,
+            Qt.Key.Key_Control: KEY_CTRL,
+            Qt.Key.Key_Alt: KEY_ALT,
+            Qt.Key.Key_Delete: KEY_DELETE,
+            Qt.Key.Key_Space: KEY_SPACE,
         }
         return mapping.get(qt_key)
 
@@ -880,33 +887,27 @@ class SceneViewport(QOpenGLWidget):
 
     def _paste_entities(self):
         from core.engine import Engine
+        from core.commands import PasteEntitiesCommand, get_history
         registry = Engine.instance()._component_registry
         if not self._entity_clipboard or not self._engine.scene:
             return
-        id_map: dict[str, str] = {}
+        cmd = PasteEntitiesCommand(self._engine.scene, self._entity_clipboard, registry)
+        get_history().execute(cmd)
         new_entities = []
-        for data in self._entity_clipboard:
-            d = copy.deepcopy(data)
-            old_id = d["id"]
-            new_id = str(uuid.uuid4())
-            d["id"] = new_id
-            id_map[old_id] = new_id
-            from core.ecs import Entity
-            e = Entity.deserialize(d, registry)
-            self._engine.scene.add_entity(e)
-            from editor.viewport.collaboration import send_collab_entity_create
-            send_collab_entity_create(self, e.serialize())
-            new_entities.append(e)
-        for data, e in zip(self._entity_clipboard, new_entities):
-            parent_id = data.get("parent")
-            if parent_id and parent_id in id_map:
-                new_parent = self._engine.scene.get_entity(id_map[parent_id])
-                if new_parent:
-                    e.set_parent(new_parent)
+        for eid in cmd.spawned_ids:
+            e = self._engine.scene.get_entity(eid)
+            if e:
+                new_entities.append(e)
         self._selected_entities = new_entities
         self._gizmo.entity = new_entities[0] if new_entities else None
+        from editor.viewport.collaboration import send_collab_entity_create, send_collab_selection
+        for e in new_entities:
+            send_collab_entity_create(self, e.serialize())
+        send_collab_selection(self)
         self.scene_modified.emit()
         self.entities_selected.emit(self._selected_entities)
+        if new_entities:
+            self.entity_selected.emit(new_entities[0])
 
     def enterEvent(self, event):
         self._focused = True

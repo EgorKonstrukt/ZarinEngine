@@ -44,6 +44,8 @@ def _get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
 class HierarchyTree(QTreeWidget):
     entity_reparented = pyqtSignal(object, object)
     delete_requested = pyqtSignal(list)
+    copy_requested = pyqtSignal()
+    paste_requested = pyqtSignal()
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setDragDropMode(QTreeWidget.DragDropMode.DragDrop)
@@ -143,6 +145,8 @@ class HierarchyTree(QTreeWidget):
                 elif modifiers & Qt.KeyboardModifier.ShiftModifier:
                     self._select_range(item)
                 else:
+                    self.clearSelection()
+                    item.setSelected(True)
                     self.setCurrentItem(item)
                     self._last_clicked_item = item
                 return
@@ -224,6 +228,17 @@ class HierarchyTree(QTreeWidget):
         event.acceptProposedAction()
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
+        mods = event.modifiers()
+        nvk = event.nativeVirtualKey()
+        if mods & Qt.KeyboardModifier.ControlModifier:
+            if nvk == 67 or key == Qt.Key.Key_C:
+                self.copy_requested.emit()
+                event.accept()
+                return
+            if nvk == 86 or key == Qt.Key.Key_V:
+                self.paste_requested.emit()
+                event.accept()
+                return
         if key == Qt.Key.Key_F2:
             items = self.selectedItems()
             if items:
@@ -288,6 +303,8 @@ class HierarchyPanel(QDockWidget):
         self._tree.itemChanged.connect(self._on_item_changed)
         self._tree.entity_reparented.connect(self._on_reparent)
         self._tree.delete_requested.connect(self._delete_entities_by_ids)
+        self._tree.copy_requested.connect(self._on_copy)
+        self._tree.paste_requested.connect(self._on_paste)
         layout.addWidget(self._tree)
         self.setWidget(w)
         self._refresh_timer = QTimer(self)
@@ -465,7 +482,7 @@ class HierarchyPanel(QDockWidget):
         rv = getattr(self._scene, '_render_version', -1)
         if rv != self._last_render_version:
             self._last_render_version = rv
-            if self._tree.state() != QTreeWidget.State.EditingState:
+            if self._tree.state() != QTreeWidget.State.EditingState and not self._tree._drag_started and self._tree._press_item is None:
                 self._refresh()
         if self._tree.currentItem() is None and self._selected_entity:
             self._restore_selection(self._selected_entity.id)
@@ -700,6 +717,31 @@ class HierarchyPanel(QDockWidget):
             entity = self._scene.get_entity(eid)
             if entity:
                 self._delete_entity(entity)
+    def _on_copy(self):
+        if not self._scene:
+            return
+        items = self._tree.selectedItems()
+        if not items:
+            return
+        import copy
+        selected = []
+        for item in items:
+            eid = item.data(0, Qt.ItemDataRole.UserRole)
+            if eid:
+                e = self._scene.get_entity(eid)
+                if e:
+                    selected.append(e)
+        if not selected:
+            return
+        mw = self.parent()
+        viewport = getattr(mw, '_viewport', None)
+        if viewport:
+            viewport._entity_clipboard = [copy.deepcopy(e.serialize()) for e in selected]
+    def _on_paste(self):
+        mw = self.parent()
+        viewport = getattr(mw, '_viewport', None)
+        if viewport:
+            viewport._paste_entities()
     def _delete_entity_by_id(self, eid: str):
         if not self._scene:
             return
@@ -786,18 +828,22 @@ class HierarchyPanel(QDockWidget):
         self._refresh()
 
     def set_selected_entity(self, entity: Optional[Entity]):
+        self._tree.blockSignals(True)
         self._selected_entity = entity
         if entity:
             self._restore_selection(entity.id)
         else:
             self._tree.clearSelection()
+        self._tree.blockSignals(False)
     def set_selected_entities(self, entities: list):
+        self._tree.blockSignals(True)
         self._tree.clearSelection()
         for entity in entities:
             if entity:
                 item = self._find_item(entity.id, self._tree.invisibleRootItem())
                 if item:
                     item.setSelected(True)
+        self._tree.blockSignals(False)
         if entities:
             self._selected_entity = entities[0]
     def refresh(self):
