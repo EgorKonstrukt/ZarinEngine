@@ -313,6 +313,7 @@ class SceneViewport(QOpenGLWidget):
         if hasattr(self, '_sel_bounds_peers'):
             self._sel_bounds_peers.clear()
         self.entities_selected.emit(self._selected_entities)
+        from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
 
     def resizeGL(self, w: int, h: int):
         dpr = self.devicePixelRatio()
@@ -456,6 +457,7 @@ class SceneViewport(QOpenGLWidget):
                         self._selected_entities.clear()
                         self._gizmo.entity = None
                         self.entity_selected.emit(None)
+                        from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
         prof.stop("input_handling")
         prof.start("logic_update")
         if eng.play_mode:
@@ -571,6 +573,7 @@ class SceneViewport(QOpenGLWidget):
                     self._selected_entities = []
                     self._gizmo.entity = None
                     self.entity_selected.emit(None)
+                from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
                 return
             if ctrl:
                 if picked:
@@ -584,6 +587,7 @@ class SceneViewport(QOpenGLWidget):
                     self._selected_entities = []
                     self._gizmo.entity = None
                     self.entity_selected.emit(None)
+                from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
                 return
             self._area_selecting = True
             self._area_start = (lx, ly)
@@ -593,6 +597,7 @@ class SceneViewport(QOpenGLWidget):
                 self._selected_entities = [picked] if picked else []
                 self._gizmo.entity = picked
                 self.entity_selected.emit(picked)
+                from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self._overlay_canvas and self._overlay_canvas.edit_mode:
@@ -685,6 +690,7 @@ class SceneViewport(QOpenGLWidget):
                     self._selected_entities = selected
                     self._gizmo.entity = self._selected_entities[0] if self._selected_entities else None
                     self.entities_selected.emit(self._selected_entities)
+                    from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
             self.update()
         self._gizmo.on_mouse_release()
         if self._multi_entity_initial_transforms:

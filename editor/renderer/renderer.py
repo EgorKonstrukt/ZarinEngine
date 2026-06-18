@@ -726,6 +726,22 @@ void main() {
             self._ctx.wireframe = old_wireframe
             self._ctx.depth_mask = old_depth_mask
 
+    def _lookup_outline_mesh(self, mf) -> Optional[MeshData]:
+        if not self._mesh_loader:
+            return None
+        meshes = self._mesh_loader._meshes
+        mesh_name = mf.mesh_name or "cube"
+        mesh_path = mf.mesh_path or ""
+        mesh = meshes.get(mesh_name)
+        if mesh:
+            return mesh
+        if mesh_path:
+            cache_key = f"{mesh_path}|s=1.0|cp=False|fu=False"
+            mesh = meshes.get(cache_key)
+            if mesh:
+                return mesh
+        return meshes.get("cube")
+
     def render_entity_outline(self, entity, model_mat: Mat4, view_mat: Mat4, proj_mat: Mat4, color: list[float]):
         if not self._outline_prog:
             return
@@ -735,7 +751,7 @@ void main() {
         mr = entity.get_component(MeshRenderer)
         if not mf or not mr or not mr.enabled:
             return
-        mesh = self._meshes.get(mf.mesh_name or "cube")
+        mesh = self._lookup_outline_mesh(mf)
         if not mesh:
             return
         old_wireframe = self._ctx.wireframe
@@ -938,8 +954,10 @@ FATLINE_VERT = """
     in float a_side;
 
     out vec3 v_color;
+    out float v_alpha;
 
     uniform vec3 u_line_color;
+    uniform float u_alpha;
     uniform float u_thickness_ndc_x;
     uniform float u_thickness_ndc_y;
 
@@ -962,14 +980,16 @@ FATLINE_VERT = """
 
         gl_Position = clipPos;
         v_color = u_line_color;
+        v_alpha = u_alpha;
     }
 """
 
 FATLINE_FRAG = """
     #version 330 core
     in vec3 v_color;
+    in float v_alpha;
     out vec4 fragColor;
     void main() {
-        fragColor = vec4(v_color, 1.0);
+        fragColor = vec4(v_color, v_alpha);
     }
 """

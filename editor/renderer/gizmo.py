@@ -131,6 +131,9 @@ class GizmoRenderer:
         strip_s = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0], dtype=np.float32)
         try:
             for color, segs in color_groups.items():
+                alpha_val = float(color[3]) if len(color) > 3 else 1.0
+                if alpha_val <= 0.001:
+                    continue
                 n_segs = len(segs)
                 n_verts = n_segs * 6
                 pts = np.empty((n_segs, 6), dtype=np.float32)
@@ -153,7 +156,9 @@ class GizmoRenderer:
                 self._fatline_vbo_t.write(ts_arr.tobytes())
                 self._fatline_vbo_side.write(side_arr.tobytes())
                 if "u_line_color" in prog:
-                    prog["u_line_color"] = color
+                    prog["u_line_color"] = color[:3]
+                if "u_alpha" in prog:
+                    prog["u_alpha"] = alpha_val
                 self._fatline_vao_persistent.render(moderngl.TRIANGLES, vertices=n_verts)
         finally:
             if old_cull_face:

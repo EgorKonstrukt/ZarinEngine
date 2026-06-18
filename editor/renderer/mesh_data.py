@@ -28,6 +28,7 @@ class MeshData:
         self._vbo: Optional[Any] = None
         self._ibo: Optional[Any] = None
         self._outline_vao: Optional[Any] = None
+        self._outline_vbo: Optional[Any] = None
         self._ctx: Optional[Any] = None
         self._vao_cache: dict[int, Any] = {}
 
@@ -105,39 +106,16 @@ class MeshData:
                 Logger.error("MeshData.render VAO render failed", e)
 
     def build_outline_vao(self, ctx: moderngl.Context, program: moderngl.Program):
-        if len(self.vertices) == 0 or not hasattr(self, '_vbo') or not self._vbo:
+        if len(self.vertices) == 0:
             return
-        n_verts = len(self.vertices) // 3
-        data = np.zeros((n_verts, 8), dtype=np.float32)
-        data[:, 0:3] = self.vertices.reshape(-1, 3)
-        if len(self.normals) == len(self.vertices):
-            data[:, 3:6] = self.normals.reshape(-1, 3)
-        if len(self.uvs) * 3 == len(self.vertices) * 2:
-            data[:, 6:8] = self.uvs.reshape(-1, 2)
-        has_pos = "in_position" in program
-        has_nrm = "in_normal" in program
-        has_uv = "in_uv" in program
-        fmt_parts = []
-        attrib_names = []
-        if has_pos:
-            fmt_parts.append("3f")
-            attrib_names.append("in_position")
+        pos_data = self.vertices.copy()
+        if self._outline_vbo is None:
+            self._outline_vbo = ctx.buffer(pos_data.tobytes())
         else:
-            fmt_parts.append("3x4")
-        if has_nrm:
-            fmt_parts.append("3f")
-            attrib_names.append("in_normal")
-        else:
-            fmt_parts.append("3x4")
-        if has_uv:
-            fmt_parts.append("2f")
-            attrib_names.append("in_uv")
-        else:
-            fmt_parts.append("2x4")
-        fmt = " ".join(fmt_parts)
+            self._outline_vbo.write(pos_data.tobytes())
         self._outline_vao = ctx.vertex_array(
             program,
-            [(self._vbo, fmt, *attrib_names)],
+            [(self._outline_vbo, "3f", "in_position")],
             self._ibo
         )
 
@@ -155,6 +133,8 @@ class MeshData:
             self._ibo.release()
         if self._outline_vao:
             self._outline_vao.release()
+        if self._outline_vbo:
+            self._outline_vbo.release()
         for v in self._vao_cache.values():
             if v:
                 try:
