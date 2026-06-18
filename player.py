@@ -31,7 +31,7 @@ def main():
 
     fmt = QSurfaceFormat()
     fmt.setDepthBufferSize(24)
-    fmt.setVersion(3, 3)
+    fmt.setVersion(4, 6)
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
     QSurfaceFormat.setDefaultFormat(fmt)
 

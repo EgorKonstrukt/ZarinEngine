@@ -1,4 +1,4 @@
-#version 330 core
+#version 460 core
 in vec3 v_uv;
 out vec4 frag_color;
 

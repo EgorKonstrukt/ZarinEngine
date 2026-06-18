@@ -1,4 +1,4 @@
-#version 330 core
+#version 460 core
 #define CASCADE_COUNT 3
 uniform sampler2D u_scene_color;
 uniform sampler2D u_depth_tex;

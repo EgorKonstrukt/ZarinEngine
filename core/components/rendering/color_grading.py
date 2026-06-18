@@ -19,7 +19,7 @@ _TONEMAP_INT_MAP = {"Off": 0, "ACES": 1, "Reinhard": 2, "Neutral": 3}
 
 
 CG_VERT = """
-#version 330 core
+#version 460 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -29,7 +29,7 @@ void main() {
 """
 
 CG_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_input_tex;
 uniform float u_exposure;
 uniform float u_contrast;

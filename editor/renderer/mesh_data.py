@@ -39,6 +39,10 @@ class MeshData:
         self.aabb_min = v.min(axis=0).astype(np.float32)
         self.aabb_max = v.max(axis=0).astype(np.float32)
 
+    @property
+    def bounding_radius(self) -> float:
+        return float(np.linalg.norm(self.aabb_max - self.aabb_min) / 2.0)
+
     def build_gl(self, ctx: moderngl.Context, program: moderngl.Program):
         self._ctx = ctx
         if len(self.vertices) == 0:

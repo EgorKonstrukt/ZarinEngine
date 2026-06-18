@@ -9,7 +9,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 BLOOM_VERT = """
-#version 330 core
+#version 460 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -19,7 +19,7 @@ void main() {
 """
 
 EXTRACT_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_scene_color;
 uniform float u_threshold;
 uniform float u_soft_threshold;
@@ -46,7 +46,7 @@ void main() {
 """
 
 BLUR_H_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_input_tex;
 uniform vec2 u_texel_size;
 uniform float u_diffusion;
@@ -66,7 +66,7 @@ void main() {
 """
 
 BLUR_V_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_input_tex;
 uniform vec2 u_texel_size;
 uniform float u_diffusion;
@@ -86,7 +86,7 @@ void main() {
 """
 
 OUTPUT_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_input_tex;
 uniform sampler2D u_dirt_tex;
 uniform float u_intensity;

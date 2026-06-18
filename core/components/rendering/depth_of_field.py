@@ -14,7 +14,7 @@ class DoFMode(Enum):
 
 
 DOF_VERT = """
-#version 330 core
+#version 460 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -24,7 +24,7 @@ void main() {
 """
 
 DOF_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_input_tex;
 uniform sampler2D u_depth_tex;
 uniform float u_focal_distance;

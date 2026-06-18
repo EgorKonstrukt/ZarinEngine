@@ -7,7 +7,7 @@ from PyQt6.QtGui import QImage
 from core.math3d import Mat4, Vec3
 
 VSHADER = """
-#version 330
+#version 460 core
 in vec3 in_pos;
 in vec3 in_normal;
 in vec2 in_uv;
@@ -27,7 +27,7 @@ void main() {
 """
 
 FSHADER = """
-#version 330
+#version 460 core
 in vec3 v_normal;
 in vec3 v_pos;
 in vec2 v_uv;

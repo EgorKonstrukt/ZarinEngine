@@ -9,7 +9,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 PANINI_VERT = """
-#version 330 core
+#version 460 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -19,7 +19,7 @@ void main() {
 """
 
 PANINI_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_input_tex;
 uniform vec2 u_view_extents;
 uniform float u_distance;

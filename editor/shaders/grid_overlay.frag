@@ -1,4 +1,4 @@
-#version 330 core
+#version 460 core
 uniform sampler2D u_depth_tex;
 uniform vec3 u_camera_pos;
 uniform float u_grid_size;

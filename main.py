@@ -75,7 +75,7 @@ def main():
     from PyQt6.QtGui import QSurfaceFormat, QIcon
     fmt = QSurfaceFormat()
     fmt.setDepthBufferSize(24)
-    fmt.setVersion(3, 3)
+    fmt.setVersion(4, 6)
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
     QSurfaceFormat.setDefaultFormat(fmt)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)

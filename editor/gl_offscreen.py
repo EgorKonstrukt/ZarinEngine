@@ -18,7 +18,7 @@ _mdl_prog: Optional[moderngl.Program] = None
 _ready: bool = False
 
 SPH_VSHADER = """
-#version 330
+#version 460 core
 in vec3 in_pos;
 in vec3 in_normal;
 in vec2 in_uv;
@@ -38,7 +38,7 @@ void main() {
 """
 
 SPH_FSHADER = """
-#version 330
+#version 460 core
 in vec3 v_normal;
 in vec3 v_pos;
 in vec2 v_uv;
@@ -72,7 +72,7 @@ void main() {
 """
 
 MDL_VSHADER = """
-#version 330
+#version 460 core
 in vec3 in_pos;
 in vec3 in_nrm;
 uniform mat4 u_model;
@@ -90,7 +90,7 @@ void main() {
 """
 
 MDL_FSHADER = """
-#version 330
+#version 460 core
 in vec3 v_normal;
 in vec3 v_pos;
 out vec4 frag_color;
@@ -117,7 +117,7 @@ def _ensure() -> bool:
     if _ready:
         return True
     try:
-        _ctx = moderngl.create_standalone_context()
+        _ctx = moderngl.create_standalone_context(require=460)
         _ctx.pixel_alignment = 1
         _ready = True
         return True

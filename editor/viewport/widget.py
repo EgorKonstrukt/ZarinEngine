@@ -131,7 +131,7 @@ class SceneViewport(QOpenGLWidget):
         self._target_fps = cfg.get("rendering.target_fps", 60)
         fmt = QSurfaceFormat()
         fmt.setDepthBufferSize(24)
-        fmt.setVersion(3, 3)
+        fmt.setVersion(4, 6)
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         fmt.setSwapInterval(1 if self._vsync_enabled else 0)
         self.setFormat(fmt)
@@ -183,7 +183,7 @@ class SceneViewport(QOpenGLWidget):
     def _on_depth_changed(self, value: int):
         fmt = QSurfaceFormat()
         fmt.setDepthBufferSize(value)
-        fmt.setVersion(3, 3)
+        fmt.setVersion(4, 6)
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         self.setFormat(fmt)
 

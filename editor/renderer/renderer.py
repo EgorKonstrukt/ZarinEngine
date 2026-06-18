@@ -34,6 +34,7 @@ from editor.renderer.materials import MaterialManager
 from editor.renderer.shaders import ShaderManager
 from editor.renderer.mesh_loader import MeshLoader
 from editor.renderer.batcher import RenderBatcher
+from editor.renderer.culling import GpuFrustumCuller
 
 
 class Renderer:
@@ -105,6 +106,7 @@ class Renderer:
         self._particles: Optional[ParticleRenderer] = None
         self._sprites: Optional[SpriteRendererGL] = None
         self._svgs: Optional[SvgRendererGL] = None
+        self._culler: Optional[Any] = None
         self._icons: Optional[IconRenderer] = None
         self._materials: Optional[MaterialManager] = None
         self._shaders: Optional[ShaderManager] = None
@@ -181,7 +183,7 @@ class Renderer:
                 fragment_shader=read_shader("shadow_overlay.frag")
             )
             PP_COPY_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_input_tex;
 in vec2 v_uv;
 out vec4 frag_color;
@@ -214,6 +216,10 @@ void main() {
             self._mesh_loader.register_primitives()
             self._batcher = RenderBatcher(self._ctx, self._default_prog)
             self._default_prog = self._batcher._default_prog
+            try:
+                self._culler = GpuFrustumCuller(self._ctx)
+            except Exception:
+                self._culler = None
             self._grid = GridRenderer(self._ctx, self._grid_prog)
             self._load_grid_config()
             self._gizmo = GizmoRenderer(self._ctx, self._gizmo_prog, self._gizmo_fatline_prog, self._gizmo_solid_prog)
@@ -508,6 +514,30 @@ void main() {
                 renderable.append((ent, tr, mesh, mr))
         if prof:
             prof.stop("collect_renderables")
+
+        if self._culler and renderable:
+            if prof:
+                prof.start("gpu_cull")
+            try:
+                n = len(renderable)
+                centers = np.zeros((n, 3), dtype=np.float32)
+                radii = np.zeros(n, dtype=np.float32)
+                for i, (ent, tr, mesh, mr) in enumerate(renderable):
+                    model = tr.world_matrix
+                    centers[i] = [model._d[3, 0], model._d[3, 1], model._d[3, 2]]
+                    sx = float(np.linalg.norm(model._d[:3, 0]))
+                    sy = float(np.linalg.norm(model._d[:3, 1]))
+                    sz = float(np.linalg.norm(model._d[:3, 2]))
+                    radii[i] = mesh.bounding_radius * max(sx, sy, sz)
+                vp = proj_mat._d.T @ view_mat._d.T
+                visible = self._culler.cull(centers, radii, vp)
+                if len(visible) < n:
+                    renderable = [renderable[idx] for idx in visible]
+            except Exception:
+                pass
+            if prof:
+                prof.stop("gpu_cull")
+
         if prof:
             prof.start("render_meshes")
         capture_mesh = prof and prof.capture_frames
@@ -922,6 +952,8 @@ void main() {
         self._release_pp_fbo()
         if self._batcher:
             self._batcher.release()
+        if self._culler:
+            self._culler.release()
         if self._mesh_loader:
             self._mesh_loader.release()
         if self._grid:
@@ -972,7 +1004,7 @@ void main() {
 
 
 FATLINE_VERT = """
-    #version 330 core
+    #version 460 core
     uniform mat4 u_mvp;
 
     in vec3 a_start;
@@ -1012,7 +1044,7 @@ FATLINE_VERT = """
 """
 
 FATLINE_FRAG = """
-    #version 330 core
+    #version 460 core
     in vec3 v_color;
     in float v_alpha;
     out vec4 fragColor;

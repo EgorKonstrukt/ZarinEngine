@@ -1,4 +1,4 @@
-#version 330 core
+#version 460 core
 in vec2 v_uv;
 out vec4 frag_color;
 uniform sampler2D u_debug_tex;

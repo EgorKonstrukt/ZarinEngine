@@ -10,7 +10,7 @@ from core.math3d import Vec3
 
 
 GOD_RAYS_VERT = """
-#version 330 core
+#version 460 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -20,7 +20,7 @@ void main() {
 """
 
 GOD_RAYS_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_scene_color;
 uniform vec2 u_light_uv;
 uniform float u_intensity;

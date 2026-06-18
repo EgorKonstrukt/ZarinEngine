@@ -1,4 +1,4 @@
-#version 330 core
+#version 460 core
 #define MAX_LIGHTS 8
 #define CASCADE_COUNT 3
 in vec3 v_world_pos;

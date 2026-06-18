@@ -8,7 +8,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 BLUR_VERT = """
-#version 330 core
+#version 460 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -18,7 +18,7 @@ void main() {
 """
 
 BLUR_FRAG = """
-#version 330 core
+#version 460 core
 uniform sampler2D u_input_tex;
 uniform float u_radius;
 uniform vec2 u_pixel_size;

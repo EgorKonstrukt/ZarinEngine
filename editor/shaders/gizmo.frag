@@ -1,4 +1,4 @@
-#version 330 core
+#version 460 core
 in vec3 v_world_pos;
 uniform vec4 u_color;
 uniform vec3 u_camera_pos;

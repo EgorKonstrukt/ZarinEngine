@@ -1,4 +1,4 @@
-#version 330
+#version 460 core
 in vec3 in_position;
 in vec4 in_color;
 in vec2 in_texcoord;
