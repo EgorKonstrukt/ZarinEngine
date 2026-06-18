@@ -493,6 +493,7 @@ class Scene:
         self._fixed_cache_valid: bool = False
         self._dirty_roots: set = set()
         self._depth_cache: dict[str, int] = {}
+        self._component_entity_frame_cache: dict = {}
 
     def _invalidate_update_cache(self):
         self._update_cache_valid = False
@@ -660,8 +661,14 @@ class Scene:
         s = self._component_indices.get(key)
         if not s:
             return []
+        cache_tag = (key, self._render_version)
+        cached = self._component_entity_frame_cache.get(cache_tag)
+        if cached is not None:
+            return cached
         ents = self._entities
-        return [ents[eid] for eid in s if eid in ents]
+        result = [ents[eid] for eid in s if eid in ents]
+        self._component_entity_frame_cache[cache_tag] = result
+        return result
 
     def _rebuild_component_index(self, comp_cls_name: str):
         indices: set[str] = set()

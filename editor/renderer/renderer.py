@@ -64,6 +64,19 @@ class Renderer:
         self._initialized: bool = False
         self._render_mode: RenderMode = RenderMode.SHADED
         self._max_lights: int = 8
+        self._light_uniforms = [
+            {
+                "type": f"u_lights[{i}].type",
+                "position": f"u_lights[{i}].position",
+                "direction": f"u_lights[{i}].direction",
+                "color": f"u_lights[{i}].color",
+                "intensity": f"u_lights[{i}].intensity",
+                "range": f"u_lights[{i}].range",
+                "spot_angle": f"u_lights[{i}].spot_angle",
+                "spot_inner_angle": f"u_lights[{i}].spot_inner_angle",
+            }
+            for i in range(self._max_lights)
+        ]
         self._ambient: list[float] = [0.05, 0.05, 0.05]
         self._selection_outline_color: list[float] = [0.8, 0.5, 0.1, 1.0]
         self._selection_outline_thickness: float = 0.03
@@ -326,31 +339,31 @@ void main() {
         if "u_shadow_light_index" in prog:
             prog["u_shadow_light_index"].value = shadow_light_idx if shadow_light_idx >= 0 else -1
         for i, (l, lt) in enumerate(lights[:self._max_lights]):
-            prefix = f"u_lights[{i}]"
+            unames = self._light_uniforms[i]
             ltype_int = 0 if l.light_type == LightType.DIRECTIONAL else (1 if l.light_type == LightType.POINT else 2)
-            if f"{prefix}.type" in prog:
-                prog[f"{prefix}.type"].value = ltype_int
+            if unames["type"] in prog:
+                prog[unames["type"]].value = ltype_int
             pos = lt.position
             fwd = lt.forward
-            if f"{prefix}.position" in prog:
-                prog[f"{prefix}.position"].write(np.array([pos.x, pos.y, pos.z], dtype=np.float32).tobytes())
-            if f"{prefix}.direction" in prog:
-                prog[f"{prefix}.direction"].write(np.array([fwd.x, fwd.y, fwd.z], dtype=np.float32).tobytes())
+            if unames["position"] in prog:
+                prog[unames["position"]].write(np.array([pos.x, pos.y, pos.z], dtype=np.float32).tobytes())
+            if unames["direction"] in prog:
+                prog[unames["direction"]].write(np.array([fwd.x, fwd.y, fwd.z], dtype=np.float32).tobytes())
             if l.procedural_sky_lighting and l.light_type == LightType.DIRECTIONAL:
                 effective_color, effective_intensity = Light.compute_sun_light(-fwd)
             else:
                 effective_color = l.color
                 effective_intensity = l.intensity
-            if f"{prefix}.color" in prog:
-                prog[f"{prefix}.color"].write(np.array(effective_color, dtype=np.float32).tobytes())
-            if f"{prefix}.intensity" in prog:
-                prog[f"{prefix}.intensity"].value = float(effective_intensity)
-            if f"{prefix}.range" in prog:
-                prog[f"{prefix}.range"].value = float(l.range)
-            if f"{prefix}.spot_angle" in prog:
-                prog[f"{prefix}.spot_angle"].value = float(l.spot_angle)
-            if f"{prefix}.spot_inner_angle" in prog:
-                prog[f"{prefix}.spot_inner_angle"].value = float(l.spot_inner_angle)
+            if unames["color"] in prog:
+                prog[unames["color"]].write(np.array(effective_color, dtype=np.float32).tobytes())
+            if unames["intensity"] in prog:
+                prog[unames["intensity"]].value = float(effective_intensity)
+            if unames["range"] in prog:
+                prog[unames["range"]].value = float(l.range)
+            if unames["spot_angle"] in prog:
+                prog[unames["spot_angle"]].value = float(l.spot_angle)
+            if unames["spot_inner_angle"] in prog:
+                prog[unames["spot_inner_angle"]].value = float(l.spot_inner_angle)
         if not disable_shadows:
             self._shadows.set_uniforms(prog)
 
@@ -361,6 +374,8 @@ void main() {
         if not self._initialized:
             return
         scene.flush_transforms()
+        if not self._import_meta_cache:
+            self._preload_import_meta(scene)
         _render_t0 = time.perf_counter()
         eng = Engine.instance()
         prof = eng._profiler if eng and hasattr(eng, '_profiler') else None
@@ -477,16 +492,7 @@ void main() {
             if mesh_path:
                 meta = self._import_meta_cache.get(mesh_path)
                 if meta is None:
-                    import_cache = mesh_path + ".import"
-                    if os.path.exists(import_cache):
-                        try:
-                            with open(import_cache) as _f:
-                                _s = json.load(_f)
-                            meta = (_s.get("scale", 1.0), _s.get("center_pivot", False), _s.get("flip_uvs", False))
-                        except Exception:
-                            meta = (1.0, False, False)
-                    else:
-                        meta = (1.0, False, False)
+                    meta = (1.0, False, False)
                     self._import_meta_cache[mesh_path] = meta
                 scale, cp, fuvs = meta
             if not mesh_name and not mesh_path:
@@ -726,6 +732,28 @@ void main() {
         finally:
             self._ctx.wireframe = old_wireframe
             self._ctx.depth_mask = old_depth_mask
+
+    def _preload_import_meta(self, scene):
+        paths = set()
+        for ent in scene.get_entities_with_component(MeshFilter):
+            mf = ent.get_component(MeshFilter)
+            if mf and mf.mesh_path:
+                paths.add(mf.mesh_path)
+        for mesh_path in paths:
+            if mesh_path in self._import_meta_cache:
+                continue
+            import_cache = mesh_path + ".import"
+            if os.path.exists(import_cache):
+                try:
+                    with open(import_cache) as _f:
+                        _s = json.load(_f)
+                    self._import_meta_cache[mesh_path] = (
+                        _s.get("scale", 1.0), _s.get("center_pivot", False), _s.get("flip_uvs", False)
+                    )
+                except Exception:
+                    self._import_meta_cache[mesh_path] = (1.0, False, False)
+            else:
+                self._import_meta_cache[mesh_path] = (1.0, False, False)
 
     def _lookup_outline_mesh(self, mf) -> Optional[MeshData]:
         if not self._mesh_loader:

@@ -60,6 +60,7 @@ class PhysicsScene:
         self._solver = solver
         self._entity_to_body: dict[str, int] = {}
         self._body_to_entity: dict[int, str] = {}
+        self._entity_body_cache: dict[str, tuple] = {}
         self._entity_to_joint: dict[str, int] = {}
         self._joint_to_entity: dict[int, str] = {}
         self._cached_shape: dict[str, tuple] = {}
@@ -82,6 +83,7 @@ class PhysicsScene:
         self._solver.remove_all_bodies()
         self._entity_to_body.clear()
         self._body_to_entity.clear()
+        self._entity_body_cache.clear()
         self._entity_to_joint.clear()
         self._joint_to_entity.clear()
         self._cached_shape.clear()
@@ -96,6 +98,7 @@ class PhysicsScene:
         self._solver.remove_all_bodies()
         self._entity_to_body.clear()
         self._body_to_entity.clear()
+        self._entity_body_cache.clear()
         self._entity_to_joint.clear()
         self._joint_to_entity.clear()
         self._cached_shape.clear()
@@ -157,6 +160,7 @@ class PhysicsScene:
         if body_id >= 0:
             self._entity_to_body[entity.id] = body_id
             self._body_to_entity[body_id] = entity.id
+            self._entity_body_cache[entity.id] = (effective_rb, tr, is_2d)
             effective_rb._body_id = body_id
             if is_2d:
                 self._2d_bodies.add(body_id)
@@ -275,6 +279,7 @@ class PhysicsScene:
             self._solver.remove_rigid_body(body_id)
             self._body_to_entity.pop(body_id, None)
             self._2d_bodies.discard(body_id)
+        self._entity_body_cache.pop(entity_id, None)
         joint_id = self._entity_to_joint.pop(entity_id, None)
         if joint_id is not None:
             self._solver.remove_joint(joint_id)
@@ -320,10 +325,9 @@ class PhysicsScene:
 
     def _register_new_entities(self):
         """Auto-register entities with physics components not yet tracked."""
-        entities = self._scene.get_all_entities()
-        if len(entities) == len(self._entity_to_body):
+        if not self._scene or len(self._scene._entities) == len(self._entity_to_body):
             return
-        for entity in entities:
+        for entity in self._scene.get_all_entities():
             if entity.id not in self._entity_to_body:
                 self._create_entity_bodies(entity)
 
@@ -419,25 +423,21 @@ class PhysicsScene:
                 self.rebuild_entity(entity)
 
     def _sync_ecs_to_physics(self):
-        from core.components import Rigidbody, Rigidbody2D, Transform
-
         items = list(self._entity_to_body.items())
         if not items:
             return
         if len(items) >= 4:
             def _batch_sync(batch):
                 for entity_id, body_id in batch:
+                    cached = self._entity_body_cache.get(entity_id)
+                    if not cached:
+                        continue
+                    rb, tr, is_2d = cached
                     entity = self._get_entity(entity_id)
                     if not entity or not entity.active:
                         continue
-                    rb = entity._components.get("Rigidbody")
-                    rb2d = entity._components.get("Rigidbody2D")
-                    tr = entity._components.get("Transform")
-                    if (not rb and not rb2d) or not tr:
-                        continue
-                    is_2d = rb2d is not None
                     if is_2d:
-                        if rb2d.is_kinematic:
+                        if rb.is_kinematic:
                             pos = tr.local_position
                             euler = tr.local_euler_angles
                             self._solver.set_body_transform(
@@ -445,15 +445,15 @@ class PhysicsScene:
                                 (pos.x, pos.y, 0.0),
                                 (0.0, 0.0, math.radians(euler.z)),
                             )
-                        if rb2d._force_accum._d.any():
+                        if rb._force_accum._x != 0.0 or rb._force_accum._y != 0.0:
                             self._solver.apply_force(
                                 body_id,
-                                (rb2d._force_accum.x, rb2d._force_accum.y, 0.0),
+                                (rb._force_accum.x, rb._force_accum.y, 0.0),
                             )
-                        if abs(rb2d._torque_accum) > 1e-10:
+                        if abs(rb._torque_accum) > 1e-10:
                             self._solver.apply_torque(
                                 body_id,
-                                (0.0, 0.0, rb2d._torque_accum),
+                                (0.0, 0.0, rb._torque_accum),
                             )
                     else:
                         if rb.is_kinematic:
@@ -483,17 +483,15 @@ class PhysicsScene:
                     Logger.error(f"Physics ECS sync error: {e}")
         else:
             for entity_id, body_id in items:
+                cached = self._entity_body_cache.get(entity_id)
+                if not cached:
+                    continue
+                rb, tr, is_2d = cached
                 entity = self._get_entity(entity_id)
                 if not entity or not entity.active:
                     continue
-                rb = entity._components.get("Rigidbody")
-                rb2d = entity._components.get("Rigidbody2D")
-                tr = entity._components.get("Transform")
-                if (not rb and not rb2d) or not tr:
-                    continue
-                is_2d = rb2d is not None
                 if is_2d:
-                    if rb2d.is_kinematic:
+                    if rb.is_kinematic:
                         pos = tr.local_position
                         euler = tr.local_euler_angles
                         self._solver.set_body_transform(
@@ -501,15 +499,15 @@ class PhysicsScene:
                             (pos.x, pos.y, 0.0),
                             (0.0, 0.0, math.radians(euler.z)),
                         )
-                    if rb2d._force_accum._x != 0.0 or rb2d._force_accum._y != 0.0:
+                    if rb._force_accum._x != 0.0 or rb._force_accum._y != 0.0:
                         self._solver.apply_force(
                             body_id,
-                            (rb2d._force_accum.x, rb2d._force_accum.y, 0.0),
+                            (rb._force_accum.x, rb._force_accum.y, 0.0),
                         )
-                    if abs(rb2d._torque_accum) > 1e-10:
+                    if abs(rb._torque_accum) > 1e-10:
                         self._solver.apply_torque(
                             body_id,
-                            (0.0, 0.0, rb2d._torque_accum),
+                            (0.0, 0.0, rb._torque_accum),
                         )
                 else:
                     if rb.is_kinematic:
@@ -532,35 +530,31 @@ class PhysicsScene:
                         )
 
     def _sync_physics_to_ecs(self):
-        from core.components import Rigidbody, Rigidbody2D, Transform
-
         items = list(self._entity_to_body.items())
         if not items:
             return
         if len(items) >= 4:
             def _batch_sync(batch):
                 for entity_id, body_id in batch:
+                    cached = self._entity_body_cache.get(entity_id)
+                    if not cached:
+                        continue
+                    rb, tr, is_2d = cached
                     entity = self._get_entity(entity_id)
                     if not entity or not entity.active:
                         continue
-                    rb = entity._components.get("Rigidbody")
-                    rb2d = entity._components.get("Rigidbody2D")
-                    tr = entity._components.get("Transform")
-                    if (not rb and not rb2d) or not tr:
-                        continue
-                    is_2d = rb2d is not None
                     if is_2d:
-                        if rb2d.is_kinematic:
+                        if rb.is_kinematic:
                             continue
                         pos, rot = self._solver.get_body_transform(body_id)
                         vel = self._solver.get_velocity(body_id)
                         ang_vel = self._solver.get_angular_velocity(body_id)
                         tr.local_position = Vec3(pos[0], pos[1], 0.0)
                         tr.local_euler_angles = Vec3(0.0, 0.0, math.degrees(rot[2]))
-                        rb2d._velocity = Vec2(vel[0], vel[1])
-                        rb2d._angular_velocity = ang_vel[2]
-                        rb2d._force_accum = Vec2.zero()
-                        rb2d._torque_accum = 0.0
+                        rb._velocity = Vec2(vel[0], vel[1])
+                        rb._angular_velocity = ang_vel[2]
+                        rb._force_accum = Vec2.zero()
+                        rb._torque_accum = 0.0
                     else:
                         if rb.is_kinematic:
                             continue
@@ -582,27 +576,25 @@ class PhysicsScene:
                     Logger.error(f"Physics ECS back-sync error: {e}")
         else:
             for entity_id, body_id in items:
+                cached = self._entity_body_cache.get(entity_id)
+                if not cached:
+                    continue
+                rb, tr, is_2d = cached
                 entity = self._get_entity(entity_id)
                 if not entity or not entity.active:
                     continue
-                rb = entity._components.get("Rigidbody")
-                rb2d = entity._components.get("Rigidbody2D")
-                tr = entity._components.get("Transform")
-                if (not rb and not rb2d) or not tr:
-                    continue
-                is_2d = rb2d is not None
                 if is_2d:
-                    if rb2d.is_kinematic:
+                    if rb.is_kinematic:
                         continue
                     pos, rot = self._solver.get_body_transform(body_id)
                     vel = self._solver.get_velocity(body_id)
                     ang_vel = self._solver.get_angular_velocity(body_id)
                     tr.local_position = Vec3(pos[0], pos[1], 0.0)
                     tr.local_euler_angles = Vec3(0.0, 0.0, math.degrees(rot[2]))
-                    rb2d._velocity = Vec2(vel[0], vel[1])
-                    rb2d._angular_velocity = ang_vel[2]
-                    rb2d._force_accum = Vec2.zero()
-                    rb2d._torque_accum = 0.0
+                    rb._velocity = Vec2(vel[0], vel[1])
+                    rb._angular_velocity = ang_vel[2]
+                    rb._force_accum = Vec2.zero()
+                    rb._torque_accum = 0.0
                 else:
                     if rb.is_kinematic:
                         continue

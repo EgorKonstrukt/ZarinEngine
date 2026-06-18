@@ -74,13 +74,13 @@ class ShadowRenderer:
 
     def _build_renderable_shadow(self, scene) -> list[tuple[MeshData, Mat4]]:
         result = []
-        for ent in scene.get_all_entities():
+        for ent in scene.get_entities_with_component(MeshFilter):
             if not ent.active:
                 continue
             mf = ent.get_component(MeshFilter)
             mr = ent.get_component(MeshRenderer)
             tr = ent.get_component(Transform)
-            if not mf or not tr or not mr or not mr.enabled:
+            if not tr or not mr or not mr.enabled:
                 continue
             if not mr.cast_shadows:
                 continue

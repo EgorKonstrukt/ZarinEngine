@@ -23,7 +23,7 @@ class MaterialManager:
 
     def __init__(self, ctx: moderngl.Context):
         self._ctx = ctx
-        self._material_cache: dict[str, tuple] = {}
+        self._material_cache: dict[str, Material] = {}
         self._texture_cache: dict[str, Any] = {}
         self._pending_texture_queue: list = []
         self._async_lock = None
@@ -40,18 +40,10 @@ class MaterialManager:
         abs_path = path if os.path.isabs(path) else os.path.normpath(os.path.join(root, path))
         cached = self._material_cache.get(abs_path)
         if cached is not None:
-            try:
-                if os.path.getmtime(abs_path) == cached[1]:
-                    return cached[0]
-            except OSError:
-                pass
+            return cached
         m = Material.load(abs_path, root)
         if m:
-            try:
-                mtime = os.path.getmtime(abs_path)
-            except OSError:
-                mtime = 0
-            self._material_cache[abs_path] = (m, mtime)
+            self._material_cache[abs_path] = m
         return m
 
     def load_texture(self, path: str) -> Optional[Any]:
@@ -183,7 +175,7 @@ class MaterialManager:
             return
         props = mat.properties
         tex_unit = 0
-        tex_uniform_map = dict(self._TEX_UNIFORM_MAP)
+        tex_uniform_map = self._TEX_UNIFORM_MAP
         for key, value in props.items():
             if isinstance(value, str):
                 tex_name = tex_uniform_map.get(key, key)
