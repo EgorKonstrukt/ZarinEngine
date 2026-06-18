@@ -877,29 +877,36 @@ class SceneViewport(QOpenGLWidget):
         if not self._selected_entities:
             return
         self._entity_clipboard = [copy.deepcopy(e.serialize()) for e in self._selected_entities]
-        for data in self._entity_clipboard:
-            data["parent"] = None
 
     def _paste_entities(self):
         from core.engine import Engine
         registry = Engine.instance()._component_registry
         if not self._entity_clipboard or not self._engine.scene:
             return
+        id_map: dict[str, str] = {}
         new_entities = []
         for data in self._entity_clipboard:
             d = copy.deepcopy(data)
-            d["id"] = str(uuid.uuid4())
-            d["parent"] = None
+            old_id = d["id"]
+            new_id = str(uuid.uuid4())
+            d["id"] = new_id
+            id_map[old_id] = new_id
             from core.ecs import Entity
             e = Entity.deserialize(d, registry)
             self._engine.scene.add_entity(e)
             from editor.viewport.collaboration import send_collab_entity_create
             send_collab_entity_create(self, e.serialize())
             new_entities.append(e)
+        for data, e in zip(self._entity_clipboard, new_entities):
+            parent_id = data.get("parent")
+            if parent_id and parent_id in id_map:
+                new_parent = self._engine.scene.get_entity(id_map[parent_id])
+                if new_parent:
+                    e.set_parent(new_parent)
         self._selected_entities = new_entities
         self._gizmo.entity = new_entities[0] if new_entities else None
-        self.entities_selected.emit(self._selected_entities)
         self.scene_modified.emit()
+        self.entities_selected.emit(self._selected_entities)
 
     def enterEvent(self, event):
         self._focused = True

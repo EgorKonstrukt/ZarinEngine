@@ -9,7 +9,7 @@ import uvicorn
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent, Resource
+from mcp.types import Tool, TextContent, Resource, ResourceTemplate, Prompt, PromptArgument
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.requests import Request
@@ -18,19 +18,21 @@ from core.logger import Logger
 
 
 class McpServer:
-    def __init__(self, tool_registry: dict[str, dict], resource_registry: dict[str, dict],
-                 host: str = "127.0.0.1", port: int = 9100):
+    def __init__(self, registry, host: str = "127.0.0.1", port: int = 9100):
         self._host = host
         self._port = port
-        self._tools = tool_registry
-        self._resources = resource_registry
+        self._registry = registry
         self._app = Server("zarin-engine")
         self._thread: Optional[threading.Thread] = None
         self._uvicorn_server: Optional[uvicorn.Server] = None
-
         self._register_handlers()
 
     def _register_handlers(self):
+        tools = self._registry.tools
+        resources = self._registry.resources
+        templates = self._registry.resource_templates
+        prompts = self._registry.prompts
+
         @self._app.list_tools()
         async def list_tools():
             return [
@@ -39,12 +41,12 @@ class McpServer:
                     description=tdef.get("description", ""),
                     inputSchema=tdef.get("inputSchema", {"type": "object", "properties": {}}),
                 )
-                for name, tdef in self._tools.items()
+                for name, tdef in tools.items()
             ]
 
         @self._app.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-            tdef = self._tools.get(name)
+            tdef = tools.get(name)
             if tdef is None:
                 return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
             try:
@@ -65,18 +67,66 @@ class McpServer:
                     description=rdef.get("description", ""),
                     mimeType=rdef.get("mimeType", "application/json"),
                 )
-                for uri, rdef in self._resources.items()
+                for uri, rdef in resources.items()
             ]
 
         @self._app.read_resource()
         async def read_resource(uri: str):
-            rdef = self._resources.get(uri)
+            rdef = resources.get(uri)
             if rdef is None:
-                raise ValueError(f"Unknown resource: {uri}")
-            content = rdef["handler"]()
+                for tmpl_uri, tmpl_def in templates.items():
+                    pattern = tmpl_uri.replace("{", "").replace("}", "")
+                    if pattern in uri:
+                        rdef = tmpl_def
+                        param = uri.split("/")[-1]
+                        break
+                if rdef is None:
+                    raise ValueError(f"Unknown resource: {uri}")
+                content = rdef["handler"](param)
+            else:
+                content = rdef["handler"]()
             return json.dumps(content, ensure_ascii=False, default=str)
 
-    # ---- Stdio transport (MCP library stdio) ----
+        if templates:
+            @self._app.list_resource_templates()
+            async def list_resource_templates():
+                return [
+                    ResourceTemplate(
+                        uriTemplate=uri,
+                        name=tdef.get("name", uri),
+                        description=tdef.get("description", ""),
+                        mimeType=tdef.get("mimeType", "application/json"),
+                    )
+                    for uri, tdef in templates.items()
+                ]
+
+        if prompts:
+            @self._app.list_prompts()
+            async def list_prompts():
+                return [
+                    Prompt(
+                        name=name,
+                        description=pdef.get("description", ""),
+                        arguments=[
+                            PromptArgument(
+                                name=a["name"],
+                                description=a.get("description", ""),
+                                required=a.get("required", False),
+                            )
+                            for a in pdef.get("arguments", [])
+                        ],
+                    )
+                    for name, pdef in prompts.items()
+                ]
+
+            @self._app.get_prompt()
+            async def get_prompt(name: str, arguments: dict = None):
+                pdef = prompts.get(name)
+                if pdef is None:
+                    raise ValueError(f"Unknown prompt: {name}")
+                result = pdef["handler"](**(arguments or {}))
+                return result
+
     async def _run_stdio(self):
         async with stdio_server() as (read_stream, write_stream):
             await self._app.run(
@@ -85,10 +135,9 @@ class McpServer:
             )
 
     def run_stdio_forever(self):
-        Logger.info("ZarinMCP: stdio MCP server running (MCP library stdio)")
+        Logger.info("ZarinMCP: stdio MCP server running")
         anyio.run(self._run_stdio, backend="asyncio")
 
-    # ---- SSE transport (for editor mode) ----
     async def _run_sse(self):
         sse = SseServerTransport("/messages/")
 

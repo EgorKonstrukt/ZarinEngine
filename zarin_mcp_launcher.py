@@ -1,38 +1,17 @@
-"""
-MCP stdio ↔ SSE bridge — connects opencode to the running editor's SSE server.
-
-Configure opencode (opencode.jsonc) to run this script:
-  "zarin-engine": {
-    "type": "local",
-    "command": ["python", "zarin_mcp_launcher.py"],
-    "cwd": "C:\\Users\\Zarrakun\\PycharmProjects\\ZarinEngine",
-    "enabled": true
-  }
-
-The Zarin Engine editor with ZarinMCP plugin must already be running.
-"""
+"""MCP stdio <-> SSE bridge with async stdin/stdout handling."""
 import os
+import sys
 import anyio
+import logging
 from mcp.client.sse import sse_client
 from mcp.server.stdio import stdio_server
-
 
 HOST = os.environ.get("ZARIN_MCP_HOST", "127.0.0.1")
 PORT = int(os.environ.get("ZARIN_MCP_PORT", "9100"))
 SSE_URL = f"http://{HOST}:{PORT}/sse"
 
 
-async def main():
-    async with (
-        stdio_server() as (stdio_read, stdio_write),
-        sse_client(SSE_URL) as (sse_read, sse_write),
-    ):
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(_forward, "stdio→sse", stdio_read, sse_write)
-            tg.start_soon(_forward, "sse→stdio", sse_read, stdio_write)
-
-
-async def _forward(label: str, source, dest):
+async def forward(source, dest):
     try:
         async for msg in source:
             if isinstance(msg, Exception):
@@ -42,5 +21,28 @@ async def _forward(label: str, source, dest):
         pass
 
 
+async def main():
+    async with (
+        stdio_server() as (stdio_read, stdio_write),
+        sse_client(SSE_URL) as (sse_read, sse_write),
+    ):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(forward, stdio_read, sse_write)
+            tg.start_soon(forward, sse_read, stdio_write)
+
+
 if __name__ == "__main__":
-    anyio.run(main, backend="asyncio")
+    for attempt in range(3):
+        try:
+            anyio.run(main, backend="asyncio")
+            break
+        except (ConnectionError, OSError) as e:
+            print(f"Connection error (attempt {attempt+1}/3): {e}", file=sys.stderr)
+            import time
+            time.sleep(3)
+            continue
+        except Exception as e:
+            print(f"Fatal error: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        sys.exit(1)

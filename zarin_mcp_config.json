@@ -4,7 +4,7 @@
       "command": "python",
       "args": ["zarin_mcp_launcher.py"],
       "cwd": ".",
-      "description": "Zarin Engine — connects to open editor via SSE bridge (30 tools, 4 resources). Start the editor first."
+      "description": "Zarin Engine — connects to open editor via SSE bridge (67 tools, 9 resources, 2 templates, 2 prompts). Start the editor first."
     }
   }
 }
