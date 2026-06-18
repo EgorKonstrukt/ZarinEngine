@@ -175,7 +175,12 @@ class Entity:
 
     def set_parent(self, parent: Optional[Entity], preserve_world: bool = True):
         t = self.get_component_by_name("Transform")
-        old_world_pos = t.position if t and preserve_world else None
+        if t and preserve_world:
+            from core.math3d import Mat4
+            from core.math_helpers import mat4_inv_fast, mat4_mul_fast
+            world = t.world_matrix
+        else:
+            world = None
         old = self._parent
         if old is not None:
             ch = old._children
@@ -186,8 +191,24 @@ class Entity:
         self._parent = parent
         if parent is not None:
             parent._children.append(self)
-        if old_world_pos is not None:
-            t.position = old_world_pos
+        if world is not None:
+            if parent:
+                pt = parent.get_component_by_name("Transform")
+                if pt:
+                    pt._update_world_matrix()
+                    inv = mat4_inv_fast(pt._world_matrix._d)
+                    local_mat = Mat4(mat4_mul_fast(world._d, inv))
+                    pos, rot, scale = local_mat.decompose()
+                    t._local_pos = pos
+                    t._local_rot = rot
+                    t._local_scale = scale
+                    t._mark_dirty()
+                    return
+            pos, rot, scale = world.decompose()
+            t._local_pos = pos
+            t._local_rot = rot
+            t._local_scale = scale
+            t._mark_dirty()
 
     def _invalidate_transform_cache(self):
         d_pop = dict.pop
