@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                              QListWidget, QListWidgetItem, QApplication,
                              QSlider)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QAction, QColor, QFont, QPixmap, QIcon
+from PyQt6.QtGui import QAction, QColor, QFont, QPixmap, QIcon, QCursor
 
 from core.math3d import Vec2, Vec3, Quat
 from core.logger import Logger
@@ -138,8 +138,73 @@ def _get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
     return pix
 
 
+class _FocusSpinBox(QDoubleSpinBox):
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        QTimer.singleShot(0, self.selectAll)
+
+class _DragLabel(QLabel):
+    def __init__(self, text, color, spinbox):
+        super().__init__(text)
+        self._spinbox = spinbox
+        self._dragging = False
+        self._start_x = 0
+        self._start_val = 0
+        self.setFixedWidth(14)
+        self.setCursor(Qt.CursorShape.SizeHorCursor)
+        self.setStyleSheet(f"color: {color}; font-weight: bold;")
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._start_x = event.globalPosition().x()
+            self._start_val = self._spinbox.value()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            screen = self.screen()
+            global_x = event.globalPosition().x()
+            global_y = event.globalPosition().y()
+            dx = global_x - self._start_x
+            if screen:
+                geo = screen.geometry()
+                margin = 2
+                if global_x >= geo.right() - margin:
+                    landing_x = geo.left() + margin + 5
+                    self._start_x -= global_x - landing_x
+                    QCursor.setPos(int(landing_x), int(global_y))
+                elif global_x <= geo.left() + margin:
+                    landing_x = geo.right() - margin - 5
+                    self._start_x -= global_x - landing_x
+                    QCursor.setPos(int(landing_x), int(global_y))
+            modifiers = QApplication.keyboardModifiers()
+            ctrl_down = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+            if modifiers & Qt.KeyboardModifier.ShiftModifier:
+                factor = 0.001
+            elif ctrl_down:
+                factor = 0.1
+            else:
+                factor = 0.01
+            new_val = self._start_val + dx * factor
+            if not ctrl_down:
+                try:
+                    from core.engine import Engine
+                    gizmo = Engine.instance().viewport.gizmo
+                    if gizmo.snap_enabled and gizmo.snap_translate > 0:
+                        snap = gizmo.snap_translate
+                        new_val = round(new_val / snap) * snap
+                except Exception:
+                    pass
+            self._spinbox.setValue(new_val)
+            event.accept()
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._dragging:
+            self._dragging = False
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+            event.accept()
+
 def _make_spinbox(val: float, lo: float = -1e9, hi: float = 1e9, step: float = 0.1, decimals: int = 4) -> QDoubleSpinBox:
-    sb = QDoubleSpinBox()
+    sb = _FocusSpinBox()
     sb.setRange(lo, hi)
     sb.setSingleStep(step)
     sb.setDecimals(decimals)
@@ -568,7 +633,7 @@ def _make_vec2_row(label: str, vec: Vec2, callback) -> tuple[QWidget, list[QDoub
     return w, spinboxes
 
 
-def _make_vec3_row(label: str, vec: Vec3, callback) -> tuple[QWidget, list[QDoubleSpinBox]]:
+def _make_vec3_row(label: str, vec: Vec3, callback, reset_to: Optional[list] = None) -> tuple[QWidget, list[QDoubleSpinBox]]:
     w = QWidget()
     layout = QHBoxLayout(w)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -578,15 +643,23 @@ def _make_vec3_row(label: str, vec: Vec3, callback) -> tuple[QWidget, list[QDoub
     layout.addWidget(lbl)
     spinboxes = []
     for val, comp_label in [(vec.x, "X"), (vec.y, "Y"), (vec.z, "Z")]:
-        lbl_c = QLabel(comp_label)
-        lbl_c.setFixedWidth(14)
-        color = _XYZ_COLORS.get(comp_label, "#aaa")
-        lbl_c.setStyleSheet(f"color: {color}; font-weight: bold;")
         sb = _make_spinbox(val)
         sb.valueChanged.connect(callback)
+        lbl_c = _DragLabel(comp_label, _XYZ_COLORS.get(comp_label, "#aaa"), sb)
         layout.addWidget(lbl_c)
         layout.addWidget(sb)
         spinboxes.append(sb)
+    if reset_to is not None:
+        btn = QPushButton()
+        btn.setText("\u21ba")
+        btn.setFixedSize(20, 20)
+        btn.setToolTip(f"Reset {label}")
+        btn.setStyleSheet("QPushButton { font-size: 14px; }")
+        def _reset():
+            for sb, v in zip(spinboxes, reset_to):
+                sb.setValue(v)
+        btn.clicked.connect(_reset)
+        layout.addWidget(btn)
     return w, spinboxes
 
 
@@ -1553,11 +1626,11 @@ class ComponentWidget(QWidget):
         pos = c.local_position
         rot = c.local_euler_angles
         sc = c.local_scale
-        pos_widget, self._pos_sbs = _make_vec3_row("Position", pos, self._on_transform_changed)
+        pos_widget, self._pos_sbs = _make_vec3_row("Position", pos, self._on_transform_changed, reset_to=[0,0,0])
         self._layout.addWidget(pos_widget)
-        rot_widget, self._rot_sbs = _make_vec3_row("Rotation", rot, self._on_transform_changed)
+        rot_widget, self._rot_sbs = _make_vec3_row("Rotation", rot, self._on_transform_changed, reset_to=[0,0,0])
         self._layout.addWidget(rot_widget)
-        sc_widget, self._sc_sbs = _make_vec3_row("Scale", sc, self._on_transform_changed)
+        sc_widget, self._sc_sbs = _make_vec3_row("Scale", sc, self._on_transform_changed, reset_to=[1,1,1])
         self._layout.addWidget(sc_widget)
 
     def _on_transform_changed(self):
