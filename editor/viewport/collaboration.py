@@ -32,41 +32,73 @@ def render_remote_collaborator_gizmos(vp, vp_mat, cam_pos, fw, fh):
             lines.append((cpos_vec - r * size, cpos_vec + r * size, color))
             lines.append((cpos_vec - u * size, cpos_vec + u * size, color))
             vp._renderer.render_gizmo_lines(lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=2.0)
-        if not peer.selected_entity_ids:
-            continue
-        for eid in peer.selected_entity_ids:
+        if peer.selected_entity_ids:
+            for eid in peer.selected_entity_ids:
+                e = scene.get_entity(eid)
+                if not e:
+                    continue
+                t = e.get_component_by_name("Transform")
+                if not t:
+                    continue
+                pos = t.position
+                gizmo_size = 0.15
+                axis_defs = [
+                    (Vec3(1, 0, 0), [1.0, 0.2, 0.2] + color[3:]),
+                    (Vec3(0, 1, 0), [0.2, 1.0, 0.2] + color[3:]),
+                    (Vec3(0, 0, 1), [0.2, 0.4, 1.0] + color[3:]),
+                ]
+                highlight_color = [1.0, 1.0, 0.0] + color[3:]
+                lines = []
+                for i, (d, c) in enumerate(axis_defs):
+                    line_color = highlight_color if (i + 1) == peer.gizmo_hover_axis else c
+                    tip = pos + d * gizmo_size
+                    lines.append((pos, tip, line_color))
+                    hs = gizmo_size * 0.2
+                    ref_up = Vec3.up() if abs(d.y) < 0.9 else Vec3.right()
+                    p1 = d.cross(ref_up).normalized()
+                    p2 = d.cross(p1).normalized()
+                    base = tip - d * hs
+                    lines.append((tip, base + p1 * hs, line_color))
+                    lines.append((tip, base - p1 * hs, line_color))
+                    lines.append((tip, base + p2 * hs, line_color))
+                    lines.append((tip, base - p2 * hs, line_color))
+                if lines:
+                    vp._renderer.render_gizmo_lines(lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=2.0)
+                outline_color = [peer.color[0], peer.color[1], peer.color[2], 1.0]
+                vp._renderer.render_entity_outline(e, t.world_matrix, view_mat, proj_mat, outline_color)
+        stale_deltas = []
+        for eid, dd in peer.transform_deltas.items():
+            if time.time() - dd["time"] > 0.5:
+                stale_deltas.append(eid)
+                continue
             e = scene.get_entity(eid)
             if not e:
+                stale_deltas.append(eid)
                 continue
             t = e.get_component_by_name("Transform")
             if not t:
                 continue
             pos = t.position
-            gizmo_size = 0.15
-            axis_defs = [
-                (Vec3(1, 0, 0), [1.0, 0.2, 0.2] + color[3:]),
-                (Vec3(0, 1, 0), [0.2, 1.0, 0.2] + color[3:]),
-                (Vec3(0, 0, 1), [0.2, 0.4, 1.0] + color[3:]),
+            dv = Vec3(*dd["pos"])
+            if dv.length() < 0.001:
+                continue
+            from_pos = pos - dv
+            d = dv.normalized()
+            gs = 0.12
+            ref_up = Vec3.up() if abs(d.y) < 0.9 else Vec3.right()
+            p1 = d.cross(ref_up).normalized()
+            p2 = d.cross(p1).normalized()
+            base = pos - d * gs
+            delta_lines = [
+                (from_pos, pos, color),
+                (pos, base + p1 * gs, color),
+                (pos, base - p1 * gs, color),
+                (pos, base + p2 * gs, color),
+                (pos, base - p2 * gs, color),
             ]
-            highlight_color = [1.0, 1.0, 0.0] + color[3:]
-            lines = []
-            for i, (d, c) in enumerate(axis_defs):
-                line_color = highlight_color if (i + 1) == peer.gizmo_hover_axis else c
-                tip = pos + d * gizmo_size
-                lines.append((pos, tip, line_color))
-                hs = gizmo_size * 0.2
-                ref_up = Vec3.up() if abs(d.y) < 0.9 else Vec3.right()
-                p1 = d.cross(ref_up).normalized()
-                p2 = d.cross(p1).normalized()
-                base = tip - d * hs
-                lines.append((tip, base + p1 * hs, line_color))
-                lines.append((tip, base - p1 * hs, line_color))
-                lines.append((tip, base + p2 * hs, line_color))
-                lines.append((tip, base - p2 * hs, line_color))
-            if lines:
-                vp._renderer.render_gizmo_lines(lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=2.0)
-            outline_color = [peer.color[0], peer.color[1], peer.color[2], 1.0]
-            vp._renderer.render_entity_outline(e, t.world_matrix, view_mat, proj_mat, outline_color)
+            vp._renderer.render_gizmo_lines(delta_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=2.0)
+        for k in stale_deltas:
+            del peer.transform_deltas[k]
 
 
 def draw_remote_cursors(vp, painter):
@@ -188,3 +220,92 @@ def send_collab_transforms(vp):
             t.local_rotation.to_list(),
             t.local_scale.to_list(),
         )
+
+
+def _collab_on_undo(cmd):
+    from core.commands import CreateEntityCommand, DeleteEntityCommand, SetComponentCommand, \
+        AddComponentCommand, RemoveComponentCommand, CompoundCommand, PasteEntitiesCommand, \
+        InstantiatePrefabCommand
+    from core.engine import Engine
+    eng = Engine.instance()
+    collab = eng.collab_manager if hasattr(eng, 'collab_manager') else None
+    if not collab or not collab.connected:
+        return
+
+    if isinstance(cmd, CompoundCommand):
+        for sub in cmd._commands:
+            _collab_on_undo(sub)
+        return
+
+    if isinstance(cmd, CreateEntityCommand) and cmd._entity_id:
+        collab.send_entity_delete(cmd._entity_id)
+    elif isinstance(cmd, DeleteEntityCommand) and cmd._entity_data:
+        collab.send_entity_create(cmd._entity_data)
+    elif isinstance(cmd, SetComponentCommand):
+        eid = cmd._entity.id if hasattr(cmd._entity, 'id') else None
+        if eid:
+            collab.send_component_update(eid, cmd._component_type.__name__, cmd._prop, cmd._old)
+    elif isinstance(cmd, AddComponentCommand):
+        eid = cmd._entity.id if hasattr(cmd._entity, 'id') else None
+        if eid and cmd._added_key:
+            collab.send_component_remove(eid, cmd._added_key)
+    elif isinstance(cmd, RemoveComponentCommand):
+        eid = cmd._entity.id if hasattr(cmd._entity, 'id') else None
+        if eid and cmd._component_data:
+            collab.send_component_add(eid, cmd._component_cls.__name__, cmd._component_data)
+    elif isinstance(cmd, (PasteEntitiesCommand, InstantiatePrefabCommand)):
+        for eid in cmd._spawned_ids:
+            collab.send_entity_delete(eid)
+
+
+def _collab_on_redo(cmd):
+    from core.commands import CreateEntityCommand, DeleteEntityCommand, SetComponentCommand, \
+        AddComponentCommand, RemoveComponentCommand, CompoundCommand, PasteEntitiesCommand, \
+        InstantiatePrefabCommand
+    from core.engine import Engine
+    eng = Engine.instance()
+    collab = eng.collab_manager if hasattr(eng, 'collab_manager') else None
+    if not collab or not collab.connected:
+        return
+
+    if isinstance(cmd, CompoundCommand):
+        for sub in cmd._commands:
+            _collab_on_redo(sub)
+        return
+
+    if isinstance(cmd, CreateEntityCommand):
+        e = cmd._scene.get_entity(cmd._entity_id) if cmd._entity_id else None
+        if e:
+            collab.send_entity_create(e.serialize())
+    elif isinstance(cmd, DeleteEntityCommand) and cmd._entity_id:
+        collab.send_entity_delete(cmd._entity_id)
+    elif isinstance(cmd, SetComponentCommand):
+        eid = cmd._entity.id if hasattr(cmd._entity, 'id') else None
+        if eid:
+            collab.send_component_update(eid, cmd._component_type.__name__, cmd._prop, cmd._new)
+    elif isinstance(cmd, AddComponentCommand):
+        eid = cmd._entity.id if hasattr(cmd._entity, 'id') else None
+        if eid and cmd._added_key:
+            comp = cmd._entity._components.get(cmd._added_key)
+            if comp:
+                comp_data = {k: getattr(comp, k) for k in vars(comp) if not k.startswith("_")}
+                collab.send_component_add(eid, cmd._component_cls.__name__, comp_data)
+    elif isinstance(cmd, RemoveComponentCommand):
+        eid = cmd._entity.id if hasattr(cmd._entity, 'id') else None
+        if eid and cmd._component_key:
+            collab.send_component_remove(eid, cmd._component_key)
+    elif isinstance(cmd, PasteEntitiesCommand):
+        for d in cmd._entity_datas:
+            collab.send_entity_create(d)
+    elif isinstance(cmd, InstantiatePrefabCommand):
+        for eid in cmd._spawned_ids:
+            e = cmd._scene.get_entity(eid)
+            if e:
+                collab.send_entity_create(e.serialize())
+
+
+def setup_collab_undo_redo_hooks(engine):
+    from core.commands import get_history
+    history = get_history()
+    history.set_on_undo(_collab_on_undo)
+    history.set_on_redo(_collab_on_redo)

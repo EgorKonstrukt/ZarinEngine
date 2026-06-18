@@ -17,7 +17,7 @@ from core.config import get_global_config
 class RemotePeer:
     __slots__ = ("peer_id", "name", "color", "cursor_screen", "cursor_hit",
                  "camera_pos", "camera_fwd", "camera_up",
-                 "selected_entity_ids", "transform_data", "last_seen",
+                 "selected_entity_ids", "transform_data", "transform_deltas", "last_seen",
                  "ping_ms", "ping_timestamp",
                  "gizmo_mode", "gizmo_hover_axis", "gizmo_dragging")
 
@@ -32,6 +32,7 @@ class RemotePeer:
         self.camera_up: list[float] = [0, 1, 0]
         self.selected_entity_ids: list[str] = []
         self.transform_data: dict[str, dict] = {}
+        self.transform_deltas: dict[str, dict] = {}
         self.last_seen: float = time.time()
         self.ping_ms: float = 0.0
         self.ping_timestamp: float = 0.0
@@ -326,24 +327,36 @@ class CollaborationManager:
         if self._client and self._client.connected:
             self._client.send(MessageType.SELECTION, {"entity_ids": entity_ids})
 
+    @staticmethod
+    def _collapse_value(v):
+        if hasattr(v, 'to_list'):
+            return v.to_list()
+        if hasattr(v, '__iter__') and not isinstance(v, (str, bytes, dict)):
+            return list(v)
+        if isinstance(v, dict):
+            return {k: CollaborationManager._collapse_value(v) for k, v in v.items()}
+        return v
+
     def send_component_update(self, entity_id: str, component_key: str,
                               prop: str, value):
         if self._client and self._client.connected:
             self._client.send(MessageType.COMPONENT_UPDATE, {
                 "entity_id": entity_id, "component_key": component_key,
-                "prop": prop, "value": value
+                "prop": prop, "value": self._collapse_value(value)
             })
 
     def send_component_sync(self, entity_id: str, component_key: str, data: dict):
         if self._client and self._client.connected:
             self._client.send(MessageType.COMPONENT_SYNC, {
-                "entity_id": entity_id, "component_key": component_key, "data": data
+                "entity_id": entity_id, "component_key": component_key,
+                "data": self._collapse_value(data)
             })
 
     def send_component_add(self, entity_id: str, component_key: str, comp_data: dict):
         if self._client and self._client.connected:
             self._client.send(MessageType.COMPONENT_ADD, {
-                "entity_id": entity_id, "component_key": component_key, "data": comp_data
+                "entity_id": entity_id, "component_key": component_key,
+                "data": self._collapse_value(comp_data)
             })
 
     def send_component_remove(self, entity_id: str, component_key: str):
@@ -452,7 +465,17 @@ class CollaborationManager:
         r = data.get("r")
         s = data.get("s")
         if p:
+            from core.math3d import Vec3
+            old_local = Vec3(t.local_position.x, t.local_position.y, t.local_position.z)
             t.local_position = p
+            pid = data.get("id", "")
+            peer = self._peers.get(pid)
+            if peer:
+                dx = p[0] - old_local.x
+                dy = p[1] - old_local.y
+                dz = p[2] - old_local.z
+                if abs(dx) > 0.0001 or abs(dy) > 0.0001 or abs(dz) > 0.0001:
+                    peer.transform_deltas[entity_id] = {"pos": [dx, dy, dz], "time": time.time()}
         if r:
             from core.math3d import Quat
             t.local_rotation = Quat(r[0], r[1], r[2], r[3])

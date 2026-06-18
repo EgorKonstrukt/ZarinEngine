@@ -164,6 +164,8 @@ def register_default_docks(mw):
     mw._collab_panel.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
     if mw._engine.collab_manager:
         mw._collab_panel.set_collaboration_manager(mw._engine.collab_manager)
+    from editor.viewport.collaboration import setup_collab_undo_redo_hooks
+    setup_collab_undo_redo_hooks(mw._engine)
     register_dock(mw, mw._collab_panel, Qt.DockWidgetArea.LeftDockWidgetArea)
 
 

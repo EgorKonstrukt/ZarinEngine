@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from core.ecs import Entity, Scene
 class Command:
@@ -337,6 +337,12 @@ class CommandHistory:
         self._last_affected_entity = None
         self._current_selection = None
         self._recording = True
+        self._on_undo: Optional[Callable[[Command], None]] = None
+        self._on_redo: Optional[Callable[[Command], None]] = None
+    def set_on_undo(self, cb: Optional[Callable[[Command], None]]):
+        self._on_undo = cb
+    def set_on_redo(self, cb: Optional[Callable[[Command], None]]):
+        self._on_redo = cb
     @property
     def can_undo(self) -> bool: return len(self._undo_stack) > 0
     @property
@@ -407,6 +413,8 @@ class CommandHistory:
         self._current_selection = pre_sel
         self._last_affected_entity = self._extract_entity(cmd) or pre_sel
         self._recording = was_recording
+        if was_recording and self._on_undo:
+            self._on_undo(cmd)
     def redo(self):
         if not self._redo_stack:
             return
@@ -420,6 +428,8 @@ class CommandHistory:
         self._current_selection = post_sel
         self._last_affected_entity = self._extract_entity(cmd) or post_sel
         self._recording = was_recording
+        if was_recording and self._on_redo:
+            self._on_redo(cmd)
     @property
     def undo_count(self) -> int:
         return len(self._undo_stack)
