@@ -324,20 +324,6 @@ class InputManager:
     def consume_scroll(self) -> float:
         return Input.mouseScrollDelta[1]
 
-KEY_W = KeyCode.W
-KEY_A = KeyCode.A
-KEY_S = KeyCode.S
-KEY_D = KeyCode.D
-KEY_Q = KeyCode.Q
-KEY_E = KeyCode.E
-KEY_R = KeyCode.R
-KEY_F = KeyCode.F
-KEY_SHIFT = KeyCode.LEFT_SHIFT
-KEY_DELETE = KeyCode.DELETE
-KEY_CTRL = KeyCode.LEFT_CONTROL
-KEY_ALT = KeyCode.LEFT_ALT
-KEY_SPACE = KeyCode.SPACE
-
-MOUSE_LEFT = 0
-MOUSE_RIGHT = 1
-MOUSE_MIDDLE = 2
+from editor.constants import (KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q, KEY_E, KEY_R, KEY_F,
+                              KEY_SHIFT, KEY_DELETE, KEY_CTRL, KEY_ALT, KEY_SPACE,
+                              MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE)

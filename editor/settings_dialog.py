@@ -496,7 +496,8 @@ class SettingsDialog(QDialog):
         return scroll
 
     def _build_file_assoc_page(self, prefix: str) -> QWidget:
-        from editor.file_associations import register, unregister, status, EXTENSIONS
+        from editor.file_associations import register, unregister, status
+        from editor.constants import EXTENSIONS
         import os
 
         scroll = QScrollArea()

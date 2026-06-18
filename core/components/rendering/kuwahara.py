@@ -76,7 +76,6 @@ class Kuwahara(GraphicsEffect):
     _gizmo_icon_label = "Kw"
     render_type = "screen"
     _intensity_prop = "_intensity"
-    _skip_rate = 1
 
     def __init__(self):
         super().__init__()

@@ -2,10 +2,8 @@ from __future__ import annotations
 import math
 from typing import Optional
 from core.math3d import Vec3, Mat4
-from editor.input_manager import InputManager, KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q, KEY_E, KEY_SHIFT
-MOUSE_R = 1
-MOUSE_M = 2
-MOUSE_L = 0
+from editor.input_manager import InputManager
+from editor.constants import KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q, KEY_E, KEY_SHIFT, MOUSE_R, MOUSE_M, MOUSE_L
 class SceneCamera:
     PERSPECTIVE_TO_ORTHO_FOV = 179.0
     TRANSITION_SPEED = 2.5

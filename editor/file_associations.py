@@ -9,16 +9,7 @@ from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QImage, QPainter, QColor
 from PyQt6.QtSvg import QSvgRenderer
 
-EXTENSIONS = {
-    ".zpes": {
-        "description": "Zarin Engine Scene",
-        "prog_id": "ZarinEngine.Scene",
-    },
-    ".zpep": {
-        "description": "Zarin Engine Prefab",
-        "prog_id": "ZarinEngine.Prefab",
-    },
-}
+from editor.constants import EXTENSIONS
 
 ICON_DIR = Path(os.path.expanduser("~")) / ".zarin"
 ICON_PATH = ICON_DIR / "zarin_icon.ico"

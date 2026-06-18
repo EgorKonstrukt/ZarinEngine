@@ -8,7 +8,7 @@ from PyQt6.QtGui import QPixmap, QPainter, QColor, QFont, QLinearGradient, QRadi
 from PyQt6.QtCore import Qt, QRect, QRectF, QPointF
 from PyQt6.QtSvg import QSvgRenderer
 
-from core.constants import (
+from editor.constants import (
     APP_VERSION_DISPLAY,
     SPLASH_WIDTH, SPLASH_HEIGHT, SPLASH_RADIUS, SPLASH_OPACITY, SPLASH_WINDOW_FLAGS,
     LOGO_TARGET_WIDTH, LOGO_VIEWBOX, LOGO_Y,

@@ -6,8 +6,7 @@ import struct
 import threading
 from typing import Optional, Callable
 
-IPC_HOST = "127.0.0.1"
-IPC_PORT = 9101
+from editor.constants import IPC_HOST, IPC_PORT
 
 
 class IpcServer:

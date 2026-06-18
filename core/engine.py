@@ -9,9 +9,7 @@ from core.ecs import Scene, ComponentRegistry
 from core.plugin_manager import PluginManager
 from core.logger import Logger
 from core.config import get_global_config
-
-
-_PATH_FIELDS = frozenset({"mesh_path", "material_path", "clip_path", "script_path"})
+from core.constants import PATH_FIELDS as _PATH_FIELDS
 
 _ENGINE_POOL = ThreadPoolExecutor(max_workers=min(8, max(2, (os.cpu_count() or 4))), thread_name_prefix="engine")
 

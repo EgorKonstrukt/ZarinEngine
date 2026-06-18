@@ -16,10 +16,13 @@ from PyQt6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent, QSurfaceFormat
 
 from core.math3d import Vec3, Mat4, Quat
 from core.logger import Logger
-from editor.scene_camera import SceneCamera, MOUSE_L, MOUSE_R, MOUSE_M
+from editor.scene_camera import SceneCamera
 from editor.gizmo.gizmo import Gizmo, GizmoMode
 from core.input_system import Input, KeyCode
-from editor.input_manager import InputManager, KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT, KEY_SPACE, KEY_S, KEY_D, KEY_A, MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE
+from editor.input_manager import InputManager
+from editor.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
+                              KEY_SPACE, KEY_S, KEY_D, KEY_A, MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE,
+                              MOUSE_L, MOUSE_R, MOUSE_M)
 from editor.viewport.overlay_widget import OverlayWidget
 from editor.viewport.axis_gizmo import get_axis_gizmo_lines
 from editor.viewport.rendering import (

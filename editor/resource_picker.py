@@ -19,8 +19,7 @@ from PyQt6.QtGui import (QFont, QPixmap, QPainter, QPainterPath, QColor, QPen, Q
 _thumbnail_cache: dict[str, QPixmap] = {}
 _thumbnail_mutex = QMutex()
 
-THUMB_SIZE = 80
-PREVIEW_SIZE = 160
+from editor.constants import THUMB_SIZE, PREVIEW_SIZE
 
 EXTENSION_FILTERS = {
     "Models (*.obj *.fbx *.stl *.gltf *.glb *.usdz)": (".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz"),

@@ -10,8 +10,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QIcon, QAction
 
-
-PROJECTS_DB_PATH = os.path.join(str(Path.home()), ".zarin", "projects.json")
+from editor.constants import PROJECTS_DB_PATH
 
 
 def _load_projects_db() -> list[dict]:

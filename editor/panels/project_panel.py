@@ -15,11 +15,7 @@ if TYPE_CHECKING:
     from core.engine import Engine
 from editor.resource_picker import _get_thumbnail, _format_size
 
-MIN_THUMB = 24
-MAX_THUMB = 128
-VIEW_ICON = 0
-VIEW_LIST = 1
-VIEW_DETAILS = 2
+from editor.constants import MIN_THUMB, MAX_THUMB, VIEW_ICON, VIEW_LIST, VIEW_DETAILS
 
 _file_clipboard: list[str] = []
 _clipboard_is_cut: bool = False

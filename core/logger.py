@@ -3,6 +3,7 @@ import time
 import traceback
 from enum import IntEnum
 from typing import Callable, Optional
+from core.constants import LOGGER_MAX_ENTRIES
 class LogLevel(IntEnum):
     DEBUG = 0
     INFO = 1
@@ -22,7 +23,7 @@ class LogEntry:
 class Logger:
     _entries: list[LogEntry] = []
     _listeners: list[Callable[[LogEntry], None]] = []
-    _max_entries: int = 2000
+    _max_entries: int = LOGGER_MAX_ENTRIES
     _min_level: LogLevel = LogLevel.DEBUG
     @classmethod
     def add_listener(cls, fn: Callable[[LogEntry], None]):
