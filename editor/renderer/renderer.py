@@ -33,6 +33,7 @@ from editor.renderer.icons import IconRenderer
 from editor.renderer.materials import MaterialManager
 from editor.renderer.shaders import ShaderManager
 from editor.renderer.mesh_loader import MeshLoader
+from editor.renderer.batcher import RenderBatcher
 
 
 class Renderer:
@@ -109,6 +110,7 @@ class Renderer:
         self._shaders: Optional[ShaderManager] = None
         self._mesh_loader: Optional[MeshLoader] = None
         self._cloud_quad: Optional[MeshData] = None
+        self._batcher: Optional[RenderBatcher] = None
 
     def load_config(self, config) -> None:
         self._ambient = [
@@ -210,6 +212,8 @@ void main() {
             self._materials = MaterialManager(self._ctx)
             self._mesh_loader = MeshLoader(self._ctx, self._default_prog, self._outline_prog)
             self._mesh_loader.register_primitives()
+            self._batcher = RenderBatcher(self._ctx, self._default_prog)
+            self._default_prog = self._batcher._default_prog
             self._grid = GridRenderer(self._ctx, self._grid_prog)
             self._load_grid_config()
             self._gizmo = GizmoRenderer(self._ctx, self._gizmo_prog, self._gizmo_fatline_prog, self._gizmo_solid_prog)
@@ -508,66 +512,55 @@ void main() {
             prof.start("render_meshes")
         capture_mesh = prof and prof.capture_frames
         outline_queue: list[tuple[MeshData, Mat4]] = []
-        for ent, tr, mesh, mr in renderable:
-            try:
-                if capture_mesh:
-                    prof.start("material_setup")
-                mat = self._materials.load_material(mr.material_path)
-                shader_path = mat.shader_path if mat else ""
-                prog = self._shaders.get_or_compile(shader_path if shader_path else "") or self._default_prog
-                if capture_mesh:
-                    prof.stop("material_setup")
-                if capture_mesh:
-                    prof.start("model_uniforms")
-                self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
-                model = tr.world_matrix
-                model_f32 = model.to_f32()
-                if "u_model" in prog:
-                    prog["u_model"].write(model_f32.tobytes())
-                if capture_mesh:
-                    prof.stop("model_uniforms")
-                if capture_mesh:
-                    prof.start("normal_matrix")
+        if self._batcher:
+            groups = self._batcher.collect_groups(
+                renderable, self._materials, self._shaders)
+            self._batcher.render_groups(
+                groups, view_f32, proj_f32, cam_pos, lights, True,
+                self._set_scene_uniforms, self._materials.apply_material,
+                self._normal_cache,
+                selected_entities or set(), outline_queue)
+        else:
+            for ent, tr, mesh, mr in renderable:
                 try:
-                    nm = self._normal_cache.get(ent._id)
-                    if nm is None:
-                        nm3x3 = model._d[:3, :3].copy()
-                        nm3x3[0] /= max(1e-10, float(np.linalg.norm(nm3x3[:, 0])))
-                        nm3x3[1] /= max(1e-10, float(np.linalg.norm(nm3x3[:, 1])))
-                        nm3x3[2] /= max(1e-10, float(np.linalg.norm(nm3x3[:, 2])))
-                        nm = nm3x3.T.astype(np.float32)
-                        self._normal_cache[ent._id] = nm
+                    mat = self._materials.load_material(mr.material_path)
+                    shader_path = mat.shader_path if mat else ""
+                    prog = self._shaders.get_or_compile(shader_path if shader_path else "") or self._default_prog
+                    self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
+                    model = tr.world_matrix
+                    model_f32 = model.to_f32()
+                    if "u_model" in prog:
+                        prog["u_model"].write(model_f32.tobytes())
+                    try:
+                        nm = self._normal_cache.get(ent._id)
+                        if nm is None:
+                            nm3x3 = model._d[:3, :3].copy()
+                            nm3x3[0] /= max(1e-10, float(np.linalg.norm(nm3x3[:, 0])))
+                            nm3x3[1] /= max(1e-10, float(np.linalg.norm(nm3x3[:, 1])))
+                            nm3x3[2] /= max(1e-10, float(np.linalg.norm(nm3x3[:, 2])))
+                            nm = nm3x3.T.astype(np.float32)
+                            self._normal_cache[ent._id] = nm
+                    except Exception:
+                        nm = np.eye(3, dtype=np.float32).T
+                    if "u_normal_matrix" in prog:
+                        prog["u_normal_matrix"].write(nm.tobytes())
+                    self._materials.apply_material(mat, prog)
+                    mesh.render(prog)
+                    if selected_entities and ent in selected_entities:
+                        outline_queue.append((mesh, tr.world_matrix))
                 except Exception:
-                    nm = np.eye(3, dtype=np.float32).T
-                if "u_normal_matrix" in prog:
-                    prog["u_normal_matrix"].write(nm.tobytes())
-                if capture_mesh:
-                    prof.stop("normal_matrix")
-                if capture_mesh:
-                    prof.start("material_apply")
-                self._materials.apply_material(mat, prog)
-                if capture_mesh:
-                    prof.stop("material_apply")
-                if capture_mesh:
-                    prof.start("mesh_draw")
-                mesh.render(prog)
-                if capture_mesh:
-                    prof.stop("mesh_draw")
-                if selected_entities and ent in selected_entities:
-                    outline_queue.append((mesh, tr.world_matrix))
-            except Exception:
-                prog = self._default_prog
-                self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
-                model = tr.world_matrix
-                model_f32 = model.to_f32()
-                if "u_model" in prog:
-                    prog["u_model"].write(model_f32.tobytes())
-                if "u_normal_matrix" in prog:
-                    prog["u_normal_matrix"].write(np.eye(3, dtype=np.float32).tobytes())
-                self._materials.apply_material(None, prog)
-                mesh.render(prog)
-                if selected_entities and ent in selected_entities:
-                    outline_queue.append((mesh, tr.world_matrix))
+                    prog = self._default_prog
+                    self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
+                    model = tr.world_matrix
+                    model_f32 = model.to_f32()
+                    if "u_model" in prog:
+                        prog["u_model"].write(model_f32.tobytes())
+                    if "u_normal_matrix" in prog:
+                        prog["u_normal_matrix"].write(np.eye(3, dtype=np.float32).tobytes())
+                    self._materials.apply_material(None, prog)
+                    mesh.render(prog)
+                    if selected_entities and ent in selected_entities:
+                        outline_queue.append((mesh, tr.world_matrix))
         if prof:
             prof.stop("render_meshes")
         if use_polygon_mode:
@@ -602,7 +595,10 @@ void main() {
         if prof:
             prof.start("render_stats")
         skybox_call = 1 if (self._skybox_enabled and self._skybox_cube) else 0
-        self._draw_calls = len(renderable) + skybox_call
+        if self._batcher:
+            self._draw_calls = self._batcher.draw_calls + skybox_call
+        else:
+            self._draw_calls = len(renderable) + skybox_call
         total_tris = 0
         for ent, tr, mesh, mr in renderable:
             if hasattr(mesh, 'indices') and mesh.indices is not None and len(mesh.indices) > 0:
@@ -924,6 +920,8 @@ void main() {
     def release(self):
         self._release_scene_fbo()
         self._release_pp_fbo()
+        if self._batcher:
+            self._batcher.release()
         if self._mesh_loader:
             self._mesh_loader.release()
         if self._grid:

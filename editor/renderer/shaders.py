@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 import moderngl
 from typing import Optional
 from core.logger import Logger
@@ -36,6 +37,7 @@ class ShaderManager:
                 vert_src = f.read()
             with open(frag_file, "r") as f:
                 frag_src = f.read()
+            vert_src = self._inject_instancing_vertex(vert_src)
             prog = self._ctx.program(vertex_shader=vert_src, fragment_shader=frag_src)
             self._cache[shader_path] = prog
             return prog
@@ -60,6 +62,7 @@ class ShaderManager:
             self._cache[shader_path] = None
             return None
         vert_src, frag_src = result
+        vert_src = self._inject_instancing_vertex(vert_src)
         try:
             prog = self._ctx.program(vertex_shader=vert_src, fragment_shader=frag_src)
             self._cache[shader_path] = prog
@@ -68,6 +71,36 @@ class ShaderManager:
             Logger.error(f"Failed to compile shader '{shader_path}': {e}", e)
             self._cache[shader_path] = None
             return None
+
+    @staticmethod
+    def _inject_instancing_vertex(src: str) -> str:
+        if "in_model0" in src:
+            return src
+        src = src.replace("uniform mat4 u_model;", "")
+        src = src.replace("uniform mat3 u_normal_matrix;", "")
+        src = re.sub(r'\bu_model\b', '_resolve_model()', src)
+        src = re.sub(r'\bu_normal_matrix\b', '_resolve_normal_matrix()', src)
+        injection = """layout(location = 3) in vec4 in_model0;
+layout(location = 4) in vec4 in_model1;
+layout(location = 5) in vec4 in_model2;
+layout(location = 6) in vec4 in_model3;
+uniform int u_use_instancing;
+uniform mat4 u_model;
+uniform mat3 u_normal_matrix;
+mat4 _resolve_model() {
+    if (u_use_instancing == 1) return mat4(in_model0, in_model1, in_model2, in_model3);
+    return u_model;
+}
+mat3 _resolve_normal_matrix() {
+    if (u_use_instancing == 1) return transpose(inverse(mat3(_resolve_model())));
+    return u_normal_matrix;
+}
+
+"""
+        idx = src.find("\n")
+        if idx >= 0:
+            return src[:idx+1] + injection + src[idx+1:]
+        return injection + src
 
     def store(self, key: str, prog: moderngl.Program):
         self._cache[key] = prog

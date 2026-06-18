@@ -5,6 +5,7 @@ import time
 from collections import deque
 from typing import Any, Type, TypeVar, Iterator, Optional
 from dataclasses import dataclass, field
+from core.spatial import Octree, AABB
 T = TypeVar("T", bound="Component")
 
 _UNSET = object()
@@ -494,6 +495,8 @@ class Scene:
         self._dirty_roots: set = set()
         self._depth_cache: dict[str, int] = {}
         self._component_entity_frame_cache: dict = {}
+        self._spatial: Octree = Octree(world_size=1000.0)
+        self._spatial_dirty: bool = True
 
     def _invalidate_update_cache(self):
         self._update_cache_valid = False
@@ -592,6 +595,7 @@ class Scene:
         self._dirty = True
         self._render_version += 1
         self._entities_cache_valid = False
+        self._spatial_dirty = True
         return e
 
     def add_entity(self, e: Entity):
@@ -616,6 +620,7 @@ class Scene:
         self._dirty = True
         self._render_version += 1
         self._entities_cache_valid = False
+        self._spatial_dirty = True
 
     def remove_entity(self, eid: str):
         e = self._entities.pop(eid, None)
@@ -640,6 +645,7 @@ class Scene:
         self._dirty = True
         self._render_version += 1
         self._entities_cache_valid = False
+        self._spatial_dirty = True
 
     def get_entity(self, eid: str) -> Optional[Entity]:
         return self._entities.get(eid)
@@ -669,6 +675,32 @@ class Scene:
         result = [ents[eid] for eid in s if eid in ents]
         self._component_entity_frame_cache[cache_tag] = result
         return result
+
+    def rebuild_spatial(self):
+        from core.math3d import Vec3
+        self._spatial.clear()
+        from core.components.transform import Transform
+        for e in self._ensure_entities_cache():
+            if not e.active:
+                continue
+            tr = e.get_component(Transform)
+            if tr:
+                pos = tr.world_position
+                self._spatial.insert(e.id, AABB.from_center_size(pos, Vec3(0.5, 0.5, 0.5)))
+        self._spatial_dirty = False
+
+    def spatial_query(self, aabb: AABB) -> list[str]:
+        if self._spatial_dirty:
+            self.rebuild_spatial()
+        return self._spatial.query(aabb)
+
+    def spatial_raycast(self, origin: 'Vec3', direction: 'Vec3', max_dist: float = 100.0) -> list[tuple[str, float]]:
+        if self._spatial_dirty:
+            self.rebuild_spatial()
+        return self._spatial.raycast(origin, direction, max_dist)
+
+    def mark_spatial_dirty(self):
+        self._spatial_dirty = True
 
     def _rebuild_component_index(self, comp_cls_name: str):
         indices: set[str] = set()
