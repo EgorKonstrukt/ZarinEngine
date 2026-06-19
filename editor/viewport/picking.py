@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 from core.math3d import Vec3
-from editor.viewport.projection import screen_to_ray
+from editor.viewport.projection import screen_to_ray, world_to_screen
 
 
 def _ray_aabb_min(ox: float, oy: float, oz: float,
@@ -342,20 +342,55 @@ def pick_entity_hit(vp, sx: int, sy: int):
     return best_entity, hit_pos
 
 
+def _screen_aabb_of(vp, entity) -> tuple | None:
+    box = _world_aabb_of(entity)
+    if box is None:
+        return None
+    corners = [
+        (box[0][0], box[0][1], box[0][2]),
+        (box[1][0], box[0][1], box[0][2]),
+        (box[0][0], box[1][1], box[0][2]),
+        (box[0][0], box[0][1], box[1][2]),
+        (box[1][0], box[1][1], box[0][2]),
+        (box[1][0], box[0][1], box[1][2]),
+        (box[0][0], box[1][1], box[1][2]),
+        (box[1][0], box[1][1], box[1][2]),
+    ]
+    sx_min = sy_min = float('inf')
+    sx_max = sy_max = float('-inf')
+    for c in corners:
+        sp = world_to_screen(vp, Vec3(*c))
+        if sp is None:
+            continue
+        sx, sy = sp
+        sx_min = min(sx_min, sx)
+        sy_min = min(sy_min, sy)
+        sx_max = max(sx_max, sx)
+        sy_max = max(sy_max, sy)
+    if sx_min == float('inf'):
+        return None
+    return (sx_min, sy_min, sx_max, sy_max)
+
+
 def pick_entities_in_rect(vp, rx: int, ry: int, rw: int, rh: int) -> list:
     scene = vp._engine.scene
     if not scene:
         return []
     result = []
     from core.components.transform import Transform
-    from editor.viewport.projection import world_to_screen
     for entity in scene.get_all_entities():
         if not entity.active:
             continue
         t = entity.get_component(Transform)
         if not t:
             continue
-        sp = world_to_screen(vp, t.position)
-        if sp and rx <= sp[0] <= rx + rw and ry <= sp[1] <= ry + rh:
+        saabb = _screen_aabb_of(vp, entity)
+        if saabb is None:
+            sp = world_to_screen(vp, t.position)
+            if sp and rx <= sp[0] <= rx + rw and ry <= sp[1] <= ry + rh:
+                result.append(entity)
+            continue
+        ex1, ey1, ex2, ey2 = saabb
+        if ex1 <= rx + rw and ex2 >= rx and ey1 <= ry + rh and ey2 >= ry:
             result.append(entity)
     return result

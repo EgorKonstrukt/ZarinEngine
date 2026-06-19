@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPainter
+from PyQt6.QtGui import QPainter, QPen, QColor
 
 from editor.viewport.overlay import draw_stats_overlay, draw_delta_label
 from editor.viewport.axis_gizmo import draw_axis_gizmo_labels
@@ -29,6 +29,12 @@ class OverlayWidget(QWidget):
         draw_delta_label(vp, qp)
         draw_axis_gizmo_labels(vp, qp)
         draw_remote_cursors(vp, qp)
+        if vp._area_selecting:
+            x1, y1 = vp._area_start
+            x2, y2 = vp._area_end
+            qp.setPen(QPen(QColor(255, 255, 255, 180), 1, Qt.PenStyle.DashLine))
+            qp.setBrush(QColor(100, 150, 255, 40))
+            qp.drawRect(min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
         if vp._overlay_canvas and not vp._overlay_canvas.edit_mode:
             vp._overlay_canvas._render_overlay(qp)
         qp.end()
