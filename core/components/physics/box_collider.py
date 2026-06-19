@@ -12,6 +12,8 @@ class BoxCollider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("layer", "Layer", FieldType.LAYER),
+            InspectorField("mask", "Collision Mask", FieldType.LAYER_MASK),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("size", "Size", FieldType.VEC3),
             InspectorField("is_trigger", "Is Trigger", FieldType.BOOL),
@@ -19,6 +21,8 @@ class BoxCollider(Component):
 
     def __init__(self):
         super().__init__()
+        self.layer: int = 0
+        self.mask: int = 0xFFFF
         self.center: Vec3 = Vec3.zero()
         self.size: Vec3 = Vec3.one()
         self.is_trigger: bool = False
@@ -41,7 +45,8 @@ class BoxCollider(Component):
         d.update({
             "center": self.center.to_list(), "size": self.size.to_list(),
             "is_trigger": self.is_trigger, "friction": self.material_friction,
-            "bounciness": self.material_bounciness
+            "bounciness": self.material_bounciness,
+            "layer": self.layer, "mask": self.mask,
         })
         return d
     @classmethod
@@ -53,6 +58,8 @@ class BoxCollider(Component):
         bc.is_trigger = data.get("is_trigger", False)
         bc.material_friction = data.get("friction", 0.6)
         bc.material_bounciness = data.get("bounciness", 0.0)
+        bc.layer = data.get("layer", 0)
+        bc.mask = data.get("mask", 0xFFFF)
         return bc
 
     def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:

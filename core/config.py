@@ -256,7 +256,10 @@ def get_project_config(project_path: str) -> Config:
                 "restitution": 0.0,
                 "linear_damping": 0.04,
                 "angular_damping": 0.04,
-                "max_contacts_per_body": 64
+                "max_contacts_per_body": 64,
+                "multi_threaded": True,
+                "layer_names": ["Default","TransparentFX","Ignore Raycast","Water","UI","Player","Enemy","Projectile","Trigger","Ground","Layer10","Layer11","Layer12","Layer13","Layer14","Layer15"],
+                "collision_matrix": [65535,65535,0,65535,16,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535]
             },
             "audio": {
                 "master_volume": 1.0,

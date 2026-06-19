@@ -27,10 +27,14 @@ class MeshCollider(Component):
             InspectorField("collision_mode", "Collision Mode", FieldType.ENUM, enum_class=CollisionMode),
             InspectorField("max_vertices", "Max Vertices", FieldType.INT, min_val=0, max_val=100000, step=100, decimals=0),
             InspectorField("is_trigger", "Is Trigger", FieldType.BOOL),
+            InspectorField("layer", "Layer", FieldType.LAYER),
+            InspectorField("mask", "Collision Mask", FieldType.LAYER_MASK),
         ]
 
     def __init__(self):
         super().__init__()
+        self.layer: int = 0
+        self.mask: int = 0xFFFF
         self.center: Vec3 = Vec3.zero()
         self.mesh_path: str = ""
         self.collision_mode: CollisionMode = CollisionMode.AUTO
@@ -55,6 +59,7 @@ class MeshCollider(Component):
             "is_trigger": self.is_trigger,
             "friction": self.material_friction,
             "bounciness": self.material_bounciness,
+            "layer": self.layer, "mask": self.mask,
         })
         return d
 
@@ -69,4 +74,6 @@ class MeshCollider(Component):
         mc.is_trigger = data.get("is_trigger", False)
         mc.material_friction = data.get("friction", 0.6)
         mc.material_bounciness = data.get("bounciness", 0.0)
+        mc.layer = data.get("layer", 0)
+        mc.mask = data.get("mask", 0xFFFF)
         return mc

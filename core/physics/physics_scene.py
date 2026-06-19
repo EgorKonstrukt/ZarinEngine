@@ -167,6 +167,8 @@ class PhysicsScene:
             restitution=shape_info.get("restitution", 0.0),
             is_trigger=shape_info.get("is_trigger", False),
             is_kinematic=is_kinematic,
+            collision_layer=shape_info.get("layer", 0),
+            collision_mask=shape_info.get("mask", 0xFFFF),
         )
         if body_id >= 0:
             self._entity_to_body[entity.id] = body_id
@@ -244,6 +246,8 @@ class PhysicsScene:
                     "friction": friction,
                     "restitution": restitution,
                     "is_trigger": is_trigger,
+                    "layer": getattr(comp, 'layer', 0),
+                    "mask": getattr(comp, 'mask', 0xFFFF),
                 }
         # Fallback: if entity has a MeshFilter with a mesh path, treat as MeshCollider
         from core.components import MeshFilter
@@ -261,6 +265,8 @@ class PhysicsScene:
                 "friction": 0.6,
                 "restitution": 0.0,
                 "is_trigger": False,
+                "layer": 0,
+                "mask": 0xFFFF,
             }
         return None
 
@@ -467,191 +473,110 @@ class PhysicsScene:
             self._body_items_dirty = False
         return self._body_items
 
+    def _batch_sync(self, items: list, sync_fn):
+        BATCH_SIZE = 32
+        batches = [items[i:i + BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
+        def _batch_worker(batch):
+            for entity_id, body_id in batch:
+                sync_fn(entity_id, body_id)
+        futures = [_PHYSICS_POOL.submit(_batch_worker, batch) for batch in batches]
+        for f in as_completed(futures):
+            try:
+                f.result()
+            except Exception as e:
+                Logger.error(f"Physics batch sync error: {e}")
+
     def _sync_ecs_to_physics(self):
         items = self._get_body_items()
         if not items:
             return
         if len(items) >= 4:
-            def _batch_sync(batch):
-                for entity_id, body_id in batch:
-                    cached = self._entity_body_cache.get(entity_id)
-                    if not cached:
-                        continue
-                    rb, tr, is_2d = cached
-                    entity = self._get_entity(entity_id)
-                    if not entity or not entity.active:
-                        continue
-                    if is_2d:
-                        if rb.is_kinematic:
-                            pos = tr.local_position
-                            euler = tr.local_euler_angles
-                            self._solver.set_body_transform(
-                                body_id,
-                                (pos.x, pos.y, 0.0),
-                                (0.0, 0.0, math.radians(euler.z)),
-                            )
-                        if rb._force_accum._x != 0.0 or rb._force_accum._y != 0.0:
-                            self._solver.apply_force(
-                                body_id,
-                                (rb._force_accum.x, rb._force_accum.y, 0.0),
-                            )
-                        if abs(rb._torque_accum) > 1e-10:
-                            self._solver.apply_torque(
-                                body_id,
-                                (0.0, 0.0, rb._torque_accum),
-                            )
-                    else:
-                        if rb.is_kinematic:
-                            pos = tr.local_position
-                            euler = tr.local_euler_angles
-                            self._solver.set_body_transform(
-                                body_id,
-                                (pos.x, pos.y, pos.z),
-                                (math.radians(euler.x), math.radians(euler.y), math.radians(euler.z)),
-                            )
-                        if rb._force_accum.length_sq() > 1e-10:
-                            self._solver.apply_force(
-                                body_id,
-                                (rb._force_accum.x, rb._force_accum.y, rb._force_accum.z),
-                            )
-                        if rb._torque_accum.length_sq() > 1e-10:
-                            self._solver.apply_torque(
-                                body_id,
-                                (rb._torque_accum.x, rb._torque_accum.y, rb._torque_accum.z),
-                            )
-            BATCH_SIZE = 32
-            batches = [items[i:i + BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
-            futures = [_PHYSICS_POOL.submit(_batch_sync, batch) for batch in batches]
-            for f in as_completed(futures):
-                try: f.result()
-                except Exception as e:
-                    Logger.error(f"Physics ECS sync error: {e}")
+            self._batch_sync(items, self._sync_entity_ecs_to_physics)
         else:
             for entity_id, body_id in items:
-                cached = self._entity_body_cache.get(entity_id)
-                if not cached:
-                    continue
-                rb, tr, is_2d = cached
-                entity = self._get_entity(entity_id)
-                if not entity or not entity.active:
-                    continue
-                if is_2d:
-                    if rb.is_kinematic:
-                        pos = tr.local_position
-                        euler = tr.local_euler_angles
-                        self._solver.set_body_transform(
-                            body_id,
-                            (pos.x, pos.y, 0.0),
-                            (0.0, 0.0, math.radians(euler.z)),
-                        )
-                    if rb._force_accum._x != 0.0 or rb._force_accum._y != 0.0:
-                        self._solver.apply_force(
-                            body_id,
-                            (rb._force_accum.x, rb._force_accum.y, 0.0),
-                        )
-                    if abs(rb._torque_accum) > 1e-10:
-                        self._solver.apply_torque(
-                            body_id,
-                            (0.0, 0.0, rb._torque_accum),
-                        )
-                else:
-                    if rb.is_kinematic:
-                        pos = tr.local_position
-                        euler = tr.local_euler_angles
-                        self._solver.set_body_transform(
-                            body_id,
-                            (pos.x, pos.y, pos.z),
-                            (math.radians(euler.x), math.radians(euler.y), math.radians(euler.z)),
-                        )
-                        if rb._force_accum.length_sq() > 1e-10:
-                            self._solver.apply_force(
-                                body_id,
-                                (rb._force_accum.x, rb._force_accum.y, rb._force_accum.z),
-                            )
-                        if rb._torque_accum.length_sq() > 1e-10:
-                            self._solver.apply_torque(
-                                body_id,
-                                (rb._torque_accum.x, rb._torque_accum.y, rb._torque_accum.z),
-                            )
+                self._sync_entity_ecs_to_physics(entity_id, body_id)
+
+    def _sync_entity_ecs_to_physics(self, entity_id: str, body_id: int):
+        cached = self._entity_body_cache.get(entity_id)
+        if not cached:
+            return
+        rb, tr, is_2d = cached
+        entity = self._get_entity(entity_id)
+        if not entity or not entity.active:
+            return
+        if is_2d:
+            self._sync_ecs_to_physics_2d(rb, tr, body_id)
+        else:
+            self._sync_ecs_to_physics_3d(rb, tr, body_id)
+
+    def _sync_ecs_to_physics_2d(self, rb, tr, body_id):
+        if rb.is_kinematic:
+            pos = tr.local_position
+            euler = tr.local_euler_angles
+            self._solver.set_body_transform(body_id, (pos.x, pos.y, 0.0), (0.0, 0.0, math.radians(euler.z)))
+        if rb._force_accum._x != 0.0 or rb._force_accum._y != 0.0:
+            self._solver.apply_force(body_id, (rb._force_accum.x, rb._force_accum.y, 0.0))
+        if abs(rb._torque_accum) > 1e-10:
+            self._solver.apply_torque(body_id, (0.0, 0.0, rb._torque_accum))
+
+    def _sync_ecs_to_physics_3d(self, rb, tr, body_id):
+        if rb.is_kinematic:
+            pos = tr.local_position
+            euler = tr.local_euler_angles
+            self._solver.set_body_transform(body_id, (pos.x, pos.y, pos.z), (math.radians(euler.x), math.radians(euler.y), math.radians(euler.z)))
+        if rb._force_accum.length_sq() > 1e-10:
+            self._solver.apply_force(body_id, (rb._force_accum.x, rb._force_accum.y, rb._force_accum.z))
+        if rb._torque_accum.length_sq() > 1e-10:
+            self._solver.apply_torque(body_id, (rb._torque_accum.x, rb._torque_accum.y, rb._torque_accum.z))
 
     def _sync_physics_to_ecs(self):
         items = self._get_body_items()
         if not items:
             return
         if len(items) >= 4:
-            def _batch_sync(batch):
-                for entity_id, body_id in batch:
-                    cached = self._entity_body_cache.get(entity_id)
-                    if not cached:
-                        continue
-                    rb, tr, is_2d = cached
-                    entity = self._get_entity(entity_id)
-                    if not entity or not entity.active:
-                        continue
-                    if is_2d:
-                        if rb.is_kinematic:
-                            continue
-                        pos, rot = self._solver.get_body_transform(body_id)
-                        vel = self._solver.get_velocity(body_id)
-                        ang_vel = self._solver.get_angular_velocity(body_id)
-                        tr.local_position = Vec3(pos[0], pos[1], 0.0)
-                        tr.local_euler_angles = Vec3(0.0, 0.0, math.degrees(rot[2]))
-                        rb._velocity = Vec2(vel[0], vel[1])
-                        rb._angular_velocity = ang_vel[2]
-                        rb._force_accum = Vec2.zero()
-                        rb._torque_accum = 0.0
-                    else:
-                        if rb.is_kinematic:
-                            continue
-                        pos, rot = self._solver.get_body_transform(body_id)
-                        vel = self._solver.get_velocity(body_id)
-                        ang_vel = self._solver.get_angular_velocity(body_id)
-                        tr.local_position = Vec3(pos[0], pos[1], pos[2])
-                        tr.local_euler_angles = Vec3(math.degrees(rot[0]), math.degrees(rot[1]), math.degrees(rot[2]))
-                        rb._velocity._x = vel[0]; rb._velocity._y = vel[1]; rb._velocity._z = vel[2]
-                        rb._angular_velocity._x = ang_vel[0]; rb._angular_velocity._y = ang_vel[1]; rb._angular_velocity._z = ang_vel[2]
-                        rb._force_accum._x = 0.0; rb._force_accum._y = 0.0; rb._force_accum._z = 0.0
-                        rb._torque_accum._x = 0.0; rb._torque_accum._y = 0.0; rb._torque_accum._z = 0.0
-            BATCH_SIZE = 32
-            batches = [items[i:i + BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
-            futures = [_PHYSICS_POOL.submit(_batch_sync, batch) for batch in batches]
-            for f in as_completed(futures):
-                try: f.result()
-                except Exception as e:
-                    Logger.error(f"Physics ECS back-sync error: {e}")
+            self._batch_sync(items, self._sync_entity_physics_to_ecs)
         else:
             for entity_id, body_id in items:
-                cached = self._entity_body_cache.get(entity_id)
-                if not cached:
-                    continue
-                rb, tr, is_2d = cached
-                entity = self._get_entity(entity_id)
-                if not entity or not entity.active:
-                    continue
-                if is_2d:
-                    if rb.is_kinematic:
-                        continue
-                    pos, rot = self._solver.get_body_transform(body_id)
-                    vel = self._solver.get_velocity(body_id)
-                    ang_vel = self._solver.get_angular_velocity(body_id)
-                    tr.local_position = Vec3(pos[0], pos[1], 0.0)
-                    tr.local_euler_angles = Vec3(0.0, 0.0, math.degrees(rot[2]))
-                    rb._velocity._x = vel[0]; rb._velocity._y = vel[1]
-                    rb._angular_velocity = ang_vel[2]
-                    rb._force_accum._x = 0.0; rb._force_accum._y = 0.0
-                    rb._torque_accum = 0.0
-                else:
-                    if rb.is_kinematic:
-                        continue
-                    pos, rot = self._solver.get_body_transform(body_id)
-                    vel = self._solver.get_velocity(body_id)
-                    ang_vel = self._solver.get_angular_velocity(body_id)
-                    tr.local_position = Vec3(pos[0], pos[1], pos[2])
-                    tr.local_euler_angles = Vec3(math.degrees(rot[0]), math.degrees(rot[1]), math.degrees(rot[2]))
-                    rb._velocity._x = vel[0]; rb._velocity._y = vel[1]; rb._velocity._z = vel[2]
-                    rb._angular_velocity._x = ang_vel[0]; rb._angular_velocity._y = ang_vel[1]; rb._angular_velocity._z = ang_vel[2]
-                    rb._force_accum._x = 0.0; rb._force_accum._y = 0.0; rb._force_accum._z = 0.0
-                    rb._torque_accum._x = 0.0; rb._torque_accum._y = 0.0; rb._torque_accum._z = 0.0
+                self._sync_entity_physics_to_ecs(entity_id, body_id)
+
+    def _sync_entity_physics_to_ecs(self, entity_id: str, body_id: int):
+        cached = self._entity_body_cache.get(entity_id)
+        if not cached:
+            return
+        rb, tr, is_2d = cached
+        entity = self._get_entity(entity_id)
+        if not entity or not entity.active:
+            return
+        if is_2d:
+            self._sync_physics_to_ecs_2d(rb, tr, body_id)
+        else:
+            self._sync_physics_to_ecs_3d(rb, tr, body_id)
+
+    def _sync_physics_to_ecs_2d(self, rb, tr, body_id):
+        if rb.is_kinematic:
+            return
+        pos, rot = self._solver.get_body_transform(body_id)
+        vel = self._solver.get_velocity(body_id)
+        ang_vel = self._solver.get_angular_velocity(body_id)
+        tr.local_position = Vec3(pos[0], pos[1], 0.0)
+        tr.local_euler_angles = Vec3(0.0, 0.0, math.degrees(rot[2]))
+        rb._velocity._x = vel[0]; rb._velocity._y = vel[1]
+        rb._angular_velocity = ang_vel[2]
+        rb._force_accum._x = 0.0; rb._force_accum._y = 0.0
+        rb._torque_accum = 0.0
+
+    def _sync_physics_to_ecs_3d(self, rb, tr, body_id):
+        if rb.is_kinematic:
+            return
+        pos, rot = self._solver.get_body_transform(body_id)
+        vel = self._solver.get_velocity(body_id)
+        ang_vel = self._solver.get_angular_velocity(body_id)
+        tr.local_position = Vec3(pos[0], pos[1], pos[2])
+        tr.local_euler_angles = Vec3(math.degrees(rot[0]), math.degrees(rot[1]), math.degrees(rot[2]))
+        rb._velocity._x = vel[0]; rb._velocity._y = vel[1]; rb._velocity._z = vel[2]
+        rb._angular_velocity._x = ang_vel[0]; rb._angular_velocity._y = ang_vel[1]; rb._angular_velocity._z = ang_vel[2]
+        rb._force_accum._x = 0.0; rb._force_accum._y = 0.0; rb._force_accum._z = 0.0
+        rb._torque_accum._x = 0.0; rb._torque_accum._y = 0.0; rb._torque_accum._z = 0.0
 
     def _create_entity_joints(self, entity: Entity):
         from core.components import Joint

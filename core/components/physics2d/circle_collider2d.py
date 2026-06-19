@@ -12,6 +12,8 @@ class CircleCollider2D(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("layer", "Layer", FieldType.LAYER),
+            InspectorField("mask", "Collision Mask", FieldType.LAYER_MASK),
             InspectorField("offset", "Offset", FieldType.VEC2),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.001, max_val=10000.0, step=0.01),
             InspectorField("is_trigger", "Is Trigger", FieldType.BOOL),
@@ -19,6 +21,8 @@ class CircleCollider2D(Component):
 
     def __init__(self):
         super().__init__()
+        self.layer: int = 0
+        self.mask: int = 0xFFFF
         self.offset: Vec2 = Vec2.zero()
         self.radius: float = 0.5
         self.is_trigger: bool = False
@@ -44,6 +48,7 @@ class CircleCollider2D(Component):
             "offset": self.offset.to_list(), "radius": self.radius,
             "is_trigger": self.is_trigger, "friction": self.material_friction,
             "bounciness": self.material_bounciness,
+            "layer": self.layer, "mask": self.mask,
         })
         return d
 
@@ -56,4 +61,6 @@ class CircleCollider2D(Component):
         cc.is_trigger = data.get("is_trigger", False)
         cc.material_friction = data.get("friction", 0.6)
         cc.material_bounciness = data.get("bounciness", 0.0)
+        cc.layer = data.get("layer", 0)
+        cc.mask = data.get("mask", 0xFFFF)
         return cc

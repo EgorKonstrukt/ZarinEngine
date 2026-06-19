@@ -392,6 +392,8 @@ class PyBulletSolver(IPhysicsSolver):
         restitution: float = 0.0,
         is_trigger: bool = False,
         is_kinematic: bool = False,
+        collision_layer: int = 0,
+        collision_mask: int = 0xFFFF,
     ) -> int:
         cid = self._cid()
         shape_id = self._make_shape(shape_type, shape_params)
@@ -474,6 +476,8 @@ class PyBulletSolver(IPhysicsSolver):
                 physicsClientId=cid,
             )
             p.addUserData(body_id, "entity_id", entity_id, physicsClientId=cid)
+            group = 1 << collision_layer
+            p.setCollisionFilterGroupMask(body_id, -1, group, collision_mask, physicsClientId=cid)
 
         return body_id
 

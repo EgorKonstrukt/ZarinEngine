@@ -35,6 +35,8 @@ class IPhysicsSolver(ABC):
         restitution: float = 0.0,
         is_trigger: bool = False,
         is_kinematic: bool = False,
+        collision_layer: int = 0,
+        collision_mask: int = 0xFFFF,
     ) -> int:
         ...
 

@@ -642,6 +642,8 @@ class PhysXSolver(IPhysicsSolver):
         restitution: float = 0.0,
         is_trigger: bool = False,
         is_kinematic: bool = False,
+        collision_layer: int = 0,
+        collision_mask: int = 0xFFFF,
     ) -> int:
         body_id = self._next_body_id
         self._next_body_id += 1
@@ -786,7 +788,6 @@ class PhysXSolver(IPhysicsSolver):
                 euler = spec["rotation"]
                 qw, qx, qy, qz = _euler_to_quat(euler)
                 dv = _rotate_vector_by_quat(dv, (qw, qx, qy, qz))
-        body_id in self._pending_vel
         if body_id in self._pending_vel:
             v = self._pending_vel[body_id]
             self._pending_vel[body_id] = (v[0] + dv[0], v[1] + dv[1], v[2] + dv[2])

@@ -23,6 +23,8 @@ class FieldType(Enum):
     HEADER = "header"
     SLIDER = "slider"
     INT_SLIDER = "int_slider"
+    LAYER = "layer"
+    LAYER_MASK = "layer_mask"
 
 
 @dataclass

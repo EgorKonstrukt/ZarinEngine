@@ -81,14 +81,15 @@ class PhysicsProcess:
         return results
 
     def wait_for_result(self, expected_type: str, timeout: float = 5.0) -> Optional[dict]:
-        deadline = __import__("time").monotonic() + timeout
+        import time
+        deadline = time.monotonic() + timeout
         while True:
             r = self.poll()
             if r and r.get("type") == expected_type:
                 return r
-            if __import__("time").monotonic() >= deadline:
+            if time.monotonic() >= deadline:
                 return None
-            __import__("time").sleep(0.0005)
+            time.sleep(0.0005)
 
     def shutdown(self, timeout: int = 5000):
         if self._process is None or not self._process.is_alive():
@@ -224,6 +225,8 @@ def _create_body(body: dict, solver, physics_scene, shared, _slot_to_body: dict)
         restitution=body.get("restitution", 0.0),
         is_trigger=body.get("is_trigger", False),
         is_kinematic=body.get("is_kinematic", False),
+        collision_layer=body.get("collision_layer", 0),
+        collision_mask=body.get("collision_mask", 0xFFFF),
     )
     if bid >= 0:
         slot = body.get("slot", -1)

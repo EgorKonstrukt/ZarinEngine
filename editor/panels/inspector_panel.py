@@ -17,6 +17,8 @@ from core.commands import SetComponentCommand, CompoundCommand, get_history
 from core.curve import Curve
 from editor.curve_editor import CurvePreview, CurveEditorDialog
 from core.gui.widgets import AnchorPresetSelector
+from core.config import get_project_config
+from core.physics.collision_layers import MAX_LAYERS, DEFAULT_LAYER_NAMES
 if TYPE_CHECKING:
     from core.ecs import Entity, Component, Scene
     from core.engine import Engine
@@ -834,6 +836,45 @@ class ComponentWidget(QWidget):
     def _undo_setter_int(self, prop_name):
         return self._undo_setter(prop_name)
 
+    def _on_layer_mask_toggle(self, prop_name, bit, btn, layer_names, menu, all_act, nothing_act):
+        mask = int(getattr(self._component, prop_name))
+        if mask & (1 << bit):
+            mask &= ~(1 << bit)
+        else:
+            mask |= 1 << bit
+        setattr(self._component, prop_name, mask)
+        self._update_layer_mask_text(btn, mask, layer_names)
+        all_act.setChecked(mask == 0xFFFF)
+        nothing_act.setChecked(mask == 0)
+
+    def _on_layer_mask_set_all(self, prop_name, state, btn, layer_names, menu):
+        mask = 0xFFFF if state else 0
+        setattr(self._component, prop_name, mask)
+        self._update_layer_mask_text(btn, mask, layer_names)
+        for act in menu.actions():
+            if act.isCheckable() and act.text() not in ("Everything", "Nothing"):
+                act.setChecked(state)
+            elif act.text() == "Everything":
+                act.setChecked(state)
+            elif act.text() == "Nothing":
+                act.setChecked(not state)
+
+    def _update_layer_mask_text(self, btn, mask, layer_names):
+        if mask == 0:
+            btn.setText("Nothing")
+        elif mask == 0xFFFF:
+            btn.setText("Everything")
+        else:
+            selected = []
+            for i in range(MAX_LAYERS):
+                if mask & (1 << i):
+                    name = layer_names[i] if i < len(layer_names) else f"Layer{i}"
+                    selected.append(name)
+            if len(selected) <= 3:
+                btn.setText(", ".join(selected))
+            else:
+                btn.setText(f"{', '.join(selected[:3])}... (+{len(selected)-3})")
+
     def _on_enabled_toggled(self, checked: bool):
         old = not checked
         self._component.enabled = checked
@@ -1194,6 +1235,56 @@ class ComponentWidget(QWidget):
             selector.anchor_changed.connect(_on_anchor_change)
             cl.addWidget(selector)
             self._layout.addWidget(container)
+
+        elif field.field_type.value == "layer":
+            cfg = get_project_config(os.getcwd())
+            layer_names = cfg.get("physics.layer_names", DEFAULT_LAYER_NAMES)
+            cb = QComboBox()
+            cb.addItems(layer_names[:MAX_LAYERS])
+            if 0 <= value < len(layer_names):
+                cb.setCurrentIndex(int(value))
+            comp_cls = type(c)
+            cb.currentIndexChanged.connect(self._undo_setter_all(comp_cls, prop_name))
+            self._add_field(field.label, cb, prop_name)
+
+        elif field.field_type.value == "layer_mask":
+            cfg = get_project_config(os.getcwd())
+            layer_names = cfg.get("physics.layer_names", DEFAULT_LAYER_NAMES)
+            mask_value = int(value)
+            comp_cls = type(c)
+
+            btn = QPushButton()
+            btn.setObjectName("layerMaskBtn")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet("QPushButton { text-align: left; padding: 4px 8px; border: 1px solid #555; border-radius: 3px; } QPushButton:hover { border-color: #888; }")
+            self._update_layer_mask_text(btn, mask_value, layer_names)
+
+            menu = QMenu(btn)
+            menu.setStyleSheet("QMenu { padding: 4px; } QMenu::indicator { width: 16px; height: 16px; }")
+
+            all_act = menu.addAction("Everything")
+            all_act.setCheckable(True)
+            all_act.setChecked(mask_value == 0xFFFF)
+            all_act.triggered.connect(lambda: self._on_layer_mask_set_all(prop_name, True, btn, layer_names, menu))
+
+            nothing_act = menu.addAction("Nothing")
+            nothing_act.setCheckable(True)
+            nothing_act.setChecked(mask_value == 0)
+            nothing_act.triggered.connect(lambda: self._on_layer_mask_set_all(prop_name, False, btn, layer_names, menu))
+
+            menu.addSeparator()
+
+            layer_actions = []
+            for i in range(MAX_LAYERS):
+                name = layer_names[i] if i < len(layer_names) else f"Layer{i}"
+                act = menu.addAction(name)
+                act.setCheckable(True)
+                act.setChecked(bool(mask_value & (1 << i)))
+                act.triggered.connect(lambda checked, bit=i: self._on_layer_mask_toggle(prop_name, bit, btn, layer_names, menu, all_act, nothing_act))
+                layer_actions.append(act)
+
+            btn.clicked.connect(lambda: menu.exec(btn.mapToGlobal(btn.rect().bottomLeft())))
+            self._add_field(field.label, btn, prop_name)
 
     def _build_list_field_standalone(self, field, prop_name):
         c = self._component

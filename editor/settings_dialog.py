@@ -4,9 +4,11 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
                               QWidget, QFormLayout, QLineEdit, QDoubleSpinBox,
                               QSpinBox, QCheckBox, QPushButton, QListWidgetItem,
                               QStackedWidget, QFrame, QScrollArea, QLabel,
-                              QSlider, QStyle, QApplication)
+                              QSlider, QStyle, QApplication, QGroupBox,
+                              QGridLayout)
 from PyQt6.QtCore import Qt, pyqtSignal
 from core.config import Config
+from core.physics.collision_layers import MAX_LAYERS, DEFAULT_LAYER_NAMES
 
 SECTION_ICONS = {
     "editor": QStyle.StandardPixmap.SP_FileDialogDetailedView,
@@ -53,6 +55,7 @@ SECTION_DESCRIPTIONS = {
 }
 
 FIELD_TOOLTIPS = {
+    "physics.multi_threaded": "Run physics simulation in a separate process for better performance",
     "editor.theme": "Editor color theme (restart required)",
     "editor.font_size": "Base font size in the editor (restart required)",
     "editor.language": "Editor UI language (restart required)",
@@ -501,6 +504,10 @@ class SettingsDialog(QDialog):
                 form.addRow(label, widget)
 
         outer_layout.addWidget(form_container)
+
+        if prefix == "physics":
+            self._add_collision_layers_editor(outer_layout)
+
         outer_layout.addStretch()
         scroll.setWidget(container)
         return scroll
@@ -654,6 +661,46 @@ class SettingsDialog(QDialog):
             return le
         return None
 
+    def _add_collision_layers_editor(self, parent_layout):
+        layer_names = self._config.get("physics.layer_names", list(DEFAULT_LAYER_NAMES))
+        collision_matrix = self._config.get("physics.collision_matrix", [0xFFFF] * MAX_LAYERS)
+
+        gb_layers = QGroupBox("Collision Layers")
+        gl = QGridLayout(gb_layers)
+        gl.setSpacing(4)
+        self._layer_edits = []
+        for i in range(MAX_LAYERS):
+            name = layer_names[i] if i < len(layer_names) else DEFAULT_LAYER_NAMES[i]
+            lbl = QLabel(f"{i}:")
+            lbl.setFixedWidth(24)
+            le = QLineEdit(name)
+            le.setFixedWidth(160)
+            le.textChanged.connect(lambda _, idx=i: self._on_layer_name_changed(idx))
+            self._layer_edits.append(le)
+            gl.addWidget(lbl, i, 0)
+            gl.addWidget(le, i, 1)
+        parent_layout.addWidget(gb_layers)
+
+        gb_matrix = QGroupBox("Collision Matrix")
+        gb_layout = QVBoxLayout(gb_matrix)
+        open_btn = QPushButton("Edit Collision Matrix...")
+        open_btn.clicked.connect(lambda: self._open_collision_matrix_dialog())
+        gb_layout.addWidget(open_btn)
+        parent_layout.addWidget(gb_matrix)
+
+    def _on_layer_name_changed(self, idx):
+        names = [le.text() for le in self._layer_edits]
+        self._config.set("physics.layer_names", names, notify=True)
+        self._config.save()
+
+    def _open_collision_matrix_dialog(self):
+        layer_names = self._config.get("physics.layer_names", list(DEFAULT_LAYER_NAMES))
+        collision_matrix = list(self._config.get("physics.collision_matrix", [0xFFFF] * MAX_LAYERS))
+        dialog = CollisionMatrixDialog(layer_names, collision_matrix, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._config.set("physics.collision_matrix", dialog.get_matrix(), notify=True)
+            self._config.save()
+
     def _on_value_changed(self, key: str, value):
         self._config.set(key, value, notify=True)
         self._config.save()
@@ -673,3 +720,60 @@ class SettingsDialog(QDialog):
         self._pages[section] = scroll
         self._stack.insertWidget(row, scroll)
         self._stack.setCurrentIndex(row)
+
+
+class CollisionMatrixDialog(QDialog):
+    def __init__(self, layer_names, matrix, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Collision Matrix")
+        self.setMinimumSize(600, 500)
+        self._matrix = list(matrix)
+        self._layer_names = list(layer_names)
+        layout = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        grid = QGridLayout(container)
+        grid.setSpacing(2)
+        info = QLabel("Check which layers collide with each other:")
+        info.setStyleSheet("font-weight: bold; padding: 4px;")
+        layout.addWidget(info)
+        self._checks = []
+        for i in range(MAX_LAYERS):
+            lbl = QLabel(f"{i}:{layer_names[i] if i < len(layer_names) else ''}")
+            lbl.setFixedWidth(140)
+            grid.addWidget(lbl, i + 1, 0)
+            lbl_top = QLabel(str(i))
+            lbl_top.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl_top.setFixedWidth(24)
+            grid.addWidget(lbl_top, 0, i + 1)
+            row_checks = []
+            for j in range(MAX_LAYERS):
+                chk = QCheckBox()
+                chk.setChecked(bool(self._matrix[i] & (1 << j)))
+                chk.stateChanged.connect(lambda _, ri=i, cj=j: self._on_toggle(ri, cj))
+                chk.setFixedWidth(24)
+                grid.addWidget(chk, i + 1, j + 1, Qt.AlignmentFlag.AlignCenter)
+                row_checks.append(chk)
+            self._checks.append(row_checks)
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def _on_toggle(self, i, j):
+        chk = self._checks[i][j]
+        if chk.isChecked():
+            self._matrix[i] |= 1 << j
+        else:
+            self._matrix[i] &= ~(1 << j)
+
+    def get_matrix(self):
+        return self._matrix

@@ -69,6 +69,8 @@ class PhysicsWorker(QThread):
                     restitution=body.get("restitution", 0.0),
                     is_trigger=body.get("is_trigger", False),
                     is_kinematic=body.get("is_kinematic", False),
+                    collision_layer=body.get("collision_layer", 0),
+                    collision_mask=body.get("collision_mask", 0xFFFF),
                 )
                 if bid >= 0:
                     self._physics_scene._entity_to_body[body["entity_id"]] = bid
@@ -179,6 +181,8 @@ class PhysicsWorker(QThread):
                 restitution=body.get("restitution", 0.0),
                 is_trigger=body.get("is_trigger", False),
                 is_kinematic=body.get("is_kinematic", False),
+                collision_layer=body.get("collision_layer", 0),
+                collision_mask=body.get("collision_mask", 0xFFFF),
             )
             if bid >= 0:
                 self._physics_scene._entity_to_body[body["entity_id"]] = bid

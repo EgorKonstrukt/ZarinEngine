@@ -13,6 +13,8 @@ class CapsuleCollider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("layer", "Layer", FieldType.LAYER),
+            InspectorField("mask", "Collision Mask", FieldType.LAYER_MASK),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.001, max_val=10000.0, step=0.01),
             InspectorField("height", "Height", FieldType.FLOAT, min_val=0.001, max_val=10000.0, step=0.01),
             InspectorField("is_trigger", "Is Trigger", FieldType.BOOL),
@@ -20,6 +22,8 @@ class CapsuleCollider(Component):
 
     def __init__(self):
         super().__init__()
+        self.layer: int = 0
+        self.mask: int = 0xFFFF
         self.center: Vec3 = Vec3.zero()
         self.radius: float = 0.5
         self.height: float = 2.0
@@ -50,7 +54,8 @@ class CapsuleCollider(Component):
         d = super().serialize()
         d.update({
             "center": self.center.to_list(), "radius": self.radius,
-            "height": self.height, "direction": self.direction, "is_trigger": self.is_trigger
+            "height": self.height, "direction": self.direction, "is_trigger": self.is_trigger,
+            "layer": self.layer, "mask": self.mask,
         })
         return d
     @classmethod
@@ -62,6 +67,8 @@ class CapsuleCollider(Component):
         cc.height = data.get("height", 2.0)
         cc.direction = data.get("direction", 1)
         cc.is_trigger = data.get("is_trigger", False)
+        cc.layer = data.get("layer", 0)
+        cc.mask = data.get("mask", 0xFFFF)
         return cc
 
     def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
