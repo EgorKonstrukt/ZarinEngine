@@ -17,7 +17,7 @@ from PyQt6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent, QSurfaceFormat
 from core.math3d import Vec3, Mat4, Quat
 from core.logger import Logger
 from editor.scene_camera import SceneCamera
-from editor.gizmo.gizmo import Gizmo, GizmoMode
+from editor.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
 from core.input_system import Input, KeyCode
 from editor.input_manager import InputManager
 from editor.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 class SceneViewport(QOpenGLWidget):
     entity_selected = pyqtSignal(object)
     entities_selected = pyqtSignal(list)
-    entity_dropped = pyqtSignal(str, object)
+    entity_dropped = pyqtSignal(str, object, object)
     scene_modified = pyqtSignal()
 
     def __init__(self, engine, parent=None):
@@ -224,15 +224,39 @@ class SceneViewport(QOpenGLWidget):
     def selected_entities(self) -> list:
         return self._selected_entities
 
+    def _set_gizmo_entity(self, entity):
+        self._gizmo.entity = entity
+        self._update_gizmo_pivot()
+
+    def _update_gizmo_pivot(self):
+        if len(self._selected_entities) > 1:
+            center = Vec3.zero()
+            count = 0
+            for ent in self._selected_entities:
+                t = ent.get_component_by_name("Transform")
+                if t:
+                    center += t.position
+                    count += 1
+            if count > 0:
+                center /= count
+            pt = self._gizmo.entity.get_component_by_name("Transform") if self._gizmo.entity else None
+            self._gizmo._pivot_offset = center - (pt.position if pt else Vec3.zero())
+            self._gizmo._visual_center = None
+        else:
+            self._gizmo._pivot_offset = Vec3.zero()
+            self._gizmo._visual_center = None
+
     def set_selected_entity(self, entity: Optional[Entity]):
         self._selected_entities = [entity] if entity else []
-        self._gizmo.entity = entity
+        self._set_gizmo_entity(entity)
+        self._update_gizmo_pivot()
         from editor.viewport.collaboration import send_collab_selection
         send_collab_selection(self)
 
     def set_selected_entities(self, entities: list):
         self._selected_entities = list(entities)
-        self._gizmo.entity = entities[0] if entities else None
+        self._set_gizmo_entity(entities[0] if entities else None)
+        self._update_gizmo_pivot()
         from editor.viewport.collaboration import send_collab_selection
         send_collab_selection(self)
 
@@ -307,7 +331,7 @@ class SceneViewport(QOpenGLWidget):
         resolved = [scene.get_entity(eid) for eid in old_ids if scene.get_entity(eid)]
         Logger.info(f"_on_scene_loaded: resolved {len(old_ids)} -> {len(resolved)}")
         self._selected_entities = resolved
-        self._gizmo.entity = self._selected_entities[0] if self._selected_entities else None
+        self._set_gizmo_entity(self._selected_entities[0] if self._selected_entities else None)
         if hasattr(self, '_sel_bounds_state'):
             self._sel_bounds_state = [None, None]
         if hasattr(self, '_sel_bounds_peers'):
@@ -455,7 +479,7 @@ class SceneViewport(QOpenGLWidget):
                             cmd = DeleteEntityCommand(eng.scene, ent.id)
                             get_history().execute(cmd)
                         self._selected_entities.clear()
-                        self._gizmo.entity = None
+                        self._set_gizmo_entity(None)
                         self.entity_selected.emit(None)
                         from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
         prof.stop("input_handling")
@@ -560,18 +584,18 @@ class SceneViewport(QOpenGLWidget):
                         }
                 return
             from editor.viewport.picking import pick_entity
-            picked = pick_entity(self, x, y)
+            picked = pick_entity(self, lx, ly)
             if shift:
                 if picked:
                     if picked in self._selected_entities:
                         self._selected_entities.remove(picked)
                     else:
                         self._selected_entities.append(picked)
-                    self._gizmo.entity = self._selected_entities[0] if self._selected_entities else None
+                    self._set_gizmo_entity(self._selected_entities[0] if self._selected_entities else None)
                     self.entities_selected.emit(self._selected_entities)
                 else:
                     self._selected_entities = []
-                    self._gizmo.entity = None
+                    self._set_gizmo_entity(None)
                     self.entity_selected.emit(None)
                 from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
                 return
@@ -581,11 +605,11 @@ class SceneViewport(QOpenGLWidget):
                         self._selected_entities.remove(picked)
                     else:
                         self._selected_entities.append(picked)
-                    self._gizmo.entity = self._selected_entities[0] if self._selected_entities else None
+                    self._set_gizmo_entity(self._selected_entities[0] if self._selected_entities else None)
                     self.entities_selected.emit(self._selected_entities)
                 else:
                     self._selected_entities = []
-                    self._gizmo.entity = None
+                    self._set_gizmo_entity(None)
                     self.entity_selected.emit(None)
                 from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
                 return
@@ -595,7 +619,7 @@ class SceneViewport(QOpenGLWidget):
             self.update()
             if picked != (self._selected_entities[0] if self._selected_entities else None):
                 self._selected_entities = [picked] if picked else []
-                self._gizmo.entity = picked
+                self._set_gizmo_entity(picked)
                 self.entity_selected.emit(picked)
                 from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
 
@@ -645,25 +669,77 @@ class SceneViewport(QOpenGLWidget):
             if multi and pre_pos is not None:
                 pt = primary.get_component_by_name("Transform")
                 if pt:
-                    pos_delta = pt.position - pre_pos
-                    rot_rel = (pre_rot.conjugate() * pt.local_rotation).normalized()
-                    scale_rel = Vec3(
-                        pt.local_scale.x / max(0.001, pre_scale.x),
-                        pt.local_scale.y / max(0.001, pre_scale.y),
-                        pt.local_scale.z / max(0.001, pre_scale.z),
-                    )
+                    center = Vec3.zero()
+                    count = 0
+                    for init in self._multi_entity_initial_transforms.values():
+                        center += init["position"]
+                        count += 1
+                    if count > 0:
+                        center /= count
+                    if self._gizmo._mode == GizmoMode.ROTATE:
+                        primary_init = self._multi_entity_initial_transforms.get(primary.id)
+                        if primary_init:
+                            world_rot_rel = (pt.local_rotation * primary_init["local_rotation"].conjugate()).normalized()
+                            for eid, init in self._multi_entity_initial_transforms.items():
+                                ent = self._engine.scene.get_entity(eid)
+                                if not ent:
+                                    continue
+                                et = ent.get_component_by_name("Transform")
+                                if et:
+                                    offset = init["position"] - center
+                                    rotated = world_rot_rel.rotate_vec3(offset)
+                                    et.position = center + rotated
+                                    et.local_rotation = (world_rot_rel * init["local_rotation"]).normalized()
+                    elif self._gizmo._mode == GizmoMode.SCALE:
+                        primary_init = self._multi_entity_initial_transforms.get(primary.id)
+                        if primary_init:
+                            dS_current = Vec3(
+                                pt.local_scale.x / max(0.001, primary_init["local_scale"].x),
+                                pt.local_scale.y / max(0.001, primary_init["local_scale"].y),
+                                pt.local_scale.z / max(0.001, primary_init["local_scale"].z),
+                            )
+                        else:
+                            dS_current = Vec3(1, 1, 1)
+                        world_rot_rel = (pt.local_rotation * pre_rot.conjugate()).normalized()
+                        for eid, init in self._multi_entity_initial_transforms.items():
+                            ent = self._engine.scene.get_entity(eid)
+                            if not ent:
+                                continue
+                            et = ent.get_component_by_name("Transform")
+                            if et:
+                                offset = init["position"] - center
+                                et.position = center + Vec3(
+                                    offset.x * dS_current.x,
+                                    offset.y * dS_current.y,
+                                    offset.z * dS_current.z,
+                                )
+                                et.local_rotation = (world_rot_rel * init["local_rotation"]).normalized()
+                                if eid != primary.id:
+                                    et.local_scale = Vec3(
+                                        max(0.001, init["local_scale"].x * dS_current.x),
+                                        max(0.001, init["local_scale"].y * dS_current.y),
+                                        max(0.001, init["local_scale"].z * dS_current.z),
+                                    )
+                    else:
+                        pos_delta = pt.position - pre_pos
+                        world_rot_rel = (pt.local_rotation * pre_rot.conjugate()).normalized()
+                        for ent in self._selected_entities:
+                            if ent is primary:
+                                continue
+                            et = ent.get_component_by_name("Transform")
+                            if et:
+                                et.position = et.position + pos_delta
+                                et.local_rotation = (world_rot_rel * et.local_rotation).normalized()
+                    new_center = Vec3.zero()
+                    cnt = 0
                     for ent in self._selected_entities:
-                        if ent is primary:
-                            continue
                         et = ent.get_component_by_name("Transform")
                         if et:
-                            et.position = et.position + pos_delta
-                            et.local_rotation = (et.local_rotation * rot_rel).normalized()
-                            et.local_scale = Vec3(
-                                max(0.001, et.local_scale.x * scale_rel.x),
-                                max(0.001, et.local_scale.y * scale_rel.y),
-                                max(0.001, et.local_scale.z * scale_rel.z),
-                            )
+                            new_center += et.position
+                            cnt += 1
+                    if cnt > 0:
+                        new_center /= cnt
+                    self._gizmo._visual_center = new_center
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if self._overlay_canvas:
@@ -688,17 +764,19 @@ class SceneViewport(QOpenGLWidget):
                 selected = pick_entities_in_rect(self, min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
                 if selected:
                     self._selected_entities = selected
-                    self._gizmo.entity = self._selected_entities[0] if self._selected_entities else None
+                    self._set_gizmo_entity(self._selected_entities[0] if self._selected_entities else None)
                     self.entities_selected.emit(self._selected_entities)
                     from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
             self.update()
+        multi = bool(self._multi_entity_initial_transforms and len(self._selected_entities) > 1)
+        self._gizmo._multi_undo_active = multi
         self._gizmo.on_mouse_release()
+        self._gizmo._multi_undo_active = False
         if self._multi_entity_initial_transforms:
-            from core.commands import SetComponentCommand, get_history
+            from core.commands import SetComponentCommand, CompoundCommand, get_history
             from core.components import Transform as TransformComponent
+            cmds = []
             for ent in self._selected_entities:
-                if ent is self._gizmo._entity:
-                    continue
                 init = self._multi_entity_initial_transforms.get(ent.id)
                 if not init:
                     continue
@@ -708,14 +786,23 @@ class SceneViewport(QOpenGLWidget):
                 if self._gizmo._mode == GizmoMode.TRANSLATE:
                     new_pos = et.position
                     if (new_pos - init["position"]).length() > 1e-8:
-                        get_history().execute(SetComponentCommand(ent, TransformComponent, "position", init["position"], new_pos))
-                elif self._gizmo._mode == GizmoMode.ROTATE:
-                    new_rot = et.local_rotation
-                    get_history().execute(SetComponentCommand(ent, TransformComponent, "local_rotation", init["local_rotation"], new_rot))
-                elif self._gizmo._mode == GizmoMode.SCALE:
-                    new_scale = et.local_scale
-                    get_history().execute(SetComponentCommand(ent, TransformComponent, "local_scale", init["local_scale"], new_scale))
+                        cmds.append(SetComponentCommand(ent, TransformComponent, "position", init["position"], new_pos))
+                elif self._gizmo._mode in (GizmoMode.ROTATE, GizmoMode.SCALE):
+                    new_pos = et.position
+                    if (new_pos - init["position"]).length() > 1e-8:
+                        cmds.append(SetComponentCommand(ent, TransformComponent, "position", init["position"], new_pos))
+                    if self._gizmo._mode == GizmoMode.ROTATE:
+                        new_rot = et.local_rotation
+                        cmds.append(SetComponentCommand(ent, TransformComponent, "local_rotation", init["local_rotation"], new_rot))
+                    else:
+                        new_scale = et.local_scale
+                        if (new_scale - init["local_scale"]).length() > 1e-8:
+                            cmds.append(SetComponentCommand(ent, TransformComponent, "local_scale", init["local_scale"], new_scale))
+            if cmds:
+                get_history().set_current_selection(list(self._selected_entities))
+                get_history().execute(CompoundCommand(cmds, "Multi-Entity Transform"))
             self._multi_entity_initial_transforms = {}
+            self._update_gizmo_pivot()
         from editor.viewport.collaboration import send_collab_transforms
         send_collab_transforms(self)
 
@@ -879,7 +966,7 @@ class SceneViewport(QOpenGLWidget):
             return
         if e:
             self._selected_entities = [e]
-            self._gizmo.entity = e
+            self._set_gizmo_entity(e)
             self.entity_selected.emit(e)
             from editor.viewport.collaboration import send_collab_entity_create
             send_collab_entity_create(self, e.serialize())
@@ -897,7 +984,7 @@ class SceneViewport(QOpenGLWidget):
             cmd = DeleteEntityCommand(self._engine.scene, ent.id)
             get_history().execute(cmd)
         self._selected_entities.clear()
-        self._gizmo.entity = None
+        self._set_gizmo_entity(None)
         self.entity_selected.emit(None)
 
     def _copy_selected_entities(self):
@@ -947,7 +1034,7 @@ class SceneViewport(QOpenGLWidget):
             if e and e.parent is None:
                 top_entities.append(e)
         self._selected_entities = top_entities
-        self._gizmo.entity = top_entities[0] if top_entities else None
+        self._set_gizmo_entity(top_entities[0] if top_entities else None)
         from editor.viewport.collaboration import send_collab_entity_create, send_collab_selection
         for eid in cmd.spawned_ids:
             e = self._engine.scene.get_entity(eid)
@@ -974,18 +1061,39 @@ class SceneViewport(QOpenGLWidget):
         if event.mimeData().hasText() or event.mimeData().hasFormat("application/x-zpep"):
             event.acceptProposedAction()
 
+    def _drop_world_pos(self, sx: int, sy: int):
+        from editor.viewport.projection import screen_to_ray
+        from core.math3d import Vec3
+        ray_origin, ray_dir = screen_to_ray(self, sx, sy)
+        from editor.viewport.picking import pick_entity
+        hit_entity = pick_entity(self, sx, sy)
+        if hit_entity is not None:
+            from editor.viewport.picking import _world_aabb_of, _ray_aabb_min
+            box = _world_aabb_of(hit_entity)
+            if box is not None:
+                d = _ray_aabb_min(ray_origin.x, ray_origin.y, ray_origin.z,
+                                  ray_dir.x, ray_dir.y, ray_dir.z,
+                                  box[0][0], box[0][1], box[0][2],
+                                  box[1][0], box[1][1], box[1][2])
+                if d > 0 and d < 1e6:
+                    return ray_origin + ray_dir * d, hit_entity
+            return ray_origin + ray_dir * 50.0, hit_entity
+        if abs(ray_dir.y) > 0.0001:
+            t = -ray_origin.y / ray_dir.y
+            if t > 0:
+                return ray_origin + ray_dir * t, None
+        return ray_origin + ray_dir * 10.0, None
+
     def dropEvent(self, event):
         pos = event.position()
+        sx, sy = int(pos.x()), int(pos.y())
+        world_pos, hit_entity = self._drop_world_pos(sx, sy)
         if event.mimeData().hasFormat("application/x-zpep"):
             path = bytes(event.mimeData().data("application/x-zpep")).decode()
-            from editor.viewport.projection import screen_to_world
-            world_pos = screen_to_world(self, int(pos.x()), int(pos.y()))
-            self.entity_dropped.emit(path, world_pos)
+            self.entity_dropped.emit(path, world_pos, hit_entity)
         elif event.mimeData().hasText():
             text = event.mimeData().text()
-            from editor.viewport.projection import screen_to_world
-            world_pos = screen_to_world(self, int(pos.x()), int(pos.y()))
-            self.entity_dropped.emit(text, world_pos)
+            self.entity_dropped.emit(text, world_pos, hit_entity)
         event.acceptProposedAction()
 
     def screen_to_ray(self, sx: int, sy: int) -> tuple[Vec3, Vec3]:

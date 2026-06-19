@@ -35,7 +35,7 @@ def connect_signals(mw):
     mw._hierarchy.entity_double_clicked.connect(lambda eid: on_entity_double_clicked(mw, eid))
     mw._viewport.entity_selected.connect(lambda e: on_entity_selected_from_viewport(mw, e))
     mw._viewport.entities_selected.connect(lambda es: on_entities_selected_from_viewport(mw, es))
-    mw._viewport.entity_dropped.connect(lambda p, w: on_entity_dropped(mw, p, w))
+    mw._viewport.entity_dropped.connect(lambda p, w, e: on_entity_dropped(mw, p, w, e))
     mw._viewport.scene_modified.connect(mw._hierarchy.refresh)
     mw._scene_toolbar.gizmo_mode_changed.connect(lambda m: on_gizmo_mode_changed(mw, m))
     mw._scene_toolbar.gizmo_space_changed.connect(lambda s: on_gizmo_space_changed(mw, s))

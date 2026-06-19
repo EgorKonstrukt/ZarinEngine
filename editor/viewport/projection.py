@@ -78,8 +78,11 @@ def world_to_screen(vp, world_pos: Vec3):
 def screen_to_ray(vp, sx: int, sy: int) -> tuple[Vec3, Vec3]:
     pw, ph = vp._get_physical_dims()
     aspect = pw / max(1, ph)
-    ndc_x = (2.0 * sx / pw) - 1.0
-    ndc_y = 1.0 - (2.0 * sy / ph)
+    dpr = vp.devicePixelRatio()
+    fx = sx * dpr
+    fy = sy * dpr
+    ndc_x = (2.0 * fx / pw) - 1.0
+    ndc_y = 1.0 - (2.0 * fy / ph)
     view = vp._cam.get_view_matrix()
     proj = vp._cam.get_projection_matrix(aspect)
     inv_vp = (view * proj).inverted()

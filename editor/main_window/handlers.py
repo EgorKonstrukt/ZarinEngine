@@ -19,6 +19,8 @@ def on_entity_selected(mw, entity):
 
 
 def on_entities_selected(mw, entities):
+    from core.commands import get_history
+    get_history().set_current_selection(list(entities) if entities else None)
     mw._viewport.set_selected_entities(entities)
     if entities:
         mw._inspector.set_selected_entities(entities)
@@ -32,6 +34,8 @@ def on_entity_selected_from_viewport(mw, entity):
 
 
 def on_entities_selected_from_viewport(mw, entities):
+    from core.commands import get_history
+    get_history().set_current_selection(list(entities) if entities else None)
     if entities:
         mw._inspector.set_selected_entities(entities)
         mw._hierarchy.set_selected_entities(entities)
@@ -91,33 +95,179 @@ def instantiate_prefab(mw, path: str, world_pos=None):
     mw._hierarchy.refresh()
 
 
-def on_entity_dropped(mw, path_or_type: str, world_pos):
+def on_entity_dropped(mw, path_or_type: str, world_pos, entity_under_cursor=None):
     if not mw._engine.scene:
         return
     ext = os.path.splitext(path_or_type)[1].lower()
+
     if ext == ".zpep":
         instantiate_prefab(mw, path_or_type, world_pos)
-    else:
-        from core.components import Transform, MeshFilter, MeshRenderer
-        e = mw._engine.scene.create_entity(os.path.basename(path_or_type) or "Dropped Object")
-        t = Transform()
-        if world_pos:
-            t.local_position = world_pos
-        e.add_component(t)
-        model_exts = {".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz"}
-        if ext in model_exts:
-            mf = MeshFilter()
-            mf.mesh_name = os.path.splitext(os.path.basename(path_or_type))[0]
-            root = mw._engine.project_root
-            try:
-                rel = os.path.relpath(path_or_type, root)
-                mf.mesh_path = rel.replace("\\", "/") if not rel.startswith("..") else os.path.abspath(path_or_type)
-            except ValueError:
-                mf.mesh_path = os.path.abspath(path_or_type)
-            e.add_component(mf)
-            e.add_component(MeshRenderer())
+        return
+
+    if ext == ".zmat":
+        if entity_under_cursor:
+            _apply_material_to_entity(mw, path_or_type, entity_under_cursor)
+        else:
+            _drop_material_on_scene(mw, path_or_type, world_pos)
         mw._hierarchy.refresh()
-        on_entity_selected(mw, e)
+        return
+
+    image_exts = {".png", ".jpg", ".jpeg", ".bmp", ".tga", ".tiff", ".webp"}
+    audio_exts = {".wav", ".mp3", ".ogg"}
+    model_exts = {".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz"}
+
+    if ext in image_exts:
+        _drop_image_asset(mw, path_or_type, world_pos, entity_under_cursor)
+    elif ext in audio_exts:
+        _drop_audio_asset(mw, path_or_type, world_pos)
+    elif ext in model_exts:
+        _drop_model_asset(mw, path_or_type, world_pos)
+    else:
+        _drop_generic_asset(mw, path_or_type, world_pos)
+
+    mw._hierarchy.refresh()
+    on_entity_selected(mw, mw._engine.scene.get_entity_by_name(os.path.basename(path_or_type) or "Dropped Object"))
+
+
+def _apply_material_to_entity(mw, path: str, entity):
+    if not entity:
+        return
+    from core.components.rendering.mesh_renderer import MeshRenderer
+    mr = entity.get_component(MeshRenderer)
+    if not mr:
+        return
+    from core.material import MaterialLibrary
+    mat = MaterialLibrary.load(path)
+    if mat:
+        mr.material_path = path
+        Logger.info(f"Applied material {path} to {entity.name}")
+
+
+def _drop_material_on_scene(mw, path: str, world_pos):
+    from core.components import Transform, MeshFilter, MeshRenderer
+    name = os.path.splitext(os.path.basename(path))[0]
+    e = mw._engine.scene.create_entity(name)
+    t = Transform()
+    if world_pos:
+        t.local_position = world_pos
+    e.add_component(t)
+    mf = MeshFilter()
+    mf.mesh_name = "cube"
+    e.add_component(mf)
+    mr = MeshRenderer()
+    mr.material_path = path
+    e.add_component(mr)
+    Logger.info(f"Created entity with material {path}")
+
+
+def _drop_image_asset(mw, path: str, world_pos, entity_under_cursor):
+    if entity_under_cursor:
+        from core.components.rendering.sprite_renderer import SpriteRenderer
+        sr = entity_under_cursor.get_component(SpriteRenderer)
+        if sr:
+            rel = _rel_path(mw, path)
+            sr.texture_path = rel or path
+            Logger.info(f"Applied texture {path} to {entity_under_cursor.name}")
+            return
+        from core.components.rendering.mesh_renderer import MeshRenderer
+        mr = entity_under_cursor.get_component(MeshRenderer)
+        if mr:
+            _create_material_and_apply(mw, path, entity_under_cursor, mr)
+            return
+
+    from core.components.rendering.sprite_renderer import SpriteRenderer
+    from core.components import Transform
+    name = os.path.splitext(os.path.basename(path))[0]
+    e = mw._engine.scene.create_entity(name)
+    t = Transform()
+    if world_pos:
+        t.local_position = world_pos
+    e.add_component(t)
+    sr = SpriteRenderer()
+    rel = _rel_path(mw, path)
+    sr.texture_path = rel or path
+    e.add_component(sr)
+    Logger.info(f"Created sprite entity from {path}")
+
+
+def _create_material_and_apply(mw, texture_path: str, entity, mr):
+    from core.material import Material
+    from core.components import Transform, MeshFilter
+    mat_name = os.path.splitext(os.path.basename(texture_path))[0] + "_mat"
+    mat = Material(mat_name)
+    mat.shader_path = "default"
+    rel = _rel_path(mw, texture_path)
+    tex_path = rel or texture_path
+    mat.properties["_MainTex"] = tex_path
+    mat.properties["diffuseMap"] = tex_path
+    mats_dir = os.path.join(mw._engine.project_root, "materials")
+    os.makedirs(mats_dir, exist_ok=True)
+    mat_path = os.path.join(mats_dir, mat_name + ".zmat").replace("\\", "/")
+    root = mw._engine.project_root
+    try:
+        rel_path = os.path.relpath(mat_path, root).replace("\\", "/")
+    except ValueError:
+        rel_path = mat_path
+    mat.save(mat_path, mw._engine.project_root)
+    mr.material_path = rel_path
+    Logger.info(f"Created material {mat_path} and applied to {entity.name}")
+
+
+def _drop_audio_asset(mw, path: str, world_pos):
+    from core.components.audio.audio_source import AudioSource
+    from core.components import Transform
+    name = os.path.splitext(os.path.basename(path))[0]
+    e = mw._engine.scene.create_entity(name)
+    t = Transform()
+    if world_pos:
+        t.local_position = world_pos
+    e.add_component(t)
+    src = AudioSource()
+    rel = _rel_path(mw, path)
+    src.clip_path = rel or path
+    src.play_on_awake = False
+    e.add_component(src)
+    Logger.info(f"Created audio source from {path}")
+
+
+def _drop_model_asset(mw, path: str, world_pos):
+    from core.components import Transform, MeshFilter, MeshRenderer
+    name = os.path.splitext(os.path.basename(path))[0]
+    e = mw._engine.scene.create_entity(name)
+    t = Transform()
+    if world_pos:
+        t.local_position = world_pos
+    e.add_component(t)
+    mf = MeshFilter()
+    mf.mesh_name = name
+    root = mw._engine.project_root
+    try:
+        rel = os.path.relpath(path, root)
+        mf.mesh_path = rel.replace("\\", "/") if not rel.startswith("..") else os.path.abspath(path)
+    except ValueError:
+        mf.mesh_path = os.path.abspath(path)
+    e.add_component(mf)
+    e.add_component(MeshRenderer())
+    Logger.info(f"Created model entity from {path}")
+
+
+def _drop_generic_asset(mw, path: str, world_pos):
+    from core.components import Transform
+    name = os.path.splitext(os.path.basename(path))[0] or "Dropped Object"
+    e = mw._engine.scene.create_entity(name)
+    t = Transform()
+    if world_pos:
+        t.local_position = world_pos
+    e.add_component(t)
+
+
+def _rel_path(mw, path: str) -> str:
+    try:
+        root = mw._engine.project_root
+        rel = os.path.relpath(path, root)
+        return rel.replace("\\", "/") if not rel.startswith("..") else ""
+    except ValueError:
+        return ""
 
 
 def on_scene_loaded(mw, scene):
@@ -354,9 +504,13 @@ def save_scene_as(mw):
 def sync_after_undo(mw):
     from core.commands import get_history
     h = get_history()
-    sel = h.last_affected_entity or h.current_selection
+    sel = h.current_selection if isinstance(getattr(h, 'current_selection', None), list) else (h.last_affected_entity or h.current_selection)
     mw._hierarchy.blockSignals(True)
-    if sel:
+    if isinstance(sel, list):
+        mw._hierarchy.set_selected_entities(sel)
+        mw._inspector.set_selected_entities(sel)
+        mw._viewport.set_selected_entities(sel)
+    elif sel:
         mw._hierarchy.set_selected_entity(sel)
         mw._inspector.setUpdatesEnabled(False)
         mw._inspector.set_entity(sel)

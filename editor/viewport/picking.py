@@ -49,7 +49,7 @@ def _ray_aabb_min(ox: float, oy: float, oz: float,
     return tmin if tmin > 0.0 else (tmax if tmax > 0.0 else -1.0)
 
 
-def _world_aabb_of(entity) -> tuple | None:
+def _world_aabb_of(entity, only_expanded: bool = False) -> tuple | None:
     from core.components.transform import Transform
     from core.components.rendering.mesh_filter import MeshFilter
     from core.components.rendering.mesh_renderer import MeshRenderer
@@ -76,6 +76,17 @@ def _world_aabb_of(entity) -> tuple | None:
                         bmin = np.minimum(bmin, p[:3])
                         bmax = np.maximum(bmax, p[:3])
             expanded = True
+    from core.components.rendering.sprite_renderer import SpriteRenderer
+    sr = entity.get_component(SpriteRenderer)
+    if sr and sr.enabled and sr.texture_path:
+        wm = t.world_matrix._d
+        for cx in (-0.5, 0.5):
+            for cy in (-0.5, 0.5):
+                for cz in (0.0,):
+                    p = np.array([cx, cy, cz, 1.0]) @ wm
+                    bmin = np.minimum(bmin, p[:3])
+                    bmax = np.maximum(bmax, p[:3])
+        expanded = True
     bc = entity.get_component(BoxCollider)
     if bc:
         half = Vec3(bc.size.x * 0.5, bc.size.y * 0.5, bc.size.z * 0.5)
@@ -102,6 +113,8 @@ def _world_aabb_of(entity) -> tuple | None:
             bmax = np.maximum(bmax, child_box[1])
             expanded = True
     if not expanded:
+        if only_expanded:
+            return None
         s = t.local_scale
         half = max(max(abs(s.x), abs(s.y), abs(s.z)) * 0.5, 0.5)
         bmin = np.array([wp.x - half, wp.y - half, wp.z - half])
@@ -145,6 +158,113 @@ def pick_entity(vp, sx: int, sy: int):
     scene = vp._engine.scene
     if not scene:
         return None
+    ray_origin, ray_dir = screen_to_ray(vp, sx, sy)
+    ro = np.array([ray_origin.x, ray_origin.y, ray_origin.z, 1.0], dtype=np.float64)
+    rd = np.array([ray_dir.x, ray_dir.y, ray_dir.z, 0.0], dtype=np.float64)
+    all_ents = scene.get_all_entities()
+    best_entity = None
+    best_dist = float("inf")
+    fallback_entity = None
+    fallback_dist = float("inf")
+    for entity in all_ents:
+        if not entity.active:
+            continue
+        from core.components.transform import Transform
+        from core.components.rendering.mesh_filter import MeshFilter
+        from core.components.rendering.mesh_renderer import MeshRenderer
+        from core.components.physics.mesh_collider import MeshCollider
+        from core.components.physics.box_collider import BoxCollider
+        from core.components.physics.sphere_collider import SphereCollider
+        from core.math_helpers import ray_mesh_intersect
+        t = entity.get_component(Transform)
+        if not t:
+            continue
+        mf = entity.get_component(MeshFilter)
+        mr = entity.get_component(MeshRenderer)
+        mesh = None
+        has_mesh = False
+        if mf:
+            mesh_name = mf.mesh_name or "cube"
+            mesh = _get_mesh_for(entity, mesh_name, mf.mesh_path)
+            has_mesh = bool(mesh and mr and mr.enabled)
+        if has_mesh:
+            wm = t.world_matrix._d
+            wm_inv = np.linalg.inv(wm)
+            local_o = ro @ wm_inv
+            local_d = rd @ wm_inv
+            if mesh.indices is not None and len(mesh.indices) > 0:
+                d = ray_mesh_intersect(local_o[0], local_o[1], local_o[2],
+                                       local_d[0], local_d[1], local_d[2],
+                                       mesh.vertices, mesh.indices)
+            else:
+                d = _ray_aabb_min(local_o[0], local_o[1], local_o[2],
+                                  local_d[0], local_d[1], local_d[2],
+                                  mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2],
+                                  mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2])
+            if d > 0 and d < best_dist:
+                best_dist = d
+                best_entity = entity
+            continue
+        mc = entity.get_component(MeshCollider)
+        if mc:
+            mf2 = entity.get_component(MeshFilter)
+            if mf2:
+                mesh2 = _get_mesh_for(entity, mf2.mesh_name or "cube", mf2.mesh_path)
+                if mesh2 is not None and mesh2.indices is not None and len(mesh2.indices) > 0:
+                    wm = t.world_matrix._d
+                    wm_inv = np.linalg.inv(wm)
+                    local_o = ro @ wm_inv
+                    local_d = rd @ wm_inv
+                    d = ray_mesh_intersect(local_o[0], local_o[1], local_o[2],
+                                           local_d[0], local_d[1], local_d[2],
+                                           mesh2.vertices, mesh2.indices)
+                    if d > 0 and d < best_dist:
+                        best_dist = d
+                        best_entity = entity
+                    continue
+        box = _world_aabb_of(entity, only_expanded=True)
+        if box is not None:
+            d = _ray_aabb_min(ray_origin.x, ray_origin.y, ray_origin.z,
+                              ray_dir.x, ray_dir.y, ray_dir.z,
+                              box[0][0], box[0][1], box[0][2],
+                              box[1][0], box[1][1], box[1][2])
+            if d > 0 and d < best_dist:
+                best_dist = d
+                best_entity = entity
+    if best_entity is not None:
+        return best_entity
+    for entity in all_ents:
+        if not entity.active:
+            continue
+        t = entity.get_component(Transform)
+        if not t:
+            continue
+        mf = entity.get_component(MeshFilter)
+        mr = entity.get_component(MeshRenderer)
+        mc = entity.get_component(MeshCollider)
+        bc = entity.get_component(BoxCollider)
+        sc = entity.get_component(SphereCollider)
+        from core.components.rendering.sprite_renderer import SpriteRenderer
+        sr = entity.get_component(SpriteRenderer)
+        if mf or mr or mc or bc or sc or sr:
+            continue
+        half = 0.5
+        wp = t.position
+        d = _ray_aabb_min(ray_origin.x, ray_origin.y, ray_origin.z,
+                          ray_dir.x, ray_dir.y, ray_dir.z,
+                          wp.x - half, wp.y - half, wp.z - half,
+                          wp.x + half, wp.y + half, wp.z + half)
+        if d > 0 and d < best_dist:
+            best_dist = d
+            best_entity = entity
+    return best_entity
+
+
+def pick_entity_hit(vp, sx: int, sy: int):
+    """Returns (entity, hit_world_pos) or (None, None)."""
+    scene = vp._engine.scene
+    if not scene:
+        return None, None
     ray_origin, ray_dir = screen_to_ray(vp, sx, sy)
     ro = np.array([ray_origin.x, ray_origin.y, ray_origin.z, 1.0], dtype=np.float64)
     rd = np.array([ray_dir.x, ray_dir.y, ray_dir.z, 0.0], dtype=np.float64)
@@ -216,7 +336,10 @@ def pick_entity(vp, sx: int, sy: int):
             if d > 0 and d < best_dist:
                 best_dist = d
                 best_entity = entity
-    return best_entity
+    if best_entity is None:
+        return None, None
+    hit_pos = ray_origin + ray_dir * best_dist
+    return best_entity, hit_pos
 
 
 def pick_entities_in_rect(vp, rx: int, ry: int, rw: int, rh: int) -> list:
