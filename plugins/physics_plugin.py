@@ -91,6 +91,8 @@ def _find_shape_info(entity: "Entity", transform=None) -> Optional[dict]:
             "friction": friction,
             "restitution": restitution,
             "is_trigger": is_trigger,
+            "layer": getattr(comp, 'layer', 0),
+            "mask": getattr(comp, 'mask', 0xFFFF),
         }
     return None
 
@@ -279,6 +281,7 @@ class PhysicsPlugin(PluginBase):
         self._last_entity_count = -1
         self._prev_frame_contacts.clear()
         self._last_result_ver = -1
+        self._reset_entity_velocities(scene)
         if self._simulation_mode == "per_layer_process":
             for proc in self._layer_processes.values():
                 proc.clear_slots()
@@ -351,10 +354,12 @@ class PhysicsPlugin(PluginBase):
                 return
             Logger.info(f"[PhysicsPlugin] Scene loaded with {len(bodies)} bodies (shared-memory).")
 
-    def _reset_entity_velocities(self):
-        if not self._engine or not self._engine.scene:
-            return
-        for entity in self._engine.scene.get_all_entities():
+    def _reset_entity_velocities(self, scene=None):
+        if scene is None:
+            if not self._engine or not self._engine.scene:
+                return
+            scene = self._engine.scene
+        for entity in scene.get_all_entities():
             rb = entity._components.get("Rigidbody")
             if rb:
                 rb._velocity = Vec3.zero()

@@ -72,6 +72,7 @@ class PyBulletSolver(IPhysicsSolver):
         self._max_contacts_per_body = 64
         self._enable_sleeping = True
         self._mesh_shape_cache: dict[tuple[str, tuple[float, float, float]], int] = {}
+        self._body_collision_info: dict[int, tuple[int, int]] = {}
 
     def initialize(self, settings: Optional[dict] = None) -> bool:
         if self._initialized:
@@ -467,6 +468,7 @@ class PyBulletSolver(IPhysicsSolver):
         if body_id >= 0:
             self._body_count += 1
             self._all_body_ids.append(body_id)
+            self._body_collision_info[body_id] = (collision_layer, collision_mask)
             p.changeDynamics(
                 body_id,
                 -1,
@@ -476,8 +478,7 @@ class PyBulletSolver(IPhysicsSolver):
                 physicsClientId=cid,
             )
             p.addUserData(body_id, "entity_id", entity_id, physicsClientId=cid)
-            group = 1 << collision_layer
-            p.setCollisionFilterGroupMask(body_id, -1, group, collision_mask, physicsClientId=cid)
+            self._apply_collision_filters(body_id)
 
         return body_id
 
@@ -487,6 +488,7 @@ class PyBulletSolver(IPhysicsSolver):
             self._body_count -= 1
             if body_id in self._all_body_ids:
                 self._all_body_ids.remove(body_id)
+            self._body_collision_info.pop(body_id, None)
         except Exception:
             pass
 
@@ -498,11 +500,27 @@ class PyBulletSolver(IPhysicsSolver):
             except Exception:
                 pass
         self._all_body_ids.clear()
+        self._body_collision_info.clear()
         self._body_count = 0
         # Clear mesh shape cache when removing all bodies
         self._mesh_shape_cache.clear()
         # Re-apply gravity after removing all bodies
         p.setGravity(*self._gravity, physicsClientId=cid)
+
+    def _apply_collision_filters(self, new_body_id: int):
+        cid = self._cid()
+        if new_body_id not in self._body_collision_info:
+            return
+        new_layer, new_mask = self._body_collision_info[new_body_id]
+        new_group = 1 << new_layer
+
+        for existing_body_id, (existing_layer, existing_mask) in self._body_collision_info.items():
+            if existing_body_id == new_body_id:
+                continue
+            existing_group = 1 << existing_layer
+            should_collide = (new_group & existing_mask) != 0 and (existing_group & new_mask) != 0
+            if not should_collide:
+                p.setCollisionFilterPair(new_body_id, existing_body_id, -1, -1, 0, physicsClientId=cid)
 
     def set_body_transform(
         self,

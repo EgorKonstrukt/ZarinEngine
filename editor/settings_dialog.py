@@ -1,11 +1,11 @@
 from __future__ import annotations
 from typing import Optional, Any
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
-                              QWidget, QFormLayout, QLineEdit, QDoubleSpinBox,
-                              QSpinBox, QCheckBox, QPushButton, QListWidgetItem,
-                              QStackedWidget, QFrame, QScrollArea, QLabel,
-                              QSlider, QStyle, QApplication, QGroupBox,
-                              QGridLayout)
+                             QWidget, QFormLayout, QLineEdit, QDoubleSpinBox,
+                             QSpinBox, QCheckBox, QPushButton, QListWidgetItem,
+                             QStackedWidget, QFrame, QScrollArea, QLabel,
+                             QSlider, QStyle, QApplication, QGroupBox,
+                             QGridLayout, QComboBox)
 from PyQt6.QtCore import Qt, pyqtSignal
 from core.config import Config
 from core.physics.collision_layers import MAX_LAYERS, DEFAULT_LAYER_NAMES
