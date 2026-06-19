@@ -159,6 +159,7 @@ FIELD_TOOLTIPS = {
     "physics.linear_damping": "Default linear damping",
     "physics.angular_damping": "Default angular damping",
     "physics.max_contacts_per_body": "Maximum contacts per rigid body",
+    "physics.simulation_mode": "How physics simulation is executed. single = main thread, multi_threaded = one separate process, per_layer_process = one process per collision layer (for extreme parallel workloads)",
     "physics.solver": "Physics solver backend (pybullet or physx)",
     "audio.master_volume": "Master audio volume",
     "audio.sfx_volume": "Sound effects volume",
@@ -642,6 +643,25 @@ class SettingsDialog(QDialog):
                 f"Unregistered: {', '.join(result)}")
 
     def _create_widget(self, key: str, value) -> Optional[QWidget]:
+        if key == "physics.simulation_mode":
+            container = QWidget()
+            vl = QVBoxLayout(container)
+            vl.setContentsMargins(0, 0, 0, 0)
+            vl.setSpacing(2)
+            cb = QComboBox()
+            cb.addItems(["single", "multi_threaded", "per_layer_process"])
+            cb.setCurrentText(self._config.get(key, value))
+            cb.currentTextChanged.connect(lambda t, k=key: self._on_value_changed(k, t))
+            vl.addWidget(cb)
+            info = QLabel(
+                "single = всё в основном потоке, отладка\n"
+                "multi_threaded = один отдельный процесс, стандарт\n"
+                "per_layer_process = свой процесс на каждый слой коллизии, для безумных симуляций"
+            )
+            info.setStyleSheet("color: #888; font-size: 11px; padding-left: 4px;")
+            info.setWordWrap(True)
+            vl.addWidget(info)
+            return container
         if isinstance(value, bool):
             cb = QCheckBox()
             cb.setChecked(self._config.get(key, value))
