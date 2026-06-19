@@ -1,33 +1,131 @@
 from __future__ import annotations
+import os
 import math
 from typing import Optional, TYPE_CHECKING
 from core.plugin_manager import PluginBase
 from core.logger import Logger
-from core.physics import PhysicsScene
+from core.physics import PhysicsProcess
 from core.math3d import Vec2, Vec3, Quat
 from core.config import get_project_config
 
 if TYPE_CHECKING:
-    from core.physics.physics_solver import IPhysicsSolver
+    from core.ecs import Entity
 
 _RAD = math.radians
 _DEG = math.degrees
 
+_SHAPE_TYPE_MAP = {
+    "BoxCollider": "box",
+    "SphereCollider": "sphere",
+    "CapsuleCollider": "capsule",
+    "MeshCollider": "mesh",
+    "BoxCollider2D": "box",
+    "CircleCollider2D": "cylinder",
+}
+
+
+def _find_shape_info(entity: "Entity", transform=None) -> Optional[dict]:
+    for comp in entity.get_all_components():
+        cname = type(comp).__name__
+        if cname not in _SHAPE_TYPE_MAP:
+            continue
+        params = {}
+        friction = 0.6
+        restitution = 0.0
+        is_trigger = False
+
+        if cname == "BoxCollider":
+            params["size"] = [comp.scaled_size.x, comp.scaled_size.y, comp.scaled_size.z]
+            params["center"] = [comp.scaled_center.x, comp.scaled_center.y, comp.scaled_center.z]
+            friction = comp.material_friction
+            restitution = comp.material_bounciness
+            is_trigger = comp.is_trigger
+        elif cname == "SphereCollider":
+            params["radius"] = comp.scaled_radius
+            params["center"] = [comp.scaled_center.x, comp.scaled_center.y, comp.scaled_center.z]
+            friction = comp.material_friction
+            restitution = comp.material_bounciness
+            is_trigger = comp.is_trigger
+        elif cname == "CapsuleCollider":
+            params["radius"] = comp.scaled_radius
+            params["height"] = comp.scaled_height
+            params["center"] = [comp.scaled_center.x, comp.scaled_center.y, comp.scaled_center.z]
+            params["direction"] = comp.direction
+            is_trigger = comp.is_trigger
+        elif cname == "BoxCollider2D":
+            sz = comp.scaled_size
+            params["size"] = [sz.x, sz.y, 1.0]
+            off = comp.scaled_offset
+            params["center"] = [off.x, off.y, 0.0]
+            friction = comp.material_friction
+            restitution = comp.material_bounciness
+            is_trigger = comp.is_trigger
+        elif cname == "CircleCollider2D":
+            params["radius"] = comp.scaled_radius
+            params["height"] = 1.0
+            off = comp.scaled_offset
+            params["center"] = [off.x, off.y, 0.0]
+            friction = comp.material_friction
+            restitution = comp.material_bounciness
+            is_trigger = comp.is_trigger
+        elif cname == "MeshCollider":
+            params["file"] = comp.mesh_path
+            params["collision_mode"] = comp.collision_mode.value
+            params["max_vertices"] = comp.max_vertices
+            friction = comp.material_friction
+            restitution = comp.material_bounciness
+            is_trigger = comp.is_trigger
+
+        scale = _read_import_scale(params.get("file", ""))
+        s = transform.local_scale if transform else Vec3.one()
+        if scale is not None:
+            params["scale"] = [scale * s.x, scale * s.y, scale * s.z]
+        elif cname == "MeshCollider":
+            params["scale"] = [s.x, s.y, s.z]
+
+        return {
+            "type": _SHAPE_TYPE_MAP[cname],
+            "params": params,
+            "friction": friction,
+            "restitution": restitution,
+            "is_trigger": is_trigger,
+        }
+    return None
+
+
+def _read_import_scale(mesh_path: str):
+    if not mesh_path:
+        return None
+    import json, os
+    import_path = mesh_path + ".import"
+    if not os.path.isabs(import_path):
+        import_path = os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", import_path))
+    if os.path.exists(import_path):
+        try:
+            with open(import_path) as f:
+                return json.load(f).get("scale", 1.0)
+        except Exception:
+            pass
+    return None
+
 
 class PhysicsPlugin(PluginBase):
     NAME = "PhysicsPlugin"
-    VERSION = "0.2.0"
-    DESCRIPTION = "Physics system with background-thread simulation."
+    VERSION = "0.3.0"
+    DESCRIPTION = "Physics system with threaded simulation."
     SYSTEM = True
 
     def __init__(self):
         super().__init__()
-        self._solver: Optional[IPhysicsSolver] = None
-        self._physics_scene: Optional[PhysicsScene] = None
         self._enabled: bool = True
-        self._solver_class = None
         self._scanned_entity_ids: set[str] = set()
         self._last_entity_count: int = -1
+        self._physics_process: Optional[PhysicsProcess] = None
+        self._prev_frame_contacts: set = set()
+        self._project_root: str = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..")
+        )
 
     @property
     def enabled(self) -> bool:
@@ -36,14 +134,6 @@ class PhysicsPlugin(PluginBase):
     @enabled.setter
     def enabled(self, v: bool):
         self._enabled = v
-
-    @property
-    def physics_scene(self) -> Optional[PhysicsScene]:
-        return self._physics_scene
-
-    @property
-    def solver(self) -> Optional[IPhysicsSolver]:
-        return self._solver
 
     def _get_physics_settings(self) -> dict:
         project_path = getattr(self._engine, "_project_path", ".") if self._engine else "."
@@ -64,57 +154,28 @@ class PhysicsPlugin(PluginBase):
                 out[k] = v
         return out
 
-    def set_solver(self, solver: IPhysicsSolver):
-        old = self._solver
-        if old is not None:
-            old.shutdown()
-        self._solver = solver
-        if solver is not None:
-            solver.initialize(self._get_physics_settings())
-        if self._physics_scene is not None:
-            self._physics_scene._solver = solver
-        Logger.info(f"PhysicsPlugin: solver set to {type(solver).__name__}")
-
     def initialize(self, engine):
         super().initialize(engine)
-        self._load_solver_from_settings()
-
-    def _load_solver_from_settings(self):
         settings = self._get_physics_settings()
         solver_name = settings.get("solver", "pybullet")
-        try:
-            if solver_name == "physx":
-                from physics_solvers.physx_solver import PhysXSolver
-                solver_cls = PhysXSolver
-            else:
-                from physics_solvers.pybullet_solver import PyBulletSolver
-                solver_cls = PyBulletSolver
-            self._solver_class = solver_cls
-            solver = solver_cls()
-            if solver.initialize(settings):
-                self._solver = solver
-                self._physics_scene = PhysicsScene(solver)
-                Logger.info(f"PhysicsPlugin: solver {solver_name} loaded ({type(solver).__name__}).")
-            else:
-                Logger.error(f"PhysicsPlugin: failed to init solver '{solver_name}'.")
-        except ImportError as e:
-            Logger.warning(f"PhysicsPlugin: solver '{solver_name}' not available ({e}). "
-                           f"Falling back to pybullet.")
-            try:
-                from physics_solvers.pybullet_solver import PyBulletSolver
-                self._solver_class = PyBulletSolver
-                solver = PyBulletSolver()
-                if solver.initialize(settings):
-                    self._solver = solver
-                    self._physics_scene = PhysicsScene(solver)
-                    Logger.info("PhysicsPlugin: fallback PyBulletSolver loaded.")
-            except ImportError:
-                Logger.error("PhysicsPlugin: no physics solver available.")
+        solver_module = ""
+        solver_class = ""
+        if solver_name == "physx":
+            solver_module = "physics_solvers.physx_solver"
+            solver_class = "PhysXSolver"
+        else:
+            solver_module = "physics_solvers.pybullet_solver"
+            solver_class = "PyBulletSolver"
+
+        self._physics_process = PhysicsProcess(project_root=self._project_root)
+        ok = self._physics_process.start(solver_module, solver_class, settings)
+        if not ok:
+            Logger.error("PhysicsPlugin: process init failed.")
+            self._physics_process = None
+            return
+        Logger.info(f"PhysicsPlugin: solver {solver_name} started in separate process.")
 
     def _snapshot_bodies(self, scene) -> list[dict]:
-        ps = self._physics_scene
-        if not ps:
-            return []
         bodies = []
         for entity in scene.get_all_entities():
             rb = entity._components.get("Rigidbody")
@@ -122,7 +183,7 @@ class PhysicsPlugin(PluginBase):
             tr = entity._components.get("Transform")
             if (not rb and not rb2d) or not tr:
                 continue
-            shape_info = ps._find_shape(entity, tr)
+            shape_info = _find_shape_info(entity, tr)
             if not shape_info:
                 continue
             is_2d = rb2d is not None
@@ -156,14 +217,10 @@ class PhysicsPlugin(PluginBase):
         return bodies
 
     def _snapshot_ecs(self, scene) -> dict:
-        ps = self._physics_scene
-        if not ps or not hasattr(ps, '_entity_to_body'):
-            return {}
         ecs_data = {}
         entities = scene._entities
-        for eid in ps._entity_to_body:
-            entity = entities.get(eid)
-            if not entity or not entity._active:
+        for eid, entity in entities.items():
+            if not entity._active:
                 continue
             rb = entity._components.get("Rigidbody")
             rb2d = entity._components.get("Rigidbody2D")
@@ -203,8 +260,11 @@ class PhysicsPlugin(PluginBase):
                 }
         return ecs_data
 
-    def _apply_worker_results(self, scene, transforms: dict, events: list):
+    def _apply_result(self, scene, result: dict):
+        transforms = result.get("transforms", {})
+        events = result.get("collision_events", [])
         entities = scene._entities
+
         for eid, data in transforms.items():
             entity = entities.get(eid)
             if not entity:
@@ -247,143 +307,172 @@ class PhysicsPlugin(PluginBase):
                 rb._force_accum = Vec3.zero()
                 rb._torque_accum = Vec3.zero()
 
-        def _dispatch(body_id: int, callback: str, other_eid: str):
-            ps = self._physics_scene
-            if not ps or not hasattr(ps, '_body_to_entity'):
-                return
-            eid = ps._body_to_entity.get(body_id)
-            if not eid:
-                return
-            entity = entities.get(eid)
-            if not entity:
-                return
-            from core.components import ScriptComponent
-            for sc in entity.get_components(ScriptComponent):
-                inst = sc._py_instance
-                if inst and hasattr(inst, callback):
-                    try:
-                        getattr(inst, callback)(other_eid)
-                    except Exception as e:
-                        Logger.error(f"Script {callback} error: {e}")
-
         if not events:
             return
-        ps = self._physics_scene
-        prev = ps._prev_frame_contacts if (ps and hasattr(ps, '_prev_frame_contacts')) else set()
         current: set = set()
-        pe = ps._body_to_entity if (ps and hasattr(ps, '_body_to_entity')) else {}
         for ev in events:
-            ba, bb = ev.get("body_a", -1), ev.get("body_b", -1)
-            if ba >= 0 and bb >= 0:
-                current.add(frozenset((ba, bb)))
-        entered = current - prev
-        exited = prev - current
-        stayed = current & prev
+            ea, eb = ev.get("entity_a", ""), ev.get("entity_b", "")
+            if ea and eb:
+                current.add(frozenset((ea, eb)))
+        entered = current - self._prev_frame_contacts
+        exited = self._prev_frame_contacts - current
+        stayed = current & self._prev_frame_contacts
         for pair in entered:
-            bl = tuple(pair)
-            e0, e1 = pe.get(bl[0], ""), pe.get(bl[1], "")
-            if e0 and e1:
-                _dispatch(bl[0], "on_collision_enter", e1)
-                _dispatch(bl[1], "on_collision_enter", e0)
+            e0, e1 = tuple(pair)
+            self._dispatch_collision(entities, e0, e1, "on_collision_enter")
+            self._dispatch_collision(entities, e1, e0, "on_collision_enter")
         for pair in exited:
-            bl = tuple(pair)
-            e0, e1 = pe.get(bl[0], ""), pe.get(bl[1], "")
-            if e0 and e1:
-                _dispatch(bl[0], "on_collision_exit", e1)
-                _dispatch(bl[1], "on_collision_exit", e0)
+            e0, e1 = tuple(pair)
+            self._dispatch_collision(entities, e0, e1, "on_collision_exit")
+            self._dispatch_collision(entities, e1, e0, "on_collision_exit")
         for pair in stayed:
-            bl = tuple(pair)
-            e0, e1 = pe.get(bl[0], ""), pe.get(bl[1], "")
-            if e0 and e1:
-                _dispatch(bl[0], "on_collision_stay", e1)
-                _dispatch(bl[1], "on_collision_stay", e0)
-        if ps and hasattr(ps, '_prev_frame_contacts'):
-            ps._prev_frame_contacts = current
+            e0, e1 = tuple(pair)
+            self._dispatch_collision(entities, e0, e1, "on_collision_stay")
+            self._dispatch_collision(entities, e1, e0, "on_collision_stay")
+        self._prev_frame_contacts = current
+
+    def _dispatch_collision(self, entities, eid: str, other_eid: str, callback: str):
+        entity = entities.get(eid)
+        if not entity:
+            return
+        from core.components import ScriptComponent
+        for sc in entity.get_components(ScriptComponent):
+            inst = sc._py_instance
+            if inst and hasattr(inst, callback):
+                try:
+                    getattr(inst, callback)(other_eid)
+                except Exception as e:
+                    Logger.error(f"Script {callback} error: {e}")
+
+    def _build_body_dict(self, entity, tr) -> Optional[dict]:
+        rb = entity._components.get("Rigidbody")
+        rb2d = entity._components.get("Rigidbody2D")
+        shape_info = _find_shape_info(entity, tr)
+        if not shape_info:
+            return None
+        is_2d = rb2d is not None
+        lp = tr._local_pos
+        q = tr._local_rot
+        if is_2d:
+            pos = (lp.x, lp.y, 0.0)
+            sz = 2.0 * math.asin(max(-1.0, min(1.0, q.z)))
+            rot = (0.0, 0.0, sz)
+            mass = 0.0 if rb2d.is_kinematic else rb2d.mass
+            is_kinematic = rb2d.is_kinematic
+        else:
+            pos = (lp.x, lp.y, lp.z)
+            euler = tr.local_euler_angles
+            rot = (_RAD(euler.x), _RAD(euler.y), _RAD(euler.z))
+            mass = 0.0 if rb.is_kinematic else rb.mass
+            is_kinematic = rb.is_kinematic
+        return {
+            "entity_id": entity.id,
+            "is_2d": is_2d,
+            "shape_type": shape_info["type"],
+            "shape_params": shape_info["params"],
+            "position": pos,
+            "rotation": rot,
+            "mass": mass,
+            "friction": shape_info.get("friction", 0.6),
+            "restitution": shape_info.get("restitution", 0.0),
+            "is_trigger": shape_info.get("is_trigger", False),
+            "is_kinematic": is_kinematic,
+        }
 
     def on_scene_loaded(self, scene):
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
-        if self._solver is None:
-            return
-        if self._physics_scene is None:
-            self._physics_scene = PhysicsScene(self._solver)
-        self._physics_scene.initialize(scene)
-        self._physics_scene.load_scene(scene)
+        self._prev_frame_contacts.clear()
 
     def on_scene_unloaded(self, scene):
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
-        if self._physics_scene:
-            self._physics_scene.shutdown()
+        self._prev_frame_contacts.clear()
+        if self._physics_process:
+            self._physics_process.send({"type": "unload_all"})
 
     def on_play_start(self):
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
-        if self._solver is None or self._engine is None:
+        self._prev_frame_contacts.clear()
+        if self._physics_process is None or self._engine is None:
             return
         scene = self._engine.scene
         if scene is None:
             return
-        if self._physics_scene is None:
-            self._physics_scene = PhysicsScene(self._solver)
-            self._physics_scene.initialize(scene)
-        self._physics_scene.load_scene(scene)
-        Logger.info("[PhysicsPlugin] Scene re-scanned for physics on play start.")
+        bodies = self._snapshot_bodies(scene)
+        if not bodies:
+            return
+        self._physics_process.send({"type": "load_bodies", "bodies": bodies})
+        if self._physics_process.wait_for_result("load_bodies", timeout=5.0) is None:
+            Logger.error("PhysicsPlugin: load_bodies timed out.")
+            return
+        Logger.info(f"[PhysicsPlugin] Scene loaded with {len(bodies)} bodies in physics process.")
 
     def on_play_stop(self):
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
-        if self._physics_scene:
-            self._physics_scene.shutdown()
-        Logger.info("[PhysicsPlugin] Physics bodies cleaned up on play stop.")
-
-    def _register_new_bodies(self, scene):
-        ps = self._physics_scene
-        if not ps:
-            return
-        entities_dict = scene._entities
-        entity_count = len(entities_dict)
-        if entity_count == self._last_entity_count and self._scanned_entity_ids:
-            return
-        self._last_entity_count = entity_count
-        scanned = self._scanned_entity_ids
-        for eid, entity in entities_dict.items():
-            if eid in scanned:
-                continue
-            scanned.add(eid)
-            if eid in ps._entity_to_body:
-                continue
-            rb = entity._components.get("Rigidbody")
-            rb2d = entity._components.get("Rigidbody2D")
-            tr = entity._components.get("Transform")
-            if (not rb and not rb2d) or not tr:
-                continue
-            ps._create_entity_bodies(entity)
+        self._prev_frame_contacts.clear()
+        if self._physics_process:
+            self._physics_process.send({"type": "unload_all"})
 
     def pre_step(self, dt: float):
-        if not self._enabled or not self._physics_scene:
+        if not self._enabled or self._physics_process is None:
             return
         if not self._engine or not self._engine.scene:
             return
         scene = self._engine.scene
         prof = self._engine.profiler
         prof.start("physics_scan_bodies")
-        self._register_new_bodies(scene)
+        entities_dict = scene._entities
+        entity_count = len(entities_dict)
+        if entity_count != self._last_entity_count or not self._scanned_entity_ids:
+            self._last_entity_count = entity_count
+            scanned = self._scanned_entity_ids
+            for eid, entity in entities_dict.items():
+                if eid in scanned:
+                    continue
+                scanned.add(eid)
+                rb = entity._components.get("Rigidbody")
+                rb2d = entity._components.get("Rigidbody2D")
+                tr = entity._components.get("Transform")
+                if (not rb and not rb2d) or not tr:
+                    continue
+                body_dict = self._build_body_dict(entity, tr)
+                if body_dict:
+                    self._physics_process.send({"type": "add_body", "body": body_dict})
         prof.stop("physics_scan_bodies")
 
     def step(self, dt: float):
-        if not self._enabled or not self._physics_scene:
+        if not self._enabled or self._physics_process is None:
             return
         if not self._engine or not self._engine.scene:
             return
+        scene = self._engine.scene
         prof = self._engine.profiler
-        prof.start("physics_scene_step")
-        self._physics_scene.step(dt)
-        prof.stop("physics_scene_step")
+
+        prof.start("physics_collect_results")
+        result = self._physics_process.poll()
+        while result is not None:
+            if result.get("type") == "step_result":
+                self._apply_result(scene, result)
+            result = self._physics_process.poll()
+        prof.stop("physics_collect_results")
+
+        prof.start("physics_build_ecs")
+        ecs_data = self._snapshot_ecs(scene)
+        prof.stop("physics_build_ecs")
+
+        prof.start("physics_queue_step")
+        self._physics_process.send({
+            "type": "step",
+            "ecs_data": ecs_data,
+            "dt": dt,
+            "need_collisions": True,
+        })
+        prof.stop("physics_queue_step")
 
     def shutdown(self):
-        if self._solver:
-            self._solver.shutdown()
-            self._solver = None
-        self._physics_scene = None
-        Logger.info("[PhysicsPlugin] Physics shutdown.")
+        if self._physics_process:
+            self._physics_process.shutdown(5000)
+            self._physics_process = None

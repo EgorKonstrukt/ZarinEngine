@@ -1,12 +1,14 @@
 from __future__ import annotations
 from queue import Queue, Empty
 from typing import Optional
-from PyQt6.QtCore import QThread
+from PyQt6.QtCore import QThread, pyqtSignal as Signal
 
 from core.logger import Logger
 
 
 class PhysicsWorker(QThread):
+    step_finished = Signal(object)
+
     def __init__(self):
         super().__init__()
         self._cmd_queue: Queue = Queue()
@@ -33,6 +35,7 @@ class PhysicsWorker(QThread):
 
         if t == "init":
             if self._initialized:
+                self._result_queue.put({"type": "init"})
                 return
             solver_class = cmd["solver_class"]
             settings = cmd.get("settings", {})
@@ -42,6 +45,7 @@ class PhysicsWorker(QThread):
                 self._solver = solver
                 self._physics_scene = PhysicsScene(solver)
                 self._initialized = True
+            self._result_queue.put({"type": "init", "success": self._initialized})
 
         elif t == "load_bodies":
             self._solver.remove_all_joints()
@@ -70,6 +74,7 @@ class PhysicsWorker(QThread):
                     self._physics_scene._entity_to_body[body["entity_id"]] = bid
                     self._physics_scene._body_to_entity[bid] = body["entity_id"]
                     self._physics_scene._cached_shape[body["entity_id"]] = ()
+            self._result_queue.put({"type": "load_bodies"})
 
         elif t == "step":
             ecs_data = cmd.get("ecs_data", {})
@@ -127,15 +132,32 @@ class PhysicsWorker(QThread):
                 }
 
             if cmd.get("need_collisions", True):
-                events = solver.get_collision_events() if hasattr(solver, 'get_collision_events') else []
+                raw_events = solver.get_collision_events() if hasattr(solver, 'get_collision_events') else []
             else:
-                events = []
+                raw_events = []
 
-            self._result_queue.put({
+            events = []
+            for ev in raw_events:
+                ba, bb = ev.get("body_a", -1), ev.get("body_b", -1)
+                events.append({
+                    "body_a": ba,
+                    "body_b": bb,
+                    "entity_a": ps._body_to_entity.get(ba, ""),
+                    "entity_b": ps._body_to_entity.get(bb, ""),
+                    "position": ev.get("position", (0, 0, 0)),
+                    "normal": ev.get("normal", (0, 0, 0)),
+                    "distance": ev.get("distance", 0.0),
+                    "force": ev.get("force", 0.0),
+                })
+
+            result = {
                 "type": "step_result",
                 "transforms": transforms,
                 "collision_events": events,
-            })
+            }
+
+            self._result_queue.put(result)
+            self.step_finished.emit(result)
 
         elif t == "remove_bodies":
             for eid in cmd["entity_ids"]:
@@ -202,6 +224,15 @@ class PhysicsWorker(QThread):
                 break
             results.append(r)
         return results
+
+    def wait_for_result(self, expected_type: str, timeout: float = 5.0) -> Optional[dict]:
+        import time
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            r = self.poll()
+            if r and r.get("type") == expected_type:
+                return r
+        return None
 
     def shutdown(self, timeout: int = 3000):
         self.send({"type": "shutdown"})
