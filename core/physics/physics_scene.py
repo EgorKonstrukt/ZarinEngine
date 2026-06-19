@@ -74,6 +74,8 @@ class PhysicsScene:
         self._shape_check_counter: int = 0
         self._body_items: list[tuple[str, int]] = []
         self._body_items_dirty: bool = False
+        self._has_collision_scripts: bool = False
+        self._collision_scripts_checked: bool = False
 
     @property
     def solver(self) -> IPhysicsSolver:
@@ -95,6 +97,8 @@ class PhysicsScene:
         self._cached_shape_info.clear()
         self._prev_frame_contacts.clear()
         self._2d_bodies.clear()
+        self._has_collision_scripts = False
+        self._collision_scripts_checked = False
         self._scene = None
 
     def load_scene(self, scene: Scene):
@@ -109,6 +113,8 @@ class PhysicsScene:
         self._cached_shape.clear()
         self._cached_shape_info.clear()
         self._2d_bodies.clear()
+        self._has_collision_scripts = False
+        self._collision_scripts_checked = False
         entities = scene.get_all_entities()
         for entity in entities:
             self._create_entity_bodies(entity)
@@ -334,6 +340,8 @@ class PhysicsScene:
         """Auto-register entities with physics components not yet tracked."""
         if not self._scene or len(self._scene._entities) == len(self._entity_to_body):
             return
+        self._has_collision_scripts = False
+        self._collision_scripts_checked = False
         for entity in self._scene.get_all_entities():
             if entity.id not in self._entity_to_body:
                 self._create_entity_bodies(entity)
@@ -349,9 +357,30 @@ class PhysicsScene:
             if ang_vel[0] != 0.0 or ang_vel[1] != 0.0 or ang_vel[2] != 0.0:
                 self._solver.set_angular_velocity(body_id, (0.0, 0.0, ang_vel[2]))
 
+    def _has_collision_listeners(self) -> bool:
+        if not self._scene:
+            return False
+        if self._collision_scripts_checked:
+            return self._has_collision_scripts
+        self._collision_scripts_checked = True
+        for entity in self._scene.get_all_entities():
+            for comp in entity._components.values():
+                if type(comp).__name__ == "ScriptComponent":
+                    inst = comp._py_instance if hasattr(comp, '_py_instance') else None
+                    if inst is None:
+                        continue
+                    if (hasattr(inst, 'on_collision_enter') or
+                        hasattr(inst, 'on_collision_stay') or
+                        hasattr(inst, 'on_collision_exit')):
+                        self._has_collision_scripts = True
+                        return True
+        return False
+
     def _process_collision_events(self):
         from core.components import ScriptComponent
-
+        if not self._has_collision_listeners():
+            self._prev_frame_contacts.clear()
+            return
         raw = self._solver.get_collision_events()
         current: set[frozenset[int]] = set()
         for ev in raw:

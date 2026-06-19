@@ -4,7 +4,6 @@ from typing import Optional, TYPE_CHECKING
 from core.plugin_manager import PluginBase
 from core.logger import Logger
 from core.physics import PhysicsScene
-from core.physics.physics_worker import PhysicsWorker
 from core.math3d import Vec2, Vec3, Quat
 from core.config import get_project_config
 
@@ -25,7 +24,6 @@ class PhysicsPlugin(PluginBase):
         super().__init__()
         self._solver: Optional[IPhysicsSolver] = None
         self._physics_scene: Optional[PhysicsScene] = None
-        self._worker: Optional[PhysicsWorker] = None
         self._enabled: bool = True
         self._solver_class = None
         self._scanned_entity_ids: set[str] = set()
@@ -80,11 +78,6 @@ class PhysicsPlugin(PluginBase):
     def initialize(self, engine):
         super().initialize(engine)
         self._load_solver_from_settings()
-        self._worker = PhysicsWorker()
-        self._worker.start()
-        if self._solver_class:
-            self._worker.send({"type": "init", "solver_class": self._solver_class, "settings": self._get_physics_settings()})
-        Logger.info("[PhysicsPlugin] Physics system initialized.")
 
     def _load_solver_from_settings(self):
         settings = self._get_physics_settings()
@@ -186,10 +179,8 @@ class PhysicsPlugin(PluginBase):
                 q = tr._local_rot
                 sz = 2.0 * math.asin(max(-1.0, min(1.0, q.z)))
                 ecs_data[eid] = {
-                    "is_2d": True,
-                    "is_kinematic": False,
-                    "pos": (lp.x, lp.y, 0.0),
-                    "rot": (0.0, 0.0, sz),
+                    "is_2d": True, "is_kinematic": False,
+                    "pos": (lp.x, lp.y, 0.0), "rot": (0.0, 0.0, sz),
                     "vel": (r._velocity.x, r._velocity.y, 0.0),
                     "ang_vel": (0.0, 0.0, r._angular_velocity),
                     "force": (float(frc[0]), float(frc[1]), 0.0),
@@ -203,10 +194,8 @@ class PhysicsPlugin(PluginBase):
                 tor = r._torque_accum._d
                 q = tr._local_rot
                 ecs_data[eid] = {
-                    "is_2d": False,
-                    "is_kinematic": False,
-                    "pos": (lp.x, lp.y, lp.z),
-                    "quat": (q.x, q.y, q.z, q.w),
+                    "is_2d": False, "is_kinematic": False,
+                    "pos": (lp.x, lp.y, lp.z), "quat": (q.x, q.y, q.z, q.w),
                     "vel": (r._velocity.x, r._velocity.y, r._velocity.z),
                     "ang_vel": (r._angular_velocity.x, r._angular_velocity.y, r._angular_velocity.z),
                     "force": (float(frc[0]), float(frc[1]), float(frc[2])),
@@ -277,6 +266,8 @@ class PhysicsPlugin(PluginBase):
                     except Exception as e:
                         Logger.error(f"Script {callback} error: {e}")
 
+        if not events:
+            return
         ps = self._physics_scene
         prev = ps._prev_frame_contacts if (ps and hasattr(ps, '_prev_frame_contacts')) else set()
         current: set = set()
@@ -318,15 +309,10 @@ class PhysicsPlugin(PluginBase):
             self._physics_scene = PhysicsScene(self._solver)
         self._physics_scene.initialize(scene)
         self._physics_scene.load_scene(scene)
-        if self._worker and self._worker.isRunning() and self._worker._initialized:
-            bodies = self._snapshot_bodies(scene)
-            self._worker.send({"type": "load_bodies", "bodies": bodies})
 
     def on_scene_unloaded(self, scene):
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
-        if self._worker and self._worker.isRunning():
-            self._worker.send({"type": "unload_all"})
         if self._physics_scene:
             self._physics_scene.shutdown()
 
@@ -342,16 +328,11 @@ class PhysicsPlugin(PluginBase):
             self._physics_scene = PhysicsScene(self._solver)
             self._physics_scene.initialize(scene)
         self._physics_scene.load_scene(scene)
-        if self._worker and self._worker.isRunning() and self._worker._initialized:
-            bodies = self._snapshot_bodies(scene)
-            self._worker.send({"type": "load_bodies", "bodies": bodies})
         Logger.info("[PhysicsPlugin] Scene re-scanned for physics on play start.")
 
     def on_play_stop(self):
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
-        if self._worker and self._worker.isRunning():
-            self._worker.send({"type": "unload_all"})
         if self._physics_scene:
             self._physics_scene.shutdown()
         Logger.info("[PhysicsPlugin] Physics bodies cleaned up on play stop.")
@@ -366,56 +347,18 @@ class PhysicsPlugin(PluginBase):
             return
         self._last_entity_count = entity_count
         scanned = self._scanned_entity_ids
-        tracked = ps._entity_to_body
-        worker = self._worker
-        worker_running = worker and worker.isRunning()
         for eid, entity in entities_dict.items():
             if eid in scanned:
                 continue
             scanned.add(eid)
-            if eid in tracked:
+            if eid in ps._entity_to_body:
                 continue
             rb = entity._components.get("Rigidbody")
             rb2d = entity._components.get("Rigidbody2D")
             tr = entity._components.get("Transform")
             if (not rb and not rb2d) or not tr:
                 continue
-            shape_info = ps._find_shape(entity, tr)
-            if not shape_info:
-                continue
-            is_2d = rb2d is not None
-            effective_rb = rb2d if is_2d else rb
-            lp = tr._local_pos
-            body_data = {
-                "entity_id": eid,
-                "shape_type": shape_info["type"],
-                "shape_params": shape_info["params"],
-                "friction": shape_info.get("friction", 0.6),
-                "restitution": shape_info.get("restitution", 0.0),
-                "is_trigger": shape_info.get("is_trigger", False),
-            }
-            if is_2d:
-                q = tr._local_rot
-                sz = 2.0 * math.asin(max(-1.0, min(1.0, q.z)))
-                body_data["position"] = (lp.x, lp.y, 0.0)
-                body_data["rotation"] = (0.0, 0.0, sz)
-                body_data["mass"] = 0.0 if rb2d.is_kinematic else rb2d.mass
-                body_data["is_kinematic"] = rb2d.is_kinematic
-            else:
-                euler = tr.local_euler_angles
-                body_data["position"] = (lp.x, lp.y, lp.z)
-                body_data["rotation"] = (_RAD(euler.x), _RAD(euler.y), _RAD(euler.z))
-                body_data["mass"] = 0.0 if rb.is_kinematic else rb.mass
-                body_data["is_kinematic"] = rb.is_kinematic
-            if worker_running:
-                self._worker.send({"type": "add_body", "body": body_data})
-                tracked[eid] = -1
-                ps._cached_shape[eid] = ps._make_shape_key(entity, shape_info)
-                if is_2d:
-                    ps._2d_bodies.add(-1)
-                effective_rb._body_id = -1
-            else:
-                ps._create_entity_bodies(entity)
+            ps._create_entity_bodies(entity)
 
     def pre_step(self, dt: float):
         if not self._enabled or not self._physics_scene:
@@ -427,36 +370,18 @@ class PhysicsPlugin(PluginBase):
         prof.start("physics_scan_bodies")
         self._register_new_bodies(scene)
         prof.stop("physics_scan_bodies")
-        if self._worker and self._worker.isRunning():
-            prof.start("physics_drain_results")
-            for r in self._worker.drain_results():
-                if r.get("type") == "step_result":
-                    self._apply_worker_results(scene, r.get("transforms", {}), r.get("collision_events", []))
-            prof.stop("physics_drain_results")
 
     def step(self, dt: float):
         if not self._enabled or not self._physics_scene:
             return
         if not self._engine or not self._engine.scene:
             return
-        scene = self._engine.scene
         prof = self._engine.profiler
-        if self._worker and self._worker.isRunning():
-            prof.start("physics_snapshot")
-            ecs_data = self._snapshot_ecs(scene)
-            prof.stop("physics_snapshot")
-            prof.start("physics_worker_send")
-            self._worker.send({"type": "step", "dt": dt, "ecs_data": ecs_data})
-            prof.stop("physics_worker_send")
-        else:
-            prof.start("physics_scene_step")
-            self._physics_scene.step(dt)
-            prof.stop("physics_scene_step")
+        prof.start("physics_scene_step")
+        self._physics_scene.step(dt)
+        prof.stop("physics_scene_step")
 
     def shutdown(self):
-        if self._worker:
-            self._worker.shutdown()
-            self._worker = None
         if self._solver:
             self._solver.shutdown()
             self._solver = None

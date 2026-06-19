@@ -105,13 +105,11 @@ class PhysicsWorker(QThread):
             solver.step_simulation(dt)
 
             transforms = {}
-            for eid, data in ecs_data.items():
-                bid = ps._entity_to_body.get(eid)
-                if bid is None:
+            for eid, bid in ps._entity_to_body.items():
+                entity_data = ecs_data.get(eid, {})
+                if entity_data.get("is_kinematic", False):
                     continue
-                if data.get("is_kinematic", False):
-                    continue
-                if data.get("is_2d", False):
+                if entity_data.get("is_2d", False):
                     vel = solver.get_velocity(bid)
                     ang_vel = solver.get_angular_velocity(bid)
                     if vel[0] != 0.0 or vel[1] != 0.0 or vel[2] != 0.0:
@@ -128,7 +126,10 @@ class PhysicsWorker(QThread):
                     "ang_vel": ang_vel,
                 }
 
-            events = solver.get_collision_events() if hasattr(solver, 'get_collision_events') else []
+            if cmd.get("need_collisions", True):
+                events = solver.get_collision_events() if hasattr(solver, 'get_collision_events') else []
+            else:
+                events = []
 
             self._result_queue.put({
                 "type": "step_result",

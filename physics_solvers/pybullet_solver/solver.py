@@ -59,17 +59,18 @@ class PyBulletSolver(IPhysicsSolver):
         self._debug_enabled = False
         self._all_body_ids: list[int] = []
         self._gravity: tuple[float, float, float] = (0.0, -9.81, 0.0)
-        self._num_sub_steps = 2
-        self._solver_iterations = 10
-        self._erp = 0.2
-        self._contact_erp = 0.2
+        self._fixed_time_step = 1.0 / 60.0
+        self._num_sub_steps = 1
+        self._solver_iterations = 50
+        self._erp = 0.4
+        self._contact_erp = 0.4
         self._friction_erp = 0.0
         self._contact_breaking_threshold = 0.02
         self._restitution = 0.0
         self._linear_damping = 0.04
         self._angular_damping = 0.04
         self._max_contacts_per_body = 64
-        # Cache for mesh collision shapes to avoid reloading the same mesh
+        self._enable_sleeping = True
         self._mesh_shape_cache: dict[tuple[str, tuple[float, float, float]], int] = {}
 
     def initialize(self, settings: Optional[dict] = None) -> bool:
@@ -91,21 +92,35 @@ class PyBulletSolver(IPhysicsSolver):
             p.setGravity(gx, gy, gz, physicsClientId=self._client)
             p.setRealTimeSimulation(0, physicsClientId=self._client)
 
-            self._num_sub_steps = max(1, opts.get("num_sub_steps", 2))
-            self._solver_iterations = max(1, opts.get("solver_iterations", 10))
+            self._fixed_time_step = max(0.001, opts.get("fixed_time_step", 1.0 / 60.0))
+            self._num_sub_steps = max(1, opts.get("num_sub_steps", 1))
+            self._solver_iterations = max(1, opts.get("solver_iterations", 50))
+            self._erp = opts.get("erp", 0.4)
+            self._contact_erp = opts.get("contact_erp", 0.4)
+            self._enable_sleeping = opts.get("enable_sleeping", True)
 
             for param_key, opt_key, default in [
-                ("numSolverIterations", "solver_iterations", 10),
-                ("erp", "erp", 0.2),
-                ("defaultContactERP", "contact_erp", 0.2),
+                ("numSolverIterations", "solver_iterations", 50),
+                ("numSubSteps", "num_sub_steps", 1),
+                ("erp", "erp", 0.4),
+                ("defaultContactERP", "contact_erp", 0.4),
                 ("frictionERP", "friction_erp", 0.0),
                 ("contactBreakingThreshold", "contact_breaking_threshold", 0.02),
+                ("fixedTimeStep", "fixed_time_step", 1.0 / 60.0),
             ]:
                 v = opts.get(opt_key, default)
                 try:
                     p.setPhysicsEngineParameter(**{param_key: v}, physicsClientId=self._client)
                 except Exception:
                     pass
+
+            try:
+                p.setPhysicsEngineParameter(
+                    enableSleeping=0,
+                    physicsClientId=self._client,
+                )
+            except Exception:
+                pass
 
             self._initialized = True
             Logger.info(f"PyBulletSolver initialized (client={self._client})")
@@ -152,12 +167,15 @@ class PyBulletSolver(IPhysicsSolver):
         return self._client
 
     def step_simulation(self, dt: float):
+        sub_steps = max(1, self._num_sub_steps)
+        internal_dt = dt / sub_steps
         p.setPhysicsEngineParameter(
-            fixedTimeStep=dt,
+            fixedTimeStep=internal_dt,
             numSubSteps=1,
             physicsClientId=self._cid(),
         )
-        p.stepSimulation(physicsClientId=self._cid())
+        for _ in range(sub_steps):
+            p.stepSimulation(physicsClientId=self._cid())
 
     def set_gravity(self, gravity: tuple[float, float, float]):
         self._gravity = gravity
@@ -452,10 +470,9 @@ class PyBulletSolver(IPhysicsSolver):
                 -1,
                 lateralFriction=friction,
                 restitution=restitution,
-                activationState=1 if not is_trigger else 2,
+                activationState=1,
                 physicsClientId=cid,
             )
-            # Store entity_id as user data
             p.addUserData(body_id, "entity_id", entity_id, physicsClientId=cid)
 
         return body_id
