@@ -193,10 +193,9 @@ def _dashed_lines(segments: list[tuple[Vec3, Vec3, list]],
     return out
 
 
-def _build_sphere_mesh(radius: float, color: list[float], segments: int = 8) -> tuple:
+def _build_unit_sphere_cache(segments: int = 8):
     verts = []
     idx = []
-    cols = []
     for lat in range(segments):
         theta1 = math.pi * lat / segments
         theta2 = math.pi * (lat + 1) / segments
@@ -205,33 +204,33 @@ def _build_sphere_mesh(radius: float, color: list[float], segments: int = 8) -> 
             phi2 = 2.0 * math.pi * (lon + 1) / segments
             s = math.sin
             c = math.cos
-            p0 = Vec3(radius * s(theta1) * c(phi1), radius * c(theta1), radius * s(theta1) * s(phi1))
-            p1 = Vec3(radius * s(theta1) * c(phi2), radius * c(theta1), radius * s(theta1) * s(phi2))
-            p2 = Vec3(radius * s(theta2) * c(phi2), radius * c(theta2), radius * s(theta2) * s(phi2))
-            p3 = Vec3(radius * s(theta2) * c(phi1), radius * c(theta2), radius * s(theta2) * s(phi1))
+            p0 = (s(theta1) * c(phi1), c(theta1), s(theta1) * s(phi1))
+            p1 = (s(theta1) * c(phi2), c(theta1), s(theta1) * s(phi2))
+            p2 = (s(theta2) * c(phi2), c(theta2), s(theta2) * s(phi2))
+            p3 = (s(theta2) * c(phi1), c(theta2), s(theta2) * s(phi1))
             i0 = len(verts)
             verts.extend([p0, p1, p2, p3])
-            cols.extend([color] * 4)
             idx.extend([i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3])
-    return (verts, idx, cols)
+    return (verts, idx)
 
 
 def _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, corners, radius, color):
     cache = getattr(_render_corner_spheres, '_cache', None)
     if cache is None:
-        cache = _build_sphere_mesh(1.0, color, segments=8)
+        cache = _build_unit_sphere_cache(segments=8)
         _render_corner_spheres._cache = cache
-    cverts, cidx, ccols = cache
+    cverts, cidx = cache
+    nv = len(cverts)
     all_verts = []
     all_idx = []
     all_cols = []
     for corner in corners:
         base = len(all_verts)
         for v in cverts:
-            all_verts.append(Vec3(corner.x + v.x * radius, corner.y + v.y * radius, corner.z + v.z * radius))
+            all_verts.append(Vec3(corner.x + v[0] * radius, corner.y + v[1] * radius, corner.z + v[2] * radius))
         for i in cidx:
             all_idx.append(base + i)
-        all_cols.extend(ccols)
+        all_cols.extend([color] * nv)
     vp._renderer.render_gizmo_meshes([(all_verts, all_idx, all_cols)], vp_mat)
 
 
@@ -249,25 +248,43 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
             else:
                 bmin_t = np.minimum(bmin_t, box[0])
                 bmax_t = np.maximum(bmax_t, box[1])
-    if bmin_t is None:
-        if state is not None:
-            state[0] = None
-            state[1] = None
+    if state is None:
         return
-    cur_min = state[0] if state is not None else None
-    cur_max = state[1] if state is not None else None
-    if cur_min is None:
-        cur_min = bmin_t.copy()
-        cur_max = bmax_t.copy()
+    if len(state) < 3:
+        state.append(0.0)
+    cur_min, cur_max, alpha = state[0], state[1], state[2]
+    cfg = get_global_config()
+    speed = cfg.get("gizmo.selection_bounds_speed", 8.0)
+    fade_speed = cfg.get("gizmo.selection_bounds_fade_speed", 4.0)
+    factor = 1.0 - np.exp(-speed * dt) if dt > 0.0 else 1.0
+    fade_factor = 1.0 - np.exp(-fade_speed * dt) if dt > 0.0 else 1.0
+    if bmin_t is not None:
+        if cur_min is None:
+            center = (bmin_t + bmax_t) * 0.5
+            cur_min = center.copy()
+            cur_max = center.copy()
+            state[0] = cur_min
+            state[1] = cur_max
+            alpha = 0.0
+        else:
+            cur_min = cur_min + (bmin_t - cur_min) * factor
+            cur_max = cur_max + (bmax_t - cur_max) * factor
+            alpha = min(1.0, alpha + fade_factor)
     else:
-        cfg = get_global_config()
-        speed = cfg.get("gizmo.selection_bounds_speed", 8.0)
-        factor = 1.0 - np.exp(-speed * dt) if dt > 0.0 else 1.0
-        cur_min = cur_min + (bmin_t - cur_min) * factor
-        cur_max = cur_max + (bmax_t - cur_max) * factor
-    if state is not None:
-        state[0] = cur_min
-        state[1] = cur_max
+        if cur_min is not None:
+            alpha = max(0.0, alpha - fade_factor)
+            if alpha <= 0.0:
+                state[0] = None
+                state[1] = None
+                state[2] = 0.0
+                return
+            center = (cur_min + cur_max) * 0.5
+            t = 1.0 - alpha
+            cur_min = cur_min + (center - cur_min) * t
+            cur_max = cur_max + (center - cur_max) * t
+        else:
+            return
+    state[0], state[1], state[2] = cur_min, cur_max, alpha
     cam_pos = vp._cam.position if vp._cam else Vec3(0, 0, 0)
     fw, fh = vp._get_physical_dims()
     raw_segments = [(a, b, color) for a, b in _box_edges(cur_min, cur_max)]
@@ -285,7 +302,15 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
     pixel_r = 6
     world_r = pixel_r * 2.0 * dist * math.tan(fov_rad * 0.5) / fh if fh > 0 else 0.05
     world_r = max(world_r, 0.01)
-    _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, verts_3d, world_r, color)
+    if alpha < 1.0:
+        faded = list(color)
+        if len(faded) > 3:
+            faded[3] = faded[3] * alpha
+        else:
+            faded.append(alpha)
+        _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, verts_3d, world_r, faded)
+    else:
+        _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, verts_3d, world_r, color)
 
 
 def render_selection_bounds(vp, vp_mat: Mat4, time_s: float, dt: float = 0.0):
