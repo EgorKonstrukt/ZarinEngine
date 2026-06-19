@@ -1,8 +1,5 @@
 from __future__ import annotations
-import numpy as np
 from core.math3d import Vec3
-
-FLOAT_TYPE = np.float64
 
 
 class AABB:
@@ -21,31 +18,52 @@ class AABB:
         return AABB(center - half, center + half)
 
     def center(self) -> Vec3:
-        return Vec3.from_array((self.min._d + self.max._d) * 0.5)
+        return Vec3(
+            (self.min.x + self.max.x) * 0.5,
+            (self.min.y + self.max.y) * 0.5,
+            (self.min.z + self.max.z) * 0.5
+        )
 
     def half_extents(self) -> Vec3:
-        return Vec3.from_array((self.max._d - self.min._d) * 0.5)
+        return Vec3(
+            (self.max.x - self.min.x) * 0.5,
+            (self.max.y - self.min.y) * 0.5,
+            (self.max.z - self.min.z) * 0.5
+        )
 
     def intersects(self, other: AABB) -> bool:
-        return bool(np.all(self.min._d <= other.max._d) and np.all(self.max._d >= other.min._d))
+        return (self.min.x <= other.max.x and self.min.y <= other.max.y and self.min.z <= other.max.z and
+                self.max.x >= other.min.x and self.max.y >= other.min.y and self.max.z >= other.min.z)
 
     def contains(self, other: AABB) -> bool:
-        return bool(np.all(self.min._d <= other.min._d) and np.all(self.max._d >= other.max._d))
+        return (self.min.x <= other.min.x and self.min.y <= other.min.y and self.min.z <= other.min.z and
+                self.max.x >= other.max.x and self.max.y >= other.max.y and self.max.z >= other.max.z)
 
     def contains_point(self, p: Vec3) -> bool:
-        return bool(np.all(self.min._d <= p._d) and np.all(self.max._d >= p._d))
+        return (self.min.x <= p.x and self.min.y <= p.y and self.min.z <= p.z and
+                self.max.x >= p.x and self.max.y >= p.y and self.max.z >= p.z)
+
+    @staticmethod
+    def _coord(v: Vec3, i: int) -> float:
+        if i == 0: return v.x
+        if i == 1: return v.y
+        return v.z
 
     def intersects_ray(self, origin: Vec3, direction: Vec3, max_dist: float) -> float:
         t_near = -1e30
         t_far = 1e30
         for i in range(3):
-            if abs(direction._d[i]) < 1e-12:
-                if origin._d[i] < self.min._d[i] or origin._d[i] > self.max._d[i]:
+            d = self._coord(direction, i)
+            o = self._coord(origin, i)
+            mn = self._coord(self.min, i)
+            mx = self._coord(self.max, i)
+            if abs(d) < 1e-12:
+                if o < mn or o > mx:
                     return -1.0
                 continue
-            inv = 1.0 / direction._d[i]
-            t1 = (self.min._d[i] - origin._d[i]) * inv
-            t2 = (self.max._d[i] - origin._d[i]) * inv
+            inv = 1.0 / d
+            t1 = (mn - o) * inv
+            t2 = (mx - o) * inv
             if t1 > t2:
                 t1, t2 = t2, t1
             if t1 > t_near: t_near = t1

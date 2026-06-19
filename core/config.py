@@ -163,7 +163,7 @@ def get_global_config() -> Config:
                 "show_icons": True,
                 "icon_scale": 5.0,
                 "selection_bounds": True,
-                "selection_bounds_speed": 8.0,
+                "selection_bounds_speed": 13.0,
                 "selection_bounds_color_r": 0.25,
                 "selection_bounds_color_g": 0.55,
                 "selection_bounds_color_b": 1.0

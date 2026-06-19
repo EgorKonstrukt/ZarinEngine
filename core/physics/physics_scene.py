@@ -56,6 +56,9 @@ _SHAPE_INFO_CACHE_KEYS = {
 class PhysicsScene:
     """Bridges ECS entities with the physics solver."""
 
+    _ZERO_VEC3 = None
+    _ZERO_VEC2 = None
+
     def __init__(self, solver: IPhysicsSolver):
         self._solver = solver
         self._entity_to_body: dict[str, int] = {}
@@ -69,6 +72,8 @@ class PhysicsScene:
         self._scene: Optional[Scene] = None
         self._2d_bodies: set[int] = set()
         self._shape_check_counter: int = 0
+        self._body_items: list[tuple[str, int]] = []
+        self._body_items_dirty: bool = False
 
     @property
     def solver(self) -> IPhysicsSolver:
@@ -162,6 +167,7 @@ class PhysicsScene:
             self._body_to_entity[body_id] = entity.id
             self._entity_body_cache[entity.id] = (effective_rb, tr, is_2d)
             effective_rb._body_id = body_id
+            self._mark_body_items_dirty()
             if is_2d:
                 self._2d_bodies.add(body_id)
             key = self._make_shape_key(entity, shape_info)
@@ -280,6 +286,7 @@ class PhysicsScene:
             self._body_to_entity.pop(body_id, None)
             self._2d_bodies.discard(body_id)
         self._entity_body_cache.pop(entity_id, None)
+        self._mark_body_items_dirty()
         joint_id = self._entity_to_joint.pop(entity_id, None)
         if joint_id is not None:
             self._solver.remove_joint(joint_id)
@@ -422,8 +429,17 @@ class PhysicsScene:
             if cached is not None and current_key != cached:
                 self.rebuild_entity(entity)
 
+    def _mark_body_items_dirty(self):
+        self._body_items_dirty = True
+
+    def _get_body_items(self):
+        if self._body_items_dirty or not self._body_items:
+            self._body_items = list(self._entity_to_body.items())
+            self._body_items_dirty = False
+        return self._body_items
+
     def _sync_ecs_to_physics(self):
-        items = list(self._entity_to_body.items())
+        items = self._get_body_items()
         if not items:
             return
         if len(items) >= 4:
@@ -464,12 +480,12 @@ class PhysicsScene:
                                 (pos.x, pos.y, pos.z),
                                 (math.radians(euler.x), math.radians(euler.y), math.radians(euler.z)),
                             )
-                        if rb._force_accum._d.any():
+                        if rb._force_accum.length_sq() > 1e-10:
                             self._solver.apply_force(
                                 body_id,
                                 (rb._force_accum.x, rb._force_accum.y, rb._force_accum.z),
                             )
-                        if rb._torque_accum._d.any():
+                        if rb._torque_accum.length_sq() > 1e-10:
                             self._solver.apply_torque(
                                 body_id,
                                 (rb._torque_accum.x, rb._torque_accum.y, rb._torque_accum.z),
@@ -518,19 +534,19 @@ class PhysicsScene:
                             (pos.x, pos.y, pos.z),
                             (math.radians(euler.x), math.radians(euler.y), math.radians(euler.z)),
                         )
-                    if rb._force_accum._d.any():
-                        self._solver.apply_force(
-                            body_id,
-                            (rb._force_accum.x, rb._force_accum.y, rb._force_accum.z),
-                        )
-                    if rb._torque_accum._d.any():
-                        self._solver.apply_torque(
-                            body_id,
-                            (rb._torque_accum.x, rb._torque_accum.y, rb._torque_accum.z),
-                        )
+                        if rb._force_accum.length_sq() > 1e-10:
+                            self._solver.apply_force(
+                                body_id,
+                                (rb._force_accum.x, rb._force_accum.y, rb._force_accum.z),
+                            )
+                        if rb._torque_accum.length_sq() > 1e-10:
+                            self._solver.apply_torque(
+                                body_id,
+                                (rb._torque_accum.x, rb._torque_accum.y, rb._torque_accum.z),
+                            )
 
     def _sync_physics_to_ecs(self):
-        items = list(self._entity_to_body.items())
+        items = self._get_body_items()
         if not items:
             return
         if len(items) >= 4:
@@ -563,10 +579,10 @@ class PhysicsScene:
                         ang_vel = self._solver.get_angular_velocity(body_id)
                         tr.local_position = Vec3(pos[0], pos[1], pos[2])
                         tr.local_euler_angles = Vec3(math.degrees(rot[0]), math.degrees(rot[1]), math.degrees(rot[2]))
-                        rb._velocity = Vec3(vel[0], vel[1], vel[2])
-                        rb._angular_velocity = Vec3(ang_vel[0], ang_vel[1], ang_vel[2])
-                        rb._force_accum = Vec3.zero()
-                        rb._torque_accum = Vec3.zero()
+                        rb._velocity._x = vel[0]; rb._velocity._y = vel[1]; rb._velocity._z = vel[2]
+                        rb._angular_velocity._x = ang_vel[0]; rb._angular_velocity._y = ang_vel[1]; rb._angular_velocity._z = ang_vel[2]
+                        rb._force_accum._x = 0.0; rb._force_accum._y = 0.0; rb._force_accum._z = 0.0
+                        rb._torque_accum._x = 0.0; rb._torque_accum._y = 0.0; rb._torque_accum._z = 0.0
             BATCH_SIZE = 32
             batches = [items[i:i + BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
             futures = [_PHYSICS_POOL.submit(_batch_sync, batch) for batch in batches]
@@ -591,9 +607,9 @@ class PhysicsScene:
                     ang_vel = self._solver.get_angular_velocity(body_id)
                     tr.local_position = Vec3(pos[0], pos[1], 0.0)
                     tr.local_euler_angles = Vec3(0.0, 0.0, math.degrees(rot[2]))
-                    rb._velocity = Vec2(vel[0], vel[1])
+                    rb._velocity._x = vel[0]; rb._velocity._y = vel[1]
                     rb._angular_velocity = ang_vel[2]
-                    rb._force_accum = Vec2.zero()
+                    rb._force_accum._x = 0.0; rb._force_accum._y = 0.0
                     rb._torque_accum = 0.0
                 else:
                     if rb.is_kinematic:
@@ -603,10 +619,10 @@ class PhysicsScene:
                     ang_vel = self._solver.get_angular_velocity(body_id)
                     tr.local_position = Vec3(pos[0], pos[1], pos[2])
                     tr.local_euler_angles = Vec3(math.degrees(rot[0]), math.degrees(rot[1]), math.degrees(rot[2]))
-                    rb._velocity = Vec3(vel[0], vel[1], vel[2])
-                    rb._angular_velocity = Vec3(ang_vel[0], ang_vel[1], ang_vel[2])
-                    rb._force_accum = Vec3.zero()
-                    rb._torque_accum = Vec3.zero()
+                    rb._velocity._x = vel[0]; rb._velocity._y = vel[1]; rb._velocity._z = vel[2]
+                    rb._angular_velocity._x = ang_vel[0]; rb._angular_velocity._y = ang_vel[1]; rb._angular_velocity._z = ang_vel[2]
+                    rb._force_accum._x = 0.0; rb._force_accum._y = 0.0; rb._force_accum._z = 0.0
+                    rb._torque_accum._x = 0.0; rb._torque_accum._y = 0.0; rb._torque_accum._z = 0.0
 
     def _create_entity_joints(self, entity: Entity):
         from core.components import Joint

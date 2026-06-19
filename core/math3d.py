@@ -1,140 +1,301 @@
 from __future__ import annotations
 import math
 import numpy as np
+from numba import njit
 from typing import Union
+
 FLOAT_TYPE = np.float64
-class Vec2:
-    __slots__ = ("_d",)
-    def __init__(self, x: float = 0.0, y: float = 0.0):
-        self._d = np.array([x, y], dtype=FLOAT_TYPE)
-    @classmethod
-    def from_array(cls, a: np.ndarray) -> Vec2:
-        v = cls.__new__(cls)
-        v._d = np.array(a[:2], dtype=FLOAT_TYPE)
-        return v
-    @property
-    def x(self) -> float: return float(self._d[0])
-    @x.setter
-    def x(self, v: float): self._d[0] = v
-    @property
-    def y(self) -> float: return float(self._d[1])
-    @y.setter
-    def y(self, v: float): self._d[1] = v
-    def __add__(self, o: Vec2) -> Vec2: return Vec2.from_array(self._d + o._d)
-    def __sub__(self, o: Vec2) -> Vec2: return Vec2.from_array(self._d - o._d)
-    def __mul__(self, s: float) -> Vec2: return Vec2.from_array(self._d * s)
-    def __rmul__(self, s: float) -> Vec2: return self.__mul__(s)
-    def __truediv__(self, s: float) -> Vec2: return Vec2.from_array(self._d / s)
-    def __neg__(self) -> Vec2: return Vec2.from_array(-self._d)
-    def __repr__(self) -> str: return f"Vec2({self.x:.4f}, {self.y:.4f})"
-    def dot(self, o: Vec2) -> float: return float(np.dot(self._d, o._d))
-    def length(self) -> float: return float(np.linalg.norm(self._d))
-    def normalized(self) -> Vec2:
-        l = self.length()
-        return Vec2.from_array(self._d / l) if l > 1e-10 else Vec2()
-    def to_list(self) -> list: return self._d.tolist()
-    @staticmethod
-    def zero() -> Vec2: return Vec2(0, 0)
-    @staticmethod
-    def one() -> Vec2: return Vec2(1, 1)
-class Vec3:
-    __slots__ = ("_d",)
-    def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0):
-        self._d = np.array([x, y, z], dtype=FLOAT_TYPE)
-    @classmethod
-    def from_array(cls, a: np.ndarray) -> Vec3:
-        v = cls.__new__(cls)
-        v._d = np.array(a[:3], dtype=FLOAT_TYPE)
-        return v
-    @property
-    def x(self) -> float: return float(self._d[0])
-    @x.setter
-    def x(self, v: float): self._d[0] = v
-    @property
-    def y(self) -> float: return float(self._d[1])
-    @y.setter
-    def y(self, v: float): self._d[1] = v
-    @property
-    def z(self) -> float: return float(self._d[2])
-    @z.setter
-    def z(self, v: float): self._d[2] = v
-    def __add__(self, o: Vec3) -> Vec3: return Vec3.from_array(self._d + o._d)
-    def __sub__(self, o: Vec3) -> Vec3: return Vec3.from_array(self._d - o._d)
-    def __mul__(self, s: float) -> Vec3: return Vec3.from_array(self._d * s)
-    def __rmul__(self, s: float) -> Vec3: return self.__mul__(s)
-    def __truediv__(self, s: float) -> Vec3: return Vec3.from_array(self._d / s)
-    def __neg__(self) -> Vec3: return Vec3.from_array(-self._d)
-    def __repr__(self) -> str: return f"Vec3({self.x:.4f}, {self.y:.4f}, {self.z:.4f})"
-    def __eq__(self, o: object) -> bool:
-        return isinstance(o, Vec3) and np.allclose(self._d, o._d)
-    def dot(self, o: Vec3) -> float: return float(np.dot(self._d, o._d))
-    def cross(self, o: Vec3) -> Vec3: return Vec3.from_array(np.cross(self._d, o._d))
-    def length(self) -> float: return float(np.linalg.norm(self._d))
-    def length_sq(self) -> float: return float(np.dot(self._d, self._d))
-    def normalized(self) -> Vec3:
-        l = self.length()
-        return Vec3.from_array(self._d / l) if l > 1e-10 else Vec3()
-    def lerp(self, o: Vec3, t: float) -> Vec3:
-        return Vec3.from_array(self._d + (o._d - self._d) * t)
-    def to_array(self) -> np.ndarray: return self._d.copy()
-    def to_list(self) -> list: return self._d.tolist()
-    @staticmethod
-    def zero() -> Vec3: return Vec3(0, 0, 0)
-    @staticmethod
-    def one() -> Vec3: return Vec3(1, 1, 1)
-    @staticmethod
-    def up() -> Vec3: return Vec3(0, 1, 0)
-    @staticmethod
-    def forward() -> Vec3: return Vec3(0, 0, -1)
-    @staticmethod
-    def right() -> Vec3: return Vec3(1, 0, 0)
-class Vec4:
-    __slots__ = ("_d",)
-    def __init__(self, x=0.0, y=0.0, z=0.0, w=1.0):
-        self._d = np.array([x, y, z, w], dtype=FLOAT_TYPE)
-    @classmethod
-    def from_array(cls, a: np.ndarray) -> Vec4:
-        v = cls.__new__(cls)
-        v._d = np.array(a[:4], dtype=FLOAT_TYPE)
-        return v
-    @property
-    def x(self) -> float: return float(self._d[0])
-    @property
-    def y(self) -> float: return float(self._d[1])
-    @property
-    def z(self) -> float: return float(self._d[2])
-    @property
-    def w(self) -> float: return float(self._d[3])
-    def to_list(self) -> list: return self._d.tolist()
-class Quat:
-    __slots__ = ("_d",)
-    def __init__(self, x=0.0, y=0.0, z=0.0, w=1.0):
-        self._d = np.array([x, y, z, w], dtype=FLOAT_TYPE)
-    @classmethod
-    def from_array(cls, a: np.ndarray) -> Quat:
-        q = cls.__new__(cls)
-        q._d = np.array(a[:4], dtype=FLOAT_TYPE)
-        return q
-    @classmethod
-    def identity(cls) -> Quat: return cls(0, 0, 0, 1)
-    @classmethod
-    def from_euler(cls, x: float, y: float, z: float) -> Quat:
-        hx, hy, hz = math.radians(x)*0.5, math.radians(y)*0.5, math.radians(z)*0.5
-        sx, cx = math.sin(hx), math.cos(hx)
-        sy, cy = math.sin(hy), math.cos(hy)
-        sz, cz = math.sin(hz), math.cos(hz)
-        return cls(
-            sx*cy*cz - cx*sy*sz,
+
+
+# ─── Quat njit kernels ───────────────────────────────────────────────────────
+
+@njit(fastmath=True, cache=True)
+def _q_mul(x1, y1, z1, w1, x2, y2, z2, w2):
+    return (w1*x2 + x1*w2 + y1*z2 - z1*y2,
+            w1*y2 - x1*z2 + y1*w2 + z1*x2,
+            w1*z2 + x1*y2 - y1*x2 + z1*w2,
+            w1*w2 - x1*x2 - y1*y2 - z1*z2)
+
+@njit(fastmath=True, cache=True)
+def _q_conjugate(x, y, z, w):
+    return -x, -y, -z, w
+
+@njit(fastmath=True, cache=True)
+def _q_normalized(x, y, z, w):
+    n = math.sqrt(x*x + y*y + z*z + w*w)
+    if n > 1e-10:
+        inv = 1.0 / n
+        return x*inv, y*inv, z*inv, w*inv
+    return 0.0, 0.0, 0.0, 1.0
+
+@njit(fastmath=True, cache=True)
+def _q_rotate_vec3(qx, qy, qz, qw, vx, vy, vz):
+    n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+    if n > 1e-10:
+        inv = 1.0 / n
+        qx *= inv; qy *= inv; qz *= inv; qw *= inv
+    tx = qw*vx + qy*vz - qz*vy
+    ty = qw*vy - qx*vz + qz*vx
+    tz = qw*vz + qx*vy - qy*vx
+    tw = -qx*vx - qy*vy - qz*vz
+    return (tw*-qx + tx*qw + ty*-qz - tz*-qy,
+            tw*-qy - tx*-qz + ty*qw + tz*-qx,
+            tw*-qz + tx*-qy - ty*-qx + tz*qw)
+
+@njit(fastmath=True, cache=True)
+def _q_to_euler(x, y, z, w):
+    sinx_cosp = 2*(w*x + y*z)
+    cosx_cosp = 1 - 2*(x*x + y*y)
+    rx = math.degrees(math.atan2(sinx_cosp, cosx_cosp))
+    siny_cosp = 2*(w*y - z*x)
+    ry = math.degrees(math.asin(max(-1.0, min(1.0, siny_cosp))))
+    sinz_cosp = 2*(w*z + x*y)
+    cosz_cosp = 1 - 2*(y*y + z*z)
+    rz = math.degrees(math.atan2(sinz_cosp, cosz_cosp))
+    return rx, ry, rz
+
+@njit(fastmath=True, cache=True)
+def _q_from_euler(x_deg, y_deg, z_deg):
+    hx = math.radians(x_deg) * 0.5
+    hy = math.radians(y_deg) * 0.5
+    hz = math.radians(z_deg) * 0.5
+    sx, cx = math.sin(hx), math.cos(hx)
+    sy, cy = math.sin(hy), math.cos(hy)
+    sz, cz = math.sin(hz), math.cos(hz)
+    return (sx*cy*cz - cx*sy*sz,
             cx*sy*cz + sx*cy*sz,
             cx*cy*sz - sx*sy*cz,
-            cx*cy*cz + sx*sy*sz
-        )
+            cx*cy*cz + sx*sy*sz)
+
+@njit(fastmath=True, cache=True)
+def _q_slerp(x1, y1, z1, w1, x2, y2, z2, w2, t):
+    d = x1*x2 + y1*y2 + z1*z2 + w1*w2
+    if d < 0:
+        x2, y2, z2, w2 = -x2, -y2, -z2, -w2
+        d = -d
+    if d > 0.9995:
+        return (x1 + t*(x2 - x1),
+                y1 + t*(y2 - y1),
+                z1 + t*(z2 - z1),
+                w1 + t*(w2 - w1))
+    theta0 = math.acos(d)
+    theta = theta0 * t
+    s0 = math.cos(theta) - d*math.sin(theta)/math.sin(theta0)
+    s1 = math.sin(theta)/math.sin(theta0)
+    return (s0*x1 + s1*x2, s0*y1 + s1*y2, s0*z1 + s1*z2, s0*w1 + s1*w2)
+
+
+# ─── Vec2 ─────────────────────────────────────────────────────────────────────
+
+class Vec2:
+    __slots__ = ("_x", "_y")
+    def __init__(self, x: float = 0.0, y: float = 0.0):
+        self._x = float(x)
+        self._y = float(y)
+
     @classmethod
-    def from_axis_angle(cls, axis: Vec3, angle_deg: float) -> Quat:
-        a = math.radians(angle_deg) * 0.5
+    def from_array(cls, a) -> Vec2:
+        return cls(float(a[0]), float(a[1]))
+
+    @staticmethod
+    def _make(x: float, y: float) -> Vec2:
+        v = object.__new__(Vec2)
+        v._x = x; v._y = y
+        return v
+
+    @property
+    def _d(self):
+        return (self._x, self._y)
+
+    @property
+    def x(self) -> float: return self._x
+    @x.setter
+    def x(self, v: float): self._x = float(v)
+    @property
+    def y(self) -> float: return self._y
+    @y.setter
+    def y(self, v: float): self._y = float(v)
+
+    def __add__(self, o): return Vec2._make(self._x + o._x, self._y + o._y)
+    def __sub__(self, o): return Vec2._make(self._x - o._x, self._y - o._y)
+    def __mul__(self, s): return Vec2._make(self._x * s, self._y * s)
+    def __rmul__(self, s): return self.__mul__(s)
+    def __truediv__(self, s): return Vec2._make(self._x / s, self._y / s)
+    def __neg__(self): return Vec2._make(-self._x, -self._y)
+    def __repr__(self): return f"Vec2({self._x:.4f}, {self._y:.4f})"
+    def __eq__(self, o):
+        return isinstance(o, Vec2) and abs(self._x-o._x) < 1e-8 and abs(self._y-o._y) < 1e-8
+    def __hash__(self): return hash((self._x, self._y))
+
+    def dot(self, o): return self._x * o._x + self._y * o._y
+    def length(self): return math.sqrt(self._x*self._x + self._y*self._y)
+    def normalized(self):
+        l = math.sqrt(self._x*self._x + self._y*self._y)
+        return Vec2._make(self._x/l, self._y/l) if l > 1e-10 else Vec2()
+    def to_list(self): return [self._x, self._y]
+
+    @staticmethod
+    def zero(): v = object.__new__(Vec2); v._x = 0.0; v._y = 0.0; return v
+    @staticmethod
+    def one(): v = object.__new__(Vec2); v._x = 1.0; v._y = 1.0; return v
+
+
+# ─── Vec3 ─────────────────────────────────────────────────────────────────────
+
+class Vec3:
+    __slots__ = ("_x", "_y", "_z")
+    def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0):
+        self._x = float(x)
+        self._y = float(y)
+        self._z = float(z)
+
+    @classmethod
+    def from_array(cls, a) -> Vec3:
+        return cls(float(a[0]), float(a[1]), float(a[2]))
+
+    @staticmethod
+    def _make(x: float, y: float, z: float) -> Vec3:
+        v = object.__new__(Vec3)
+        v._x = x; v._y = y; v._z = z
+        return v
+
+    @property
+    def _d(self):
+        return (self._x, self._y, self._z)
+
+    @property
+    def x(self) -> float: return self._x
+    @x.setter
+    def x(self, v: float): self._x = float(v)
+    @property
+    def y(self) -> float: return self._y
+    @y.setter
+    def y(self, v: float): self._y = float(v)
+    @property
+    def z(self) -> float: return self._z
+    @z.setter
+    def z(self, v: float): self._z = float(v)
+
+    def __getitem__(self, i: int) -> float:
+        if i == 0: return self._x
+        if i == 1: return self._y
+        if i == 2: return self._z
+        raise IndexError(i)
+
+    def __iter__(self):
+        yield self._x; yield self._y; yield self._z
+
+    def __add__(self, o): return Vec3._make(self._x + o._x, self._y + o._y, self._z + o._z)
+    def __sub__(self, o): return Vec3._make(self._x - o._x, self._y - o._y, self._z - o._z)
+    def __mul__(self, s): return Vec3._make(self._x * s, self._y * s, self._z * s)
+    def __rmul__(self, s): return self.__mul__(s)
+    def __truediv__(self, s): return Vec3._make(self._x / s, self._y / s, self._z / s)
+    def __neg__(self): return Vec3._make(-self._x, -self._y, -self._z)
+    def __repr__(self): return f"Vec3({self._x:.4f}, {self._y:.4f}, {self._z:.4f})"
+    def __eq__(self, o):
+        if not isinstance(o, Vec3): return False
+        return abs(self._x-o._x) < 1e-8 and abs(self._y-o._y) < 1e-8 and abs(self._z-o._z) < 1e-8
+    def __hash__(self): return hash((self._x, self._y, self._z))
+
+    def dot(self, o): return self._x*o._x + self._y*o._y + self._z*o._z
+    def cross(self, o):
+        return Vec3._make(
+            self._y*o._z - self._z*o._y,
+            self._z*o._x - self._x*o._z,
+            self._x*o._y - self._y*o._x
+        )
+    def length(self): return math.sqrt(self._x*self._x + self._y*self._y + self._z*self._z)
+    def length_sq(self): return self._x*self._x + self._y*self._y + self._z*self._z
+    def normalized(self):
+        l = math.sqrt(self._x*self._x + self._y*self._y + self._z*self._z)
+        return Vec3._make(self._x/l, self._y/l, self._z/l) if l > 1e-10 else Vec3()
+    def lerp(self, o, t):
+        return Vec3._make(
+            self._x + (o._x - self._x)*t,
+            self._y + (o._y - self._y)*t,
+            self._z + (o._z - self._z)*t
+        )
+    def to_array(self): return np.array([self._x, self._y, self._z], dtype=FLOAT_TYPE)
+    def to_list(self): return [self._x, self._y, self._z]
+
+    @staticmethod
+    def zero(): v = object.__new__(Vec3); v._x = 0.0; v._y = 0.0; v._z = 0.0; return v
+    @staticmethod
+    def one(): v = object.__new__(Vec3); v._x = 1.0; v._y = 1.0; v._z = 1.0; return v
+    @staticmethod
+    def up(): v = object.__new__(Vec3); v._x = 0.0; v._y = 1.0; v._z = 0.0; return v
+    @staticmethod
+    def forward(): v = object.__new__(Vec3); v._x = 0.0; v._y = 0.0; v._z = -1.0; return v
+    @staticmethod
+    def right(): v = object.__new__(Vec3); v._x = 1.0; v._y = 0.0; v._z = 0.0; return v
+
+
+# ─── Vec4 ─────────────────────────────────────────────────────────────────────
+
+class Vec4:
+    __slots__ = ("_x", "_y", "_z", "_w")
+    def __init__(self, x=0.0, y=0.0, z=0.0, w=1.0):
+        self._x = float(x); self._y = float(y); self._z = float(z); self._w = float(w)
+
+    @classmethod
+    def from_array(cls, a) -> Vec4:
+        return cls(float(a[0]), float(a[1]), float(a[2]), float(a[3]))
+
+    @staticmethod
+    def _make(x: float, y: float, z: float, w: float) -> Vec4:
+        v = object.__new__(Vec4)
+        v._x = x; v._y = y; v._z = z; v._w = w
+        return v
+
+    @property
+    def _d(self): return (self._x, self._y, self._z, self._w)
+
+    @property
+    def x(self): return self._x
+    @property
+    def y(self): return self._y
+    @property
+    def z(self): return self._z
+    @property
+    def w(self): return self._w
+    def to_list(self): return [self._x, self._y, self._z, self._w]
+
+
+# ─── Quat ─────────────────────────────────────────────────────────────────────
+
+class Quat:
+    __slots__ = ("_x", "_y", "_z", "_w")
+    def __init__(self, x=0.0, y=0.0, z=0.0, w=1.0):
+        self._x = float(x); self._y = float(y); self._z = float(z); self._w = float(w)
+
+    @classmethod
+    def from_array(cls, a) -> Quat:
+        return cls(float(a[0]), float(a[1]), float(a[2]), float(a[3]))
+
+    @staticmethod
+    def _make(x: float, y: float, z: float, w: float) -> Quat:
+        q = object.__new__(Quat)
+        q._x = x; q._y = y; q._z = z; q._w = w
+        return q
+
+    @property
+    def _d(self): return (self._x, self._y, self._z, self._w)
+
+    @classmethod
+    def identity(cls): return cls(0, 0, 0, 1)
+
+    @classmethod
+    def from_euler(cls, x, y, z):
+        x, y, z, w = _q_from_euler(x, y, z)
+        return Quat._make(x, y, z, w)
+
+    @classmethod
+    def from_axis_angle(cls, axis: Vec3, angle_deg: float):
         ax = axis.normalized()
+        a = math.radians(angle_deg) * 0.5
         s = math.sin(a)
-        return cls(ax.x*s, ax.y*s, ax.z*s, math.cos(a))
+        return Quat._make(ax._x * s, ax._y * s, ax._z * s, math.cos(a))
+
     @classmethod
     def look_rotation(cls, forward: Vec3, up: Vec3 = None) -> Quat:
         if up is None: up = Vec3.up()
@@ -142,86 +303,76 @@ class Quat:
         r = up.cross(f).normalized()
         u = f.cross(r)
         m = np.eye(3, dtype=FLOAT_TYPE)
-        m[0] = r.to_array()
-        m[1] = u.to_array()
-        m[2] = f.to_array()
+        m[0] = np.array([r._x, r._y, r._z])
+        m[1] = np.array([u._x, u._y, u._z])
+        m[2] = np.array([f._x, f._y, f._z])
         return cls._from_rotation_matrix3(m)
+
     @classmethod
     def _from_rotation_matrix3(cls, m: np.ndarray) -> Quat:
         t = m[0,0] + m[1,1] + m[2,2]
         if t > 0:
             s = 0.5 / math.sqrt(t + 1.0)
-            return cls((m[2,1]-m[1,2])*s, (m[0,2]-m[2,0])*s, (m[1,0]-m[0,1])*s, 0.25/s)
+            return Quat._make((m[2,1]-m[1,2])*s, (m[0,2]-m[2,0])*s, (m[1,0]-m[0,1])*s, 0.25/s)
         elif m[0,0] > m[1,1] and m[0,0] > m[2,2]:
             s = 2.0*math.sqrt(1.0+m[0,0]-m[1,1]-m[2,2])
-            return cls(0.25*s, (m[0,1]+m[1,0])/s, (m[0,2]+m[2,0])/s, (m[2,1]-m[1,2])/s)
+            return Quat._make(0.25*s, (m[0,1]+m[1,0])/s, (m[0,2]+m[2,0])/s, (m[2,1]-m[1,2])/s)
         elif m[1,1] > m[2,2]:
             s = 2.0*math.sqrt(1.0+m[1,1]-m[0,0]-m[2,2])
-            return cls((m[0,1]+m[1,0])/s, 0.25*s, (m[1,2]+m[2,1])/s, (m[0,2]-m[2,0])/s)
+            return Quat._make((m[0,1]+m[1,0])/s, 0.25*s, (m[1,2]+m[2,1])/s, (m[0,2]-m[2,0])/s)
         else:
             s = 2.0*math.sqrt(1.0+m[2,2]-m[0,0]-m[1,1])
-            return cls((m[0,2]+m[2,0])/s, (m[1,2]+m[2,1])/s, 0.25*s, (m[1,0]-m[0,1])/s)
+            return Quat._make((m[0,2]+m[2,0])/s, (m[1,2]+m[2,1])/s, 0.25*s, (m[1,0]-m[0,1])/s)
+
     @property
-    def x(self) -> float: return float(self._d[0])
+    def x(self): return self._x
     @property
-    def y(self) -> float: return float(self._d[1])
+    def y(self): return self._y
     @property
-    def z(self) -> float: return float(self._d[2])
+    def z(self): return self._z
     @property
-    def w(self) -> float: return float(self._d[3])
-    def __mul__(self, o: Quat) -> Quat:
-        ax,ay,az,aw = self._d
-        bx,by,bz,bw = o._d
-        return Quat(
-            aw*bx+ax*bw+ay*bz-az*by,
-            aw*by-ax*bz+ay*bw+az*bx,
-            aw*bz+ax*by-ay*bx+az*bw,
-            aw*bw-ax*bx-ay*by-az*bz
-        )
-    def conjugate(self) -> Quat: return Quat(-self.x, -self.y, -self.z, self.w)
-    def normalized(self) -> Quat:
-        n = np.linalg.norm(self._d)
-        return Quat.from_array(self._d/n) if n > 1e-10 else Quat.identity()
+    def w(self): return self._w
+
+    def __mul__(self, o):
+        x, y, z, w = _q_mul(self._x, self._y, self._z, self._w, o._x, o._y, o._z, o._w)
+        return Quat._make(x, y, z, w)
+
+    def conjugate(self): x, y, z, w = _q_conjugate(self._x, self._y, self._z, self._w); return Quat._make(x, y, z, w)
+
+    def normalized(self):
+        x, y, z, w = _q_normalized(self._x, self._y, self._z, self._w)
+        return Quat._make(x, y, z, w)
+
     def rotate_vec3(self, v: Vec3) -> Vec3:
-        q = self.normalized()
-        vq = Quat(v.x, v.y, v.z, 0)
-        res = (q * vq) * q.conjugate()
-        return Vec3(res.x, res.y, res.z)
+        x, y, z = _q_rotate_vec3(self._x, self._y, self._z, self._w, v._x, v._y, v._z)
+        return Vec3(x, y, z)
+
     def to_euler(self) -> Vec3:
-        x,y,z,w = self._d
-        sinx_cosp = 2*(w*x + y*z)
-        cosx_cosp = 1 - 2*(x*x + y*y)
-        rx = math.degrees(math.atan2(sinx_cosp, cosx_cosp))
-        siny_cosp = 2*(w*y - z*x)
-        sy = max(-1.0, min(1.0, siny_cosp))
-        ry = math.degrees(math.asin(sy))
-        sinz_cosp = 2*(w*z + x*y)
-        cosz_cosp = 1 - 2*(y*y + z*z)
-        rz = math.degrees(math.atan2(sinz_cosp, cosz_cosp))
-        return Vec3(rx, ry, rz)
+        x, y, z = _q_to_euler(self._x, self._y, self._z, self._w)
+        return Vec3(x, y, z)
+
     def to_matrix4(self) -> Mat4:
         n = self.normalized()
-        x,y,z,w = n._d
+        x, y, z, w = n._x, n._y, n._z, n._w
         m = np.eye(4, dtype=FLOAT_TYPE)
         m[0,0]=1-2*y*y-2*z*z; m[0,1]=2*x*y+2*w*z; m[0,2]=2*x*z-2*w*y
         m[1,0]=2*x*y-2*w*z;   m[1,1]=1-2*x*x-2*z*z; m[1,2]=2*y*z+2*w*x
         m[2,0]=2*x*z+2*w*y;   m[2,1]=2*y*z-2*w*x;   m[2,2]=1-2*x*x-2*y*y
         return Mat4(m)
-    def slerp(self, o: Quat, t: float) -> Quat:
-        dot = float(np.dot(self._d, o._d))
-        if dot < 0:
-            od = -o._d
-            dot = -dot
-        else:
-            od = o._d
-        if dot > 0.9995:
-            return Quat.from_array(self._d + t*(od - self._d)).normalized()
-        theta0 = math.acos(dot)
-        theta = theta0 * t
-        s0 = math.cos(theta) - dot*math.sin(theta)/math.sin(theta0)
-        s1 = math.sin(theta)/math.sin(theta0)
-        return Quat.from_array(s0*self._d + s1*od).normalized()
-    def to_list(self) -> list: return self._d.tolist()
+
+    def slerp(self, o, t):
+        x, y, z, w = _q_slerp(self._x, self._y, self._z, self._w, o._x, o._y, o._z, o._w, t)
+        n = math.sqrt(x*x + y*y + z*z + w*w)
+        if n > 1e-10:
+            inv = 1.0 / n
+            return Quat._make(x*inv, y*inv, z*inv, w*inv)
+        return Quat.identity()
+
+    def to_list(self): return [self._x, self._y, self._z, self._w]
+
+
+# ─── Mat4 (stays numpy — 16 values justify the overhead) ─────────────────────
+
 class Mat4:
     __slots__ = ("_d",)
     def __init__(self, data: np.ndarray = None):
@@ -229,36 +380,36 @@ class Mat4:
             self._d = np.array(data, dtype=FLOAT_TYPE)
         else:
             self._d = np.eye(4, dtype=FLOAT_TYPE)
+
     @staticmethod
     def identity() -> Mat4: return Mat4()
+
     @staticmethod
     def translation(v: Vec3) -> Mat4:
-        m = Mat4()
-        m._d[3,0] = v.x; m._d[3,1] = v.y; m._d[3,2] = v.z
-        return m
+        m = Mat4(); m._d[3,0] = v.x; m._d[3,1] = v.y; m._d[3,2] = v.z; return m
+
     @staticmethod
     def scale(v: Vec3) -> Mat4:
-        m = Mat4()
-        m._d[0,0] = v.x; m._d[1,1] = v.y; m._d[2,2] = v.z
-        return m
+        m = Mat4(); m._d[0,0] = v.x; m._d[1,1] = v.y; m._d[2,2] = v.z; return m
+
     @staticmethod
     def perspective(fov_deg: float, aspect: float, near: float, far: float) -> Mat4:
         f = 1.0 / math.tan(math.radians(fov_deg) * 0.5)
         m = np.zeros((4,4), dtype=FLOAT_TYPE)
-        m[0,0] = f / aspect
-        m[1,1] = f
-        m[2,2] = (far+near)/(near-far)
-        m[2,3] = -1.0
+        m[0,0] = f / aspect; m[1,1] = f
+        m[2,2] = (far+near)/(near-far); m[2,3] = -1.0
         m[3,2] = (2*far*near)/(near-far)
         return Mat4(m)
+
     @staticmethod
-    def orthographic(left: float, right: float, bottom: float, top: float, near: float, far: float) -> Mat4:
+    def orthographic(left, right, bottom, top, near, far) -> Mat4:
         m = np.zeros((4,4), dtype=FLOAT_TYPE)
         m[0,0] = 2/(right-left); m[3,0] = -(right+left)/(right-left)
         m[1,1] = 2/(top-bottom); m[3,1] = -(top+bottom)/(top-bottom)
         m[2,2] = -2/(far-near);  m[3,2] = -(far+near)/(far-near)
         m[3,3] = 1
         return Mat4(m)
+
     @staticmethod
     def look_at(eye: Vec3, center: Vec3, up: Vec3) -> Mat4:
         f = (center - eye).normalized()
@@ -270,17 +421,18 @@ class Mat4:
         m[0,2]=-f.x; m[1,2]=-f.y; m[2,2]=-f.z
         m[3,0]=-r.dot(eye); m[3,1]=-u.dot(eye); m[3,2]=f.dot(eye)
         return Mat4(m)
-    def __mul__(self, o: Mat4) -> Mat4: return Mat4(self._d @ o._d)
-    def __matmul__(self, o: Mat4) -> Mat4: return self.__mul__(o)
-    def transposed(self) -> Mat4: return Mat4(self._d.T)
-    def inverted(self) -> Mat4: return Mat4(np.linalg.inv(self._d))
-    def to_array(self) -> np.ndarray: return self._d.copy()
-    def to_f32(self) -> np.ndarray:
+
+    def __mul__(self, o): return Mat4(self._d @ o._d)
+    def __matmul__(self, o): return self.__mul__(o)
+    def transposed(self): return Mat4(self._d.T)
+    def inverted(self): return Mat4(np.linalg.inv(self._d))
+    def to_array(self): return self._d.copy()
+    def to_f32(self):
         return self._d.T.astype(np.float32).flatten(order='F')
-    def to_list(self) -> list: return self._d.tolist()
-    def get_translation(self) -> Vec3: return Vec3(self._d[3,0], self._d[3,1], self._d[3,2])
+    def to_list(self): return self._d.tolist()
+    def get_translation(self): return Vec3(float(self._d[3,0]), float(self._d[3,1]), float(self._d[3,2]))
     def decompose(self) -> tuple[Vec3, Quat, Vec3]:
-        pos = Vec3(self._d[3,0], self._d[3,1], self._d[3,2])
+        pos = Vec3(float(self._d[3,0]), float(self._d[3,1]), float(self._d[3,2]))
         sx = float(np.linalg.norm(self._d[:3,0]))
         sy = float(np.linalg.norm(self._d[:3,1]))
         sz = float(np.linalg.norm(self._d[:3,2]))

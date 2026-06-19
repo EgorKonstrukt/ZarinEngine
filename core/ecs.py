@@ -90,7 +90,7 @@ class Component:
 
 class Entity:
     __slots__ = (
-        '_id', '_name', '_type_map', '_components',
+        '_id', '_name', '_type_map', '_type_name_map', '_components',
         '_update_list', '_fixed_update_list',
         '_active', '_parent', '_children', '_tags', '_layer',
         '_scene', '_prefab_guid', '_prefab_data',
@@ -102,6 +102,7 @@ class Entity:
         self._id: str = eid or str(uuid.uuid4())
         self._name: str = name
         self._type_map: dict[type, list[Component]] = {}
+        self._type_name_map: dict[str, type] = {}
         self._components: dict[str, Component] = {}
         self._update_list: list[Component] = []
         self._fixed_update_list: list[Component] = []
@@ -232,6 +233,7 @@ class Entity:
         type_map = self._type_map
         if comp_type not in type_map:
             type_map[comp_type] = []
+            self._type_name_map[comp_type.__name__] = comp_type
         type_map[comp_type].append(comp)
 
         sc = self._scene
@@ -268,6 +270,7 @@ class Entity:
         self._components.pop(key, None)
         if not clist:
             del self._type_map[cls]
+            self._type_name_map.pop(cls.__name__, None)
             if cls.__name__ == "Transform":
                 self._transform_type = None
                 self._invalidate_transform_cache()
@@ -312,6 +315,9 @@ class Entity:
                 except ValueError: pass
                 if sc:
                     sc._active_fixed_components.discard(comp)
+        if not clist:
+            del self._type_map[cls]
+            self._type_name_map.pop(cls.__name__, None)
         if base == "Transform":
             self._transform_type = None
             self._invalidate_transform_cache()
@@ -332,6 +338,7 @@ class Entity:
             except ValueError: pass
             if not clist:
                 del self._type_map[comp_type]
+                self._type_name_map.pop(comp_type.__name__, None)
                 if comp_type.__name__ == "Transform":
                     self._transform_type = None
                     self._invalidate_transform_cache()
@@ -362,8 +369,10 @@ class Entity:
         return list(self._type_map.get(cls, []))
 
     def get_component_by_name(self, name: str) -> Optional[Component]:
-        for t, clist in self._type_map.items():
-            if t.__name__ == name:
+        t = self._type_name_map.get(name)
+        if t is not None:
+            clist = self._type_map.get(t)
+            if clist:
                 return clist[0]
         c = self._components.get(name)
         if c is not None:

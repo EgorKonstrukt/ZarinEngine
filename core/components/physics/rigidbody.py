@@ -37,11 +37,6 @@ class Rigidbody(Component):
         self._force_accum: Vec3 = Vec3.zero()
         self._torque_accum: Vec3 = Vec3.zero()
         self._body_id: int = -1
-    def on_start(self):
-        self._velocity = Vec3.zero()
-        self._angular_velocity = Vec3.zero()
-        self._force_accum = Vec3.zero()
-        self._torque_accum = Vec3.zero()
 
     @property
     def velocity(self) -> Vec3: return self._velocity
@@ -59,8 +54,8 @@ class Rigidbody(Component):
         if self.mass > 0 and not self.is_kinematic:
             self._velocity = self._velocity + impulse * (1.0 / self.mass)
     def _clear_forces(self):
-        self._force_accum = Vec3.zero()
-        self._torque_accum = Vec3.zero()
+        self._force_accum._x = 0.0; self._force_accum._y = 0.0; self._force_accum._z = 0.0
+        self._torque_accum._x = 0.0; self._torque_accum._y = 0.0; self._torque_accum._z = 0.0
     def serialize(self) -> dict:
         d = super().serialize()
         d.update({
