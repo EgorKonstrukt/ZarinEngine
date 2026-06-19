@@ -538,27 +538,41 @@ class PyBulletSolver(IPhysicsSolver):
         flags = p.LINK_FRAME if local else p.WORLD_FRAME
         p.applyExternalForce(body_id, -1, impulse, (0, 0, 0), flags, physicsClientId=cid)
 
-    def set_velocity(self, body_id: int, velocity: tuple[float, float, float]):
+    def set_velocities(
+        self, body_id: int,
+        linear: Optional[tuple[float, float, float]] = None,
+        angular: Optional[tuple[float, float, float]] = None,
+    ):
         cid = self._cid()
-        p.resetBaseVelocity(body_id, linearVelocity=velocity, physicsClientId=cid)
+        kwargs = {"physicsClientId": cid}
+        if linear is not None:
+            kwargs["linearVelocity"] = linear
+        if angular is not None:
+            kwargs["angularVelocity"] = angular
+        p.resetBaseVelocity(body_id, **kwargs)
+
+    def get_velocities(
+        self, body_id: int
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+        cid = self._cid()
+        vel, ang = p.getBaseVelocity(body_id, physicsClientId=cid)
+        return (vel[0], vel[1], vel[2]), (ang[0], ang[1], ang[2])
+
+    def set_velocity(self, body_id: int, velocity: tuple[float, float, float]):
+        self.set_velocities(body_id, linear=velocity)
 
     def get_velocity(self, body_id: int) -> tuple[float, float, float]:
-        cid = self._cid()
-        vel, _ = p.getBaseVelocity(body_id, physicsClientId=cid)
-        return (vel[0], vel[1], vel[2])
+        return self.get_velocities(body_id)[0]
 
     def set_angular_velocity(
         self, body_id: int, velocity: tuple[float, float, float]
     ):
-        cid = self._cid()
-        p.resetBaseVelocity(body_id, angularVelocity=velocity, physicsClientId=cid)
+        self.set_velocities(body_id, angular=velocity)
 
     def get_angular_velocity(
         self, body_id: int
     ) -> tuple[float, float, float]:
-        cid = self._cid()
-        _, ang = p.getBaseVelocity(body_id, physicsClientId=cid)
-        return (ang[0], ang[1], ang[2])
+        return self.get_velocities(body_id)[1]
 
     def ray_cast(
         self,
