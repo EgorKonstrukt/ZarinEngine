@@ -4,7 +4,7 @@ import math
 import numpy as np
 from core.math3d import Mat4, Vec3
 from core.config import get_global_config
-from editor.gizmo.gizmo_drawer import GizmoDrawer, FillMode
+
 from editor.gizmo.gizmo_collider import get_collider_wireframe_lines
 from editor.gizmo.gizmo_particle import get_particle_emitter_lines
 from editor.gizmo.gizmo_camera import get_camera_frustum_lines
@@ -193,6 +193,48 @@ def _dashed_lines(segments: list[tuple[Vec3, Vec3, list]],
     return out
 
 
+def _build_sphere_mesh(radius: float, color: list[float], segments: int = 8) -> tuple:
+    verts = []
+    idx = []
+    cols = []
+    for lat in range(segments):
+        theta1 = math.pi * lat / segments
+        theta2 = math.pi * (lat + 1) / segments
+        for lon in range(segments):
+            phi1 = 2.0 * math.pi * lon / segments
+            phi2 = 2.0 * math.pi * (lon + 1) / segments
+            s = math.sin
+            c = math.cos
+            p0 = Vec3(radius * s(theta1) * c(phi1), radius * c(theta1), radius * s(theta1) * s(phi1))
+            p1 = Vec3(radius * s(theta1) * c(phi2), radius * c(theta1), radius * s(theta1) * s(phi2))
+            p2 = Vec3(radius * s(theta2) * c(phi2), radius * c(theta2), radius * s(theta2) * s(phi2))
+            p3 = Vec3(radius * s(theta2) * c(phi1), radius * c(theta2), radius * s(theta2) * s(phi1))
+            i0 = len(verts)
+            verts.extend([p0, p1, p2, p3])
+            cols.extend([color] * 4)
+            idx.extend([i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3])
+    return (verts, idx, cols)
+
+
+def _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, corners, radius, color):
+    cache = getattr(_render_corner_spheres, '_cache', None)
+    if cache is None:
+        cache = _build_sphere_mesh(1.0, color, segments=8)
+        _render_corner_spheres._cache = cache
+    cverts, cidx, ccols = cache
+    all_verts = []
+    all_idx = []
+    all_cols = []
+    for corner in corners:
+        base = len(all_verts)
+        for v in cverts:
+            all_verts.append(Vec3(corner.x + v.x * radius, corner.y + v.y * radius, corner.z + v.z * radius))
+        for i in cidx:
+            all_idx.append(base + i)
+        all_cols.extend(ccols)
+    vp._renderer.render_gizmo_meshes([(all_verts, all_idx, all_cols)], vp_mat)
+
+
 def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
     from editor.viewport.picking import _world_aabb_of
     bmin_t = None
@@ -243,13 +285,7 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
     pixel_r = 6
     world_r = pixel_r * 2.0 * dist * math.tan(fov_rad * 0.5) / fh if fh > 0 else 0.05
     world_r = max(world_r, 0.01)
-    sphere_color = [color[0], color[1], color[2], 1.0] if len(color) >= 3 else [0.6, 0.2, 0.8, 1.0]
-    meshes = []
-    for v in verts_3d:
-        _, sphere_meshes = GizmoDrawer.sphere(v, world_r, sphere_color, FillMode.SOLID, segments=8)
-        meshes.extend(sphere_meshes)
-    if meshes:
-        vp._renderer.render_gizmo_meshes(meshes, vp_mat)
+    _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, verts_3d, world_r, color)
 
 
 def render_selection_bounds(vp, vp_mat: Mat4, time_s: float, dt: float = 0.0):
