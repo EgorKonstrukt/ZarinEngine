@@ -1,11 +1,9 @@
 from __future__ import annotations
 import uuid
-import json
-import time
 from collections import deque
-from typing import Any, Type, TypeVar, Iterator, Optional
-from dataclasses import dataclass, field
+from typing import Any, Type, TypeVar, Optional
 from core.spatial import Octree, AABB
+
 T = TypeVar("T", bound="Component")
 
 _UNSET = object()
@@ -46,25 +44,26 @@ class Component:
     def on_disable(self): pass
 
     @property
-    def entity(self) -> Optional[Entity]: return self._entity
+    def entity(self) -> Optional[Entity]:
+        return self._entity
 
     @property
-    def transform(self) -> Optional[Any]:
-        t = self.__dict__.get('_transform', _UNSET)
-        if t is not _UNSET:
-            return t
+    def transform(self):
+        cached = self._transform
+        if cached is not _UNSET:
+            return cached
         ent = self._entity
         if ent is None:
-            self.__dict__['_transform'] = None
+            self._transform = None
             return None
-        cls = ent._component_name_index.get("Transform")
-        if cls:
-            clist = ent._component_type_index.get(cls)
-            if clist:
-                self.__dict__['_transform'] = clist[0]
-                return clist[0]
-        self.__dict__['_transform'] = None
-        return None
+        t_type = ent._get_transform_type()
+        if t_type is None:
+            self._transform = None
+            return None
+        t_list = ent._type_map.get(t_type)
+        result = t_list[0] if t_list else None
+        self._transform = result
+        return result
 
     @property
     def gizmo_icon(self) -> Optional[tuple[int, int, int, str]]:
@@ -91,19 +90,19 @@ class Component:
 
 class Entity:
     __slots__ = (
-        '_id', '_name', '_components', '_component_type_index',
-        '_component_name_index', '_update_list', '_fixed_update_list',
+        '_id', '_name', '_type_map', '_components',
+        '_update_list', '_fixed_update_list',
         '_active', '_parent', '_children', '_tags', '_layer',
         '_scene', '_prefab_guid', '_prefab_data',
+        '_transform_type',
     )
 
     def __init__(self, name: str = "Entity", eid: Optional[str] = None,
                  prefab_guid: Optional[str] = None):
         self._id: str = eid or str(uuid.uuid4())
         self._name: str = name
+        self._type_map: dict[type, list[Component]] = {}
         self._components: dict[str, Component] = {}
-        self._component_type_index: dict[type, list[Component]] = {}
-        self._component_name_index: dict[str, type] = {}
         self._update_list: list[Component] = []
         self._fixed_update_list: list[Component] = []
         self._active: bool = True
@@ -114,6 +113,19 @@ class Entity:
         self._scene: Optional[Scene] = None
         self._prefab_guid: Optional[str] = prefab_guid
         self._prefab_data: Optional[dict] = None
+        self._transform_type: Optional[type] = None
+
+    def _get_transform_type(self):
+        tt = self._transform_type
+        if tt is not None:
+            return tt
+        for t in self._type_map:
+            if t.__name__ == "Transform":
+                self._transform_type = t
+                return t
+        from core.components.transform import Transform
+        self._transform_type = Transform
+        return Transform
 
     @property
     def id(self) -> str: return self._id
@@ -129,6 +141,8 @@ class Entity:
 
     @active.setter
     def active(self, v: bool):
+        if self._active == v:
+            return
         self._active = v
         sc = self._scene
         if sc:
@@ -140,7 +154,8 @@ class Entity:
                 sc._active_update_components.difference_update(self._update_list)
                 sc._active_fixed_components.difference_update(self._fixed_update_list)
         cb = (lambda c: c.on_enable()) if v else (lambda c: c.on_disable())
-        for c in self._components.values():
+        comps = self._components
+        for c in comps.values():
             if c.enabled:
                 cb(c)
 
@@ -197,13 +212,12 @@ class Entity:
             t._mark_dirty()
 
     def _invalidate_transform_cache(self):
-        d_pop = dict.pop
         for c in self._components.values():
-            d_pop(c.__dict__, '_transform', None)
+            c._transform = _UNSET
 
     def _make_component_key(self, comp: Component) -> str:
         base = type(comp).__name__
-        if getattr(type(comp), '_allow_multiple', False):
+        if type(comp)._allow_multiple:
             return base + "." + str(uuid.uuid4())[:8]
         return base
 
@@ -212,16 +226,14 @@ class Entity:
             key = self._make_component_key(comp)
         comp._entity = self
         comp._key = key
-        self._components[key] = comp
         comp_type = type(comp)
-        type_index = self._component_type_index
-        name_index = self._component_name_index
-        if comp_type not in type_index:
-            type_index[comp_type] = []
-            cname = comp_type.__name__
-            if cname not in name_index:
-                name_index[cname] = comp_type
-        type_index[comp_type].append(comp)
+        self._components[key] = comp
+
+        type_map = self._type_map
+        if comp_type not in type_map:
+            type_map[comp_type] = []
+        type_map[comp_type].append(comp)
+
         sc = self._scene
         is_active = self._active
         if comp._updates:
@@ -232,26 +244,22 @@ class Entity:
             self._fixed_update_list.append(comp)
             if sc and is_active and comp.enabled:
                 sc._active_fixed_components.add(comp)
+
         if sc:
-            base = comp_type.__name__
+            comp_name = comp_type.__name__
             idx = sc._component_indices
-            if base not in idx:
-                idx[base] = set()
-            idx[base].add(self._id)
+            if comp_name not in idx:
+                idx[comp_name] = set()
+            idx[comp_name].add(self._id)
             sc._render_version += 1
         if comp_type.__name__ == "Transform":
+            self._transform_type = comp_type
             self._invalidate_transform_cache()
-        elif '_transform' not in comp.__dict__:
-            t_cls = name_index.get("Transform")
-            if t_cls:
-                t_list = type_index.get(t_cls)
-                if t_list:
-                    comp.__dict__['_transform'] = t_list[0]
         comp.on_awake()
         return comp
 
     def remove_component(self, cls: Type[T]):
-        clist = self._component_type_index.get(cls)
+        clist = self._type_map.get(cls)
         if not clist:
             return
         comp = clist.pop(0)
@@ -259,8 +267,10 @@ class Entity:
         comp.on_destroy()
         self._components.pop(key, None)
         if not clist:
-            del self._component_type_index[cls]
-            self._component_name_index.pop(cls.__name__, None)
+            del self._type_map[cls]
+            if cls.__name__ == "Transform":
+                self._transform_type = None
+                self._invalidate_transform_cache()
         sc = self._scene
         if comp._updates:
             try: self._update_list.remove(comp)
@@ -272,17 +282,17 @@ class Entity:
             except ValueError: pass
             if sc:
                 sc._active_fixed_components.discard(comp)
-        base = cls.__name__
         if sc:
+            base = cls.__name__
             if base == "Transform":
-                self._invalidate_transform_cache()
+                self._transform_type = None
             idx = sc._component_indices.get(base)
             if idx:
                 idx.discard(self._id)
             sc._render_version += 1
 
     def remove_all_components(self, cls: Type[T]):
-        clist = self._component_type_index.pop(cls, None)
+        clist = self._type_map.pop(cls, None)
         if not clist:
             return
         base = cls.__name__
@@ -302,10 +312,10 @@ class Entity:
                 except ValueError: pass
                 if sc:
                     sc._active_fixed_components.discard(comp)
-        self._component_name_index.pop(cls.__name__, None)
+        if base == "Transform":
+            self._transform_type = None
+            self._invalidate_transform_cache()
         if sc:
-            if base == "Transform":
-                self._invalidate_transform_cache()
             idx = sc._component_indices.get(base)
             if idx:
                 idx.discard(self._id)
@@ -316,13 +326,15 @@ class Entity:
             return
         comp.on_destroy()
         comp_type = type(comp)
-        clist = self._component_type_index.get(comp_type)
+        clist = self._type_map.get(comp_type)
         if clist:
             try: clist.remove(comp)
             except ValueError: pass
             if not clist:
-                del self._component_type_index[comp_type]
-                self._component_name_index.pop(comp_type.__name__, None)
+                del self._type_map[comp_type]
+                if comp_type.__name__ == "Transform":
+                    self._transform_type = None
+                    self._invalidate_transform_cache()
         sc = self._scene
         if comp._updates:
             try: self._update_list.remove(comp)
@@ -337,23 +349,21 @@ class Entity:
         base = key.split(".")[0]
         if sc:
             if base == "Transform":
-                self._invalidate_transform_cache()
+                self._transform_type = None
             idx = sc._component_indices.get(base)
             if idx:
                 idx.discard(self._id)
 
     def get_component(self, cls: Type[T]) -> Optional[T]:
-        clist = self._component_type_index.get(cls)
+        clist = self._type_map.get(cls)
         return clist[0] if clist else None
 
     def get_components(self, cls: Type[T]) -> list[T]:
-        return list(self._component_type_index.get(cls, []))
+        return list(self._type_map.get(cls, []))
 
     def get_component_by_name(self, name: str) -> Optional[Component]:
-        cls = self._component_name_index.get(name)
-        if cls:
-            clist = self._component_type_index.get(cls)
-            if clist:
+        for t, clist in self._type_map.items():
+            if t.__name__ == name:
                 return clist[0]
         c = self._components.get(name)
         if c is not None:
@@ -365,10 +375,13 @@ class Entity:
         return None
 
     def has_component(self, cls: Type[T]) -> bool:
-        return cls in self._component_type_index
+        return cls in self._type_map
 
     def get_all_components(self) -> list[Component]:
-        return list(self._components.values())
+        result = []
+        for clist in self._type_map.values():
+            result.extend(clist)
+        return result
 
     def move_component(self, key: str, direction: int):
         keys = list(self._components.keys())
@@ -604,7 +617,7 @@ class Scene:
         eid = e.id
         idx = self._component_indices
         is_active = e._active
-        for comp_type, clist in e._component_type_index.items():
+        for comp_type, clist in e._type_map.items():
             comp_name = comp_type.__name__
             if comp_name not in idx:
                 idx[comp_name] = set()
@@ -633,7 +646,7 @@ class Scene:
         idx = self._component_indices
         for c in e._components.values():
             c.on_destroy()
-        for comp_type, clist in e._component_type_index.items():
+        for comp_type, clist in e._type_map.items():
             comp_name = comp_type.__name__
             s = idx.get(comp_name)
             if s:
@@ -705,7 +718,7 @@ class Scene:
     def _rebuild_component_index(self, comp_cls_name: str):
         indices: set[str] = set()
         for eid, e in self._entities.items():
-            for t in e._component_type_index:
+            for t in e._type_map:
                 if t.__name__ == comp_cls_name:
                     indices.add(eid)
                     break
@@ -771,21 +784,14 @@ class Scene:
         prof.stop("scene_start")
 
     def serialize(self) -> dict:
-        prof = self._get_profiler()
-        if prof is None:
-            return {"name": self._name}
-        prof.start("scene_serialize")
         data = {"name": self._name, "entities": {eid: e.serialize() for eid, e in self._entities.items()}}
-        prof.stop("scene_serialize")
+        prof = self._get_profiler()
+        if prof is not None:
+            prof.set_value("scene_serialize", 0)
         return data
 
     @classmethod
     def deserialize(cls, data: dict, registry: ComponentRegistry) -> Scene:
-        eng = _get_engine()
-        prof = None
-        if eng and hasattr(eng, '_profiler'):
-            prof = eng._profiler
-            prof.start("scene_deserialize")
         s = cls(data["name"])
         raw = data.get("entities", {})
         entities: dict[str, Entity] = {}
@@ -799,6 +805,4 @@ class Scene:
             if pid and pid in entities:
                 e.set_parent(entities[pid])
             s.add_entity(e)
-        if prof:
-            prof.stop("scene_deserialize")
         return s
