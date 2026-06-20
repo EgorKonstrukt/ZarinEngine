@@ -88,6 +88,7 @@ class Renderer:
         self._shadow_resolution: int = 4096
         self._shadow_distance: float = 50.0
         self._line_width: float = 1.0
+        self._clear_color: list = [0.18, 0.18, 0.18]
         self._import_meta_cache: dict[str, tuple] = {}
         self._normal_cache: dict[int, np.ndarray] = {}
 
@@ -596,6 +597,17 @@ void main() {
             prof.stop("render_meshes")
         if use_polygon_mode:
             self._ctx.wireframe = False
+        if self._grid and self._grid.show:
+            if prof:
+                prof.start("render_grid")
+            if "u_scene_color" in self._grid_prog:
+                self._grid_prog["u_scene_color"] = 12
+                self._scene_color_tex.use(12)
+            if "u_viewport_size" in self._grid_prog:
+                self._grid_prog["u_viewport_size"].value = (float(viewport_w), float(viewport_h))
+            self._grid.render(view_f32, proj_f32, cam_pos, self._clear_color, viewport_h, cam_fov)
+            if prof:
+                prof.stop("render_grid")
         if prof:
             prof.start("render_overlay")
         if fbo is not None:
@@ -612,17 +624,6 @@ void main() {
         self._ctx.enable(moderngl.DEPTH_TEST)
         if prof:
             prof.stop("render_overlay")
-        if self._grid and self._grid.show:
-            if prof:
-                prof.start("render_grid")
-            if "u_scene_depth" in self._grid_prog:
-                self._grid_prog["u_scene_depth"] = 14
-                self._scene_depth_tex.use(14)
-            if "u_viewport_size" in self._grid_prog:
-                self._grid_prog["u_viewport_size"].value = (float(viewport_w), float(viewport_h))
-            self._grid.render(view_f32, proj_f32, cam_pos)
-            if prof:
-                prof.stop("render_grid")
         if prof:
             prof.start("render_stats")
         skybox_call = 1 if (self._skybox_enabled and self._skybox_cube) else 0
@@ -918,6 +919,14 @@ void main() {
     def grid_size(self, v: float):
         if self._grid:
             self._grid.grid_size = v
+
+    @property
+    def clear_color(self) -> list:
+        return self._clear_color
+
+    @clear_color.setter
+    def clear_color(self, v: list):
+        self._clear_color = list(v[:3]) if v else [0.18, 0.18, 0.18]
 
     @property
     def ambient(self) -> list[float]:

@@ -208,6 +208,21 @@ class SceneViewport(QOpenGLWidget):
         self._grid_step = config.get("viewport.grid_step", self._grid_step)
         self._apply_config()
 
+    def set_grid_step(self, step: float):
+        self._grid_step = max(0.01, step)
+
+    def snap_to_grid(self, value: float) -> float:
+        if self._grid_step <= 0:
+            return value
+        return round(value / self._grid_step) * self._grid_step
+
+    def snap_vec3_to_grid(self, v: Vec3) -> Vec3:
+        if self._grid_step <= 0:
+            return v
+        return Vec3(round(v.x / self._grid_step) * self._grid_step,
+                    round(v.y / self._grid_step) * self._grid_step,
+                    round(v.z / self._grid_step) * self._grid_step)
+
     @property
     def camera(self) -> SceneCamera:
         return self._cam
@@ -371,6 +386,7 @@ class SceneViewport(QOpenGLWidget):
             scene = eng.scene
             cam_cc = self._clear_color + [1.0] if scene else self._no_scene_color + [1.0]
             self._screen_fbo.clear(*cam_cc[:3], 1.0)
+            self._renderer.clear_color = self._clear_color
             if in_frame:
                 prof.stop("gl_setup")
             if scene:

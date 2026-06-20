@@ -2,6 +2,8 @@
 uniform sampler2D u_depth_tex;
 uniform vec3 u_camera_pos;
 uniform float u_grid_size;
+uniform float u_grid_step_major;
+uniform float u_grid_step_super;
 uniform float u_grid_2d;
 uniform vec3 u_view_dir;
 uniform mat4 u_inv_vp;
@@ -39,13 +41,13 @@ void main() {
     float minorLine = min(coord.x, coord.y);
     float minorAlpha = 1.0 - smoothstep(0.0, 1.0, minorLine);
 
-    vec2 majorPos = pos / 10.0;
+    vec2 majorPos = pos / u_grid_step_major;
     vec2 majorFw = max(fwidth(majorPos), vec2(2e-5));
     vec2 majorCoord = abs(fract(majorPos - 0.5) - 0.5) / majorFw;
     float majorLine = min(majorCoord.x, majorCoord.y);
     float majorAlpha = 1.0 - smoothstep(0.0, 1.0, majorLine);
 
-    vec2 superPos = pos / 50.0;
+    vec2 superPos = pos / u_grid_step_super;
     vec2 superFw = max(fwidth(superPos), vec2(2e-5));
     vec2 superCoord = abs(fract(superPos - 0.5) - 0.5) / superFw;
     float superLine = min(superCoord.x, superCoord.y);

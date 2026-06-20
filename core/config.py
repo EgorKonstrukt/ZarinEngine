@@ -138,6 +138,8 @@ def get_global_config() -> Config:
                 "show_grid": True,
                 "grid_size": 10.0,
                 "grid_world_size": 2000.0,
+                "grid_2d_mode": False,
+                "grid_zoom_distance": 5.0,
                 "ambient_r": 0.05,
                 "ambient_g": 0.05,
                 "ambient_b": 0.05,

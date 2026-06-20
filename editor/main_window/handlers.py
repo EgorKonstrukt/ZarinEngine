@@ -305,6 +305,7 @@ def on_gizmo_vis_toggled(mw, checked: bool):
 
 def on_snap_t_changed(mw, val: float):
     mw._viewport.gizmo.snap_translate = val
+    mw._viewport.set_grid_step(val)
     mw._scene_toolbar.save_state()
 
 
