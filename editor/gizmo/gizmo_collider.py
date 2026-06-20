@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 _mesh_data: dict[str, dict] = {}
 _decimated_hull_cache: dict[tuple[str, int], Optional[list]] = {}
+_decimated_hull_cache_np: dict[tuple[str, int], Optional[np.ndarray]] = {}
 _wire_cache: dict[str, tuple[list, str]] = {}
 _PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -85,7 +86,7 @@ def _load_mesh_data(path: str) -> Optional[dict]:
 
     if len(data.indices) == 0:
         result = {
-            "verts": verts, "edges": [],
+            "verts": verts, "edges": [], "edge_verts_np": np.empty((0, 2, 3), dtype=np.float32),
             "mins": mins, "maxs": maxs,
             "num_verts": len(verts),
             "center": center, "radius": radius,
@@ -106,6 +107,8 @@ def _load_mesh_data(path: str) -> Optional[dict]:
                 edges_set.add((ib, ia))
 
     edges: list[tuple[Vec3, Vec3]] = []
+    edge_indices = np.array(list(edges_set), dtype=np.int32)
+    edge_verts_np = verts[edge_indices]
     for ia, ib in edges_set:
         r0 = verts[ia]
         r1 = verts[ib]
@@ -113,7 +116,7 @@ def _load_mesh_data(path: str) -> Optional[dict]:
                       Vec3(float(r1[0]), float(r1[1]), float(r1[2]))))
 
     result = {
-        "verts": verts, "edges": edges,
+        "verts": verts, "edges": edges, "edge_verts_np": edge_verts_np,
         "mins": mins, "maxs": maxs,
         "num_verts": len(verts),
         "center": center, "radius": radius,
@@ -164,7 +167,25 @@ def _compute_hull_edges_from_verts(verts: np.ndarray) -> Optional[list]:
         return None
 
 
+def _compute_hull_edges_np(verts: np.ndarray) -> Optional[np.ndarray]:
+    try:
+        from scipy.spatial import ConvexHull
+        hull = ConvexHull(verts)
+        edges_set: set[tuple[int, int]] = set()
+        for simplex in hull.simplices:
+            a, b, c = int(simplex[0]), int(simplex[1]), int(simplex[2])
+            for ia, ib in ((a, b), (b, c), (c, a)):
+                edges_set.add((ia, ib) if ia < ib else (ib, ia))
+        if not edges_set:
+            return None
+        edge_indices = np.array(list(edges_set), dtype=np.int32)
+        return verts[edge_indices]
+    except Exception:
+        return None
+
+
 _convex_hull_cache: dict[str, Optional[list]] = {}
+_convex_hull_cache_np: dict[str, Optional[np.ndarray]] = {}
 
 
 def _get_convex_hull_edges(path: str) -> Optional[list]:
@@ -176,6 +197,18 @@ def _get_convex_hull_edges(path: str) -> Optional[list]:
         return None
     result = _compute_hull_edges_from_verts(md["verts"])
     _convex_hull_cache[cache_key] = result
+    return result
+
+
+def _get_convex_hull_edges_np(path: str) -> Optional[np.ndarray]:
+    cache_key = path.lower().replace("\\", "/")
+    if cache_key in _convex_hull_cache_np:
+        return _convex_hull_cache_np[cache_key]
+    md = _load_mesh_data(path)
+    if md is None or md["num_verts"] == 0:
+        return None
+    result = _compute_hull_edges_np(md["verts"])
+    _convex_hull_cache_np[cache_key] = result
     return result
 
 
@@ -199,6 +232,29 @@ def _get_decimated_hull_edges(path: str, max_verts: int) -> Optional[list]:
         return result
     except Exception:
         _decimated_hull_cache[cache_key] = None
+        return None
+
+
+def _get_decimated_hull_edges_np(path: str, max_verts: int) -> Optional[np.ndarray]:
+    cache_key = (path.lower().replace("\\", "/"), max_verts)
+    if cache_key in _decimated_hull_cache_np:
+        return _decimated_hull_cache_np[cache_key]
+    try:
+        md = _load_mesh_data(path)
+        if md is None or md["num_verts"] == 0:
+            return None
+        verts = md["verts"]
+        if len(verts) <= max_verts:
+            return None
+        dv = _decimate_verts(verts, max_verts)
+        if len(dv) < 3:
+            _decimated_hull_cache_np[cache_key] = None
+            return None
+        result = _compute_hull_edges_np(dv)
+        _decimated_hull_cache_np[cache_key] = result
+        return result
+    except Exception:
+        _decimated_hull_cache_np[cache_key] = None
         return None
 
 

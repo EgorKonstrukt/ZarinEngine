@@ -14,7 +14,7 @@ from core.components.physics.box_collider import BoxCollider
 from core.components.physics.sphere_collider import SphereCollider
 from core.components.physics.capsule_collider import CapsuleCollider
 from core.components.physics.rigidbody import Rigidbody
-from editor.gizmo.gizmo_collider import _load_mesh_data, _get_convex_hull_edges, _get_decimated_hull_edges
+from editor.gizmo.gizmo_collider import _load_mesh_data, _get_convex_hull_edges_np, _get_decimated_hull_edges_np
 from core.components.scripting.script_component import ScriptComponent
 from core.components.rendering.particle_system import ParticleSystem
 from core.components.rendering.camera import Camera
@@ -57,60 +57,65 @@ def _collider_color_arr(n: int, color: list) -> np.ndarray:
 def _build_box_np(comp, pos: Vec3, rot, sc: Vec3, color: list) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     sz = comp.scaled_size
     hx, hy, hz = sz.x * 0.5, sz.y * 0.5, sz.z * 0.5
-    c = pos + rot.rotate_vec3(comp.scaled_center)
-    local_offsets = [
-        Vec3(-hx, -hy, -hz), Vec3(hx, -hy, -hz), Vec3(hx, hy, -hz), Vec3(-hx, hy, -hz),
-        Vec3(-hx, -hy, hz), Vec3(hx, -hy, hz), Vec3(hx, hy, hz), Vec3(-hx, hy, hz),
-    ]
-    corners = [(c + rot.rotate_vec3(o)) for o in local_offsets]
-    starts, ends = _box_starts_ends(corners)
+    R = _quat_to_mat3(rot)
+    c_local = np.array([comp.scaled_center.x, comp.scaled_center.y, comp.scaled_center.z], dtype=np.float32)
+    c = c_local @ R + np.array([pos.x, pos.y, pos.z], dtype=np.float32)
+    local_offsets = np.array([
+        [-hx, -hy, -hz], [hx, -hy, -hz], [hx, hy, -hz], [-hx, hy, -hz],
+        [-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz],
+    ], dtype=np.float32)
+    corners = local_offsets @ R + c
+    edge_pairs = np.array(_BOX_EDGE_PAIRS, dtype=np.int32)
+    starts = corners[edge_pairs[:, 0]]
+    ends = corners[edge_pairs[:, 1]]
     return starts, ends, _collider_color_arr(12, color)
 
 
 def _build_sphere_np(comp, pos: Vec3, rot, sc: Vec3, color: list) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     radius = comp.scaled_radius
-    c = pos + rot.rotate_vec3(comp.scaled_center)
+    R = _quat_to_mat3(rot)
+    c_local = np.array([comp.scaled_center.x, comp.scaled_center.y, comp.scaled_center.z], dtype=np.float32)
+    c = c_local @ R + np.array([pos.x, pos.y, pos.z], dtype=np.float32)
     segs = 24
     total = segs * 3
     starts = np.zeros((total, 3), dtype=np.float32)
     ends = np.zeros((total, 3), dtype=np.float32)
     idx = 0
     for axis_idx in range(3):
-        pts = []
-        for i in range(segs + 1):
-            theta = 2.0 * math.pi * i / segs
-            if axis_idx == 0:
-                pt = Vec3(0, math.cos(theta) * radius, math.sin(theta) * radius)
-            elif axis_idx == 1:
-                pt = Vec3(math.cos(theta) * radius, 0, math.sin(theta) * radius)
-            else:
-                pt = Vec3(math.cos(theta) * radius, math.sin(theta) * radius, 0)
-            pts.append(c + rot.rotate_vec3(pt))
-        for i in range(segs):
-            starts[idx, 0] = pts[i].x; starts[idx, 1] = pts[i].y; starts[idx, 2] = pts[i].z
-            ends[idx, 0] = pts[i+1].x; ends[idx, 1] = pts[i+1].y; ends[idx, 2] = pts[i+1].z
-            idx += 1
+        theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
+        ct = np.cos(theta) * radius; st = np.sin(theta) * radius
+        pts = np.zeros((segs + 1, 3), dtype=np.float32)
+        if axis_idx == 0:
+            pts[:, 1] = ct; pts[:, 2] = st
+        elif axis_idx == 1:
+            pts[:, 0] = ct; pts[:, 2] = st
+        else:
+            pts[:, 0] = ct; pts[:, 1] = st
+        pts = pts @ R + c
+        starts[idx:idx+segs] = pts[:-1]
+        ends[idx:idx+segs] = pts[1:]
+        idx += segs
     return starts, ends, _collider_color_arr(total, color)
 
 
 def _build_capsule_np(comp, pos: Vec3, rot, sc: Vec3, color: list) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    R = _quat_to_mat3(rot)
+    pos_np = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
+    c_local = np.array([comp.scaled_center.x, comp.scaled_center.y, comp.scaled_center.z], dtype=np.float32)
+    c = c_local @ R + pos_np
     radius = comp.scaled_radius
     half_h = max(0, comp.scaled_height * 0.5 - radius)
-    c = pos + rot.rotate_vec3(comp.scaled_center)
     dir_idx = getattr(comp, "direction", 1)
-    axis_vecs = [Vec3.right(), Vec3.up(), Vec3.forward()]
-    axis = axis_vecs[dir_idx] if dir_idx < 3 else Vec3.up()
+    axis_vecs = [np.array([1,0,0], dtype=np.float32), np.array([0,1,0], dtype=np.float32), np.array([0,0,1], dtype=np.float32)]
+    axis = axis_vecs[dir_idx] if dir_idx < 3 else axis_vecs[1]
     segs = 20
-    top_center = c + rot.rotate_vec3(axis * half_h)
-    bottom_center = c - rot.rotate_vec3(axis * half_h)
-    lines_per_ring = segs * 2
+    axis_rot = axis @ R
+    top_center = c + axis_rot * half_h
+    bottom_center = c - axis_rot * half_h
     total = 0
-    ring_counts = []
     for ring_axis in range(3):
-        if ring_axis == dir_idx:
-            continue
-        total += lines_per_ring
-        ring_counts.append(lines_per_ring)
+        if ring_axis != dir_idx:
+            total += segs * 2
     total += 8
     starts = np.zeros((total, 3), dtype=np.float32)
     ends = np.zeros((total, 3), dtype=np.float32)
@@ -118,38 +123,37 @@ def _build_capsule_np(comp, pos: Vec3, rot, sc: Vec3, color: list) -> tuple[np.n
     for ring_axis in range(3):
         if ring_axis == dir_idx:
             continue
-        u = Vec3.right(); v = Vec3.forward()
-        if ring_axis == 0:
-            u = Vec3(0, 1, 0); v = Vec3(0, 0, 1)
-        elif ring_axis == 1:
-            u = Vec3(1, 0, 0); v = Vec3(0, 0, 1)
-        pts_top = []; pts_bot = []
-        for i in range(segs + 1):
-            theta = 2.0 * math.pi * i / segs
-            rp = (u * math.cos(theta) + v * math.sin(theta)) * radius
-            pts_top.append(top_center + rot.rotate_vec3(rp))
-            pts_bot.append(bottom_center + rot.rotate_vec3(rp))
-        for i in range(segs):
-            starts[idx, 0] = pts_top[i].x; starts[idx, 1] = pts_top[i].y; starts[idx, 2] = pts_top[i].z
-            ends[idx, 0] = pts_top[i+1].x; ends[idx, 1] = pts_top[i+1].y; ends[idx, 2] = pts_top[i+1].z
-            idx += 1
-            starts[idx, 0] = pts_bot[i].x; starts[idx, 1] = pts_bot[i].y; starts[idx, 2] = pts_bot[i].z
-            ends[idx, 0] = pts_bot[i+1].x; ends[idx, 1] = pts_bot[i+1].y; ends[idx, 2] = pts_bot[i+1].z
-            idx += 1
-    for i in range(8):
-        theta = 2.0 * math.pi * i / 8
-        u = Vec3.right(); v = Vec3.forward()
-        if dir_idx == 0:
-            u = Vec3(0, 1, 0); v = Vec3(0, 0, 1)
-        elif dir_idx == 1:
-            u = Vec3(1, 0, 0); v = Vec3(0, 0, 1)
-        rp = (u * math.cos(theta) + v * math.sin(theta)) * radius
-        tp = top_center + rot.rotate_vec3(rp)
-        bp = bottom_center + rot.rotate_vec3(rp)
-        starts[idx, 0] = tp.x; starts[idx, 1] = tp.y; starts[idx, 2] = tp.z
-        ends[idx, 0] = bp.x; ends[idx, 1] = bp.y; ends[idx, 2] = bp.z
-        idx += 1
+        u_base = np.array([0,1,0] if ring_axis == 0 else [1,0,0], dtype=np.float32)
+        v_base = np.array([0,0,1] if ring_axis == 2 else [0,1,0], dtype=np.float32)
+        if ring_axis == 1:
+            u_base = np.array([1,0,0], dtype=np.float32); v_base = np.array([0,0,1], dtype=np.float32)
+        u = u_base @ R; v = v_base @ R
+        theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
+        ct = np.cos(theta) * radius; st = np.sin(theta) * radius
+        pts = np.outer(ct, u) + np.outer(st, v)
+        pts_top = pts + top_center
+        pts_bot = pts + bottom_center
+        n = segs
+        starts[idx:idx+n] = pts_top[:-1]; ends[idx:idx+n] = pts_top[1:]; idx += n
+        starts[idx:idx+n] = pts_bot[:-1]; ends[idx:idx+n] = pts_bot[1:]; idx += n
+    theta = np.linspace(0, 2.0 * math.pi, 9, dtype=np.float32)[:-1]
+    ct = np.cos(theta) * radius; st = np.sin(theta) * radius
+    pts = np.outer(ct, u) + np.outer(st, v)
+    starts[idx:idx+8] = pts + top_center
+    ends[idx:idx+8] = pts + bottom_center
     return starts, ends, _collider_color_arr(total, color)
+
+
+def _quat_to_mat3(rot) -> np.ndarray:
+    x, y, z, w = rot.x, rot.y, rot.z, rot.w
+    n = math.sqrt(x*x + y*y + z*z + w*w)
+    if n > 1e-10:
+        inv = 1.0 / n; x *= inv; y *= inv; z *= inv; w *= inv
+    return np.array([
+        [1-2*y*y-2*z*z, 2*x*y+2*w*z, 2*x*z-2*w*y],
+        [2*x*y-2*w*z, 1-2*x*x-2*z*z, 2*y*z+2*w*x],
+        [2*x*z+2*w*y, 2*y*z-2*w*x, 1-2*x*x-2*y*y],
+    ], dtype=np.float32)
 
 
 def _build_mesh_collider_lines_np(comp, entity, pos: Vec3, rot, sc: Vec3):
@@ -159,121 +163,133 @@ def _build_mesh_collider_lines_np(comp, entity, pos: Vec3, rot, sc: Vec3):
     max_verts = getattr(comp, "max_vertices", 2000)
     md = _load_mesh_data(mesh_path) if mesh_path else None
     if md is None or md["num_verts"] == 0:
-        c = pos + rot.rotate_vec3(Vec3(0, 0, 0))
+        R = _quat_to_mat3(rot)
+        pos_np = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
         s = 0.5
-        corners = [c + rot.rotate_vec3(Vec3(-s, -s, -s)), c + rot.rotate_vec3(Vec3(s, -s, -s)),
-                   c + rot.rotate_vec3(Vec3(s, s, -s)), c + rot.rotate_vec3(Vec3(-s, s, -s)),
-                   c + rot.rotate_vec3(Vec3(-s, -s, s)), c + rot.rotate_vec3(Vec3(s, -s, s)),
-                   c + rot.rotate_vec3(Vec3(s, s, s)), c + rot.rotate_vec3(Vec3(-s, s, s))]
-        starts, ends = _box_starts_ends(corners)
+        local_offsets = np.array([
+            [-s,-s,-s],[s,-s,-s],[s,s,-s],[-s,s,-s],
+            [-s,-s,s],[s,-s,s],[s,s,s],[-s,s,s],
+        ], dtype=np.float32)
+        corners = local_offsets @ R + pos_np
+        edge_pairs = np.array(_BOX_EDGE_PAIRS, dtype=np.int32)
+        starts = corners[edge_pairs[:, 0]]
+        ends = corners[edge_pairs[:, 1]]
         Gizmos.draw_lines(starts, ends, _collider_color_arr(12, mesh_color))
         return
 
-    def _tw(v: Vec3) -> Vec3:
-        return pos + rot.rotate_vec3(Vec3(v.x * sc.x, v.y * sc.y, v.z * sc.z))
+    R = _quat_to_mat3(rot)
+    pos_np = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
+    sc_np = np.array([sc.x, sc.y, sc.z], dtype=np.float32)
 
-    starts_list: list[Vec3] = []
-    ends_list: list[Vec3] = []
+    s_list: list[np.ndarray] = []
+    e_list: list[np.ndarray] = []
 
-    def _box_from_bounds(mins_np, maxs_np):
-        size = maxs_np - mins_np
-        ctr_np = (mins_np + maxs_np) * 0.5
-        ctr = Vec3(float(ctr_np[0]), float(ctr_np[1]), float(ctr_np[2]))
-        sv = Vec3(float(size[0]) * 0.5, float(size[1]) * 0.5, float(size[2]) * 0.5)
-        local_offsets = [Vec3(-sv.x, -sv.y, -sv.z), Vec3(sv.x, -sv.y, -sv.z),
-                         Vec3(sv.x, sv.y, -sv.z), Vec3(-sv.x, sv.y, -sv.z),
-                         Vec3(-sv.x, -sv.y, sv.z), Vec3(sv.x, -sv.y, sv.z),
-                         Vec3(sv.x, sv.y, sv.z), Vec3(-sv.x, sv.y, sv.z)]
-        lc = [ctr + o for o in local_offsets]
-        corners = [_tw(lc[i]) for i in range(8)]
-        edge_pairs = [(0, 1), (1, 2), (2, 3), (3, 0),
-                      (4, 5), (5, 6), (6, 7), (7, 4),
-                      (0, 4), (1, 5), (2, 6), (3, 7)]
-        for a, b in edge_pairs:
-            starts_list.append(corners[a])
-            ends_list.append(corners[b])
-        for face in [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (2, 3, 7, 6), (0, 3, 7, 4), (1, 2, 6, 5)]:
-            starts_list.append(corners[face[0]]); ends_list.append(corners[face[2]])
-            starts_list.append(corners[face[1]]); ends_list.append(corners[face[3]])
+    def _submit_np(edge_verts: np.ndarray):
+        if edge_verts.shape[0] == 0:
+            return
+        scaled = edge_verts * sc_np
+        rotated = scaled @ R
+        s_list.append(rotated[:, 0, :] + pos_np)
+        e_list.append(rotated[:, 1, :] + pos_np)
 
     if mode == CollisionMode.BOX:
         size = md["maxs"] - md["mins"]
         if np.all(size < 100.0):
-            _box_from_bounds(md["mins"], md["maxs"])
+            mins = md["mins"]; maxs = md["maxs"]
+            ctr = (mins + maxs) * 0.5
+            half = size * 0.5
+            local_offsets = np.array([
+                [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+                [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],
+            ], dtype=np.float32) * half
+            lc = ctr + local_offsets
+            lc_t = lc * sc_np @ R + pos_np
+            edge_pairs = np.array([(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7),
+                                   (0,2),(1,3),(4,6),(5,7),(0,7),(1,6),(2,5),(3,4)], dtype=np.int32)
+            s_list.append(lc_t[edge_pairs[:, 0]])
+            e_list.append(lc_t[edge_pairs[:, 1]])
         else:
-            c = pos + rot.rotate_vec3(Vec3(0, 0, 0))
+            c = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
             s = 0.5
-            corners = [c + rot.rotate_vec3(Vec3(-s, -s, -s)), c + rot.rotate_vec3(Vec3(s, -s, -s)),
-                       c + rot.rotate_vec3(Vec3(s, s, -s)), c + rot.rotate_vec3(Vec3(-s, s, -s)),
-                       c + rot.rotate_vec3(Vec3(-s, -s, s)), c + rot.rotate_vec3(Vec3(s, -s, s)),
-                       c + rot.rotate_vec3(Vec3(s, s, s)), c + rot.rotate_vec3(Vec3(-s, s, s))]
-            for a, b in [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]:
-                starts_list.append(corners[a]); ends_list.append(corners[b])
+            corners = np.array([
+                [-s,-s,-s],[s,-s,-s],[s,s,-s],[-s,s,-s],
+                [-s,-s,s],[s,-s,s],[s,s,s],[-s,s,s],
+            ], dtype=np.float32) @ R + c
+            edge_pairs = np.array([(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)])
+            s_list.append(corners[edge_pairs[:, 0]])
+            e_list.append(corners[edge_pairs[:, 1]])
 
     elif mode == CollisionMode.SPHERE:
-        c = _tw(Vec3(float(md["center"][0]), float(md["center"][1]), float(md["center"][2])))
+        c = np.array([md["center"][0], md["center"][1], md["center"][2]], dtype=np.float32)
         max_sc = max(sc.x, sc.y, sc.z)
         radius = md["radius"] * max_sc
         segs = 24
         for axis_idx in range(3):
-            pts = []
-            for i in range(segs + 1):
-                theta = 2.0 * math.pi * i / segs
-                if axis_idx == 0:
-                    pt = Vec3(0, math.cos(theta) * radius, math.sin(theta) * radius)
-                elif axis_idx == 1:
-                    pt = Vec3(math.cos(theta) * radius, 0, math.sin(theta) * radius)
-                else:
-                    pt = Vec3(math.cos(theta) * radius, math.sin(theta) * radius, 0)
-                pts.append(c + rot.rotate_vec3(pt))
-            for i in range(segs):
-                starts_list.append(pts[i]); ends_list.append(pts[i + 1])
+            theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
+            ct = np.cos(theta) * radius; st = np.sin(theta) * radius
+            pts = np.zeros((segs + 1, 3), dtype=np.float32)
+            if axis_idx == 0:
+                pts[:, 1] = ct; pts[:, 2] = st
+            elif axis_idx == 1:
+                pts[:, 0] = ct; pts[:, 2] = st
+            else:
+                pts[:, 0] = ct; pts[:, 1] = st
+            pts = pts @ R + (c * sc_np @ R + pos_np)
+            s_list.append(pts[:-1])
+            e_list.append(pts[1:])
 
     elif mode == CollisionMode.CONVEX_HULL:
-        hull_edges = _get_convex_hull_edges(mesh_path)
-        if hull_edges is not None:
-            for v0, v1 in hull_edges:
-                starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
-        elif md["edges"]:
-            for v0, v1 in md["edges"]:
-                starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+        hull_np = _get_convex_hull_edges_np(mesh_path)
+        if hull_np is not None:
+            _submit_np(hull_np)
+        elif md.get("edge_verts_np", None) is not None and md["edge_verts_np"].shape[0] > 0:
+            _submit_np(md["edge_verts_np"])
 
     elif mode == CollisionMode.AUTO:
         if md["num_verts"] > max_verts:
-            hull_edges = _get_decimated_hull_edges(mesh_path, max_verts)
-            if hull_edges is not None:
-                for v0, v1 in hull_edges:
-                    starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+            hull_np = _get_decimated_hull_edges_np(mesh_path, max_verts)
+            if hull_np is not None:
+                _submit_np(hull_np)
             else:
                 size = md["maxs"] - md["mins"]
                 if np.all(size < 100.0):
-                    _box_from_bounds(md["mins"], md["maxs"])
+                    mins = md["mins"]; maxs = md["maxs"]
+                    ctr = (mins + maxs) * 0.5
+                    half = size * 0.5
+                    local_offsets = np.array([
+                        [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+                        [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],
+                    ], dtype=np.float32) * half
+                    lc = ctr + local_offsets
+                    lc_t = lc * sc_np @ R + pos_np
+                    edge_pairs = np.array([(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7),
+                                           (0,2),(1,3),(4,6),(5,7),(0,7),(1,6),(2,5),(3,4)], dtype=np.int32)
+                    s_list.append(lc_t[edge_pairs[:, 0]])
+                    e_list.append(lc_t[edge_pairs[:, 1]])
                 else:
-                    c = pos + rot.rotate_vec3(Vec3(0, 0, 0))
+                    c = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
                     s = 0.5
-                    corners = [c + rot.rotate_vec3(Vec3(-s, -s, -s)), c + rot.rotate_vec3(Vec3(s, -s, -s)),
-                               c + rot.rotate_vec3(Vec3(s, s, -s)), c + rot.rotate_vec3(Vec3(-s, s, -s)),
-                               c + rot.rotate_vec3(Vec3(-s, -s, s)), c + rot.rotate_vec3(Vec3(s, -s, s)),
-                               c + rot.rotate_vec3(Vec3(s, s, s)), c + rot.rotate_vec3(Vec3(-s, s, s))]
-                    for a, b in [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]:
-                        starts_list.append(corners[a]); ends_list.append(corners[b])
+                    corners = np.array([
+                        [-s,-s,-s],[s,-s,-s],[s,s,-s],[-s,s,-s],
+                        [-s,-s,s],[s,-s,s],[s,s,s],[-s,s,s],
+                    ], dtype=np.float32) @ R + c
+                    edge_pairs = np.array([(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)])
+                    s_list.append(corners[edge_pairs[:, 0]])
+                    e_list.append(corners[edge_pairs[:, 1]])
         else:
-            for v0, v1 in md["edges"]:
-                starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+            ev = md.get("edge_verts_np")
+            if ev is not None and ev.shape[0] > 0:
+                _submit_np(ev)
 
-    elif md["edges"]:
-        for v0, v1 in md["edges"]:
-            starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+    elif md.get("edge_verts_np", None) is not None and md["edge_verts_np"].shape[0] > 0:
+        _submit_np(md["edge_verts_np"])
 
-    if starts_list:
-        n = len(starts_list)
-        starts = np.zeros((n, 3), dtype=np.float32)
-        ends = np.zeros((n, 3), dtype=np.float32)
-        for i in range(n):
-            s = starts_list[i]; e = ends_list[i]
-            starts[i, 0] = s.x; starts[i, 1] = s.y; starts[i, 2] = s.z
-            ends[i, 0] = e.x; ends[i, 1] = e.y; ends[i, 2] = e.z
-        Gizmos.draw_lines(starts, ends, _collider_color_arr(n, mesh_color))
+    if s_list:
+        n = sum(s.shape[0] for s in s_list)
+        if n > 0:
+            starts = np.concatenate(s_list, axis=0)
+            ends = np.concatenate(e_list, axis=0)
+            Gizmos.draw_lines(starts, ends, _collider_color_arr(n, mesh_color))
 
 
 def render_collider_wireframes(vp, vp_mat: Mat4):
@@ -311,27 +327,32 @@ def render_collider_wireframes(vp, vp_mat: Mat4):
                 elif cname == "BoxCollider2D":
                     sz = comp.scaled_size
                     off_v2 = comp.scaled_offset
-                    c = pos + rot.rotate_vec3(Vec3(off_v2.x, off_v2.y, 0.0))
+                    R = _quat_to_mat3(rot)
+                    pos_np = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
+                    c = np.array([off_v2.x, off_v2.y, 0.0], dtype=np.float32) @ R + pos_np
                     hx, hy = sz.x * 0.5, sz.y * 0.5
-                    corners = [
-                        c + rot.rotate_vec3(Vec3(-hx, -hy, 0.0)),
-                        c + rot.rotate_vec3(Vec3(hx, -hy, 0.0)),
-                        c + rot.rotate_vec3(Vec3(hx, hy, 0.0)),
-                        c + rot.rotate_vec3(Vec3(-hx, hy, 0.0)),
-                    ]
-                    starts, ends = _box_starts_ends(corners, _RECT_EDGE_PAIRS)
+                    local_offsets = np.array([
+                        [-hx, -hy, 0.0], [hx, -hy, 0.0], [hx, hy, 0.0], [-hx, hy, 0.0],
+                    ], dtype=np.float32)
+                    corners = local_offsets @ R + c
+                    edge_pairs = np.array(_RECT_EDGE_PAIRS, dtype=np.int32)
+                    starts = corners[edge_pairs[:, 0]]
+                    ends = corners[edge_pairs[:, 1]]
                     Gizmos.draw_lines(starts, ends, _collider_color_arr(4, color))
                 elif cname == "CircleCollider2D":
                     radius = comp.scaled_radius
                     off_v2 = comp.scaled_offset
-                    c = pos + rot.rotate_vec3(Vec3(off_v2.x, off_v2.y, 0.0))
+                    R = _quat_to_mat3(rot)
+                    pos_np = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
+                    c = np.array([off_v2.x, off_v2.y, 0.0], dtype=np.float32) @ R + pos_np
                     segs = 24
-                    pts = []
-                    for i in range(segs + 1):
-                        theta = 2.0 * math.pi * i / segs
-                        pt = Vec3(math.cos(theta) * radius, math.sin(theta) * radius, 0.0)
-                        pts.append(c + rot.rotate_vec3(pt))
-                    starts, ends = _ring_starts_ends(pts, segs)
+                    theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
+                    pts = np.zeros((segs + 1, 3), dtype=np.float32)
+                    pts[:, 0] = np.cos(theta) * radius
+                    pts[:, 1] = np.sin(theta) * radius
+                    pts = pts @ R + c
+                    starts = pts[:-1]
+                    ends = pts[1:]
                     Gizmos.draw_lines(starts, ends, _collider_color_arr(segs, color))
                 elif cname == "MeshCollider":
                     _build_mesh_collider_lines_np(comp, entity, pos, rot, sc)
