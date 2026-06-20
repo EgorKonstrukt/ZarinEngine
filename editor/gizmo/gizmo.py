@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 FLOAT_T = np.float32
 
+DEF_CAP = 2048
+
 class GizmoMode(Enum):
     NONE = "none"
     TRANSLATE = "translate"
@@ -44,7 +46,7 @@ AXIS_HIGHLIGHT = [1.0, 0.835, 0.0, 1.0]
 class GpuGizmoBatch:
     __slots__ = ('start_buf', 'end_buf', 'color_buf', 'size', 'capacity')
 
-    def __init__(self, capacity: int = 1024):
+    def __init__(self, capacity: int = DEF_CAP):
         self.capacity = capacity
         self.start_buf = np.empty((capacity, 3), dtype=FLOAT_T)
         self.end_buf = np.empty((capacity, 3), dtype=FLOAT_T)
@@ -54,26 +56,58 @@ class GpuGizmoBatch:
     def clear(self):
         self.size = 0
 
+    def _ensure(self, n: int):
+        needed = self.size + n
+        if needed <= self.capacity:
+            return
+        new_cap = self.capacity
+        while new_cap < needed:
+            new_cap <<= 1
+        new_s = np.empty((new_cap, 3), dtype=FLOAT_T)
+        new_e = np.empty((new_cap, 3), dtype=FLOAT_T)
+        new_c = np.empty((new_cap, 4), dtype=FLOAT_T)
+        new_s[:self.size] = self.start_buf[:self.size]
+        new_e[:self.size] = self.end_buf[:self.size]
+        new_c[:self.size] = self.color_buf[:self.size]
+        self.start_buf = new_s
+        self.end_buf = new_e
+        self.color_buf = new_c
+        self.capacity = new_cap
+
     def append(self, start: Vec3, end: Vec3, color: list):
+        self._ensure(1)
         i = self.size
-        if i >= self.capacity:
-            self.capacity *= 2
-            self.start_buf = np.resize(self.start_buf, (self.capacity, 3))
-            self.end_buf = np.resize(self.end_buf, (self.capacity, 3))
-            self.color_buf = np.resize(self.color_buf, (self.capacity, 4))
-        self.start_buf[i, 0] = start.x; self.start_buf[i, 1] = start.y; self.start_buf[i, 2] = start.z
-        self.end_buf[i, 0] = end.x; self.end_buf[i, 1] = end.y; self.end_buf[i, 2] = end.z
-        self.color_buf[i, 0] = color[0]; self.color_buf[i, 1] = color[1]; self.color_buf[i, 2] = color[2]
+        self.start_buf[i, 0] = start.x
+        self.start_buf[i, 1] = start.y
+        self.start_buf[i, 2] = start.z
+        self.end_buf[i, 0] = end.x
+        self.end_buf[i, 1] = end.y
+        self.end_buf[i, 2] = end.z
+        self.color_buf[i, 0] = color[0]
+        self.color_buf[i, 1] = color[1]
+        self.color_buf[i, 2] = color[2]
         self.color_buf[i, 3] = color[3] if len(color) > 3 else 1.0
-        self.size += 1
+        self.size = i + 1
 
     def append_quad(self, corners: list[Vec3], color: list):
         n = len(corners)
+        self._ensure(n)
         for i in range(n):
             self.append(corners[i], corners[(i + 1) % n], color)
 
     def get_arrays(self) -> tuple:
         return (self.start_buf[:self.size], self.end_buf[:self.size], self.color_buf[:self.size])
+
+    def get_flat_verts(self) -> Optional[np.ndarray]:
+        if self.size == 0:
+            return None
+        n = self.size
+        out = np.empty((n * 2, 7), dtype=FLOAT_T)
+        out[0::2, :3] = self.start_buf[:n]
+        out[1::2, :3] = self.end_buf[:n]
+        out[0::2, 3:] = self.color_buf[:n]
+        out[1::2, 3:] = self.color_buf[:n]
+        return out
 
 class Gizmo:
     HANDLE_SIZE = 0.1
@@ -125,7 +159,7 @@ class Gizmo:
         self._smooth_snap_speed: float = 0.25
         self._snap_state: dict[str, float] = {}
         self._snap_counter: int = 0
-        self._batch: GpuGizmoBatch = GpuGizmoBatch(1024)
+        self._batch: GpuGizmoBatch = GpuGizmoBatch(DEF_CAP)
         self._vp_mat_cache: Optional[Mat4] = None
         self._inv_vp_cache: Optional[Mat4] = None
         self._cam_fwd_cache: Vec3 = Vec3.zero()
@@ -402,6 +436,23 @@ class Gizmo:
         elif self._mode == GizmoMode.SCALE:
             self._get_scale_lines_batch(pos, t, cam, viewport_w, viewport_h)
         return self._batch.get_arrays()
+
+    def get_gizmo_flat_verts(self, cam: SceneCamera, viewport_w: int = 800, viewport_h: int = 600) -> Optional[np.ndarray]:
+        if not self._entity or self._mode == GizmoMode.NONE:
+            return None
+        t = self._entity.get_component_by_name("Transform")
+        if not t:
+            return None
+        self._update_cache(cam, viewport_w, viewport_h)
+        pos = self._visual_center if self._visual_center is not None else t.position + self._pivot_offset
+        self._batch.clear()
+        if self._mode == GizmoMode.TRANSLATE:
+            self._get_translate_lines_batch(pos, t, cam, viewport_w, viewport_h)
+        elif self._mode == GizmoMode.ROTATE:
+            self._get_rotate_lines_batch(pos, t, cam, viewport_w, viewport_h)
+        elif self._mode == GizmoMode.SCALE:
+            self._get_scale_lines_batch(pos, t, cam, viewport_w, viewport_h)
+        return self._batch.get_flat_verts()
 
     def _get_translate_lines_batch(self, pos, transform, cam, vw, vh):
         batch = self._batch

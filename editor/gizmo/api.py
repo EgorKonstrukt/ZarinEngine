@@ -1072,11 +1072,14 @@ class GizmosManager:
         self._batches.append((starts, ends, colors))
 
     def _get_render_data(self):
-        if not self._batches:
+        b = self._batches
+        if not b:
             return None
-        s_list = [b[0] for b in self._batches]
-        e_list = [b[1] for b in self._batches]
-        c_list = [b[2] for b in self._batches]
+        if len(b) == 1:
+            return b[0]
+        s_list = [x[0] for x in b]
+        e_list = [x[1] for x in b]
+        c_list = [x[2] for x in b]
         return (np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list))
 
     def _add(self, g: GizmoData, **style_kw):
@@ -1165,243 +1168,141 @@ class GizmosManager:
             g.rotation = tuple(t[3:7])
         return g
 
-    def draw_point(self, position, color='white', size=3.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.POINT, position=self._resolve_pos(position),
-            color=self._resolve_color(color), size=size, duration=duration,
-            layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def _draw_gizmo(self, gizmo_type, position=None, end_position=None, color='white',
+                    size=1.0, thickness=1.0, duration=0.0, layer=0, world_space=True,
+                    **kw):
+        g = self._apply_transform(GizmoData(gizmo_type=gizmo_type,
+            position=self._resolve_pos(position) if position is not None else (0,0,0),
+            color=self._resolve_color(color), size=size, thickness=thickness,
+            duration=duration, layer=layer, world_space=world_space, **kw))
+        if end_position is not None:
+            g.end_position = self._resolve_pos(end_position)
+        self._add(g)
 
-    def draw_line(self, start, end, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.LINE, position=self._resolve_pos(start),
-            end_position=self._resolve_pos(end), color=self._resolve_color(color),
-            thickness=thickness, duration=duration, layer=layer,
-            world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_point(self, position, color='white', size=3.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.POINT, position, color=color, size=size, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_circle(self, center, normal=(0,1,0), radius=1.0, color='white', filled=False, thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.CIRCLE, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=radius, color=self._resolve_color(color),
-            filled=filled, thickness=thickness, segments=segments, duration=duration, layer=layer,
-            world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_line(self, start, end, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.LINE, start, end, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_sphere(self, center, radius=1.0, color='white', filled=False, thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.SPHERE, position=self._resolve_pos(center),
-            size=radius, color=self._resolve_color(color), filled=filled, thickness=thickness,
-            segments=segments, duration=duration, layer=layer,
-            world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_circle(self, center, normal=(0,1,0), radius=1.0, color='white', filled=False, thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.CIRCLE, center, normal=self._resolve_pos(normal), size=radius, color=color, filled=filled, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_box(self, center, size=(1,1,1), color='white', filled=False, thickness=1.0, rotation=None, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.BOX, position=self._resolve_pos(center),
-            size=size, color=self._resolve_color(color), filled=filled, thickness=thickness,
-            rotation=self._resolve_pos(rotation) if rotation else None,
-            duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_sphere(self, center, radius=1.0, color='white', filled=False, thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.SPHERE, center, size=radius, color=color, filled=filled, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_arc(self, center, normal=(0,1,0), radius=1.0, angle_start=0.0, angle_end=360.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.ARC, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=radius, color=self._resolve_color(color),
-            angle_start=angle_start, angle_end=angle_end, segments=segments,
-            thickness=thickness, duration=duration, layer=layer,
-            world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_box(self, center, size=(1,1,1), color='white', filled=False, thickness=1.0, rotation=None, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.BOX, center, size=size, color=color, filled=filled, thickness=thickness, rotation=self._resolve_pos(rotation) if rotation else None, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_capsule(self, start, end, radius=0.5, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.CAPSULE, position=self._resolve_pos(start),
-            end_position=self._resolve_pos(end), size=radius, color=self._resolve_color(color),
-            thickness=thickness, duration=duration, layer=layer,
-            world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_arc(self, center, normal=(0,1,0), radius=1.0, angle_start=0.0, angle_end=360.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.ARC, center, normal=self._resolve_pos(normal), size=radius, color=color, angle_start=angle_start, angle_end=angle_end, segments=segments, thickness=thickness, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_grid(self, center, normal=(0,1,0), size=10.0, divisions=10, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.GRID, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=size, segments=divisions,
-            color=self._resolve_color(color), thickness=thickness, duration=duration,
-            layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_capsule(self, start, end, radius=0.5, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.CAPSULE, start, end, size=radius, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_cone(self, center, direction=(0,1,0), height=1.0, base_radius=0.5, color='white', filled=False, thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.CONE, position=self._resolve_pos(center),
-            normal=self._resolve_pos(direction), size=base_radius, height=height,
-            color=self._resolve_color(color), filled=filled, thickness=thickness,
-            duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_grid(self, center, normal=(0,1,0), size=10.0, divisions=10, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.GRID, center, normal=self._resolve_pos(normal), size=size, segments=divisions, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_axis(self, origin, length=1.0, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.AXIS, position=self._resolve_pos(origin),
-            size=length, color=self._resolve_color(color),
-            thickness=thickness, duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_cone(self, center, direction=(0,1,0), height=1.0, base_radius=0.5, color='white', filled=False, thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.CONE, center, normal=self._resolve_pos(direction), size=base_radius, height=height, color=color, filled=filled, thickness=thickness, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_text(self, position, text, color='white', font_size=14, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.TEXT, position=self._resolve_pos(position),
-            text=text, color=self._resolve_color(color), font_size=font_size,
-            duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_axis(self, origin, length=1.0, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.AXIS, origin, size=length, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_ring(self, center, inner_radius=0.5, outer_radius=1.0, color='white', filled=False, thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.RING, position=self._resolve_pos(center),
-            size=outer_radius, inner_radius=inner_radius, color=self._resolve_color(color),
-            filled=filled, thickness=thickness, segments=segments, duration=duration,
-            layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_text(self, position, text, color='white', font_size=14, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.TEXT, position, text=text, color=color, font_size=font_size, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_arrow(self, start, end, color='white', thickness=2.0, arrow_size=0.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.ARROW, position=self._resolve_pos(start),
-            end_position=self._resolve_pos(end), color=self._resolve_color(color),
-            thickness=thickness, arrow_size=arrow_size, duration=duration, layer=layer,
-            world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_ring(self, center, inner_radius=0.5, outer_radius=1.0, color='white', filled=False, thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.RING, center, size=outer_radius, inner_radius=inner_radius, color=color, filled=filled, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_cross(self, center, size=1.0, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.CROSS, position=self._resolve_pos(center),
-            size=size, color=self._resolve_color(color), thickness=thickness,
-            duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_arrow(self, start, end, color='white', thickness=2.0, arrow_size=0.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.ARROW, start, end, color=color, thickness=thickness, arrow_size=arrow_size, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_dashed_line(self, start, end, color='white', thickness=1.0, dash_length=0.3, gap_length=0.15, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.DASHED, position=self._resolve_pos(start),
-            end_position=self._resolve_pos(end), color=self._resolve_color(color),
-            thickness=thickness, dash_length=dash_length, gap_length=gap_length,
-            duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_cross(self, center, size=1.0, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.CROSS, center, size=size, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_bezier(self, points, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
+    def draw_dashed_line(self, start, end, color='white', thickness=1.0, dash_length=0.3, gap_length=0.15, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.DASHED, start, end, color=color, thickness=thickness, dash_length=dash_length, gap_length=gap_length, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
+
+    def draw_bezier(self, points, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
         pts = [self._resolve_pos(p) for p in points]
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.BEZIER, position=pts[0],
-            points=pts, color=self._resolve_color(color),
-            thickness=thickness, segments=segments, duration=duration,
-            layer=layer, world_space=world_space), **kwargs))
+        self._draw_gizmo(GizmoType.BEZIER, pts[0], points=pts, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_triangle(self, p0, p1, p2, color='white', filled=False, thickness=1.0, duration=0.0, layer=0, world_space=True, **kwargs):
+    def draw_triangle(self, p0, p1, p2, color='white', filled=False, thickness=1.0, duration=0.0, layer=0, world_space=True, **kw):
         pts = [self._resolve_pos(p) for p in (p0, p1, p2)]
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.TRIANGLE, position=pts[0],
-            points=pts, color=self._resolve_color(color),
-            filled=filled, thickness=thickness, duration=duration, layer=layer, world_space=world_space), **kwargs))
+        self._draw_gizmo(GizmoType.TRIANGLE, pts[0], points=pts, color=color, filled=filled, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_poly(self, points, color='white', filled=False, thickness=1.0, duration=0.0, layer=0, world_space=True, **kwargs):
+    def draw_poly(self, points, color='white', filled=False, thickness=1.0, duration=0.0, layer=0, world_space=True, **kw):
         pts = [self._resolve_pos(p) for p in points]
         cx = sum(p[0] for p in pts) / len(pts)
         cy = sum(p[1] for p in pts) / len(pts)
         cz = sum(p[2] for p in pts) / len(pts)
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.POLY, position=(cx,cy,cz),
-            points=pts, color=self._resolve_color(color), filled=filled,
-            thickness=thickness, duration=duration, layer=layer, world_space=world_space), **kwargs))
+        self._draw_gizmo(GizmoType.POLY, (cx, cy, cz), points=pts, color=color, filled=filled, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_cylinder(self, center, direction=(0,1,0), height=1.0, radius=0.5, color='white', filled=False, thickness=1.0, rotation=None, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.CYLINDER, position=self._resolve_pos(center),
-            normal=self._resolve_pos(direction), size=radius, height=height,
-            color=self._resolve_color(color), filled=filled, thickness=thickness,
-            segments=segments, rotation=self._resolve_pos(rotation) if rotation else None,
-            duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_cylinder(self, center, direction=(0,1,0), height=1.0, radius=0.5, color='white', filled=False, thickness=1.0, rotation=None, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.CYLINDER, center, normal=self._resolve_pos(direction), size=radius, height=height, color=color, filled=filled, thickness=thickness, segments=segments, rotation=self._resolve_pos(rotation) if rotation else None, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_ellipse(self, center, normal=(0,1,0), radius_x=1.0, radius_y=0.5, color='white', thickness=1.0, segments=32, filled=False, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.ELLIPSE, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=radius_x, radius_y=radius_y,
-            color=self._resolve_color(color), thickness=thickness, segments=segments,
-            filled=filled, duration=duration, layer=layer,
-            world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_ellipse(self, center, normal=(0,1,0), radius_x=1.0, radius_y=0.5, color='white', thickness=1.0, segments=32, filled=False, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.ELLIPSE, center, normal=self._resolve_pos(normal), size=radius_x, radius_y=radius_y, color=color, thickness=thickness, segments=segments, filled=filled, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_rect(self, center, size=(1.0, 1.0), normal=(0, 0, 1), color='white', filled=False, thickness=1.0, rotation=None, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.RECT, position=self._resolve_pos(center),
-            size=size, normal=self._resolve_pos(normal), color=self._resolve_color(color),
-            filled=filled, thickness=thickness, rotation=self._resolve_pos(rotation) if rotation else None,
-            duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance), **kwargs))
+    def draw_rect(self, center, size=(1.0, 1.0), normal=(0, 0, 1), color='white', filled=False, thickness=1.0, rotation=None, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
+        self._draw_gizmo(GizmoType.RECT, center, size=size, normal=self._resolve_pos(normal), color=color, filled=filled, thickness=thickness, rotation=self._resolve_pos(rotation) if rotation else None, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
-    def draw_ray(self, origin, direction, length=1.0, color='white', thickness=1.0, arrow_size=0.2, duration=0.0, layer=0, world_space=True, **kwargs):
+    def draw_ray(self, origin, direction, length=1.0, color='white', thickness=1.0, arrow_size=0.2, duration=0.0, layer=0, world_space=True, **kw):
         d = self._resolve_pos(direction)
         ln = math.sqrt(d[0]**2+d[1]**2+d[2]**2)
         if ln > 0:
             d = (d[0]/ln, d[1]/ln, d[2]/ln)
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.RAY, position=self._resolve_pos(origin),
-            normal=d, size=length, color=self._resolve_color(color),
-            thickness=thickness, arrow_size=arrow_size, duration=duration,
-            layer=layer, world_space=world_space), **kwargs))
+        self._draw_gizmo(GizmoType.RAY, origin, normal=d, size=length, color=color, thickness=thickness, arrow_size=arrow_size, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_bbox(self, min_point, max_point, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.BBOX,
-            min_point=self._resolve_pos(min_point), max_point=self._resolve_pos(max_point),
-            color=self._resolve_color(color), thickness=thickness,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_bbox(self, min_point, max_point, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.BBOX, min_point=self._resolve_pos(min_point), max_point=self._resolve_pos(max_point), color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_frustum(self, origin, direction, fov=60.0, aspect=1.5, near=0.1, far=10.0, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.FRUSTUM, position=self._resolve_pos(origin),
-            normal=self._resolve_pos(direction), size=aspect, fov=fov,
-            near_plane=near, far_plane=far, color=self._resolve_color(color),
-            thickness=thickness, duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_frustum(self, origin, direction, fov=60.0, aspect=1.5, near=0.1, far=10.0, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.FRUSTUM, origin, normal=self._resolve_pos(direction), size=aspect, fov=fov, near_plane=near, far_plane=far, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_helix(self, center, direction=(0,1,0), height=2.0, radius=0.5, turns=3.0, color='white', thickness=1.0, segments=64, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.HELIX, position=self._resolve_pos(center),
-            normal=self._resolve_pos(direction), size=radius, height=height, turns=turns,
-            color=self._resolve_color(color), thickness=thickness, segments=segments,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_helix(self, center, direction=(0,1,0), height=2.0, radius=0.5, turns=3.0, color='white', thickness=1.0, segments=64, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.HELIX, center, normal=self._resolve_pos(direction), size=radius, height=height, turns=turns, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_parabola(self, start, end, height=1.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.PARABOLA, position=self._resolve_pos(start),
-            end_position=self._resolve_pos(end), height=height,
-            color=self._resolve_color(color), thickness=thickness, segments=segments,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_parabola(self, start, end, height=1.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.PARABOLA, start, end, height=height, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_spline(self, points, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
+    def draw_spline(self, points, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
         pts = [self._resolve_pos(p) for p in points]
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.SPLINE, position=pts[0],
-            points=pts, color=self._resolve_color(color),
-            thickness=thickness, segments=segments, duration=duration,
-            layer=layer, world_space=world_space), **kwargs))
+        self._draw_gizmo(GizmoType.SPLINE, pts[0], points=pts, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_icosphere(self, center, radius=1.0, color='white', subdivisions=1, thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.ICOSPHERE, position=self._resolve_pos(center),
-            size=radius, color=self._resolve_color(color), subdivisions=subdivisions,
-            thickness=thickness, segments=segments, duration=duration,
-            layer=layer, world_space=world_space), **kwargs))
+    def draw_icosphere(self, center, radius=1.0, color='white', subdivisions=1, thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.ICOSPHERE, center, size=radius, color=color, subdivisions=subdivisions, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_label(self, position, text, color='white', font_size=14, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.LABEL, position=self._resolve_pos(position),
-            text=text, color=self._resolve_color(color), font_size=font_size,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_label(self, position, text, color='white', font_size=14, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.LABEL, position, text=text, color=color, font_size=font_size, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_torus(self, center, normal=(0,1,0), major_radius=1.0, minor_radius=0.3, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.TORUS, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=major_radius, inner_radius=minor_radius,
-            color=self._resolve_color(color), thickness=thickness, segments=segments,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_torus(self, center, normal=(0,1,0), major_radius=1.0, minor_radius=0.3, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.TORUS, center, normal=self._resolve_pos(normal), size=major_radius, inner_radius=minor_radius, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_pipe(self, center, direction=(0,1,0), height=1.0, outer_radius=0.5, inner_radius=0.3, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.PIPE, position=self._resolve_pos(center),
-            normal=self._resolve_pos(direction), size=outer_radius, inner_radius=inner_radius,
-            height=height, color=self._resolve_color(color), thickness=thickness,
-            segments=segments, duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_pipe(self, center, direction=(0,1,0), height=1.0, outer_radius=0.5, inner_radius=0.3, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.PIPE, center, normal=self._resolve_pos(direction), size=outer_radius, inner_radius=inner_radius, height=height, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_star(self, center, normal=(0,1,0), outer_radius=1.0, inner_radius=0.4, points=5, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.STAR, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=outer_radius, inner_radius=inner_radius,
-            segments=points, color=self._resolve_color(color), thickness=thickness,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_star(self, center, normal=(0,1,0), outer_radius=1.0, inner_radius=0.4, points=5, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.STAR, center, normal=self._resolve_pos(normal), size=outer_radius, inner_radius=inner_radius, segments=points, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_pie(self, center, normal=(0,1,0), radius=1.0, angle_start=0.0, angle_end=90.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.PIE, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=radius,
-            angle_start=angle_start, angle_end=angle_end, segments=segments,
-            color=self._resolve_color(color), thickness=thickness,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_pie(self, center, normal=(0,1,0), radius=1.0, angle_start=0.0, angle_end=90.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.PIE, center, normal=self._resolve_pos(normal), size=radius, angle_start=angle_start, angle_end=angle_end, segments=segments, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_wedge(self, center, direction=(0,1,0), radius=1.0, height=1.0, angle_start=0.0, angle_end=90.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.WEDGE, position=self._resolve_pos(center),
-            normal=self._resolve_pos(direction), size=radius, height=height,
-            angle_start=angle_start, angle_end=angle_end, segments=segments,
-            color=self._resolve_color(color), thickness=thickness,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_wedge(self, center, direction=(0,1,0), radius=1.0, height=1.0, angle_start=0.0, angle_end=90.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.WEDGE, center, normal=self._resolve_pos(direction), size=radius, height=height, angle_start=angle_start, angle_end=angle_end, segments=segments, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_spiral(self, center, direction=(0,1,0), max_radius=1.0, height=2.0, turns=3.0, color='white', thickness=1.0, segments=64, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.SPIRAL, position=self._resolve_pos(center),
-            normal=self._resolve_pos(direction), size=max_radius, height=height, turns=turns,
-            color=self._resolve_color(color), thickness=thickness, segments=segments,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_spiral(self, center, direction=(0,1,0), max_radius=1.0, height=2.0, turns=3.0, color='white', thickness=1.0, segments=64, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.SPIRAL, center, normal=self._resolve_pos(direction), size=max_radius, height=height, turns=turns, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_chord(self, center, normal=(0,1,0), radius=1.0, angle_start=0.0, angle_end=90.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.CHORD, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=radius,
-            angle_start=angle_start, angle_end=angle_end, segments=segments,
-            color=self._resolve_color(color), thickness=thickness,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_chord(self, center, normal=(0,1,0), radius=1.0, angle_start=0.0, angle_end=90.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.CHORD, center, normal=self._resolve_pos(normal), size=radius, angle_start=angle_start, angle_end=angle_end, segments=segments, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_hemisphere(self, center, normal=(0,1,0), radius=1.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.HEMISPHERE, position=self._resolve_pos(center),
-            normal=self._resolve_pos(normal), size=radius,
-            color=self._resolve_color(color), thickness=thickness, segments=segments,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_hemisphere(self, center, normal=(0,1,0), radius=1.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.HEMISPHERE, center, normal=self._resolve_pos(normal), size=radius, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)
 
-    def draw_pyramid(self, center, direction=(0,1,0), base_radius=0.5, height=1.0, sides=4, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kwargs):
-        self._add(self._apply_transform(GizmoData(gizmo_type=GizmoType.PYRAMID, position=self._resolve_pos(center),
-            normal=self._resolve_pos(direction), size=base_radius, height=height, segments=sides,
-            color=self._resolve_color(color), thickness=thickness,
-            duration=duration, layer=layer, world_space=world_space), **kwargs))
+    def draw_pyramid(self, center, direction=(0,1,0), base_radius=0.5, height=1.0, sides=4, color='white', thickness=1.0, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.PYRAMID, center, normal=self._resolve_pos(direction), size=base_radius, height=height, segments=sides, color=color, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
     @staticmethod
     def color_rgb(r: float, g: float, b: float, a: float = 1.0) -> Tuple[float, float, float, float]:
@@ -1454,198 +1355,33 @@ def set_gizmos(gm):
     _gizmos_instance = gm
 
 
-class Gizmos:
-    @staticmethod
-    def draw_point(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_point(*a, **kw)
+_PASSTHROUGH = {
+    'clear', 'clear_persistent', 'clear_unique', 'toggle', 'update',
+    'set_transform', 'reset_transform', 'push_transform', 'pop_transform',
+    'push_style', 'pop_style',
+}
 
-    @staticmethod
-    def draw_line(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_line(*a, **kw)
+def _delegate(method, *a, **kw):
+    if _gizmos_instance:
+        getattr(_gizmos_instance, method)(*a, **kw)
 
-    @staticmethod
-    def draw_circle(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_circle(*a, **kw)
+class _GizmosMeta(type):
+    def __getattr__(cls, name):
+        if name.startswith('draw_') or name in _PASSTHROUGH:
+            return lambda *a, **kw: _delegate(name, *a, **kw)
+        if name.startswith('color_') or name in ('style',):
+            fn = getattr(GizmosManager, name, None)
+            if fn:
+                return staticmethod(fn)
+        raise AttributeError(f"Gizmos has no attribute '{name}'")
 
+class Gizmos(metaclass=_GizmosMeta):
     @staticmethod
-    def draw_sphere(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_sphere(*a, **kw)
-
-    @staticmethod
-    def draw_box(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_box(*a, **kw)
-
-    @staticmethod
-    def draw_arc(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_arc(*a, **kw)
-
-    @staticmethod
-    def draw_capsule(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_capsule(*a, **kw)
-
-    @staticmethod
-    def draw_grid(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_grid(*a, **kw)
-
-    @staticmethod
-    def draw_cone(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_cone(*a, **kw)
-
-    @staticmethod
-    def draw_axis(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_axis(*a, **kw)
-
-    @staticmethod
-    def draw_text(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_text(*a, **kw)
-
-    @staticmethod
-    def draw_ring(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_ring(*a, **kw)
-
-    @staticmethod
-    def draw_arrow(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_arrow(*a, **kw)
-
-    @staticmethod
-    def draw_cross(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_cross(*a, **kw)
-
-    @staticmethod
-    def draw_dashed_line(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_dashed_line(*a, **kw)
-
-    @staticmethod
-    def draw_bezier(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_bezier(*a, **kw)
-
-    @staticmethod
-    def draw_triangle(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_triangle(*a, **kw)
-
-    @staticmethod
-    def draw_poly(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_poly(*a, **kw)
-
-    @staticmethod
-    def draw_lines(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_lines(*a, **kw)
-
-    @staticmethod
-    def draw_cylinder(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_cylinder(*a, **kw)
-
-    @staticmethod
-    def draw_ellipse(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_ellipse(*a, **kw)
-
-    @staticmethod
-    def draw_rect(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_rect(*a, **kw)
-
-    @staticmethod
-    def draw_ray(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_ray(*a, **kw)
-
-    @staticmethod
-    def draw_bbox(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_bbox(*a, **kw)
-
-    @staticmethod
-    def draw_frustum(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_frustum(*a, **kw)
-
-    @staticmethod
-    def draw_helix(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_helix(*a, **kw)
-
-    @staticmethod
-    def draw_parabola(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_parabola(*a, **kw)
-
-    @staticmethod
-    def draw_spline(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_spline(*a, **kw)
-
-    @staticmethod
-    def draw_icosphere(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_icosphere(*a, **kw)
-
-    @staticmethod
-    def draw_label(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_label(*a, **kw)
-
-    @staticmethod
-    def draw_torus(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_torus(*a, **kw)
-
-    @staticmethod
-    def draw_pipe(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_pipe(*a, **kw)
-
-    @staticmethod
-    def draw_star(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_star(*a, **kw)
-
-    @staticmethod
-    def draw_pie(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_pie(*a, **kw)
-
-    @staticmethod
-    def draw_wedge(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_wedge(*a, **kw)
-
-    @staticmethod
-    def draw_spiral(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_spiral(*a, **kw)
-
-    @staticmethod
-    def draw_chord(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_chord(*a, **kw)
-
-    @staticmethod
-    def draw_hemisphere(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_hemisphere(*a, **kw)
-
-    @staticmethod
-    def draw_pyramid(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.draw_pyramid(*a, **kw)
-
-    @staticmethod
-    def clear():
-        if _gizmos_instance: _gizmos_instance.clear()
-
-    @staticmethod
-    def clear_persistent():
-        if _gizmos_instance: _gizmos_instance.clear_persistent()
-
-    @staticmethod
-    def clear_unique():
-        if _gizmos_instance: _gizmos_instance.clear_unique()
-
-    @staticmethod
-    def toggle():
-        if _gizmos_instance: _gizmos_instance.enabled = not _gizmos_instance.enabled
-
-    @staticmethod
-    def update(dt):
-        if _gizmos_instance: _gizmos_instance.update(dt)
-
-    @staticmethod
-    def set_transform(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.set_transform(*a, **kw)
-
-    @staticmethod
-    def reset_transform():
-        if _gizmos_instance: _gizmos_instance.reset_transform()
-
-    @staticmethod
-    def push_transform(*a, **kw):
-        if _gizmos_instance: _gizmos_instance.push_transform(*a, **kw)
-
-    @staticmethod
-    def pop_transform():
-        if _gizmos_instance: _gizmos_instance.pop_transform()
+    def style(**kw):
+        if _gizmos_instance:
+            return _gizmos_instance.style(**kw)
+        from contextlib import nullcontext
+        return nullcontext()
 
     @staticmethod
     def color_rgb(*a, **kw):
@@ -1666,20 +1402,6 @@ class Gizmos:
     @staticmethod
     def color_hsv(*a, **kw):
         return GizmosManager.color_hsv(*a, **kw)
-
-    @staticmethod
-    def push_style(**kw):
-        if _gizmos_instance: _gizmos_instance.push_style(**kw)
-
-    @staticmethod
-    def pop_style():
-        if _gizmos_instance: _gizmos_instance.pop_style()
-
-    @staticmethod
-    def style(**kw):
-        if _gizmos_instance: return _gizmos_instance.style(**kw)
-        from contextlib import nullcontext
-        return nullcontext()
 
     SOLID = LineStyle.SOLID
     DASHED = LineStyle.DASHED

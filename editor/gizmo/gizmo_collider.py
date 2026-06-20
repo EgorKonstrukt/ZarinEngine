@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
+from collections import OrderedDict
 import json
 import math
 import os
@@ -12,10 +13,35 @@ if TYPE_CHECKING:
     from core.ecs import Entity
 
 
-_mesh_data: dict[str, dict] = {}
-_decimated_hull_cache: dict[tuple[str, int], Optional[list]] = {}
-_decimated_hull_cache_np: dict[tuple[str, int], Optional[np.ndarray]] = {}
+_SENTINEL = object()
+
+class _LRU:
+    def __init__(self, maxsize: int = 512):
+        self._data: OrderedDict = OrderedDict()
+        self._maxsize = maxsize
+
+    def get(self, key):
+        if key not in self._data:
+            return _SENTINEL
+        self._data.move_to_end(key)
+        return self._data[key]
+
+    def set(self, key, value):
+        self._data[key] = value
+        self._data.move_to_end(key)
+        if len(self._data) > self._maxsize:
+            self._data.popitem(last=False)
+
+    def __contains__(self, key):
+        return key in self._data
+
+
+_mesh_data = _LRU(256)
+_decimated_hull_cache = _LRU(128)
+_decimated_hull_cache_np = _LRU(128)
 _wire_cache: dict[str, tuple[list, str]] = {}
+_convex_hull_cache = _LRU(128)
+_convex_hull_cache_np = _LRU(128)
 _PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../.."))
 
 
@@ -47,8 +73,9 @@ def _load_mesh_data(path: str) -> Optional[dict]:
     if not resolved:
         return None
     cache_key = resolved.lower()
-    if cache_key in _mesh_data:
-        return _mesh_data[cache_key]
+    cached = _mesh_data.get(cache_key)
+    if cached is not _SENTINEL:
+        return cached
 
     from editor.renderer.mesh_loader import MeshLoader
     if cache_key in MeshLoader._shared_import_cache:
@@ -72,8 +99,9 @@ def _load_mesh_data(path: str) -> Optional[dict]:
             pass
 
     if data is None or len(data.vertices) == 0:
-        _mesh_data[cache_key] = {"verts": np.empty((0, 3), dtype=np.float32), "edges": [], "num_verts": 0}
-        return _mesh_data[cache_key]
+        result = {"verts": np.empty((0, 3), dtype=np.float32), "edges": [], "num_verts": 0}
+        _mesh_data.set(cache_key, result)
+        return result
 
     verts = data.vertices.reshape(-1, 3)
     if scale != 1.0:
@@ -91,7 +119,7 @@ def _load_mesh_data(path: str) -> Optional[dict]:
             "num_verts": len(verts),
             "center": center, "radius": radius,
         }
-        _mesh_data[cache_key] = result
+        _mesh_data.set(cache_key, result)
         return result
 
     idxs = data.indices
@@ -121,7 +149,7 @@ def _load_mesh_data(path: str) -> Optional[dict]:
         "num_verts": len(verts),
         "center": center, "radius": radius,
     }
-    _mesh_data[cache_key] = result
+    _mesh_data.set(cache_key, result)
     return result
 
 
@@ -184,38 +212,37 @@ def _compute_hull_edges_np(verts: np.ndarray) -> Optional[np.ndarray]:
         return None
 
 
-_convex_hull_cache: dict[str, Optional[list]] = {}
-_convex_hull_cache_np: dict[str, Optional[np.ndarray]] = {}
-
-
 def _get_convex_hull_edges(path: str) -> Optional[list]:
     cache_key = path.lower().replace("\\", "/")
-    if cache_key in _convex_hull_cache:
-        return _convex_hull_cache[cache_key]
+    cached = _convex_hull_cache.get(cache_key)
+    if cached is not _SENTINEL:
+        return cached
     md = _load_mesh_data(path)
     if md is None or md["num_verts"] == 0:
         return None
     result = _compute_hull_edges_from_verts(md["verts"])
-    _convex_hull_cache[cache_key] = result
+    _convex_hull_cache.set(cache_key, result)
     return result
 
 
 def _get_convex_hull_edges_np(path: str) -> Optional[np.ndarray]:
     cache_key = path.lower().replace("\\", "/")
-    if cache_key in _convex_hull_cache_np:
-        return _convex_hull_cache_np[cache_key]
+    cached = _convex_hull_cache_np.get(cache_key)
+    if cached is not _SENTINEL:
+        return cached
     md = _load_mesh_data(path)
     if md is None or md["num_verts"] == 0:
         return None
     result = _compute_hull_edges_np(md["verts"])
-    _convex_hull_cache_np[cache_key] = result
+    _convex_hull_cache_np.set(cache_key, result)
     return result
 
 
 def _get_decimated_hull_edges(path: str, max_verts: int) -> Optional[list]:
     cache_key = (path.lower().replace("\\", "/"), max_verts)
-    if cache_key in _decimated_hull_cache:
-        return _decimated_hull_cache[cache_key]
+    cached = _decimated_hull_cache.get(cache_key)
+    if cached is not _SENTINEL:
+        return cached
     try:
         md = _load_mesh_data(path)
         if md is None or md["num_verts"] == 0:
@@ -225,20 +252,21 @@ def _get_decimated_hull_edges(path: str, max_verts: int) -> Optional[list]:
             return None
         dv = _decimate_verts(verts, max_verts)
         if len(dv) < 3:
-            _decimated_hull_cache[cache_key] = None
+            _decimated_hull_cache.set(cache_key, None)
             return None
         result = _compute_hull_edges_from_verts(dv)
-        _decimated_hull_cache[cache_key] = result
+        _decimated_hull_cache.set(cache_key, result)
         return result
     except Exception:
-        _decimated_hull_cache[cache_key] = None
+        _decimated_hull_cache.set(cache_key, None)
         return None
 
 
 def _get_decimated_hull_edges_np(path: str, max_verts: int) -> Optional[np.ndarray]:
     cache_key = (path.lower().replace("\\", "/"), max_verts)
-    if cache_key in _decimated_hull_cache_np:
-        return _decimated_hull_cache_np[cache_key]
+    cached = _decimated_hull_cache_np.get(cache_key)
+    if cached is not _SENTINEL:
+        return cached
     try:
         md = _load_mesh_data(path)
         if md is None or md["num_verts"] == 0:
@@ -248,13 +276,13 @@ def _get_decimated_hull_edges_np(path: str, max_verts: int) -> Optional[np.ndarr
             return None
         dv = _decimate_verts(verts, max_verts)
         if len(dv) < 3:
-            _decimated_hull_cache_np[cache_key] = None
+            _decimated_hull_cache_np.set(cache_key, None)
             return None
         result = _compute_hull_edges_np(dv)
-        _decimated_hull_cache_np[cache_key] = result
+        _decimated_hull_cache_np.set(cache_key, result)
         return result
     except Exception:
-        _decimated_hull_cache_np[cache_key] = None
+        _decimated_hull_cache_np.set(cache_key, None)
         return None
 
 

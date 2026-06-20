@@ -8,6 +8,9 @@ from editor.gizmo.gpu_primitives import (
     make_cube_mesh, make_quad_mesh, make_circle_ring_mesh, make_instance_vao
 )
 
+_STRIP_T = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
+_STRIP_S = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0], dtype=np.float32)
+
 FATLINE_VERT = """
 #version 460 core
 uniform mat4 u_mvp;
@@ -92,6 +95,11 @@ class GizmoRenderer:
         self._fatline_vbo_color: Optional[moderngl.Buffer] = None
         self._fatline_vao: Optional[moderngl.VertexArray] = None
         self._fatline_capacity: int = 0
+        self._fs_starts = np.empty((0, 3), dtype=np.float32)
+        self._fs_ends = np.empty((0, 3), dtype=np.float32)
+        self._fs_t = np.empty((0,), dtype=np.float32)
+        self._fs_side = np.empty((0,), dtype=np.float32)
+        self._fs_colors = np.empty((0, 4), dtype=np.float32)
         self._solid_vbo: Optional[moderngl.Buffer] = None
         self._solid_ibo: Optional[moderngl.Buffer] = None
         self._solid_vao: Optional[moderngl.VertexArray] = None
@@ -161,6 +169,11 @@ class GizmoRenderer:
                 (self._fatline_vbo_color, "4f", "a_color"),
             ]
         )
+        self._fs_starts = np.empty((cap, 3), dtype=np.float32)
+        self._fs_ends = np.empty((cap, 3), dtype=np.float32)
+        self._fs_t = np.empty((cap,), dtype=np.float32)
+        self._fs_side = np.empty((cap,), dtype=np.float32)
+        self._fs_colors = np.empty((cap, 4), dtype=np.float32)
         self._fatline_capacity = cap
 
     def _build_solid_buffers(self, vcap: int = 512, icap: int = 1024):
@@ -258,6 +271,7 @@ class GizmoRenderer:
         n_segs = starts.shape[0]
         if n_segs == 0:
             return
+        n_verts = n_segs * 6
         try:
             old_cull = bool(self._ctx.cull_face)
         except:
@@ -274,31 +288,31 @@ class GizmoRenderer:
             prog["u_thickness_ndc_x"] = float(ndc_x)
         if "u_thickness_ndc_y" in prog:
             prog["u_thickness_ndc_y"] = float(ndc_y)
-        strip_t = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
-        strip_s = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0], dtype=np.float32)
-        n_verts = n_segs * 6
-        pts = np.empty((n_segs, 6), dtype=np.float32)
-        pts[:, 0:3] = starts
-        pts[:, 3:6] = ends
-        starts_arr = np.repeat(pts[:, :3], 6, axis=0)
-        ends_arr = np.repeat(pts[:, 3:], 6, axis=0)
-        ts_arr = np.tile(strip_t, n_segs)
-        side_arr = np.tile(strip_s, n_segs)
-        if colors.shape[1] >= 3:
-            if colors.shape[1] == 3:
-                colors_rgba = np.column_stack([colors, np.full(n_segs, 1.0, dtype=np.float32)])
-            else:
-                colors_rgba = colors[:, :4]
-        else:
-            colors_rgba = np.full((n_segs, 4), 0.5, dtype=np.float32)
-        colors_arr = np.repeat(colors_rgba, 6, axis=0)
         if n_verts > self._fatline_capacity:
             self._build_fatline_buffers(n_verts)
-        self._fatline_vbo_start.write(starts_arr.tobytes())
-        self._fatline_vbo_end.write(ends_arr.tobytes())
-        self._fatline_vbo_t.write(ts_arr.tobytes())
-        self._fatline_vbo_side.write(side_arr.tobytes())
-        self._fatline_vbo_color.write(colors_arr.tobytes())
+        sv = self._fs_starts[:n_verts].reshape(-1, 6, 3)
+        sv[:] = starts[:, None, :]
+        ev = self._fs_ends[:n_verts].reshape(-1, 6, 3)
+        ev[:] = ends[:, None, :]
+        tv = self._fs_t[:n_verts].reshape(-1, 6)
+        tv[:] = _STRIP_T[None, :]
+        sidev = self._fs_side[:n_verts].reshape(-1, 6)
+        sidev[:] = _STRIP_S[None, :]
+        if colors.shape[1] == 3:
+            cr = np.empty((n_segs, 4), dtype=np.float32)
+            cr[:, :3] = colors
+            cr[:, 3] = 1.0
+        elif colors.shape[1] >= 4:
+            cr = colors[:, :4]
+        else:
+            cr = np.full((n_segs, 4), 0.5, dtype=np.float32)
+        cv = self._fs_colors[:n_verts].reshape(-1, 6, 4)
+        cv[:] = cr[:, None, :]
+        self._fatline_vbo_start.write(memoryview(self._fs_starts[:n_verts]))
+        self._fatline_vbo_end.write(memoryview(self._fs_ends[:n_verts]))
+        self._fatline_vbo_t.write(memoryview(self._fs_t[:n_verts]))
+        self._fatline_vbo_side.write(memoryview(self._fs_side[:n_verts]))
+        self._fatline_vbo_color.write(memoryview(self._fs_colors[:n_verts]))
         self._fatline_vao.render(moderngl.TRIANGLES, vertices=n_verts)
         if old_cull:
             self._ctx.enable(moderngl.CULL_FACE)
