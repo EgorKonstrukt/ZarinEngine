@@ -18,7 +18,7 @@ from core.math3d import Vec3, Mat4, Quat
 from core.logger import Logger
 from editor.scene_camera import SceneCamera
 from editor.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
-from editor.gizmo.api import GizmosManager, set_gizmos
+from editor.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS
 from core.input_system import Input, KeyCode
 from editor.input_manager import InputManager
 from editor.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
@@ -1124,11 +1124,9 @@ class SceneViewport(QOpenGLWidget):
         if not gm or not gm.enabled:
             return
         fw, fh = self._get_physical_dims()
-        aspect = fw / max(1, fh)
         view = self._cam.get_view_matrix()
-        proj = self._cam.get_projection_matrix(aspect)
+        proj = self._cam.get_projection_matrix(fw / max(1, fh))
         vp_mat = view * proj
-        cam_pos = self._cam.position
         np_data = gm._get_render_data()
         gm._batches.clear()
         if np_data is not None:
@@ -1142,77 +1140,16 @@ class SceneViewport(QOpenGLWidget):
         e_list: list[np.ndarray] = []
         c_list: list[np.ndarray] = []
         for g in all_g:
-            p = g.position
-            gt = g.gizmo_type.name
-            col = np.array(list(g.color)[:4], dtype=np.float32).reshape(1, 4)
-            if gt == 'LINE' and g.end_position:
-                ep = g.end_position
-                s_list.append(np.array([[p[0], p[1], p[2]]], dtype=np.float32))
-                e_list.append(np.array([[ep[0], ep[1], ep[2]]], dtype=np.float32))
-                c_list.append(col)
-            elif gt == 'CIRCLE':
-                n = g.normal; r = g.size; segs = g.segments
-                nv = Vec3(n[0], n[1], n[2])
-                p1 = Vec3(1,0,0) if abs(n[1])<0.9 else Vec3(0,0,1)
-                p1 = nv.cross(p1).normalized()
-                p2 = nv.cross(p1).normalized()
-                theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
-                ct = np.cos(theta) * r
-                st = np.sin(theta) * r
-                pts = np.empty((segs + 1, 3), dtype=np.float32)
-                pts[:, 0] = p[0] + p1.x * ct + p2.x * st
-                pts[:, 1] = p[1] + p1.y * ct + p2.y * st
-                pts[:, 2] = p[2] + p1.z * ct + p2.z * st
-                s_list.append(pts[:-1])
-                e_list.append(pts[1:])
-                c_list.append(np.tile(col, (segs, 1)))
-            elif gt == 'BOX':
-                h = g.size if isinstance(g.size, (tuple, list)) else (g.size, g.size, g.size)
-                hx, hy, hz = h[0]*0.5, h[1]*0.5, h[2]*0.5
-                c = np.array([
-                    [-hx, -hy, -hz], [hx, -hy, -hz], [hx, hy, -hz], [-hx, hy, -hz],
-                    [-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz],
-                ], dtype=np.float32) + np.array([p[0], p[1], p[2]], dtype=np.float32)
-                edges = np.array([(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)])
-                s_list.append(c[edges[:, 0]])
-                e_list.append(c[edges[:, 1]])
-                c_list.append(np.tile(col, (12, 1)))
-            elif gt == 'SPHERE':
-                r = g.size
-                segs = g.segments // 2
-                lats = np.linspace(0, math.pi, segs + 1, dtype=np.float32)
-                lons = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
-                lat_sin = np.sin(lats)
-                lat_cos = np.cos(lats)
-                lon_sin = np.sin(lons)
-                lon_cos = np.cos(lons)
-                verts = np.empty(((segs + 1) * (segs + 1), 3), dtype=np.float32)
-                idx = 0
-                for li in range(segs + 1):
-                    for lj in range(segs + 1):
-                        verts[idx, 0] = p[0] + r * lat_sin[li] * lon_cos[lj]
-                        verts[idx, 1] = p[1] + r * lat_cos[li]
-                        verts[idx, 2] = p[2] + r * lat_sin[li] * lon_sin[lj]
-                        idx += 1
-                nv = segs + 1
-                lines_seg_buf = []
-                for li in range(segs):
-                    for lj in range(segs):
-                        i0 = li * nv + lj
-                        i1 = li * nv + lj + 1
-                        i2 = (li + 1) * nv + lj
-                        i3 = (li + 1) * nv + lj + 1
-                        lines_seg_buf.append(i0); lines_seg_buf.append(i1)
-                        lines_seg_buf.append(i1); lines_seg_buf.append(i2)
-                        lines_seg_buf.append(i2); lines_seg_buf.append(i3)
-                        lines_seg_buf.append(i3); lines_seg_buf.append(i0)
-                lidx = np.array(lines_seg_buf)
-                s_list.append(verts[lidx[0::2]])
-                e_list.append(verts[lidx[1::2]])
-                c_list.append(np.tile(col, (len(lidx) // 2, 1)))
+            builder = _GIZMO_LINE_BUILDERS.get(g.gizmo_type)
+            if builder is not None:
+                result = builder(g)
+                if result is not None:
+                    s, e, c = result
+                    s_list.append(s)
+                    e_list.append(e)
+                    c_list.append(c)
         if s_list:
-            starts = np.concatenate(s_list, axis=0)
-            ends = np.concatenate(e_list, axis=0)
-            colors = np.concatenate(c_list, axis=0)
-            self._renderer.render_gizmo_arrays(starts, ends, colors, vp_mat, fw, fh, thickness_multiplier=1.0)
+            self._renderer.render_gizmo_arrays(
+                np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list),
+                vp_mat, fw, fh, thickness_multiplier=1.0)
         gm.draws.clear()
