@@ -18,6 +18,7 @@ from core.math3d import Vec3, Mat4, Quat
 from core.logger import Logger
 from editor.scene_camera import SceneCamera
 from editor.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
+from editor.gizmo.api import GizmosManager, set_gizmos
 from core.input_system import Input, KeyCode
 from editor.input_manager import InputManager
 from editor.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
@@ -60,6 +61,8 @@ class SceneViewport(QOpenGLWidget):
         self._cam: SceneCamera = SceneCamera()
         self._cam.set_viewport_size(self.width(), self.height())
         self._gizmo: Gizmo = Gizmo()
+        self._gizmos_api: GizmosManager = GizmosManager()
+        set_gizmos(self._gizmos_api)
         self._selected_entities: list = []
         self._last_frame_time: float = time.perf_counter()
         self._last_dt: float = 0.016
@@ -320,12 +323,15 @@ class SceneViewport(QOpenGLWidget):
             self._renderer.initialize()
             self._renderer.request_render(lambda: self.update())
             self._engine.on("scene_loaded", self._on_scene_loaded)
+            self._engine.on("play_stop", self._on_play_stop)
+            self._engine.on("play_start", self._on_play_stop)
         except Exception as e:
             import traceback
             print(f"[Zarin Engine] OpenGL init error: {e}\n{traceback.format_exc()}", flush=True)
             Logger.error(f"OpenGL init error: {e}", e)
 
     def _on_scene_loaded(self, scene):
+        self._gizmos_api.clear()
         Logger.info(f"_on_scene_loaded: selected={len(self._selected_entities)} scene_entities={len(scene._entities)}")
         old_ids = [e.id for e in self._selected_entities]
         resolved = [scene.get_entity(eid) for eid in old_ids if scene.get_entity(eid)]
@@ -338,6 +344,9 @@ class SceneViewport(QOpenGLWidget):
             self._sel_bounds_peers.clear()
         self.entities_selected.emit(self._selected_entities)
         from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
+
+    def _on_play_stop(self, data=None):
+        self._gizmos_api.clear()
 
     def resizeGL(self, w: int, h: int):
         dpr = self.devicePixelRatio()
@@ -386,9 +395,14 @@ class SceneViewport(QOpenGLWidget):
                 if in_frame:
                     prof.start("gizmo_lines")
                 t1 = time.perf_counter()
-                gizmo_lines = self._gizmo.get_gizmo_lines(self._cam, fw, fh)
-                if gizmo_lines:
-                    self._renderer.render_gizmo_lines(gizmo_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
+                gizmo_result = self._gizmo.get_gizmo_arrays(self._cam, fw, fh)
+                if gizmo_result is not None:
+                    gs, ge, gc = gizmo_result
+                    self._renderer.render_gizmo_arrays(gs, ge, gc, vp_mat, fw, fh, thickness_multiplier=1.0)
+                elif self._gizmo_visible:
+                    gizmo_lines = self._gizmo.get_gizmo_lines(self._cam, fw, fh)
+                    if gizmo_lines:
+                        self._renderer.render_gizmo_lines(gizmo_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
                 if self._gizmo_visible:
                     axis_lines = get_axis_gizmo_lines(self)
                     if axis_lines:
@@ -416,6 +430,7 @@ class SceneViewport(QOpenGLWidget):
                 if self._debug_lines:
                     self._renderer.render_gizmo_lines(self._debug_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
                     self._debug_lines.clear()
+                self._render_api_gizmos()
                 if in_frame:
                     prof.stop("gizmo_icons")
                 if in_frame:
@@ -496,6 +511,7 @@ class SceneViewport(QOpenGLWidget):
         prof.start("cam_update")
         self._cam.update(dt)
         prof.stop("cam_update")
+        self._gizmos_api.update(dt)
         prof.stop("logic_update")
         prof.start("render_widget")
         if self.isVisible():
@@ -1106,3 +1122,77 @@ class SceneViewport(QOpenGLWidget):
 
     def add_debug_line(self, start: Vec3, end: Vec3, color: list[float]):
         self._debug_lines.append((start, end, color))
+
+    def _render_api_gizmos(self):
+        gm = self._gizmos_api
+        if not gm or not gm.enabled:
+            return
+        fw, fh = self._get_physical_dims()
+        aspect = fw / max(1, fh)
+        view = self._cam.get_view_matrix()
+        proj = self._cam.get_projection_matrix(aspect)
+        vp_mat = view * proj
+        cam_pos = self._cam.position
+        np_data = gm._get_render_data()
+        gm._batches.clear()
+        if np_data is not None:
+            gs, ge, gc = np_data
+            self._renderer.render_gizmo_arrays(gs, ge, gc, vp_mat, fw, fh, thickness_multiplier=1.0)
+        all_g = list(gm.unique_draws.values()) + gm.draws + gm.persistent_draws
+        if not all_g:
+            return
+        lines = []
+        for g in all_g:
+            p = g.position
+            gt = g.gizmo_type.name
+            if gt == 'LINE' and g.end_position:
+                ep = g.end_position
+                lines.append((
+                    Vec3(p[0], p[1], p[2]),
+                    Vec3(ep[0], ep[1], ep[2]),
+                    list(g.color),
+                ))
+            elif gt == 'CIRCLE':
+                n = g.normal
+                r = g.size
+                segs = g.segments
+                p1 = Vec3(1,0,0) if abs(n[1])<0.9 else Vec3(0,0,1)
+                p1 = Vec3(n[0],n[1],n[2]).cross(p1).normalized()
+                p2 = Vec3(n[0],n[1],n[2]).cross(p1).normalized()
+                for i in range(segs):
+                    a1 = 2*math.pi*i/segs; a2 = 2*math.pi*(i+1)/segs
+                    c1, s1 = math.cos(a1)*r, math.sin(a1)*r
+                    c2, s2 = math.cos(a2)*r, math.sin(a2)*r
+                    lines.append((
+                        Vec3(p[0]+p1.x*c1+p2.x*s1, p[1]+p1.y*c1+p2.y*s1, p[2]+p1.z*c1+p2.z*s1),
+                        Vec3(p[0]+p1.x*c2+p2.x*s2, p[1]+p1.y*c2+p2.y*s2, p[2]+p1.z*c2+p2.z*s2),
+                        list(g.color),
+                    ))
+            elif gt == 'BOX':
+                hx, hy, hz = g.size if isinstance(g.size, (tuple,list)) else (g.size,g.size,g.size)
+                hx*=0.5; hy*=0.5; hz*=0.5
+                c = [Vec3(p[0]-hx,p[1]-hy,p[2]-hz), Vec3(p[0]+hx,p[1]-hy,p[2]-hz),
+                     Vec3(p[0]+hx,p[1]+hy,p[2]-hz), Vec3(p[0]-hx,p[1]+hy,p[2]-hz),
+                     Vec3(p[0]-hx,p[1]-hy,p[2]+hz), Vec3(p[0]+hx,p[1]-hy,p[2]+hz),
+                     Vec3(p[0]+hx,p[1]+hy,p[2]+hz), Vec3(p[0]-hx,p[1]+hy,p[2]+hz)]
+                for a,b in [(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)]:
+                    lines.append((c[a], c[b], list(g.color)))
+            elif gt == 'SPHERE':
+                r = g.size
+                segs = g.segments // 2
+                for lat in range(segs):
+                    th1 = math.pi*lat/segs; th2 = math.pi*(lat+1)/segs
+                    for lon in range(segs):
+                        ph1 = 2*math.pi*lon/segs; ph2 = 2*math.pi*(lon+1)/segs
+                        def sp(th,ph):
+                            return Vec3(p[0]+r*math.sin(th)*math.cos(ph),
+                                        p[1]+r*math.cos(th),
+                                        p[2]+r*math.sin(th)*math.sin(ph))
+                        v0 = sp(th1,ph1); v1 = sp(th1,ph2); v2 = sp(th2,ph2); v3 = sp(th2,ph1)
+                        lines.append((v0,v1,list(g.color)))
+                        lines.append((v1,v2,list(g.color)))
+                        lines.append((v2,v3,list(g.color)))
+                        lines.append((v3,v0,list(g.color)))
+        if lines:
+            self._renderer.render_gizmo_lines(lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
+        gm.draws.clear()

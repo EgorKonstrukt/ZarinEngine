@@ -3,126 +3,215 @@ import numpy as np
 import moderngl
 from typing import Optional
 from core.math3d import Vec3, Mat4
+from editor.gizmo.gpu_primitives import (
+    GpuMesh, make_cone_mesh, make_cylinder_mesh,
+    make_cube_mesh, make_quad_mesh, make_circle_ring_mesh, make_instance_vao
+)
 
+FATLINE_VERT = """
+#version 460 core
+uniform mat4 u_mvp;
+in vec3 a_start;
+in vec3 a_end;
+in float a_t;
+in float a_side;
+in vec4 a_color;
+out vec3 v_color;
+out float v_alpha;
+uniform float u_thickness_ndc_x;
+uniform float u_thickness_ndc_y;
+void main() {
+    vec4 clip_start = u_mvp * vec4(a_start, 1.0);
+    vec4 clip_end   = u_mvp * vec4(a_end,   1.0);
+    vec4 clipPos = mix(clip_start, clip_end, a_t);
+    vec2 dxy = clip_end.xy - clip_start.xy;
+    float len = length(dxy);
+    vec2 perp;
+    if (len > 1e-6) {
+        vec2 dir = dxy / len;
+        perp = vec2(-dir.y, dir.x);
+    } else {
+        perp = vec2(1.0, 0.0);
+    }
+    clipPos.xy += perp * a_side * vec2(u_thickness_ndc_x, u_thickness_ndc_y) * clipPos.w;
+    gl_Position = clipPos;
+    v_color = a_color.rgb;
+    v_alpha = a_color.a;
+}
+"""
+
+FATLINE_FRAG = """
+#version 460 core
+in vec3 v_color;
+in float v_alpha;
+out vec4 fragColor;
+void main() {
+    fragColor = vec4(v_color, v_alpha);
+}
+"""
+
+INSTANCED_VERT = """
+#version 460 core
+in vec3 in_position;
+in vec4 in_color;
+in vec4 i_row0;
+in vec4 i_row1;
+in vec4 i_row2;
+in vec4 i_row3;
+in vec4 i_color;
+uniform mat4 u_mvp;
+out vec4 v_color;
+void main() {
+    mat4 i_model = mat4(i_row0, i_row1, i_row2, i_row3);
+    v_color = i_color * in_color;
+    gl_Position = u_mvp * i_model * vec4(in_position, 1.0);
+}
+"""
+
+INSTANCED_FRAG = """
+#version 460 core
+in vec4 v_color;
+out vec4 fragColor;
+void main() {
+    fragColor = v_color;
+}
+"""
 
 class GizmoRenderer:
-    """Renders gizmo lines, solid meshes and wireframe overlays."""
-
     def __init__(self, ctx: moderngl.Context, gizmo_prog: moderngl.Program,
                  fatline_prog: moderngl.Program, solid_prog: moderngl.Program):
         self._ctx = ctx
         self._gizmo_prog = gizmo_prog
         self._fatline_prog = fatline_prog
         self._solid_prog = solid_prog
-        self._line_vbo_data: Optional[moderngl.Buffer] = None
-        self._line_vao: Optional[moderngl.VertexArray] = None
+        self._line_width: float = 1.0
         self._fatline_vbo_start: Optional[moderngl.Buffer] = None
         self._fatline_vbo_end: Optional[moderngl.Buffer] = None
         self._fatline_vbo_t: Optional[moderngl.Buffer] = None
         self._fatline_vbo_side: Optional[moderngl.Buffer] = None
-        self._fatline_vao_persistent: Optional[moderngl.VertexArray] = None
-        self._fatline_vbo_capacity: int = 0
+        self._fatline_vbo_color: Optional[moderngl.Buffer] = None
+        self._fatline_vao: Optional[moderngl.VertexArray] = None
+        self._fatline_capacity: int = 0
         self._solid_vbo: Optional[moderngl.Buffer] = None
         self._solid_ibo: Optional[moderngl.Buffer] = None
-        self._solid_vao_persistent: Optional[moderngl.VertexArray] = None
-        self._solid_vbo_capacity: int = 0
-        self._solid_ibo_capacity: int = 0
-        self._line_width: float = 1.0
-        self._build_buffers()
+        self._solid_vao: Optional[moderngl.VertexArray] = None
+        self._solid_vbo_cap: int = 0
+        self._solid_ibo_cap: int = 0
+        self._instanced_prog: Optional[moderngl.Program] = None
+        self._cone_mesh: Optional[GpuMesh] = None
+        self._cylinder_mesh: Optional[GpuMesh] = None
+        self._cube_mesh: Optional[GpuMesh] = None
+        self._quad_mesh: Optional[GpuMesh] = None
+        self._circle_mesh: Optional[GpuMesh] = None
+        self._instanced_initialized: bool = False
+        self._build_fatline_buffers()
+        self._build_solid_buffers()
 
-    def _build_buffers(self):
-        dummy = np.zeros((6,), dtype=np.float32)
-        self._line_vbo_data = self._ctx.buffer(dummy.tobytes(), dynamic=True)
-        self._line_vao = self._ctx.vertex_array(
-            self._gizmo_prog,
-            [(self._line_vbo_data, "3f", "in_position")]
-        )
-        self._ensure_fatline_buffers(2048)
-        self._ensure_solid_buffers(512, 1024)
-
-    def _ensure_fatline_buffers(self, n_verts: int):
-        if self._fatline_vbo_capacity >= n_verts and self._fatline_vao_persistent is not None:
+    def _ensure_instanced_prog(self):
+        if self._instanced_prog is not None:
             return
-        cap = max(n_verts, 2048)
+        try:
+            self._instanced_prog = self._ctx.program(
+                vertex_shader=INSTANCED_VERT,
+                fragment_shader=INSTANCED_FRAG
+            )
+        except Exception:
+            self._instanced_prog = None
+
+    def initialize_instanced_meshes(self):
+        if self._instanced_initialized:
+            return
+        self._ensure_instanced_prog()
+        if self._instanced_prog is None:
+            return
+        ctx = self._ctx
+        prog = self._instanced_prog
+        self._cone_mesh = make_instance_vao(ctx, prog, make_cone_mesh(ctx, prog))
+        self._cylinder_mesh = make_instance_vao(ctx, prog, make_cylinder_mesh(ctx, prog))
+        self._cube_mesh = make_instance_vao(ctx, prog, make_cube_mesh(ctx, prog))
+        self._quad_mesh = make_instance_vao(ctx, prog, make_quad_mesh(ctx, prog))
+        self._circle_mesh = make_instance_vao(ctx, prog, make_circle_ring_mesh(ctx, prog))
+        self._instanced_initialized = True
+
+    def _build_fatline_buffers(self, capacity: int = 2048):
+        cap = max(capacity, 2048)
         dummy3 = np.zeros(cap * 3, dtype=np.float32)
         dummy1 = np.zeros(cap, dtype=np.float32)
-        for attr in ('_fatline_vbo_start', '_fatline_vbo_end', '_fatline_vbo_t', '_fatline_vbo_side'):
-            buf = getattr(self, attr)
-            if buf is not None:
-                try:
-                    buf.release()
-                except Exception:
-                    pass
-        if self._fatline_vao_persistent is not None:
-            try:
-                self._fatline_vao_persistent.release()
-            except Exception:
-                pass
+        dummy4 = np.zeros(cap * 4, dtype=np.float32)
+        for buf_name in ('_fatline_vbo_start', '_fatline_vbo_end', '_fatline_vbo_t', '_fatline_vbo_side', '_fatline_vbo_color'):
+            b = getattr(self, buf_name, None)
+            if b is not None:
+                try: b.release()
+                except: pass
+        if self._fatline_vao is not None:
+            try: self._fatline_vao.release()
+            except: pass
         self._fatline_vbo_start = self._ctx.buffer(dummy3.tobytes(), dynamic=True)
         self._fatline_vbo_end = self._ctx.buffer(dummy3.tobytes(), dynamic=True)
         self._fatline_vbo_t = self._ctx.buffer(dummy1.tobytes(), dynamic=True)
         self._fatline_vbo_side = self._ctx.buffer(dummy1.tobytes(), dynamic=True)
-        self._fatline_vao_persistent = self._ctx.vertex_array(
+        self._fatline_vbo_color = self._ctx.buffer(dummy4.tobytes(), dynamic=True)
+        self._fatline_vao = self._ctx.vertex_array(
             self._fatline_prog,
             [
                 (self._fatline_vbo_start, "3f", "a_start"),
                 (self._fatline_vbo_end, "3f", "a_end"),
                 (self._fatline_vbo_t, "1f", "a_t"),
                 (self._fatline_vbo_side, "1f", "a_side"),
+                (self._fatline_vbo_color, "4f", "a_color"),
             ]
         )
-        self._fatline_vbo_capacity = cap
+        self._fatline_capacity = cap
 
-    def _ensure_solid_buffers(self, n_verts: int, n_idx: int):
-        if (self._solid_vbo_capacity >= n_verts and
-                self._solid_ibo_capacity >= n_idx and
-                self._solid_vao_persistent is not None):
-            return
-        vcap = max(n_verts, 512)
-        icap = max(n_idx, 1024)
-        for attr in ('_solid_vbo', '_solid_ibo'):
-            buf = getattr(self, attr)
-            if buf is not None:
-                try:
-                    buf.release()
-                except Exception:
-                    pass
-        if self._solid_vao_persistent is not None:
-            try:
-                self._solid_vao_persistent.release()
-            except Exception:
-                pass
+    def _build_solid_buffers(self, vcap: int = 512, icap: int = 1024):
+        vcap = max(vcap, 512)
+        icap = max(icap, 1024)
+        for buf_name in ('_solid_vbo', '_solid_ibo'):
+            b = getattr(self, buf_name, None)
+            if b is not None:
+                try: b.release()
+                except: pass
+        if self._solid_vao is not None:
+            try: self._solid_vao.release()
+            except: pass
         self._solid_vbo = self._ctx.buffer(np.zeros(vcap * 7, dtype=np.float32).tobytes(), dynamic=True)
         self._solid_ibo = self._ctx.buffer(np.zeros(icap, dtype=np.uint32).tobytes(), dynamic=True)
-        self._solid_vao_persistent = self._ctx.vertex_array(
+        self._solid_vao = self._ctx.vertex_array(
             self._solid_prog,
             [(self._solid_vbo, "3f 4f", "in_position", "in_color")],
             self._solid_ibo
         )
-        self._solid_vbo_capacity = vcap
-        self._solid_ibo_capacity = icap
+        self._solid_vbo_cap = vcap
+        self._solid_ibo_cap = icap
 
-    def render_lines(self, lines: list[tuple], vp_mat: Mat4,
-                     fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0):
+    def render_lines(self, lines, vp_mat: Mat4, fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0):
         if not self._fatline_prog or not lines:
             return
         desired_pixels = max(1.0, float(self._line_width) * 1.5 * thickness_multiplier)
-        color_groups: dict[tuple, list] = {}
+        if isinstance(lines, tuple) and len(lines) == 3 and all(isinstance(a, np.ndarray) for a in lines):
+            starts_np, ends_np, colors_np = lines
+            self._render_lines_np(starts_np, ends_np, colors_np, vp_mat, fw, fh, desired_pixels)
+            return
+        color_groups: dict = {}
         for start, end, color in lines:
-            c = (float(color[0]), float(color[1]), float(color[2]))
-            color_groups.setdefault(c, []).append((start, end))
+            if isinstance(start, Vec3):
+                key = (float(color[0]), float(color[1]), float(color[2]))
+                color_groups.setdefault(key, []).append((start, end))
+            else:
+                key = (float(color[0]), float(color[1]), float(color[2]))
+                color_groups.setdefault(key, []).append((start, end))
         try:
-            old_cull_face = bool(self._ctx.cull_face)
-        except Exception:
-            old_cull_face = True
+            old_cull = bool(self._ctx.cull_face)
+        except:
+            old_cull = True
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.disable(moderngl.DEPTH_TEST)
         prog = self._fatline_prog
         vp_f32 = vp_mat.to_f32()
         if "u_mvp" in prog:
             prog["u_mvp"].write(vp_f32.tobytes())
-        fw_s, fh_s = max(1.0, float(fw)), max(1.0, float(fh))
-        ndc_x, ndc_y = desired_pixels / fw_s, desired_pixels / fh_s
+        ndc_x = desired_pixels / max(1.0, float(fw))
+        ndc_y = desired_pixels / max(1.0, float(fh))
         if "u_thickness_ndc_x" in prog:
             prog["u_thickness_ndc_x"] = float(ndc_x)
         if "u_thickness_ndc_y" in prog:
@@ -130,8 +219,8 @@ class GizmoRenderer:
         strip_t = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
         strip_s = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0], dtype=np.float32)
         try:
-            for color, segs in color_groups.items():
-                alpha_val = float(color[3]) if len(color) > 3 else 1.0
+            for color_key, segs in color_groups.items():
+                alpha_val = float(color_key[3]) if len(color_key) > 3 else 1.0
                 if alpha_val <= 0.001:
                     continue
                 n_segs = len(segs)
@@ -144,28 +233,101 @@ class GizmoRenderer:
                 ends_arr = np.repeat(pts[:, 3:], 6, axis=0)
                 ts_arr = np.tile(strip_t, n_segs)
                 side_arr = np.tile(strip_s, n_segs)
-                self._ensure_fatline_buffers(n_verts)
-                if n_verts > self._fatline_vbo_capacity:
-                    self._fatline_vbo_start.orphan(n_verts * 12)
-                    self._fatline_vbo_end.orphan(n_verts * 12)
-                    self._fatline_vbo_t.orphan(n_verts * 4)
-                    self._fatline_vbo_side.orphan(n_verts * 4)
-                    self._fatline_vbo_capacity = n_verts
+                if n_verts > self._fatline_capacity:
+                    self._build_fatline_buffers(n_verts)
                 self._fatline_vbo_start.write(starts_arr.tobytes())
                 self._fatline_vbo_end.write(ends_arr.tobytes())
                 self._fatline_vbo_t.write(ts_arr.tobytes())
                 self._fatline_vbo_side.write(side_arr.tobytes())
-                if "u_line_color" in prog:
-                    prog["u_line_color"] = color[:3]
-                if "u_alpha" in prog:
-                    prog["u_alpha"] = alpha_val
-                self._fatline_vao_persistent.render(moderngl.TRIANGLES, vertices=n_verts)
+                color_arr = np.zeros((n_verts, 4), dtype=np.float32)
+                color_arr[:, 0] = color_key[0]
+                color_arr[:, 1] = color_key[1]
+                color_arr[:, 2] = color_key[2]
+                color_arr[:, 3] = alpha_val
+                self._fatline_vbo_color.write(color_arr.tobytes())
+                self._fatline_vao.render(moderngl.TRIANGLES, vertices=n_verts)
         finally:
-            if old_cull_face:
+            if old_cull:
                 self._ctx.enable(moderngl.CULL_FACE)
             else:
                 self._ctx.disable(moderngl.CULL_FACE)
             self._ctx.enable(moderngl.DEPTH_TEST)
+
+    def _render_lines_np(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
+                          vp_mat: Mat4, fw: int, fh: int, desired_pixels: float):
+        n_segs = starts.shape[0]
+        if n_segs == 0:
+            return
+        try:
+            old_cull = bool(self._ctx.cull_face)
+        except:
+            old_cull = True
+        self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.disable(moderngl.DEPTH_TEST)
+        prog = self._fatline_prog
+        vp_f32 = vp_mat.to_f32()
+        if "u_mvp" in prog:
+            prog["u_mvp"].write(vp_f32.tobytes())
+        ndc_x = desired_pixels / max(1.0, float(fw))
+        ndc_y = desired_pixels / max(1.0, float(fh))
+        if "u_thickness_ndc_x" in prog:
+            prog["u_thickness_ndc_x"] = float(ndc_x)
+        if "u_thickness_ndc_y" in prog:
+            prog["u_thickness_ndc_y"] = float(ndc_y)
+        strip_t = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
+        strip_s = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0], dtype=np.float32)
+        n_verts = n_segs * 6
+        pts = np.empty((n_segs, 6), dtype=np.float32)
+        pts[:, 0:3] = starts
+        pts[:, 3:6] = ends
+        starts_arr = np.repeat(pts[:, :3], 6, axis=0)
+        ends_arr = np.repeat(pts[:, 3:], 6, axis=0)
+        ts_arr = np.tile(strip_t, n_segs)
+        side_arr = np.tile(strip_s, n_segs)
+        if colors.shape[1] >= 3:
+            if colors.shape[1] == 3:
+                colors_rgba = np.column_stack([colors, np.full(n_segs, 1.0, dtype=np.float32)])
+            else:
+                colors_rgba = colors[:, :4]
+        else:
+            colors_rgba = np.full((n_segs, 4), 0.5, dtype=np.float32)
+        colors_arr = np.repeat(colors_rgba, 6, axis=0)
+        if n_verts > self._fatline_capacity:
+            self._build_fatline_buffers(n_verts)
+        self._fatline_vbo_start.write(starts_arr.tobytes())
+        self._fatline_vbo_end.write(ends_arr.tobytes())
+        self._fatline_vbo_t.write(ts_arr.tobytes())
+        self._fatline_vbo_side.write(side_arr.tobytes())
+        self._fatline_vbo_color.write(colors_arr.tobytes())
+        self._fatline_vao.render(moderngl.TRIANGLES, vertices=n_verts)
+        if old_cull:
+            self._ctx.enable(moderngl.CULL_FACE)
+        else:
+            self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.enable(moderngl.DEPTH_TEST)
+
+    def render_instanced(self, mesh: GpuMesh, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int):
+        if not self._instanced_initialized or mesh.instance_vbo is None:
+            return
+        prog = self._instanced_prog
+        vp_f32 = vp_mat.to_f32()
+        if "u_mvp" in prog:
+            prog["u_mvp"].write(vp_f32.tobytes())
+        data_size = num_instances * mesh.instance_stride
+        if data_size > 0:
+            mesh.instance_vbo.write(instance_data[:data_size].tobytes())
+        try:
+            old_cull = bool(self._ctx.cull_face)
+        except:
+            old_cull = True
+        self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.disable(moderngl.DEPTH_TEST)
+        mesh.vao.render(moderngl.TRIANGLES, instances=num_instances)
+        if old_cull:
+            self._ctx.enable(moderngl.CULL_FACE)
+        else:
+            self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.enable(moderngl.DEPTH_TEST)
 
     def render_meshes(self, meshes: list[tuple], vp_mat: Mat4):
         if not self._solid_prog or not meshes:
@@ -189,20 +351,15 @@ class GizmoRenderer:
                 v_data[i, 6] = c[3] if len(c) > 3 else 1.0
             idx_arr = np.array(indices, dtype=np.uint32)
             n_idx = len(idx_arr)
-            self._ensure_solid_buffers(n, n_idx)
-            if n > self._solid_vbo_capacity:
-                self._solid_vbo.orphan(n * 28)
-                self._solid_vbo_capacity = n
-            if n_idx > self._solid_ibo_capacity:
-                self._solid_ibo.orphan(n_idx * 4)
-                self._solid_ibo_capacity = n_idx
+            if n > self._solid_vbo_cap or n_idx > self._solid_ibo_cap:
+                self._build_solid_buffers(n, n_idx)
             self._solid_vbo.write(v_data.tobytes())
             self._solid_ibo.write(idx_arr.tobytes())
-            self._solid_vao_persistent.render(moderngl.TRIANGLES, vertices=n_idx)
+            self._solid_vao.render(moderngl.TRIANGLES, vertices=n_idx)
         self._ctx.disable(moderngl.BLEND)
         try:
             self._ctx.enable(moderngl.CULL_FACE)
-        except Exception:
+        except:
             pass
 
     def render_wireframe_box(self, center: Vec3, size: Vec3, color: list[float], vp_mat: Mat4):
@@ -222,16 +379,32 @@ class GizmoRenderer:
         self.render_lines(lines, vp_mat)
 
     def release(self):
-        if self._line_vao:
-            self._line_vao.release()
-        if self._line_vbo_data:
-            self._line_vbo_data.release()
-        for attr in ('_fatline_vbo_start', '_fatline_vbo_end', '_fatline_vbo_t',
-                     '_fatline_vbo_side', '_fatline_vao_persistent',
-                     '_solid_vbo', '_solid_ibo', '_solid_vao_persistent'):
-            buf = getattr(self, attr, None)
-            if buf:
-                try:
-                    buf.release()
-                except Exception:
-                    pass
+        for buf_name in ('_fatline_vbo_start', '_fatline_vbo_end', '_fatline_vbo_t', '_fatline_vbo_side', '_fatline_vbo_color',
+                         '_solid_vbo', '_solid_ibo'):
+            b = getattr(self, buf_name, None)
+            if b is not None:
+                try: b.release()
+                except: pass
+        for vao_name in ('_fatline_vao', '_solid_vao'):
+            v = getattr(self, vao_name, None)
+            if v is not None:
+                try: v.release()
+                except: pass
+        for mesh_name in ('_cone_mesh', '_cylinder_mesh', '_cube_mesh', '_quad_mesh', '_circle_mesh'):
+            m = getattr(self, mesh_name, None)
+            if m is not None:
+                if m.vao:
+                    try: m.vao.release()
+                    except: pass
+                if m.vbo:
+                    try: m.vbo.release()
+                    except: pass
+                if m.ibo:
+                    try: m.ibo.release()
+                    except: pass
+                if m.instance_vbo:
+                    try: m.instance_vbo.release()
+                    except: pass
+        if self._instanced_prog:
+            try: self._instanced_prog.release()
+            except: pass

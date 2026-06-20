@@ -5,20 +5,275 @@ import numpy as np
 from core.math3d import Mat4, Vec3
 from core.config import get_global_config
 
-from editor.gizmo.gizmo_collider import get_collider_wireframe_lines
 from editor.gizmo.gizmo_particle import get_particle_emitter_lines
 from editor.gizmo.gizmo_camera import get_camera_frustum_lines
 from editor.gizmo.gizmo_audio import get_audio_source_gizmo_lines
-from core.components.physics.mesh_collider import MeshCollider
+from editor.gizmo.api import Gizmos
+from core.components.physics.mesh_collider import MeshCollider, CollisionMode
 from core.components.physics.box_collider import BoxCollider
 from core.components.physics.sphere_collider import SphereCollider
 from core.components.physics.capsule_collider import CapsuleCollider
 from core.components.physics.rigidbody import Rigidbody
+from editor.gizmo.gizmo_collider import _load_mesh_data, _get_convex_hull_edges, _get_decimated_hull_edges
 from core.components.scripting.script_component import ScriptComponent
 from core.components.rendering.particle_system import ParticleSystem
 from core.components.rendering.camera import Camera
 from core.components.audio.audio_source import AudioSource
 from core.components.audio.reverb_zone import ReverbZone
+
+
+_BOX_EDGE_PAIRS = [(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)]
+_RECT_EDGE_PAIRS = [(0,1),(1,2),(2,3),(3,0)]
+
+
+def _box_starts_ends(corners: list[Vec3], pairs: list | None = None) -> tuple[np.ndarray, np.ndarray]:
+    if pairs is None:
+        pairs = _BOX_EDGE_PAIRS
+    n = len(pairs)
+    starts = np.zeros((n, 3), dtype=np.float32)
+    ends = np.zeros((n, 3), dtype=np.float32)
+    for i, (a, b) in enumerate(pairs):
+        starts[i, 0] = corners[a].x; starts[i, 1] = corners[a].y; starts[i, 2] = corners[a].z
+        ends[i, 0] = corners[b].x; ends[i, 1] = corners[b].y; ends[i, 2] = corners[b].z
+    return starts, ends
+
+
+def _ring_starts_ends(pts: list[Vec3], segs: int) -> tuple[np.ndarray, np.ndarray]:
+    starts = np.zeros((segs, 3), dtype=np.float32)
+    ends = np.zeros((segs, 3), dtype=np.float32)
+    for i in range(segs):
+        starts[i, 0] = pts[i].x; starts[i, 1] = pts[i].y; starts[i, 2] = pts[i].z
+        ends[i, 0] = pts[i+1].x; ends[i, 1] = pts[i+1].y; ends[i, 2] = pts[i+1].z
+    return starts, ends
+
+
+def _collider_color_arr(n: int, color: list) -> np.ndarray:
+    c = np.zeros((n, 4), dtype=np.float32)
+    c[:, 0] = color[0]; c[:, 1] = color[1]; c[:, 2] = color[2]
+    c[:, 3] = color[3] if len(color) > 3 else 1.0
+    return c
+
+
+def _build_box_np(comp, pos: Vec3, rot, sc: Vec3, color: list) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    sz = comp.scaled_size
+    hx, hy, hz = sz.x * 0.5, sz.y * 0.5, sz.z * 0.5
+    c = pos + rot.rotate_vec3(comp.scaled_center)
+    local_offsets = [
+        Vec3(-hx, -hy, -hz), Vec3(hx, -hy, -hz), Vec3(hx, hy, -hz), Vec3(-hx, hy, -hz),
+        Vec3(-hx, -hy, hz), Vec3(hx, -hy, hz), Vec3(hx, hy, hz), Vec3(-hx, hy, hz),
+    ]
+    corners = [(c + rot.rotate_vec3(o)) for o in local_offsets]
+    starts, ends = _box_starts_ends(corners)
+    return starts, ends, _collider_color_arr(12, color)
+
+
+def _build_sphere_np(comp, pos: Vec3, rot, sc: Vec3, color: list) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    radius = comp.scaled_radius
+    c = pos + rot.rotate_vec3(comp.scaled_center)
+    segs = 24
+    total = segs * 3
+    starts = np.zeros((total, 3), dtype=np.float32)
+    ends = np.zeros((total, 3), dtype=np.float32)
+    idx = 0
+    for axis_idx in range(3):
+        pts = []
+        for i in range(segs + 1):
+            theta = 2.0 * math.pi * i / segs
+            if axis_idx == 0:
+                pt = Vec3(0, math.cos(theta) * radius, math.sin(theta) * radius)
+            elif axis_idx == 1:
+                pt = Vec3(math.cos(theta) * radius, 0, math.sin(theta) * radius)
+            else:
+                pt = Vec3(math.cos(theta) * radius, math.sin(theta) * radius, 0)
+            pts.append(c + rot.rotate_vec3(pt))
+        for i in range(segs):
+            starts[idx, 0] = pts[i].x; starts[idx, 1] = pts[i].y; starts[idx, 2] = pts[i].z
+            ends[idx, 0] = pts[i+1].x; ends[idx, 1] = pts[i+1].y; ends[idx, 2] = pts[i+1].z
+            idx += 1
+    return starts, ends, _collider_color_arr(total, color)
+
+
+def _build_capsule_np(comp, pos: Vec3, rot, sc: Vec3, color: list) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    radius = comp.scaled_radius
+    half_h = max(0, comp.scaled_height * 0.5 - radius)
+    c = pos + rot.rotate_vec3(comp.scaled_center)
+    dir_idx = getattr(comp, "direction", 1)
+    axis_vecs = [Vec3.right(), Vec3.up(), Vec3.forward()]
+    axis = axis_vecs[dir_idx] if dir_idx < 3 else Vec3.up()
+    segs = 20
+    top_center = c + rot.rotate_vec3(axis * half_h)
+    bottom_center = c - rot.rotate_vec3(axis * half_h)
+    lines_per_ring = segs * 2
+    total = 0
+    ring_counts = []
+    for ring_axis in range(3):
+        if ring_axis == dir_idx:
+            continue
+        total += lines_per_ring
+        ring_counts.append(lines_per_ring)
+    total += 8
+    starts = np.zeros((total, 3), dtype=np.float32)
+    ends = np.zeros((total, 3), dtype=np.float32)
+    idx = 0
+    for ring_axis in range(3):
+        if ring_axis == dir_idx:
+            continue
+        u = Vec3.right(); v = Vec3.forward()
+        if ring_axis == 0:
+            u = Vec3(0, 1, 0); v = Vec3(0, 0, 1)
+        elif ring_axis == 1:
+            u = Vec3(1, 0, 0); v = Vec3(0, 0, 1)
+        pts_top = []; pts_bot = []
+        for i in range(segs + 1):
+            theta = 2.0 * math.pi * i / segs
+            rp = (u * math.cos(theta) + v * math.sin(theta)) * radius
+            pts_top.append(top_center + rot.rotate_vec3(rp))
+            pts_bot.append(bottom_center + rot.rotate_vec3(rp))
+        for i in range(segs):
+            starts[idx, 0] = pts_top[i].x; starts[idx, 1] = pts_top[i].y; starts[idx, 2] = pts_top[i].z
+            ends[idx, 0] = pts_top[i+1].x; ends[idx, 1] = pts_top[i+1].y; ends[idx, 2] = pts_top[i+1].z
+            idx += 1
+            starts[idx, 0] = pts_bot[i].x; starts[idx, 1] = pts_bot[i].y; starts[idx, 2] = pts_bot[i].z
+            ends[idx, 0] = pts_bot[i+1].x; ends[idx, 1] = pts_bot[i+1].y; ends[idx, 2] = pts_bot[i+1].z
+            idx += 1
+    for i in range(8):
+        theta = 2.0 * math.pi * i / 8
+        u = Vec3.right(); v = Vec3.forward()
+        if dir_idx == 0:
+            u = Vec3(0, 1, 0); v = Vec3(0, 0, 1)
+        elif dir_idx == 1:
+            u = Vec3(1, 0, 0); v = Vec3(0, 0, 1)
+        rp = (u * math.cos(theta) + v * math.sin(theta)) * radius
+        tp = top_center + rot.rotate_vec3(rp)
+        bp = bottom_center + rot.rotate_vec3(rp)
+        starts[idx, 0] = tp.x; starts[idx, 1] = tp.y; starts[idx, 2] = tp.z
+        ends[idx, 0] = bp.x; ends[idx, 1] = bp.y; ends[idx, 2] = bp.z
+        idx += 1
+    return starts, ends, _collider_color_arr(total, color)
+
+
+def _build_mesh_collider_lines_np(comp, entity, pos: Vec3, rot, sc: Vec3):
+    mesh_color = [0.0, 0.8, 0.2, 0.6]
+    mesh_path = getattr(comp, "mesh_path", "")
+    mode = getattr(comp, "collision_mode", CollisionMode.AUTO)
+    max_verts = getattr(comp, "max_vertices", 2000)
+    md = _load_mesh_data(mesh_path) if mesh_path else None
+    if md is None or md["num_verts"] == 0:
+        c = pos + rot.rotate_vec3(Vec3(0, 0, 0))
+        s = 0.5
+        corners = [c + rot.rotate_vec3(Vec3(-s, -s, -s)), c + rot.rotate_vec3(Vec3(s, -s, -s)),
+                   c + rot.rotate_vec3(Vec3(s, s, -s)), c + rot.rotate_vec3(Vec3(-s, s, -s)),
+                   c + rot.rotate_vec3(Vec3(-s, -s, s)), c + rot.rotate_vec3(Vec3(s, -s, s)),
+                   c + rot.rotate_vec3(Vec3(s, s, s)), c + rot.rotate_vec3(Vec3(-s, s, s))]
+        starts, ends = _box_starts_ends(corners)
+        Gizmos.draw_lines(starts, ends, _collider_color_arr(12, mesh_color))
+        return
+
+    def _tw(v: Vec3) -> Vec3:
+        return pos + rot.rotate_vec3(Vec3(v.x * sc.x, v.y * sc.y, v.z * sc.z))
+
+    starts_list: list[Vec3] = []
+    ends_list: list[Vec3] = []
+
+    def _box_from_bounds(mins_np, maxs_np):
+        size = maxs_np - mins_np
+        ctr_np = (mins_np + maxs_np) * 0.5
+        ctr = Vec3(float(ctr_np[0]), float(ctr_np[1]), float(ctr_np[2]))
+        sv = Vec3(float(size[0]) * 0.5, float(size[1]) * 0.5, float(size[2]) * 0.5)
+        local_offsets = [Vec3(-sv.x, -sv.y, -sv.z), Vec3(sv.x, -sv.y, -sv.z),
+                         Vec3(sv.x, sv.y, -sv.z), Vec3(-sv.x, sv.y, -sv.z),
+                         Vec3(-sv.x, -sv.y, sv.z), Vec3(sv.x, -sv.y, sv.z),
+                         Vec3(sv.x, sv.y, sv.z), Vec3(-sv.x, sv.y, sv.z)]
+        lc = [ctr + o for o in local_offsets]
+        corners = [_tw(lc[i]) for i in range(8)]
+        edge_pairs = [(0, 1), (1, 2), (2, 3), (3, 0),
+                      (4, 5), (5, 6), (6, 7), (7, 4),
+                      (0, 4), (1, 5), (2, 6), (3, 7)]
+        for a, b in edge_pairs:
+            starts_list.append(corners[a])
+            ends_list.append(corners[b])
+        for face in [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (2, 3, 7, 6), (0, 3, 7, 4), (1, 2, 6, 5)]:
+            starts_list.append(corners[face[0]]); ends_list.append(corners[face[2]])
+            starts_list.append(corners[face[1]]); ends_list.append(corners[face[3]])
+
+    if mode == CollisionMode.BOX:
+        size = md["maxs"] - md["mins"]
+        if np.all(size < 100.0):
+            _box_from_bounds(md["mins"], md["maxs"])
+        else:
+            c = pos + rot.rotate_vec3(Vec3(0, 0, 0))
+            s = 0.5
+            corners = [c + rot.rotate_vec3(Vec3(-s, -s, -s)), c + rot.rotate_vec3(Vec3(s, -s, -s)),
+                       c + rot.rotate_vec3(Vec3(s, s, -s)), c + rot.rotate_vec3(Vec3(-s, s, -s)),
+                       c + rot.rotate_vec3(Vec3(-s, -s, s)), c + rot.rotate_vec3(Vec3(s, -s, s)),
+                       c + rot.rotate_vec3(Vec3(s, s, s)), c + rot.rotate_vec3(Vec3(-s, s, s))]
+            for a, b in [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]:
+                starts_list.append(corners[a]); ends_list.append(corners[b])
+
+    elif mode == CollisionMode.SPHERE:
+        c = _tw(Vec3(float(md["center"][0]), float(md["center"][1]), float(md["center"][2])))
+        max_sc = max(sc.x, sc.y, sc.z)
+        radius = md["radius"] * max_sc
+        segs = 24
+        for axis_idx in range(3):
+            pts = []
+            for i in range(segs + 1):
+                theta = 2.0 * math.pi * i / segs
+                if axis_idx == 0:
+                    pt = Vec3(0, math.cos(theta) * radius, math.sin(theta) * radius)
+                elif axis_idx == 1:
+                    pt = Vec3(math.cos(theta) * radius, 0, math.sin(theta) * radius)
+                else:
+                    pt = Vec3(math.cos(theta) * radius, math.sin(theta) * radius, 0)
+                pts.append(c + rot.rotate_vec3(pt))
+            for i in range(segs):
+                starts_list.append(pts[i]); ends_list.append(pts[i + 1])
+
+    elif mode == CollisionMode.CONVEX_HULL:
+        hull_edges = _get_convex_hull_edges(mesh_path)
+        if hull_edges is not None:
+            for v0, v1 in hull_edges:
+                starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+        elif md["edges"]:
+            for v0, v1 in md["edges"]:
+                starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+
+    elif mode == CollisionMode.AUTO:
+        if md["num_verts"] > max_verts:
+            hull_edges = _get_decimated_hull_edges(mesh_path, max_verts)
+            if hull_edges is not None:
+                for v0, v1 in hull_edges:
+                    starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+            else:
+                size = md["maxs"] - md["mins"]
+                if np.all(size < 100.0):
+                    _box_from_bounds(md["mins"], md["maxs"])
+                else:
+                    c = pos + rot.rotate_vec3(Vec3(0, 0, 0))
+                    s = 0.5
+                    corners = [c + rot.rotate_vec3(Vec3(-s, -s, -s)), c + rot.rotate_vec3(Vec3(s, -s, -s)),
+                               c + rot.rotate_vec3(Vec3(s, s, -s)), c + rot.rotate_vec3(Vec3(-s, s, -s)),
+                               c + rot.rotate_vec3(Vec3(-s, -s, s)), c + rot.rotate_vec3(Vec3(s, -s, s)),
+                               c + rot.rotate_vec3(Vec3(s, s, s)), c + rot.rotate_vec3(Vec3(-s, s, s))]
+                    for a, b in [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]:
+                        starts_list.append(corners[a]); ends_list.append(corners[b])
+        else:
+            for v0, v1 in md["edges"]:
+                starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+
+    elif md["edges"]:
+        for v0, v1 in md["edges"]:
+            starts_list.append(_tw(v0)); ends_list.append(_tw(v1))
+
+    if starts_list:
+        n = len(starts_list)
+        starts = np.zeros((n, 3), dtype=np.float32)
+        ends = np.zeros((n, 3), dtype=np.float32)
+        for i in range(n):
+            s = starts_list[i]; e = ends_list[i]
+            starts[i, 0] = s.x; starts[i, 1] = s.y; starts[i, 2] = s.z
+            ends[i, 0] = e.x; ends[i, 1] = e.y; ends[i, 2] = e.z
+        Gizmos.draw_lines(starts, ends, _collider_color_arr(n, mesh_color))
 
 
 def render_collider_wireframes(vp, vp_mat: Mat4):
@@ -27,24 +282,59 @@ def render_collider_wireframes(vp, vp_mat: Mat4):
         return
     cam_pos = vp._cam.position if vp._cam else Vec3(0, 0, 0)
     MAX_DISTANCE = 20.0
-    lines = []
+    color = [0.0, 1.0, 0.0, 0.6]
     seen = set()
     for collider_type in (MeshCollider, BoxCollider, SphereCollider, CapsuleCollider):
         for entity in scene.get_entities_with_component(collider_type):
             if not entity.active or entity.id in seen:
                 continue
             seen.add(entity.id)
+            tr = entity.get_component_by_name("Transform")
+            if not tr:
+                continue
             if collider_type is MeshCollider:
-                tr = entity.get_component_by_name("Transform")
-                if tr and (tr.local_position - cam_pos).length() > MAX_DISTANCE:
+                if (tr.local_position - cam_pos).length() > MAX_DISTANCE:
                     continue
                 if getattr(vp._engine, 'play_mode', False) and entity.get_component(Rigidbody):
                     continue
-            lines.extend(get_collider_wireframe_lines(entity))
-    if lines:
-        cp = vp._cam.position if vp._cam else Vec3(0, 0, 0)
-        fw, fh = vp._get_physical_dims()
-        vp._renderer.render_gizmo_lines(lines, vp_mat, cp, fw, fh, thickness_multiplier=1.0)
+            pos = tr.local_position
+            rot = tr.local_rotation
+            sc = tr.local_scale
+            for comp in entity.get_all_components():
+                cname = type(comp).__name__
+                if cname == "BoxCollider":
+                    Gizmos.draw_lines(*_build_box_np(comp, pos, rot, sc, color))
+                elif cname == "SphereCollider":
+                    Gizmos.draw_lines(*_build_sphere_np(comp, pos, rot, sc, color))
+                elif cname == "CapsuleCollider":
+                    Gizmos.draw_lines(*_build_capsule_np(comp, pos, rot, sc, color))
+                elif cname == "BoxCollider2D":
+                    sz = comp.scaled_size
+                    off_v2 = comp.scaled_offset
+                    c = pos + rot.rotate_vec3(Vec3(off_v2.x, off_v2.y, 0.0))
+                    hx, hy = sz.x * 0.5, sz.y * 0.5
+                    corners = [
+                        c + rot.rotate_vec3(Vec3(-hx, -hy, 0.0)),
+                        c + rot.rotate_vec3(Vec3(hx, -hy, 0.0)),
+                        c + rot.rotate_vec3(Vec3(hx, hy, 0.0)),
+                        c + rot.rotate_vec3(Vec3(-hx, hy, 0.0)),
+                    ]
+                    starts, ends = _box_starts_ends(corners, _RECT_EDGE_PAIRS)
+                    Gizmos.draw_lines(starts, ends, _collider_color_arr(4, color))
+                elif cname == "CircleCollider2D":
+                    radius = comp.scaled_radius
+                    off_v2 = comp.scaled_offset
+                    c = pos + rot.rotate_vec3(Vec3(off_v2.x, off_v2.y, 0.0))
+                    segs = 24
+                    pts = []
+                    for i in range(segs + 1):
+                        theta = 2.0 * math.pi * i / segs
+                        pt = Vec3(math.cos(theta) * radius, math.sin(theta) * radius, 0.0)
+                        pts.append(c + rot.rotate_vec3(pt))
+                    starts, ends = _ring_starts_ends(pts, segs)
+                    Gizmos.draw_lines(starts, ends, _collider_color_arr(segs, color))
+                elif cname == "MeshCollider":
+                    _build_mesh_collider_lines_np(comp, entity, pos, rot, sc)
 
 
 def render_particle_emitter_wireframes(vp, vp_mat: Mat4):

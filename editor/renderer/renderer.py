@@ -22,7 +22,7 @@ from editor.renderer.types import RenderMode
 from editor.renderer.mesh_data import MeshData, read_shader
 from editor.renderer.meshes import make_cube_mesh, make_sphere_mesh, make_plane_mesh, make_quad_mesh
 from editor.renderer.grid import GridRenderer
-from editor.renderer.gizmo import GizmoRenderer
+from editor.renderer.gizmo import GizmoRenderer, FATLINE_VERT, FATLINE_FRAG
 from editor.renderer.shadows import ShadowRenderer
 from core.components.rendering.sky import Sky
 from core.components.rendering.clouds import Cloud
@@ -224,6 +224,7 @@ void main() {
             self._load_grid_config()
             self._gizmo = GizmoRenderer(self._ctx, self._gizmo_prog, self._gizmo_fatline_prog, self._gizmo_solid_prog)
             self._gizmo._line_width = self._line_width
+            self._gizmo.initialize_instanced_meshes()
             self._shadows = ShadowRenderer(self._ctx, self._shadow_prog, self._shadow_resolution, self._shadow_distance)
             self._skybox_cube = make_cube_mesh()
             self._skybox_cube.build_gl(self._ctx, self._default_prog)
@@ -826,10 +827,30 @@ void main() {
             self._ctx.wireframe = old_wireframe
             self._ctx.depth_mask = old_depth_mask
 
-    def render_gizmo_lines(self, lines: list[tuple], vp_mat: Mat4, cam_pos: Optional[Vec3] = None,
+    def render_gizmo_lines(self, lines, vp_mat: Mat4, cam_pos: Optional[Vec3] = None,
                            fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0):
         if self._gizmo:
             self._gizmo.render_lines(lines, vp_mat, fw, fh, thickness_multiplier)
+
+    def render_gizmo_arrays(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
+                             vp_mat: Mat4, fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0):
+        if self._gizmo:
+            desired_pixels = max(1.0, float(self._line_width) * 1.5 * thickness_multiplier)
+            self._gizmo._render_lines_np(starts, ends, colors, vp_mat, fw, fh, desired_pixels)
+
+    def render_instanced_gizmo(self, mesh_type: str, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int):
+        if not self._gizmo:
+            return
+        mesh_map = {
+            'cone': self._gizmo._cone_mesh,
+            'cylinder': self._gizmo._cylinder_mesh,
+            'cube': self._gizmo._cube_mesh,
+            'quad': self._gizmo._quad_mesh,
+            'circle': self._gizmo._circle_mesh,
+        }
+        mesh = mesh_map.get(mesh_type)
+        if mesh is not None:
+            self._gizmo.render_instanced(mesh, instance_data, vp_mat, num_instances)
 
     def render_gizmo_meshes(self, meshes: list[tuple], vp_mat: Mat4):
         if self._gizmo:
@@ -1001,54 +1022,3 @@ void main() {
                 except Exception:
                     pass
         Logger.info("Renderer released.")
-
-
-FATLINE_VERT = """
-    #version 460 core
-    uniform mat4 u_mvp;
-
-    in vec3 a_start;
-    in vec3 a_end;
-    in float a_t;
-    in float a_side;
-
-    out vec3 v_color;
-    out float v_alpha;
-
-    uniform vec3 u_line_color;
-    uniform float u_alpha;
-    uniform float u_thickness_ndc_x;
-    uniform float u_thickness_ndc_y;
-
-    void main() {
-        vec4 clip_start = u_mvp * vec4(a_start, 1.0);
-        vec4 clip_end   = u_mvp * vec4(a_end,   1.0);
-
-        vec4 clipPos = mix(clip_start, clip_end, a_t);
-
-        vec2 dxy = clip_end.xy - clip_start.xy;
-        float len = length(dxy);
-        vec2 perp;
-        if (len > 1e-6) {
-            vec2 dir = dxy / len;
-            perp = vec2(-dir.y, dir.x);
-        } else {
-            perp = vec2(1.0, 0.0);
-        }
-        clipPos.xy += perp * a_side * vec2(u_thickness_ndc_x, u_thickness_ndc_y) * clipPos.w;
-
-        gl_Position = clipPos;
-        v_color = u_line_color;
-        v_alpha = u_alpha;
-    }
-"""
-
-FATLINE_FRAG = """
-    #version 460 core
-    in vec3 v_color;
-    in float v_alpha;
-    out vec4 fragColor;
-    void main() {
-        fragColor = vec4(v_color, v_alpha);
-    }
-"""
