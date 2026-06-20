@@ -7,7 +7,6 @@ from core.math3d import Vec3
 
 
 class GridRenderer:
-    _NICE_RATIOS = ((1.5, 1.0), (3.5, 2.0), (7.5, 5.0))
     _TARGET_PIXEL_SPACING = 500.0
     _FADE_STEP_MIN_PX = 8.0
     _FADE_STEP_RANGE_PX = 100.0
@@ -42,15 +41,8 @@ class GridRenderer:
 
     def _nice_step(self, raw: float) -> float:
         n = max(1e-9, raw / self._grid_size)
-        exp = math.floor(math.log10(n))
-        mag = 10.0 ** exp
-        ratio = n / mag
-        nice_n = 10.0 * mag
-        for threshold, factor in self._NICE_RATIOS:
-            if ratio < threshold:
-                nice_n = factor * mag
-                break
-        return nice_n * self._grid_size
+        exp = round(math.log(n) / math.log(4))
+        return (4.0 ** exp) * self._grid_size
 
     def _alpha_from_px(self, step_px: float) -> float:
         return max(0.0, min(1.0, (step_px - self._FADE_STEP_MIN_PX) / self._FADE_STEP_RANGE_PX))
