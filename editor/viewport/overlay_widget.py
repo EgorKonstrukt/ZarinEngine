@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPainter, QPen, QColor
 
 from editor.viewport.overlay import draw_stats_overlay, draw_delta_label
-from editor.viewport.axis_gizmo import draw_axis_gizmo_labels
+from editor.viewport.axis_gizmo import draw_axis_gizmo_overlay
 from editor.viewport.collaboration import draw_remote_cursors
 
 
@@ -27,7 +27,7 @@ class OverlayWidget(QWidget):
         if vp._stats_enabled:
             draw_stats_overlay(vp, qp)
         draw_delta_label(vp, qp)
-        draw_axis_gizmo_labels(vp, qp)
+        draw_axis_gizmo_overlay(vp, qp)
         draw_remote_cursors(vp, qp)
         if vp._area_selecting:
             x1, y1 = vp._area_start

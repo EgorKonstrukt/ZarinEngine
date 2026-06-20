@@ -25,7 +25,8 @@ from editor.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY
                               KEY_SPACE, KEY_S, KEY_D, KEY_A, MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE,
                               MOUSE_L, MOUSE_R, MOUSE_M)
 from editor.viewport.overlay_widget import OverlayWidget
-from editor.viewport.axis_gizmo import get_axis_gizmo_lines
+from editor.viewport.axis_gizmo import draw_axis_gizmo_api
+
 from editor.viewport.rendering import (
     render_collider_wireframes,
     render_particle_emitter_wireframes,
@@ -120,10 +121,6 @@ class SceneViewport(QOpenGLWidget):
         self._collab_throttle_transform: float = 0.0
         self._collab_throttle_gizmo: float = 0.0
         self._collab_last_gizmo_state: tuple[str, int, bool] = ("none", -1, False)
-        self._AXIS_GIZMO_SIZE = 100
-        self._AXIS_GIZMO_MARGIN = 8
-        self._AXIS_ARROW_LEN = 32
-        self._AXIS_ARROW_HEAD = 6
         from editor.viewport.toolbar import setup_toolbar
         setup_toolbar(self)
 
@@ -414,6 +411,7 @@ class SceneViewport(QOpenGLWidget):
                 if self._debug_lines:
                     self._renderer.render_gizmo_lines(self._debug_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
                     self._debug_lines.clear()
+                draw_axis_gizmo_api(self)
                 self._render_api_gizmos()
                 if in_frame:
                     prof.stop("gizmo_icons")
@@ -434,9 +432,6 @@ class SceneViewport(QOpenGLWidget):
                         gizmo_lines = self._gizmo.get_gizmo_lines(self._cam, fw, fh)
                         if gizmo_lines:
                             self._renderer.render_gizmo_lines(gizmo_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
-                    axis_lines = get_axis_gizmo_lines(self)
-                    if axis_lines:
-                        self._renderer.render_gizmo_lines(axis_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
                 eng.set_profiler_data("gizmo_time", (time.perf_counter() - t1) * 1000.0)
                 t2 = time.perf_counter()
                 if in_frame:

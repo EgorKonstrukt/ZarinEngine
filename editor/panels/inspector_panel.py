@@ -1690,6 +1690,23 @@ class ComponentWidget(QWidget):
             picker = _make_resource_type_picker(value or "", rtype, lambda v, n=prop_name: self._on_script_resource_changed(comp, n, v))
             self._add_field(field.label, picker)
 
+        elif field.field_type.value == "enum":
+            enum_class = field.enum_class
+            if enum_class:
+                items = [e.value for e in enum_class]
+                cb = QComboBox()
+                cb.addItems(items)
+                current_val = value if isinstance(value, str) else (value.value if hasattr(value, 'value') else '')
+                idx = items.index(current_val) if current_val in items else 0
+                cb.setCurrentIndex(idx)
+                def _on_enum_changed(v, n=prop_name):
+                    old = comp.get_field_value(n)
+                    comp.set_field_value(n, v)
+                    if self._entity:
+                        get_history().execute(SetComponentCommand(self._entity, type(comp), f"_script_{n}", old, v))
+                cb.currentTextChanged.connect(_on_enum_changed)
+                self._add_field(field.label, cb)
+
         elif field.field_type.value == "button":
             btn = QPushButton(field.label)
 

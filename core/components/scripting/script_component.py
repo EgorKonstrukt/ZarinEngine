@@ -1,4 +1,5 @@
 from __future__ import annotations
+from enum import Enum
 from typing import Optional, Any, get_type_hints
 from core.ecs import Component, ComponentRegistry
 from core.logger import Logger
@@ -102,7 +103,10 @@ class ScriptComponent(Component):
             if name not in self._field_values:
                 self._field_values[name] = default
             ft = self._py_type_to_field_type(ann_type)
-            fields.append(InspectorField(name, name.replace('_', ' ').title(), ft))
+            if ft == FieldType.ENUM:
+                fields.append(InspectorField(name, name.replace('_', ' ').title(), ft, enum_class=ann_type))
+            else:
+                fields.append(InspectorField(name, name.replace('_', ' ').title(), ft))
         for attr_name in dir(cls):
             if attr_name.startswith('_') or attr_name in hints:
                 continue
@@ -125,6 +129,8 @@ class ScriptComponent(Component):
         origin = getattr(t, '__origin__', None)
         if origin is not None:
             t = origin
+        if isinstance(t, type) and issubclass(t, Enum):
+            return FieldType.ENUM
         if t is float:
             return FieldType.FLOAT
         if t is int:
@@ -179,6 +185,10 @@ class ScriptComponent(Component):
                     setattr(self._py_instance, name, self._resolve_entity(value))
                 elif hint is not None and hasattr(hint, '__name__') and hint.__name__ == 'Entity':
                     setattr(self._py_instance, name, self._resolve_entity(value))
+                elif isinstance(hint, type) and issubclass(hint, Enum):
+                    if not isinstance(value, hint):
+                        value = hint(value)
+                    setattr(self._py_instance, name, value)
                 else:
                     setattr(self._py_instance, name, value)
             except Exception:
@@ -288,6 +298,8 @@ class ScriptComponent(Component):
                 fields[name] = [value.x, value.y]
             elif isinstance(value, Vec3):
                 fields[name] = [value.x, value.y, value.z]
+            elif isinstance(value, Enum):
+                fields[name] = value.value
             else:
                 fields[name] = value
         d["script_fields"] = fields
