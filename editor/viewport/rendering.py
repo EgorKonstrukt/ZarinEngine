@@ -337,6 +337,21 @@ def render_collider_wireframes(vp, vp_mat: Mat4):
                     _build_mesh_collider_lines_np(comp, entity, pos, rot, sc)
 
 
+def _submit_lines_fast(lines: list, thickness_multiplier: float = 1.0):
+    if not lines:
+        return
+    n = len(lines)
+    starts = np.zeros((n, 3), dtype=np.float32)
+    ends = np.zeros((n, 3), dtype=np.float32)
+    colors = np.zeros((n, 4), dtype=np.float32)
+    for i, (s, e, c) in enumerate(lines):
+        starts[i, 0] = s.x; starts[i, 1] = s.y; starts[i, 2] = s.z
+        ends[i, 0] = e.x; ends[i, 1] = e.y; ends[i, 2] = e.z
+        colors[i, 0] = c[0]; colors[i, 1] = c[1]; colors[i, 2] = c[2]
+        colors[i, 3] = c[3] if len(c) > 3 else 1.0
+    Gizmos.draw_lines(starts, ends, colors)
+
+
 def render_particle_emitter_wireframes(vp, vp_mat: Mat4):
     scene = vp._engine.scene if vp._engine else None
     if not scene:
@@ -345,10 +360,7 @@ def render_particle_emitter_wireframes(vp, vp_mat: Mat4):
     for entity in scene.get_entities_with_component(ParticleSystem):
         if entity.active:
             lines.extend(get_particle_emitter_lines(entity))
-    if lines:
-        cp = vp._cam.position if vp._cam else Vec3(0, 0, 0)
-        fw, fh = vp._get_physical_dims()
-        vp._renderer.render_gizmo_lines(lines, vp_mat, cp, fw, fh, thickness_multiplier=1.0)
+    _submit_lines_fast(lines)
 
 
 def render_camera_frustums(vp, vp_mat: Mat4):
@@ -359,10 +371,7 @@ def render_camera_frustums(vp, vp_mat: Mat4):
     for entity in scene.get_entities_with_component(Camera):
         if entity.active:
             lines.extend(get_camera_frustum_lines(entity))
-    if lines:
-        cp = vp._cam.position if vp._cam else Vec3(0, 0, 0)
-        fw, fh = vp._get_physical_dims()
-        vp._renderer.render_gizmo_lines(lines, vp_mat, cp, fw, fh, thickness_multiplier=0.3)
+    _submit_lines_fast(lines)
 
 
 def render_audio_source_gizmos(vp, vp_mat: Mat4):
@@ -373,10 +382,7 @@ def render_audio_source_gizmos(vp, vp_mat: Mat4):
     for entity in scene.get_entities_with_component(AudioSource):
         if entity.active:
             lines.extend(get_audio_source_gizmo_lines(entity))
-    if lines:
-        cp = vp._cam.position if vp._cam else Vec3(0, 0, 0)
-        fw, fh = vp._get_physical_dims()
-        vp._renderer.render_gizmo_lines(lines, vp_mat, cp, fw, fh, thickness_multiplier=1.0)
+    _submit_lines_fast(lines)
 
 
 def render_reverb_zone_gizmos(vp, vp_mat: Mat4):
@@ -393,10 +399,7 @@ def render_reverb_zone_gizmos(vp, vp_mat: Mat4):
                 lines.extend(rz.gizmo_lines())
             except Exception:
                 pass
-    if lines:
-        cp = vp._cam.position if vp._cam else Vec3(0, 0, 0)
-        fw, fh = vp._get_physical_dims()
-        vp._renderer.render_gizmo_lines(lines, vp_mat, cp, fw, fh, thickness_multiplier=1.0)
+    _submit_lines_fast(lines)
 
 
 def render_script_gizmos(vp, vp_mat: Mat4):
@@ -421,10 +424,7 @@ def render_script_gizmos(vp, vp_mat: Mat4):
                     meshes.extend(msh)
             except Exception:
                 pass
-    if lines:
-        cp = vp._cam.position if vp._cam else Vec3(0, 0, 0)
-        fw, fh = vp._get_physical_dims()
-        vp._renderer.render_gizmo_lines(lines, vp_mat, cp, fw, fh, thickness_multiplier=1.0)
+    _submit_lines_fast(lines)
     if meshes:
         vp._renderer.render_gizmo_meshes(meshes, vp_mat)
 
