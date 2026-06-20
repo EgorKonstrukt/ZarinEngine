@@ -29,6 +29,10 @@ class CapsuleCollider(Component):
         self.height: float = 2.0
         self.direction: int = 1
         self.is_trigger: bool = False
+        # ХУЙНЯ: нет material_friction и material_bounciness.
+        # У BoxCollider и SphereCollider есть, у капсулы — похуй.
+        # PhysicsScene._find_shape() для CapsuleCollider не читает friction/restitution,
+        # так что по дефолту 0.6/0.0. Но в инспекторе полей нет — кастомизировать нельзя.
     @property
     def scaled_radius(self) -> float:
         tr = self.transform

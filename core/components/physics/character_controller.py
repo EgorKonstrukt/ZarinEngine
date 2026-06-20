@@ -6,6 +6,13 @@ from core.components.inspector_meta import FieldType, InspectorField, ComponentI
 from core.input_system import Input, KeyCode
 
 
+# БЛЯДСКИЙ CharacterController: НЕ ИСПОЛЬЗУЕТ ФИЗИЧЕСКИЙ СОЛВЕР ВООБЩЕ.
+# Всё нахуй ручное: position += vel * dt, ground check через брутфорс всех энтити,
+# проверяет ТОЛЬКО BoxCollider (сферы, капсулы, меши — похуй).
+# Скольжения вдоль стен нет, step-up/down не работает (параметры есть — похуй).
+# Дважды копипастнутый ray-AABB алгоритм (отличий ноль).
+# Engine.instance() внутри цикла — красота.
+# Кто это писал — руки оторвать.
 @ComponentRegistry.register
 class CharacterController(Component):
     _icon = "CharacterController.png"
@@ -142,6 +149,12 @@ class CharacterController(Component):
             wish = wish.normalized()
         return wish
 
+    # ЕБАНЫЙ БРУТФОРС: бежит по ВСЕМ Entity сцены.
+    # Проверяет ТОЛЬКО BoxCollider — сфера/капсула/меш ПОФИГУ.
+    # Внутри лупа дёргает Engine.instance() каждый кадр.
+    # С 1000+ объектами это просто floor(1/fps) секунд в жопе.
+    # Нет spatial hash, нет broadphase, нет cached ближайших поверхностей.
+    # И да, параметры step_up/step_down ВООБЩЕ НЕ ИСПОЛЬЗУЮТСЯ.
     def _check_ground(self) -> tuple[bool, float]:
         if not self.transform:
             return False, 0.0
@@ -175,6 +188,9 @@ class CharacterController(Component):
         h = Vec3(sz.x * 0.5, sz.y * 0.5, sz.z * 0.5)
         return (world_pos - h, world_pos + h)
 
+    # ПИЗДЕЦ: _ray_aabb_intersect и _ray_aabb_entry — ЭТО ОДНО И ТО ЖЕ.
+    # Серьёзно, открой глаза: 95% кода идентично. Одна возвращает bool, другая float.
+    # Можно было сделать _ray_aabb_test(..., need_entry=True) — но нет, ЛЕНЬ.
     def _ray_aabb_intersect(self, origin: Vec3, dir: Vec3, max_dist: float,
                              aabb_min: Vec3, aabb_max: Vec3) -> bool:
         tmin = -1e9
@@ -198,6 +214,7 @@ class CharacterController(Component):
                     return False
         return tmin < max_dist and tmax >= 0
 
+    # БЛЯДЬ, КОПИПАСТА _ray_aabb_intersect С ДРУГИМ RETURN. ХВАТИЛО УМА ПЕРЕИМЕНОВАТЬ min(tmin, max_dist) В entry.
     def _ray_aabb_entry(self, origin: Vec3, dir: Vec3, aabb_min: Vec3, aabb_max: Vec3) -> float | None:
         tmin = -1e9
         tmax = 1e9
@@ -362,6 +379,10 @@ class CharacterController(Component):
             self._move_air(dt)
             vel = self.velocity
 
+        # БЛЯДЬ: НЕТ СТЕН. НИКАКИХ. position += vel * dt — и в дамки.
+        # Ступенька в 1 см? Пройдёшь. Стена? Пройдёшь насквозь.
+        # Нет sliding, нет response, нет fucking collision check по горизонтали.
+        # step_up/step_down в параметрах есть — работают как placebo.
         pos = tr.local_position
         new_pos = Vec3(
             pos.x + vel.x * dt,
