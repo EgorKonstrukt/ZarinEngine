@@ -18,7 +18,7 @@ from core.math3d import Vec3, Mat4, Quat
 from core.logger import Logger
 from editor.scene_camera import SceneCamera
 from editor.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
-from editor.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS
+from editor.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS, _apply_line_style
 from core.input_system import Input, KeyCode
 from editor.input_manager import InputManager
 from editor.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
@@ -1145,9 +1145,11 @@ class SceneViewport(QOpenGLWidget):
                 result = builder(g)
                 if result is not None:
                     s, e, c = result
-                    s_list.append(s)
-                    e_list.append(e)
-                    c_list.append(c)
+                    s, e, c = _apply_line_style(s, e, c, g.line_style, g.dash_length, g.gap_length)
+                    if s.shape[0] > 0:
+                        s_list.append(s)
+                        e_list.append(e)
+                        c_list.append(c)
         if s_list:
             self._renderer.render_gizmo_arrays(
                 np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list),
