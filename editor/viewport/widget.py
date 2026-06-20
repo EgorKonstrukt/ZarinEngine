@@ -392,23 +392,7 @@ class SceneViewport(QOpenGLWidget):
                 vp_mat = view * proj
                 dpr = self.devicePixelRatio()
                 self._renderer._line_width = max(1.0, float(dpr) * 1.0)
-                if in_frame:
-                    prof.start("gizmo_lines")
                 t1 = time.perf_counter()
-                gizmo_result = self._gizmo.get_gizmo_arrays(self._cam, fw, fh)
-                if gizmo_result is not None:
-                    gs, ge, gc = gizmo_result
-                    self._renderer.render_gizmo_arrays(gs, ge, gc, vp_mat, fw, fh, thickness_multiplier=1.0)
-                elif self._gizmo_visible:
-                    gizmo_lines = self._gizmo.get_gizmo_lines(self._cam, fw, fh)
-                    if gizmo_lines:
-                        self._renderer.render_gizmo_lines(gizmo_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
-                if self._gizmo_visible:
-                    axis_lines = get_axis_gizmo_lines(self)
-                    if axis_lines:
-                        self._renderer.render_gizmo_lines(axis_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
-                if in_frame:
-                    prof.stop("gizmo_lines")
                 if in_frame:
                     prof.start("gizmo_wireframes")
                 if self._gizmo_visible:
@@ -441,6 +425,18 @@ class SceneViewport(QOpenGLWidget):
                     pass
                 if in_frame:
                     prof.stop("gizmo_collab")
+                if self._gizmo_visible:
+                    gizmo_result = self._gizmo.get_gizmo_arrays(self._cam, fw, fh)
+                    if gizmo_result is not None:
+                        gs, ge, gc = gizmo_result
+                        self._renderer.render_gizmo_arrays(gs, ge, gc, vp_mat, fw, fh, thickness_multiplier=1.0)
+                    else:
+                        gizmo_lines = self._gizmo.get_gizmo_lines(self._cam, fw, fh)
+                        if gizmo_lines:
+                            self._renderer.render_gizmo_lines(gizmo_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
+                    axis_lines = get_axis_gizmo_lines(self)
+                    if axis_lines:
+                        self._renderer.render_gizmo_lines(axis_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
                 eng.set_profiler_data("gizmo_time", (time.perf_counter() - t1) * 1000.0)
                 t2 = time.perf_counter()
                 if in_frame:

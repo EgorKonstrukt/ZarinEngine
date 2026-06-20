@@ -14,6 +14,8 @@ from core.components.physics.box_collider import BoxCollider
 from core.components.physics.sphere_collider import SphereCollider
 from core.components.physics.capsule_collider import CapsuleCollider
 from core.components.physics.rigidbody import Rigidbody
+from core.components.physics2d.box_collider2d import BoxCollider2D
+from core.components.physics2d.circle_collider2d import CircleCollider2D
 from editor.gizmo.gizmo_collider import _load_mesh_data, _get_convex_hull_edges_np, _get_decimated_hull_edges_np
 from core.components.scripting.script_component import ScriptComponent
 from core.components.rendering.particle_system import ParticleSystem
@@ -292,6 +294,12 @@ def _build_mesh_collider_lines_np(comp, entity, pos: Vec3, rot, sc: Vec3):
             Gizmos.draw_lines(starts, ends, _collider_color_arr(n, mesh_color))
 
 
+def _get_tr_hash(tr):
+    p = tr.local_position; r = tr.local_rotation; s = tr.local_scale
+    return (p.x, p.y, p.z, r.x, r.y, r.z, r.w, s.x, s.y, s.z)
+
+_collider_gizmo_cache: dict[tuple, tuple] = {}
+
 def render_collider_wireframes(vp, vp_mat: Mat4):
     scene = vp._engine.scene if vp._engine else None
     if not scene:
@@ -299,63 +307,103 @@ def render_collider_wireframes(vp, vp_mat: Mat4):
     cam_pos = vp._cam.position if vp._cam else Vec3(0, 0, 0)
     MAX_DISTANCE = 20.0
     color = [0.0, 1.0, 0.0, 0.6]
-    seen = set()
-    for collider_type in (MeshCollider, BoxCollider, SphereCollider, CapsuleCollider):
+    types = [(BoxCollider, 'box'), (SphereCollider, 'sphere'), (CapsuleCollider, 'capsule'), (MeshCollider, 'mesh')]
+    used_keys: set[tuple] = set()
+
+    for collider_type, type_tag in types:
         for entity in scene.get_entities_with_component(collider_type):
-            if not entity.active or entity.id in seen:
+            if not entity.active:
                 continue
-            seen.add(entity.id)
             tr = entity.get_component_by_name("Transform")
             if not tr:
                 continue
-            if collider_type is MeshCollider:
-                if (tr.local_position - cam_pos).length() > MAX_DISTANCE:
-                    continue
-                if getattr(vp._engine, 'play_mode', False) and entity.get_component(Rigidbody):
-                    continue
             pos = tr.local_position
             rot = tr.local_rotation
             sc = tr.local_scale
-            for comp in entity.get_all_components():
-                cname = type(comp).__name__
-                if cname == "BoxCollider":
-                    Gizmos.draw_lines(*_build_box_np(comp, pos, rot, sc, color))
-                elif cname == "SphereCollider":
-                    Gizmos.draw_lines(*_build_sphere_np(comp, pos, rot, sc, color))
-                elif cname == "CapsuleCollider":
-                    Gizmos.draw_lines(*_build_capsule_np(comp, pos, rot, sc, color))
-                elif cname == "BoxCollider2D":
-                    sz = comp.scaled_size
-                    off_v2 = comp.scaled_offset
-                    R = _quat_to_mat3(rot)
-                    pos_np = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
-                    c = np.array([off_v2.x, off_v2.y, 0.0], dtype=np.float32) @ R + pos_np
-                    hx, hy = sz.x * 0.5, sz.y * 0.5
-                    local_offsets = np.array([
-                        [-hx, -hy, 0.0], [hx, -hy, 0.0], [hx, hy, 0.0], [-hx, hy, 0.0],
-                    ], dtype=np.float32)
-                    corners = local_offsets @ R + c
-                    edge_pairs = np.array(_RECT_EDGE_PAIRS, dtype=np.int32)
-                    starts = corners[edge_pairs[:, 0]]
-                    ends = corners[edge_pairs[:, 1]]
-                    Gizmos.draw_lines(starts, ends, _collider_color_arr(4, color))
-                elif cname == "CircleCollider2D":
-                    radius = comp.scaled_radius
-                    off_v2 = comp.scaled_offset
-                    R = _quat_to_mat3(rot)
-                    pos_np = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
-                    c = np.array([off_v2.x, off_v2.y, 0.0], dtype=np.float32) @ R + pos_np
-                    segs = 24
-                    theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
-                    pts = np.zeros((segs + 1, 3), dtype=np.float32)
-                    pts[:, 0] = np.cos(theta) * radius
-                    pts[:, 1] = np.sin(theta) * radius
-                    pts = pts @ R + c
-                    starts = pts[:-1]
-                    ends = pts[1:]
-                    Gizmos.draw_lines(starts, ends, _collider_color_arr(segs, color))
-                elif cname == "MeshCollider":
-                    _build_mesh_collider_lines_np(comp, entity, pos, rot, sc)
+            hash_key = (entity.id, type_tag)
+            used_keys.add(hash_key)
+            tr_hash = _get_tr_hash(tr)
+
+            if collider_type is MeshCollider:
+                if (pos - cam_pos).length() > MAX_DISTANCE:
+                    continue
+                if getattr(vp._engine, 'play_mode', False) and entity.get_component(Rigidbody):
+                    continue
+                _build_mesh_collider_lines_np(entity.get_component(MeshCollider), entity, pos, rot, sc)
+                continue
+
+            cached = _collider_gizmo_cache.get(hash_key)
+            if cached is not None and cached[3] == tr_hash:
+                Gizmos.draw_lines(cached[0], cached[1], cached[2])
+                continue
+
+            comp = entity.get_component(collider_type)
+            if comp is None:
+                continue
+            if collider_type is BoxCollider:
+                starts, ends, cols = _build_box_np(comp, pos, rot, sc, color)
+            elif collider_type is SphereCollider:
+                starts, ends, cols = _build_sphere_np(comp, pos, rot, sc, color)
+            elif collider_type is CapsuleCollider:
+                starts, ends, cols = _build_capsule_np(comp, pos, rot, sc, color)
+            else:
+                continue
+            _collider_gizmo_cache[hash_key] = (starts, ends, cols, tr_hash)
+            Gizmos.draw_lines(starts, ends, cols)
+
+    _render_collider2d(scene, color)
+
+    stale = set(_collider_gizmo_cache.keys()) - used_keys
+    if stale:
+        for k in stale:
+            del _collider_gizmo_cache[k]
+
+
+def _render_collider2d(scene, color):
+    for entity in scene.get_entities_with_component(BoxCollider2D):
+        if not entity.active:
+            continue
+        _render_box2d(entity, color)
+    for entity in scene.get_entities_with_component(CircleCollider2D):
+        if not entity.active:
+            continue
+        _render_circle2d(entity, color)
+
+def _render_box2d(entity, color):
+    tr = entity.get_component_by_name("Transform")
+    if not tr:
+        return
+    pos = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
+    R = _quat_to_mat3(tr.local_rotation)
+    box = entity.get_component(BoxCollider2D)
+    if not box:
+        return
+    sz = box.scaled_size
+    off_v2 = box.scaled_offset
+    c = np.array([off_v2.x, off_v2.y, 0.0], dtype=np.float32) @ R + pos
+    hx, hy = sz.x * 0.5, sz.y * 0.5
+    corners = np.array([[-hx, -hy, 0.0], [hx, -hy, 0.0], [hx, hy, 0.0], [-hx, hy, 0.0]], dtype=np.float32) @ R + c
+    edge_pairs = np.array(_RECT_EDGE_PAIRS, dtype=np.int32)
+    Gizmos.draw_lines(corners[edge_pairs[:, 0]], corners[edge_pairs[:, 1]], _collider_color_arr(4, color))
+
+def _render_circle2d(entity, color):
+    tr = entity.get_component_by_name("Transform")
+    if not tr:
+        return
+    pos = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
+    R = _quat_to_mat3(tr.local_rotation)
+    circle = entity.get_component(CircleCollider2D)
+    if not circle:
+        return
+    radius = circle.scaled_radius
+    off_v2 = circle.scaled_offset
+    c = np.array([off_v2.x, off_v2.y, 0.0], dtype=np.float32) @ R + pos
+    segs = 24
+    theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
+    pts = np.zeros((segs + 1, 3), dtype=np.float32)
+    pts[:, 0] = np.cos(theta) * radius; pts[:, 1] = np.sin(theta) * radius
+    pts = pts @ R + c
+    Gizmos.draw_lines(pts[:-1], pts[1:], _collider_color_arr(segs, color))
 
 
 def _submit_lines_fast(lines: list, thickness_multiplier: float = 1.0):
