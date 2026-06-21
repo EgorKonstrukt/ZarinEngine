@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Optional, TYPE_CHECKING
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QTreeWidget, QTreeWidgetItem, QPushButton,
@@ -10,6 +11,7 @@ if TYPE_CHECKING:
     from core.ecs import Entity, Scene
     from core.engine import Engine
 _ENTITY_MIME = "application/x-zpe-entity"
+_COMPONENT_MIME = "application/x-zpe-component"
 
 import os
 def _get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
@@ -46,6 +48,7 @@ class HierarchyTree(QTreeWidget):
     delete_requested = pyqtSignal(list)
     copy_requested = pyqtSignal()
     paste_requested = pyqtSignal()
+    component_drop_requested = pyqtSignal(object, object, object)
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setDragDropMode(QTreeWidget.DragDropMode.DragDrop)
@@ -89,7 +92,7 @@ class HierarchyTree(QTreeWidget):
             it.setSelected(True)
         self.setCurrentItem(item)
     def supportedDropActions(self):
-        return Qt.DropAction.MoveAction
+        return Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
     def mimeTypes(self):
         return [_ENTITY_MIME]
     def mimeData(self, items):
@@ -152,6 +155,9 @@ class HierarchyTree(QTreeWidget):
                 return
         super().mouseReleaseEvent(event)
     def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat(_COMPONENT_MIME):
+            event.acceptProposedAction()
+            return
         if not event.mimeData().hasFormat(_ENTITY_MIME):
             event.ignore()
             return
@@ -192,6 +198,23 @@ class HierarchyTree(QTreeWidget):
             parent = parent.parent()
         return False
     def dropEvent(self, event):
+        if event.mimeData().hasFormat(_COMPONENT_MIME):
+            raw = bytes(event.mimeData().data(_COMPONENT_MIME)).decode("utf-8")
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                event.ignore()
+                return
+            target_item = self.itemAt(event.position().toPoint())
+            if target_item is not None:
+                target_eid = target_item.data(0, Qt.ItemDataRole.UserRole)
+                if target_eid:
+                    is_copy = event.proposedAction() == Qt.DropAction.CopyAction
+                    self.component_drop_requested.emit(target_eid, data, is_copy)
+                    event.acceptProposedAction()
+                    return
+            event.ignore()
+            return
         if not event.mimeData().hasFormat(_ENTITY_MIME):
             event.ignore()
             return
@@ -302,6 +325,7 @@ class HierarchyPanel(QDockWidget):
         self._tree.itemDoubleClicked.connect(self._on_item_double_click)
         self._tree.itemChanged.connect(self._on_item_changed)
         self._tree.entity_reparented.connect(self._on_reparent)
+        self._tree.component_drop_requested.connect(self._on_component_drop)
         self._tree.delete_requested.connect(self._delete_entities_by_ids)
         self._tree.copy_requested.connect(self._on_copy)
         self._tree.paste_requested.connect(self._on_paste)
@@ -469,6 +493,56 @@ class HierarchyPanel(QDockWidget):
         self._refresh()
         if self._selected_entity:
             self._restore_selection(self._selected_entity.id)
+    def _on_component_drop(self, target_eid: str, data: dict, is_copy: bool):
+        if not self._scene:
+            return
+        target_entity = self._scene.get_entity(target_eid)
+        if not target_entity:
+            return
+        source_entity = self._scene.get_entity(data.get("entity_id", ""))
+        if not source_entity:
+            return
+        if not is_copy and source_entity == target_entity:
+            return
+        comp_type_name = data.get("component_type", "")
+        component_key = data.get("component_key", "")
+        comp_data = data.get("component_data", {})
+        if not comp_type_name or not comp_data:
+            return
+        from core.ecs import ComponentRegistry
+        cls = ComponentRegistry.get(comp_type_name)
+        if not cls:
+            return
+        can_multiple = getattr(cls, '_allow_multiple', False)
+        from core.commands import MoveComponentCommand, CopyComponentCommand, CompoundCommand, get_history
+        if is_copy:
+            eid_set = {target_eid}
+            for item in self._tree.selectedItems():
+                eid = item.data(0, Qt.ItemDataRole.UserRole)
+                if eid:
+                    eid_set.add(eid)
+            targets = []
+            for eid in eid_set:
+                e = self._scene.get_entity(eid)
+                if e and e != source_entity:
+                    if not can_multiple and e.has_component(cls):
+                        continue
+                    targets.append(e)
+            if not targets:
+                return
+            cmds = [CopyComponentCommand(e, cls, comp_data, source_key=component_key) for e in targets]
+            get_history().execute(CompoundCommand(cmds, f"Copy {comp_type_name} to {len(targets)} entities"))
+        else:
+            if not can_multiple and target_entity.has_component(cls):
+                return
+            get_history().execute(MoveComponentCommand(source_entity, target_entity, component_key, cls, comp_data))
+        self._scene.mark_dirty()
+        self.refresh()
+        mw = self.parent()
+        inspector = getattr(mw, '_inspector', None)
+        if inspector:
+            inspector._rebuild()
+
     def _is_ancestor(self, potential_ancestor: Entity, entity: Entity) -> bool:
         current = entity.parent
         while current:

@@ -326,6 +326,58 @@ class PasteEntitiesCommand(Command):
     def description(self):
         n = len(self._clipboard_data)
         return f"Paste {n} entit{'y' if n == 1 else 'ies'}"
+class MoveComponentCommand(Command):
+    def __init__(self, source_entity, target_entity, component_key, component_cls, component_data: dict):
+        self._source = source_entity
+        self._target = target_entity
+        self._component_key = component_key
+        self._component_cls = component_cls
+        self._component_data = component_data
+        self._target_key = None
+    def execute(self):
+        if self._component_key:
+            self._source.remove_component_by_key(self._component_key)
+        else:
+            self._source.remove_component(self._component_cls)
+        new_comp = self._component_cls.deserialize(self._component_data)
+        key_to_use = self._component_key if not getattr(self._component_cls, '_allow_multiple', False) else None
+        self._target.add_component(new_comp, key=key_to_use)
+        for k, c in self._target._components.items():
+            if c is new_comp:
+                self._target_key = k
+                break
+    def undo(self):
+        if self._target_key:
+            self._target.remove_component_by_key(self._target_key)
+        new_comp = self._component_cls.deserialize(self._component_data)
+        self._source.add_component(new_comp, key=self._component_key)
+        self._target_key = None
+    @property
+    def description(self):
+        return f"Move {self._component_cls.__name__}"
+
+class CopyComponentCommand(Command):
+    def __init__(self, target_entity, component_cls, component_data: dict, source_key: str = None):
+        self._target = target_entity
+        self._component_cls = component_cls
+        self._component_data = component_data
+        self._source_key = source_key
+        self._target_key = None
+    def execute(self):
+        new_comp = self._component_cls.deserialize(self._component_data)
+        key_to_use = self._source_key if not getattr(self._component_cls, '_allow_multiple', False) else None
+        self._target.add_component(new_comp, key=key_to_use)
+        for k, c in self._target._components.items():
+            if c is new_comp:
+                self._target_key = k
+                break
+    def undo(self):
+        if self._target_key:
+            self._target.remove_component_by_key(self._target_key)
+    @property
+    def description(self):
+        return f"Copy {self._component_cls.__name__}"
+
 class CommandHistory:
     def __init__(self, max_size: int = 100):
         self._undo_stack: list[Command] = []

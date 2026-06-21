@@ -21,8 +21,8 @@ class CurvePreview(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._curve: Curve = Curve()
-        self._bg_color = QColor(30, 30, 30)
-        self._line_color = QColor(100, 180, 255)
+        self._bg_color = QColor(37, 37, 37)
+        self._line_color = QColor(90, 156, 245)
         self.setMinimumSize(100, 30)
         self.setMaximumHeight(40)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -86,14 +86,14 @@ class CurveWidget(QWidget):
         self._pan_offset = QPointF(0, 0)
         self._zoom = 1.0
 
-        self._grid_color = QColor(50, 50, 50)
-        self._major_grid_color = QColor(70, 70, 70)
-        self._bg_color = QColor(25, 25, 25)
-        self._curve_color = QColor(100, 180, 255)
-        self._key_color = QColor(255, 200, 80)
-        self._key_selected_color = QColor(255, 255, 255)
-        self._tangent_color = QColor(200, 200, 200)
-        self._text_color = QColor(180, 180, 180)
+        self._grid_color = QColor(42, 42, 42)
+        self._major_grid_color = QColor(60, 60, 60)
+        self._bg_color = QColor(30, 30, 30)
+        self._curve_color = QColor(90, 156, 245)
+        self._key_color = QColor(206, 145, 120)
+        self._key_selected_color = QColor(220, 220, 220)
+        self._tangent_color = QColor(160, 160, 160)
+        self._text_color = QColor(140, 140, 140)
 
         self.setMinimumSize(300, 200)
         self.setMouseTracking(True)
@@ -390,7 +390,78 @@ class CurveEditorDialog(QDialog):
         self.resize(700, 500)
         self._curve = curve
 
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: #1e1e1e;
+            }}
+            QGroupBox {{
+                color: #cccccc;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                margin-top: 12px;
+                padding-top: 16px;
+                font-size: 11px;
+                font-weight: 600;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 2px 8px;
+                color: #5a9cf5;
+            }}
+            QLabel {{
+                color: #cccccc;
+                font-size: 11px;
+                background: transparent;
+            }}
+            QDoubleSpinBox, QSpinBox {{
+                background: #2a2a2a;
+                color: #eeeeee;
+                border: 1px solid #3c3c3c;
+                border-radius: 3px;
+                padding: 1px 2px 1px 4px;
+                font-size: 11px;
+                min-height: 20px;
+                selection-background-color: #5a9cf5;
+            }}
+            QDoubleSpinBox:hover, QSpinBox:hover {{ border-color: #4a4a4a; }}
+            QDoubleSpinBox:focus, QSpinBox:focus {{ border-color: #5a9cf5; }}
+            QComboBox {{
+                background: #2a2a2a;
+                color: #eeeeee;
+                border: 1px solid #3c3c3c;
+                border-radius: 3px;
+                padding: 2px 4px;
+                font-size: 11px;
+                min-height: 20px;
+            }}
+            QComboBox:hover {{ border-color: #4a4a4a; }}
+            QComboBox::drop-down {{ border: none; width: 16px; }}
+            QComboBox::down-arrow {{ width: 8px; height: 8px; }}
+            QComboBox QAbstractItemView {{
+                background: #252525;
+                color: #cccccc;
+                border: 1px solid #3c3c3c;
+                selection-background-color: #333333;
+                selection-color: #eeeeee;
+            }}
+            QPushButton {{
+                color: #cccccc;
+                background: #2a2a2a;
+                border: 1px solid #4a4a4a;
+                border-radius: 3px;
+                padding: 4px 16px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                background: #333333;
+                color: #eeeeee;
+            }}
+        """)
+
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
         self._curve_widget = CurveWidget()
         self._curve_widget.set_curve(curve)
@@ -399,6 +470,7 @@ class CurveEditorDialog(QDialog):
 
         info_group = QGroupBox("Selected Key")
         info_layout = QGridLayout(info_group)
+        info_layout.setSpacing(4)
         self._time_spin = QDoubleSpinBox()
         self._time_spin.setRange(0.0, 1.0)
         self._time_spin.setSingleStep(0.01)
@@ -439,6 +511,7 @@ class CurveEditorDialog(QDialog):
         layout.addWidget(info_group)
 
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(4)
         btn_layout.addStretch()
         add_btn = QPushButton("Add Key (0,0)")
         add_btn.clicked.connect(lambda: self._add_key_at(0.0, 0.0))
