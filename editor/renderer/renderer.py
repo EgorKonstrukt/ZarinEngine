@@ -15,6 +15,7 @@ from core.logger import Logger
 from core.components.transform import Transform
 from core.components.rendering.mesh_filter import MeshFilter
 from core.components.rendering.mesh_renderer import MeshRenderer
+from core.components.mesh_editor import ProBuilderMesh
 from core.components.rendering.graphics_effect import GraphicsEffect
 from core.math3d import Mat4, Vec3
 
@@ -487,6 +488,7 @@ void main() {
         self._mesh_loader.process_pending()
         if prof:
             prof.stop("mesh_async_load")
+        self._sync_probuilder_meshes(scene)
         renderable = []
         if prof:
             prof.start("collect_renderables")
@@ -976,6 +978,51 @@ void main() {
     @property
     def effects_enabled(self) -> bool:
         return not self._effects_disabled
+
+    def _sync_probuilder_meshes(self, scene):
+        mesh_loader = self._mesh_loader
+        if not mesh_loader:
+            return
+        if not hasattr(self, '_pb_scale_cache'):
+            self._pb_scale_cache = {}
+        for ent in scene.get_entities_with_component(ProBuilderMesh):
+            if not ent.active:
+                continue
+            pb = ent.get_component(ProBuilderMesh)
+            if not pb or not pb.enabled or pb.vertex_count == 0:
+                continue
+            tr = ent.get_component_by_name("Transform")
+            if tr:
+                s = tr.local_scale
+                scale_key = (s.x, s.y, s.z)
+                prev_scale = self._pb_scale_cache.get(ent.id)
+                if prev_scale != scale_key:
+                    self._pb_scale_cache[ent.id] = scale_key
+                    pb.rebuild_uvs(world_scale=np.array([s.x, s.y, s.z], dtype=np.float32))
+                    pb._gpu_dirty = True
+            if not pb._gpu_dirty:
+                continue
+            mf = ent.get_component(MeshFilter)
+            if not mf:
+                mf = MeshFilter()
+                ent.add_component(mf)
+            mesh_name = f"ProBuilder_{ent.id[:6]}"
+            mf.mesh_name = mesh_name
+            gpu_mesh = pb.to_gpu_mesh()
+            gpu_mesh.build_gl(self._ctx, self._default_prog)
+            if self._outline_prog:
+                gpu_mesh.build_outline_vao(self._ctx, self._outline_prog)
+            mr = ent.get_component(MeshRenderer)
+            if not mr:
+                mr = MeshRenderer()
+                ent.add_component(mr)
+            cache_key = f"{mesh_name}|s=1.0|cp=False|fu=False"
+            mesh_loader._meshes[cache_key] = gpu_mesh
+            pb._gpu_dirty = False
+        active_ids = {ent.id for ent in scene.get_entities_with_component(ProBuilderMesh) if ent.active}
+        stale = [k for k in self._pb_scale_cache if k not in active_ids]
+        for k in stale:
+            del self._pb_scale_cache[k]
 
     def release(self):
         self._release_scene_fbo()

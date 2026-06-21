@@ -548,6 +548,12 @@ class HierarchyPanel(QDockWidget):
             act = QAction(name, self)
             act.triggered.connect(lambda checked=False, n=name.lower(): self._create_primitive(n))
             primitives_menu.addAction(act)
+        probuilder_menu = menu.addMenu("ProBuilder Shape")
+        from core.components.mesh_editor.primitives import get_primitive_names
+        for name in get_primitive_names():
+            act = QAction(name, self)
+            act.triggered.connect(lambda checked=False, n=name: self._create_probuilder_primitive(n))
+            probuilder_menu.addAction(act)
         lights_menu = menu.addMenu("Light")
         for ltype, label in [("directional", "Directional Light"), ("point", "Point Light"), ("spot", "Spot Light")]:
             act = QAction(label, self)
@@ -632,6 +638,34 @@ class HierarchyPanel(QDockWidget):
             item = self._find_item(e.id, self._tree.invisibleRootItem())
             if item:
                 self._tree.setCurrentItem(item)
+    def _create_probuilder_primitive(self, name: str):
+        if not self._scene:
+            return
+        from core.commands import CreateEntityCommand, get_history
+        from core.components import Transform, MeshFilter, MeshRenderer
+        from core.components.mesh_editor import ProBuilderMesh, create_primitive
+        cmd = CreateEntityCommand(self._scene, name)
+        get_history().execute(cmd)
+        e = self._scene.get_entity(cmd._entity_id)
+        if e:
+            e.add_component(Transform())
+            mf = MeshFilter()
+            e.add_component(mf)
+            e.add_component(MeshRenderer())
+            pb = ProBuilderMesh()
+            e.add_component(pb)
+            positions, indices = create_primitive(name)
+            pb.set_mesh_data(positions, indices)
+            mf.mesh_name = f"ProBuilder_{e.id[:6]}"
+        self._refresh()
+        if e:
+            self._collab_sync_create(e)
+            self._selected_entity = e
+            self.entity_selected.emit(e)
+            item = self._find_item(e.id, self._tree.invisibleRootItem())
+            if item:
+                self._tree.setCurrentItem(item)
+
     def _create_light(self, ltype: str):
         if not self._scene:
             return

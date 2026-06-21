@@ -24,7 +24,7 @@ class GridRenderer:
         self._grid_2d_mode: bool = False
         self._grid_zoom_distance: float = 5.0
         self._grid_size: float = 1.0
-        self._grid_opacity: float = 0.25
+        self._grid_opacity: float = 0.33
         self._build()
 
     def _build(self):

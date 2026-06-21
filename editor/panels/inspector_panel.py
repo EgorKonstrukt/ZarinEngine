@@ -1015,15 +1015,20 @@ class ComponentWidget(QWidget):
             self._add_field(field.label, sb, prop_name)
 
         elif field.field_type.value == "int":
-            sb = QSpinBox()
-            min_i = max(-2147483648, min(2147483647, int(field.min_val)))
-            max_i = max(-2147483648, min(2147483647, int(field.max_val)))
-            sb.setRange(min_i, max_i)
-            sb.setValue(max(min_i, min(max_i, int(value))))
-            sb.setMinimumWidth(60)
-            comp_cls = type(c)
-            sb.valueChanged.connect(self._undo_setter_all(comp_cls, prop_name))
-            self._add_field(field.label, sb, prop_name)
+            if field.readonly:
+                lbl = QLabel(str(value))
+                lbl.setStyleSheet("color: #888; padding: 4px 8px;")
+                self._add_field(field.label, lbl)
+            else:
+                sb = QSpinBox()
+                min_i = max(-2147483648, min(2147483647, int(field.min_val)))
+                max_i = max(-2147483648, min(2147483647, int(field.max_val)))
+                sb.setRange(min_i, max_i)
+                sb.setValue(max(min_i, min(max_i, int(value))))
+                sb.setMinimumWidth(60)
+                comp_cls = type(c)
+                sb.valueChanged.connect(self._undo_setter_all(comp_cls, prop_name))
+                self._add_field(field.label, sb, prop_name)
 
         elif field.field_type.value == "slider":
             row = QWidget()

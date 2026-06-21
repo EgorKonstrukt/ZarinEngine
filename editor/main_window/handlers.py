@@ -16,6 +16,8 @@ def on_entity_selected(mw, entity):
     mw._hierarchy.set_selected_entity(entity)
     mw._inspector.set_entity(entity)
     mw._viewport.set_selected_entity(entity)
+    if hasattr(mw, '_mesh_editor') and mw._mesh_editor:
+        mw._mesh_editor.set_entity(entity)
 
 
 def on_entities_selected(mw, entities):
@@ -31,6 +33,8 @@ def on_entity_selected_from_viewport(mw, entity):
     get_history().set_current_selection(entity)
     mw._inspector.set_entity(entity)
     mw._hierarchy.set_selected_entity(entity)
+    if hasattr(mw, '_mesh_editor') and mw._mesh_editor:
+        mw._mesh_editor.set_entity(entity)
 
 
 def on_entities_selected_from_viewport(mw, entities):

@@ -9,6 +9,7 @@ from editor.main_window.handlers import (
     undo, redo,
     open_global_settings, open_project_settings,
     show_build_dialog, show_about,
+    on_entity_selected,
 )
 from editor.main_window.project import open_project_manager, open_project_browse
 from editor.main_window.state import reset_layout
@@ -75,6 +76,12 @@ def setup_menu(mw):
         act = QAction(name.capitalize(), mw)
         act.triggered.connect(lambda checked=False, n=name: mw._hierarchy._create_primitive(n))
         primitives_menu.addAction(act)
+    probuilder_menu = go_menu.addMenu("ProBuilder Shape")
+    from core.components.mesh_editor.primitives import get_primitive_names
+    for name in get_primitive_names():
+        act = QAction(name, mw)
+        act.triggered.connect(lambda checked=False, n=name: mw._hierarchy._create_probuilder_primitive(n))
+        probuilder_menu.addAction(act)
     lights_menu = go_menu.addMenu("Light")
     for ltype in ["directional", "point", "spot"]:
         act = QAction(ltype.replace("_", " ").title(), mw)
@@ -98,6 +105,11 @@ def setup_menu(mw):
     pm_act.triggered.connect(mw._plugin_mgr.show)
     tools_menu.addAction(pm_act)
     tools_menu.addSeparator()
+    mesh_editor_act = QAction("Mesh Editor", mw)
+    mesh_editor_act.setShortcut(QKeySequence("Ctrl+Shift+M"))
+    mesh_editor_act.triggered.connect(lambda: _show_mesh_editor(mw))
+    tools_menu.addAction(mesh_editor_act)
+    tools_menu.addSeparator()
     gui_act = QAction("GUI Editor", mw)
     gui_act.setShortcut(QKeySequence("Ctrl+Shift+G"))
     gui_act.triggered.connect(lambda: mw._gui_editor.show() or mw._gui_editor.raise_())
@@ -114,6 +126,14 @@ def setup_menu(mw):
     about_act = QAction("About Zarin Engine", mw)
     about_act.triggered.connect(lambda: show_about(mw))
     help_menu.addAction(about_act)
+
+
+def _show_mesh_editor(mw):
+    mw._mesh_editor.show()
+    mw._mesh_editor.raise_()
+    sel = getattr(mw._viewport, '_selected_entities', None)
+    if sel and len(sel) > 0:
+        mw._mesh_editor.set_entity(sel[0])
 
 
 def add_plugin_menu_items(mw, mb):

@@ -52,6 +52,7 @@ class InspectorField:
     max_val: float = 100000000000000000.0
     step: float = 0.1
     decimals: int = 4
+    readonly: bool = False
     element_fields: list[ListElementField] = field(default_factory=list)
 
 @dataclass

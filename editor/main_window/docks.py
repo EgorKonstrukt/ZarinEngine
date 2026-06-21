@@ -16,6 +16,7 @@ from editor.panels.play_window import PlayDockPanel
 from editor.panels.terminal_panel import TerminalPanel
 from editor.panels.undo_history_panel import UndoHistoryPanel
 from editor.panels.collaboration_panel import CollaborationPanel
+from editor.panels.mesh_editor_panel import MeshEditorPanel
 from editor.gui_editor.gui_viewport import GuiEditorViewport
 
 _AREA_MAP = {
@@ -167,6 +168,9 @@ def register_default_docks(mw):
     from editor.viewport.collaboration import setup_collab_undo_redo_hooks
     setup_collab_undo_redo_hooks(mw._engine)
     register_dock(mw, mw._collab_panel, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._mesh_editor = MeshEditorPanel(mw._engine, mw)
+    mw._mesh_editor.setObjectName("MeshEditorDock")
+    register_dock(mw, mw._mesh_editor, Qt.DockWidgetArea.LeftDockWidgetArea)
 
 
 def register_plugin_docks(mw):
@@ -203,6 +207,7 @@ def add_all_docks(mw):
     mw.addDockWidget(area, mw._undo_history)
     mw.addDockWidget(area, mw._plugin_mgr)
     mw.addDockWidget(area, mw._collab_panel)
+    mw.addDockWidget(area, mw._mesh_editor)
     for dock in mw._docks:
         if dock not in (mw._hierarchy, mw._viewport_dock, mw._inspector,
                         mw._play_dock, mw._gui_editor, mw._prefab_editor,
@@ -222,6 +227,7 @@ def build_dock_layout(mw):
     mw.tabifyDockWidget(mw._inspector, mw._terminal)
     mw.tabifyDockWidget(mw._inspector, mw._undo_history)
     mw.tabifyDockWidget(mw._inspector, mw._plugin_mgr)
+    mw.tabifyDockWidget(mw._inspector, mw._mesh_editor)
     mw._viewport_dock.raise_()
     mw._hierarchy.raise_()
     mw._inspector.raise_()

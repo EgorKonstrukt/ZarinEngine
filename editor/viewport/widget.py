@@ -19,6 +19,7 @@ from core.logger import Logger
 from editor.scene_camera import SceneCamera
 from editor.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
 from editor.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS, _apply_line_style
+from editor.gizmo.pb_scale_gizmo import PbScaleGizmo
 from core.input_system import Input, KeyCode
 from editor.input_manager import InputManager
 from editor.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
@@ -121,6 +122,7 @@ class SceneViewport(QOpenGLWidget):
         self._collab_throttle_transform: float = 0.0
         self._collab_throttle_gizmo: float = 0.0
         self._collab_last_gizmo_state: tuple[str, int, bool] = ("none", -1, False)
+        self._pb_scale_gizmo: "PbScaleGizmo | None" = None
         from editor.viewport.toolbar import setup_toolbar
         setup_toolbar(self)
 
@@ -334,6 +336,7 @@ class SceneViewport(QOpenGLWidget):
             self._renderer = Renderer(self._ctx)
             self._renderer.initialize()
             self._renderer.request_render(lambda: self.update())
+            self._pb_scale_gizmo = PbScaleGizmo(self)
             self._engine.on("scene_loaded", self._on_scene_loaded)
             self._engine.on("play_stop", self._on_play_stop)
             self._engine.on("play_start", self._on_play_stop)
@@ -429,6 +432,8 @@ class SceneViewport(QOpenGLWidget):
                     self._debug_lines.clear()
                 draw_axis_gizmo_api(self)
                 self._render_api_gizmos()
+                if self._pb_scale_gizmo and self._pb_scale_gizmo.active:
+                    self._pb_scale_gizmo.render()
                 if in_frame:
                     prof.stop("gizmo_icons")
                 if in_frame:
@@ -595,6 +600,8 @@ class SceneViewport(QOpenGLWidget):
             if axis_hit >= 0:
                 snap_camera_to_axis(self, axis_hit)
                 return
+            if self._pb_scale_gizmo and self._pb_scale_gizmo.active and self._pb_scale_gizmo.on_mouse_press(lx, ly):
+                return
             if self._gizmo.on_mouse_press(x, y, self._cam, *self._get_physical_dims()):
                 self._multi_entity_initial_transforms = {}
                 for ent in self._selected_entities:
@@ -673,6 +680,10 @@ class SceneViewport(QOpenGLWidget):
             self._area_end = (lx, ly)
             self.update()
         else:
+            if self._pb_scale_gizmo and self._pb_scale_gizmo._dragging:
+                self._pb_scale_gizmo.on_mouse_move(lx, ly)
+                self.update()
+                return
             primary = self._gizmo._entity
             multi = len(self._selected_entities) > 1 and primary is not None and self._gizmo._dragging
             pre_pos = None
@@ -795,6 +806,9 @@ class SceneViewport(QOpenGLWidget):
         self._gizmo._multi_undo_active = multi
         self._gizmo.on_mouse_release()
         self._gizmo._multi_undo_active = False
+        if self._pb_scale_gizmo and self._pb_scale_gizmo._dragging:
+            self._pb_scale_gizmo.on_mouse_release()
+            self.update()
         if self._multi_entity_initial_transforms:
             from core.commands import SetComponentCommand, CompoundCommand, get_history
             from core.components import Transform as TransformComponent
