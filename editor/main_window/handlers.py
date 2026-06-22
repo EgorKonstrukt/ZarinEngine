@@ -386,7 +386,7 @@ def on_play_start(mw, _):
         mw._viewport._overlay_canvas = canvas
         if hasattr(mw, '_play_dock') and hasattr(mw._play_dock, '_viewport'):
             mw._play_dock._viewport.show_overlay(canvas)
-            if mw._viewport.renderer:
+            if mw._viewport.renderer and mw._play_dock._viewport._renderer:
                 mw._play_dock._viewport._renderer.skybox_enabled = mw._viewport.renderer.skybox_enabled
                 mw._play_dock._viewport._renderer.set_effects_enabled(mw._viewport.renderer.effects_enabled)
         canvas.edit_mode = False

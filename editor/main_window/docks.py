@@ -19,6 +19,7 @@ from editor.panels.collaboration_panel import CollaborationPanel
 from editor.panels.mesh_editor_panel import MeshEditorPanel
 from editor.panels.animation_panel import AnimationPanel
 from editor.panels.animator_panel import AnimatorPanel
+from editor.panels.scripts_panel import ScriptsPanel
 from editor.gui_editor.gui_viewport import GuiEditorViewport
 
 _AREA_MAP = {
@@ -194,6 +195,14 @@ def register_default_docks(mw):
     mw._animator.state_selected_signal.connect(mw._inspector.show_animator_state)
     mw._animator.transition_selected_signal.connect(mw._inspector.show_animator_transition)
     mw._animator.selection_cleared.connect(mw._inspector.clear_animator_mode)
+    mw._scripts = ScriptsPanel(mw._engine, mw)
+    mw._scripts.setObjectName("ScriptsDock")
+    mw._scripts.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._scripts.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._scripts, Qt.DockWidgetArea.LeftDockWidgetArea)
 
 
 def register_plugin_docks(mw):
@@ -233,12 +242,14 @@ def add_all_docks(mw):
     mw.addDockWidget(area, mw._mesh_editor)
     mw.addDockWidget(area, mw._animation)
     mw.addDockWidget(area, mw._animator)
+    mw.addDockWidget(area, mw._scripts)
     for dock in mw._docks:
         if dock not in (mw._hierarchy, mw._viewport_dock, mw._inspector,
                         mw._play_dock, mw._gui_editor, mw._prefab_editor,
                         mw._console, mw._profiler, mw._project,
                         mw._terminal, mw._undo_history, mw._plugin_mgr,
-                        mw._collab_panel, mw._mesh_editor, mw._animation, mw._animator):
+                        mw._collab_panel, mw._mesh_editor, mw._animation,
+                        mw._animator, mw._scripts):
             mw.addDockWidget(area, dock)
 
 
