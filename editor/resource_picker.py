@@ -58,74 +58,143 @@ def _draw_text_centered(painter: QPainter, text: str, rect: QRect, color: QColor
     painter.setFont(f)
     painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
-def _draw_mesh_preview(path: str, size: int) -> Optional[QPixmap]:
-    cache_key = f"mesh:{path}:{size}"
-    _thumbnail_mutex.lock()
-    cached = _thumbnail_cache.get(cache_key)
-    _thumbnail_mutex.unlock()
-    if cached is not None:
-        return cached
-    from core.asset_importer import load_obj_async
-    loaded: list[Optional[np.ndarray]] = [None]
-    indices_loaded: list[Optional[np.ndarray]] = [None]
-    error: list[bool] = [False]
+_mesh_thumb_cache: dict[str, QPixmap] = {}
+_mesh_thumb_mutex = QMutex()
 
-    def _on_loaded(data):
-        if data is None or len(data.vertices) < 3 or len(data.indices) < 3:
-            error[0] = True
-            return
-        loaded[0] = data.vertices
-        indices_loaded[0] = data.indices
 
-    load_obj_async(path, _on_loaded)
-    if error[0]:
-        return None
-    if loaded[0] is None or indices_loaded[0] is None:
-        return None
-    pm = _draw_mesh_preview_2d(loaded[0], indices_loaded[0], size)
-    _thumbnail_mutex.lock()
-    _thumbnail_cache[cache_key] = pm
-    _thumbnail_mutex.unlock()
-    return pm
+class _MeshDataLoader(QThread):
+    mesh_data_ready = pyqtSignal(str, int, object, object)
 
-def _draw_mesh_preview_2d(verts_flat: np.ndarray, idx: np.ndarray, size: int) -> QPixmap:
+    def __init__(self):
+        super().__init__()
+        self._queue: list[tuple[str, int]] = []
+        self._cancelled = False
+        self._lock = QMutex()
+
+    def cancel(self):
+        self._cancelled = True
+
+    def enqueue(self, path: str, size: int):
+        self._lock.lock()
+        if (path, size) not in self._queue:
+            self._queue.append((path, size))
+        self._lock.unlock()
+
+    def run(self):
+        from core.asset_importer import load_mesh
+        while not self._cancelled:
+            self._lock.lock()
+            work = self._queue.pop(0) if self._queue else None
+            self._lock.unlock()
+            if work is None:
+                self.msleep(20)
+                continue
+            path, size = work
+            cache_key = f"mesh:{path}:{size}"
+            _mesh_thumb_mutex.lock()
+            if cache_key in _mesh_thumb_cache:
+                _mesh_thumb_mutex.unlock()
+                continue
+            _mesh_thumb_mutex.unlock()
+            try:
+                data = load_mesh(path)
+                if data is None or len(data.vertices) < 3 or len(data.indices) < 3:
+                    continue
+                self.mesh_data_ready.emit(path, size, data.vertices, data.indices)
+            except Exception:
+                continue
+
+
+_mesh_loader: Optional[_MeshDataLoader] = None
+
+
+def _get_mesh_loader() -> _MeshDataLoader:
+    global _mesh_loader
+    if _mesh_loader is None:
+        _mesh_loader = _MeshDataLoader()
+        _mesh_loader.start()
+    return _mesh_loader
+
+
+def _render_mesh_ortho(verts_flat: np.ndarray, idx: np.ndarray, size: int) -> Optional[QPixmap]:
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
-    if len(verts_flat) < 3:
+    if len(verts_flat) < 3 or len(idx) < 3:
         return pm
-    pts = verts_flat.reshape(-1, 3)
-
-    rot_angle = math.radians(-45)
-    cos_a = math.cos(rot_angle)
-    sin_a = math.sin(rot_angle)
-    rotated_pts = []
-    for p in pts:
-        rx = p[0] * cos_a - p[2] * sin_a
-        rz = p[0] * sin_a + p[2] * cos_a
-        ry = p[1]
-        rotated_pts.append([rx, ry, rz])
-    pts_3d = np.array(rotated_pts)
-
-    pts_2d = pts_3d[:, :2].copy()
-    cx, cy = pts_2d.mean(axis=0)
-    pts_2d -= [cx, cy]
-    max_ext = np.abs(pts_2d).max()
+    pts = verts_flat.reshape(-1, 3).copy()
+    rot_y = math.radians(-45)
+    rot_x = math.radians(30)
+    cos_y, sin_y = math.cos(rot_y), math.sin(rot_y)
+    cos_x, sin_x = math.cos(rot_x), math.sin(rot_x)
+    for i in range(len(pts)):
+        x, y, z = pts[i]
+        rx = x * cos_y - z * sin_y
+        rz = x * sin_y + z * cos_y
+        ry = y * cos_x - rz * sin_x
+        rz = y * sin_x + rz * cos_x
+        pts[i] = [rx, ry, rz]
+    proj = pts[:, :2].copy()
+    cx, cy = proj.mean(axis=0)
+    proj -= [cx, cy]
+    max_ext = np.abs(proj).max()
     if max_ext < 1e-8:
         return pm
-    margin = 4
-    scale_px = (size - 2 * margin) / (2 * max_ext)
-    pts_2d *= scale_px
-    pts_2d += [size // 2, size // 2]
+    margin = max(4, size // 16)
+    s = (size - 2 * margin) / (2 * max_ext)
+    proj *= s
+    proj += [size // 2, size // 2]
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(QPen(QColor(255, 255, 255, 180), 1))
+    tri_color = QColor(100, 160, 220, 40)
+    wire_color = QColor(180, 210, 240, 200)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(tri_color))
+    path = QPainterPath()
     for i in range(0, len(idx), 3):
-        for a, b in [(0, 1), (1, 2), (2, 0)]:
-            i1, i2 = idx[i + a], idx[i + b]
-            x1, y1 = pts_2d[i1]
-            x2, y2 = pts_2d[i2]
-            p.drawLine(int(x1), int(y1), int(x2), int(y2))
+        if i + 2 >= len(idx):
+            break
+        i0, i1, i2 = int(idx[i]), int(idx[i + 1]), int(idx[i + 2])
+        if i0 >= len(proj) or i1 >= len(proj) or i2 >= len(proj):
+            continue
+        x0, y0 = proj[i0]
+        x1, y1 = proj[i1]
+        x2, y2 = proj[i2]
+        path.moveTo(x0, y0)
+        path.lineTo(x1, y1)
+        path.lineTo(x2, y2)
+        path.closeSubpath()
+    p.drawPath(path)
+    p.setPen(QPen(wire_color, 1))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    for i in range(0, len(idx), 3):
+        if i + 2 >= len(idx):
+            break
+        i0, i1, i2 = int(idx[i]), int(idx[i + 1]), int(idx[i + 2])
+        if i0 >= len(proj) or i1 >= len(proj) or i2 >= len(proj):
+            continue
+        x0, y0 = proj[i0]
+        x1, y1 = proj[i1]
+        x2, y2 = proj[i2]
+        p.drawLine(int(x0), int(y0), int(x1), int(y1))
+        p.drawLine(int(x1), int(y1), int(x2), int(y2))
+        p.drawLine(int(x2), int(y2), int(x0), int(y0))
     p.end()
+    return pm
+
+
+def _render_mesh_for_cache(path: str, size: int, verts: np.ndarray, idx: np.ndarray) -> Optional[QPixmap]:
+    cache_key = f"mesh:{path}:{size}"
+    _mesh_thumb_mutex.lock()
+    if cache_key in _mesh_thumb_cache:
+        pm = _mesh_thumb_cache[cache_key]
+        _mesh_thumb_mutex.unlock()
+        return pm
+    _mesh_thumb_mutex.unlock()
+    pm = _render_mesh_ortho(verts, idx, size)
+    if pm:
+        _mesh_thumb_mutex.lock()
+        _mesh_thumb_cache[cache_key] = pm
+        _mesh_thumb_mutex.unlock()
     return pm
 
 
@@ -379,9 +448,13 @@ def _get_thumbnail_raw(path: str, size: int) -> QPixmap:
                 return pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
                                  Qt.TransformationMode.SmoothTransformation)
     if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
-        if ext == ".obj":
-            pm = _draw_mesh_preview(path, size)
-            if pm: return pm
+        cache_key = f"mesh:{path}:{size}"
+        _mesh_thumb_mutex.lock()
+        cached = _mesh_thumb_cache.get(cache_key)
+        _mesh_thumb_mutex.unlock()
+        if cached is not None:
+            return cached
+        _get_mesh_loader().enqueue(path, size)
         return _draw_mesh_icon(size)
     if ext == ".wav":
         return _draw_audio_waveform(path, size)

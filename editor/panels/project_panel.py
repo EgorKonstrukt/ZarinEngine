@@ -8,9 +8,13 @@ from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QLineEdit, QMenu, QFileDialog, QSplitter,
                               QListWidget, QListWidgetItem, QAbstractItemView,
                               QToolButton, QSlider, QStyle, QFileIconProvider,
-                              QStackedWidget)
-from PyQt6.QtCore import Qt, QEvent, pyqtSignal, QMimeData, QByteArray, QSize, QFileInfo, QUrl
-from PyQt6.QtGui import QAction, QDrag, QIcon, QWheelEvent, QKeyEvent, QGuiApplication, QShortcut, QKeySequence
+                              QStackedWidget, QFrame, QHeaderView, QSizePolicy,
+                              QGraphicsDropShadowEffect, QStyledItemDelegate,
+                              QAbstractItemDelegate)
+from PyQt6.QtCore import Qt, QEvent, pyqtSignal, QMimeData, QByteArray, QSize, QFileInfo, QUrl, QTimer
+from PyQt6.QtGui import (QAction, QDrag, QIcon, QWheelEvent, QKeyEvent, QGuiApplication,
+                          QShortcut, QKeySequence, QColor, QPainter, QPainterPath, QFont,
+                          QPen, QBrush, QPixmap, QFontMetrics)
 if TYPE_CHECKING:
     from core.engine import Engine
 from editor.resource_picker import _get_thumbnail, _format_size
@@ -21,12 +25,318 @@ from core.editor_scale import scale, scale_xy
 _file_clipboard: list[str] = []
 _clipboard_is_cut: bool = False
 
+_WIN10_BG = "#1e1e1e"
+_WIN10_PANEL = "#252526"
+_WIN10_TOOLBAR = "#2d2d2d"
+_WIN10_BORDER = "#3c3c3c"
+_WIN10_BORDER_LIGHT = "#4a4a4a"
+_WIN10_TEXT = "#cccccc"
+_WIN10_TEXT_DIM = "#888888"
+_WIN10_TEXT_BRIGHT = "#ffffff"
+_WIN10_ACCENT = "#4fc3f7"
+_WIN10_ACCENT_DIM = "#1a5276"
+_WIN10_HOVER = "#37373d"
+_WIN10_SELECTED = "#264f78"
+_WIN10_GROUP_HEADER = "#333333"
+_WIN10_SEARCH_BG = "#3c3c3c"
+_WIN10_ADDRESS_BG = "#2d2d2d"
+_WIN10_SCROLLBAR = "#424242"
+_WIN10_FOLDER_TREE_BG = "#252526"
+_WIN10_STATUSBAR_BG = "#007acc"
+
+_WIN10_STYLE = f"""
+QDockWidget {{
+    background: {_WIN10_BG};
+    color: {_WIN10_TEXT};
+}}
+QDockWidget::title {{
+    background: {_WIN10_TOOLBAR};
+    padding: 4px 8px;
+    font-size: 11px;
+    color: {_WIN10_TEXT};
+    border-bottom: 1px solid {_WIN10_BORDER};
+}}
+QWidget {{
+    background: {_WIN10_BG};
+    color: {_WIN10_TEXT};
+    font-size: 12px;
+}}
+QListWidget {{
+    background: {_WIN10_BG};
+    color: {_WIN10_TEXT};
+    border: none;
+    outline: none;
+    font-size: 12px;
+    padding: 2px;
+}}
+QListWidget::item {{
+    padding: 2px 4px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+}}
+QListWidget::item:selected {{
+    background: {_WIN10_SELECTED};
+    color: {_WIN10_TEXT_BRIGHT};
+    border: 1px solid {_WIN10_ACCENT_DIM};
+}}
+QListWidget::item:hover:!selected {{
+    background: {_WIN10_HOVER};
+    border: 1px solid {_WIN10_BORDER};
+}}
+QTreeWidget {{
+    background: {_WIN10_BG};
+    color: {_WIN10_TEXT};
+    border: none;
+    outline: none;
+}}
+QTreeWidget::item {{
+    padding: 2px 4px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+}}
+QTreeWidget::item:selected {{
+    background: {_WIN10_SELECTED};
+    color: {_WIN10_TEXT_BRIGHT};
+    border: 1px solid {_WIN10_ACCENT_DIM};
+}}
+QTreeWidget::item:hover:!selected {{
+    background: {_WIN10_HOVER};
+    border: 1px solid {_WIN10_BORDER};
+}}
+QTreeWidget::branch {{
+    background: transparent;
+}}
+QHeaderView::section {{
+    background: {_WIN10_TOOLBAR};
+    color: {_WIN10_TEXT};
+    border: none;
+    border-right: 1px solid {_WIN10_BORDER};
+    border-bottom: 2px solid {_WIN10_BORDER};
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: normal;
+}}
+QHeaderView::section:hover {{
+    background: {_WIN10_HOVER};
+}}
+QHeaderView::section:pressed {{
+    background: #444;
+}}
+QScrollBar:vertical {{
+    background: transparent;
+    width: 10px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: {_WIN10_SCROLLBAR};
+    min-height: 30px;
+    border-radius: 5px;
+    margin: 2px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background: #666;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 10px;
+    margin: 0;
+}}
+QScrollBar::handle:horizontal {{
+    background: {_WIN10_SCROLLBAR};
+    min-width: 30px;
+    border-radius: 5px;
+    margin: 2px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: #666;
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    width: 0px;
+}}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+    background: transparent;
+}}
+QMenu {{
+    background: {_WIN10_PANEL};
+    color: {_WIN10_TEXT};
+    border: 1px solid {_WIN10_BORDER};
+    padding: 4px 0;
+}}
+QMenu::item {{
+    padding: 5px 24px 5px 28px;
+    border: 1px solid transparent;
+}}
+QMenu::item:selected {{
+    background: {_WIN10_HOVER};
+    border: 1px solid {_WIN10_BORDER_LIGHT};
+}}
+QMenu::separator {{
+    height: 1px;
+    background: {_WIN10_BORDER};
+    margin: 4px 8px;
+}}
+QSplitter::handle {{
+    background: {_WIN10_BORDER};
+}}
+QSplitter::handle:horizontal {{
+    width: 1px;
+}}
+QSplitter::handle:vertical {{
+    height: 1px;
+}}
+QSlider::groove:horizontal {{
+    background: {_WIN10_BORDER};
+    height: 3px;
+    border-radius: 1px;
+}}
+QSlider::handle:horizontal {{
+    background: {_WIN10_TEXT_DIM};
+    width: 10px;
+    height: 10px;
+    margin: -4px 0;
+    border-radius: 5px;
+}}
+QSlider::handle:horizontal:hover {{
+    background: {_WIN10_ACCENT};
+}}
+"""
+
+
+class _NavButton(QToolButton):
+    def __init__(self, text="", tooltip="", parent=None):
+        super().__init__(parent)
+        self.setText(text)
+        self.setToolTip(tooltip)
+        self.setFixedSize(scale(28), scale(28))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(f"""
+            QToolButton {{
+                background: transparent;
+                color: {_WIN10_TEXT_DIM};
+                border: 1px solid transparent;
+                border-radius: 3px;
+                font-size: 11px;
+                padding: 0;
+            }}
+            QToolButton:hover {{
+                background: {_WIN10_HOVER};
+                color: {_WIN10_TEXT};
+                border: 1px solid {_WIN10_BORDER};
+            }}
+            QToolButton:pressed {{
+                background: #444;
+            }}
+            QToolButton:disabled {{
+                color: #3a3a3a;
+            }}
+        """)
+
+
+class _AddressBar(QLineEdit):
+    path_changed = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setStyleSheet(f"""
+            QLineEdit {{
+                background: {_WIN10_ADDRESS_BG};
+                color: {_WIN10_TEXT};
+                border: 1px solid {_WIN10_BORDER};
+                border-radius: 2px;
+                padding: 2px 8px;
+                font-size: 12px;
+                min-height: 22px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {_WIN10_ACCENT};
+            }}
+        """)
+
+
+class _SearchBar(QLineEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText("Search...")
+        self.setClearButtonEnabled(True)
+        self.setMaximumWidth(scale(200))
+        self.setStyleSheet(f"""
+            QLineEdit {{
+                background: {_WIN10_SEARCH_BG};
+                color: {_WIN10_TEXT};
+                border: 1px solid {_WIN10_BORDER};
+                border-radius: 2px;
+                padding: 2px 24px 2px 8px;
+                font-size: 11px;
+                min-height: 22px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {_WIN10_ACCENT};
+            }}
+            QLineEdit::placeholder {{
+                color: {_WIN10_TEXT_DIM};
+            }}
+        """)
+
+
+class _GroupHeader(QWidget):
+    def __init__(self, text, count=0, parent=None):
+        super().__init__(parent)
+        self._text = text
+        self._count = count
+        self.setFixedHeight(scale(26))
+        self.setStyleSheet(f"""
+            background: {_WIN10_GROUP_HEADER};
+            border-bottom: 1px solid {_WIN10_BORDER};
+        """)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor(_WIN10_GROUP_HEADER))
+        p.setPen(QPen(QColor(_WIN10_TEXT), 1))
+        font = p.font()
+        font.setPointSize(9)
+        font.setBold(False)
+        p.setFont(font)
+        x = scale(8)
+        y = (self.height() - p.fontMetrics().height()) // 2 + p.fontMetrics().ascent()
+        p.drawText(x, y, self._text)
+        if self._count > 0:
+            count_text = f" ({self._count})"
+            fm = QFontMetrics(font)
+            text_w = fm.horizontalAdvance(self._text)
+            p.setPen(QPen(QColor(_WIN10_TEXT_DIM), 1))
+            p.drawText(x + text_w + scale(4), y, count_text)
+        p.end()
+
 
 class FileListWidget(QListWidget):
     def __init__(self, panel: ProjectPanel, parent=None):
         super().__init__(parent)
         self._panel = panel
         self.setAcceptDrops(True)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+
+    def wheelEvent(self, event: QWheelEvent):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta != 0:
+                step = 8 if abs(delta) > 120 else 4
+                new_val = self._panel._thumb_size + (step if delta > 0 else -step)
+                new_val = max(MIN_THUMB, min(new_val, MAX_THUMB))
+                self._panel._thumb_size = new_val
+                self._panel._zoom_slider.setValue(new_val)
+            event.accept()
+            return
+        super().wheelEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
@@ -88,6 +398,20 @@ class FileDetailWidget(QTreeWidget):
         super().__init__(parent)
         self._panel = panel
         self.setAcceptDrops(True)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+
+    def wheelEvent(self, event: QWheelEvent):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta != 0:
+                step = 8 if abs(delta) > 120 else 4
+                new_val = self._panel._thumb_size + (step if delta > 0 else -step)
+                new_val = max(MIN_THUMB, min(new_val, MAX_THUMB))
+                self._panel._thumb_size = new_val
+                self._panel._zoom_slider.setValue(new_val)
+            event.accept()
+            return
+        super().wheelEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
@@ -144,6 +468,53 @@ class FolderTreeWidget(QTreeWidget):
         super().__init__(parent)
         self._panel = panel
         self.setAcceptDrops(True)
+        self.setHeaderHidden(True)
+        self.setRootIsDecorated(True)
+        self.setIndentation(scale(16))
+        self.setStyleSheet(f"""
+            QTreeWidget {{
+                background: {_WIN10_FOLDER_TREE_BG};
+                color: {_WIN10_TEXT};
+                border: none;
+                outline: none;
+                font-size: 12px;
+                padding: 4px 2px;
+            }}
+            QTreeWidget::item {{
+                padding: 3px 4px;
+                border: 1px solid transparent;
+                border-radius: 2px;
+                min-height: 22px;
+            }}
+            QTreeWidget::item:selected {{
+                background: {_WIN10_SELECTED};
+                color: {_WIN10_TEXT_BRIGHT};
+                border: 1px solid {_WIN10_ACCENT_DIM};
+            }}
+            QTreeWidget::item:hover:!selected {{
+                background: {_WIN10_HOVER};
+                border: 1px solid {_WIN10_BORDER};
+            }}
+            QTreeWidget::branch {{
+                background: transparent;
+            }}
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 8px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {_WIN10_SCROLLBAR};
+                min-height: 30px;
+                border-radius: 4px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: #666;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+        """)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() or event.mimeData().hasText():
@@ -166,33 +537,125 @@ class FolderTreeWidget(QTreeWidget):
             super().dropEvent(event)
 
 
+class _AddressBreadcrumb(QLineEdit):
+    def __init__(self, pane: _FilePane, parent=None):
+        super().__init__(parent)
+        self._pane = pane
+        self._editing = False
+        self.setReadOnly(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(f"""
+            QLineEdit {{
+                background: transparent;
+                color: {_WIN10_TEXT};
+                border: 1px solid transparent;
+                border-radius: 2px;
+                padding: 2px 6px;
+                font-size: 12px;
+                min-height: 20px;
+            }}
+            QLineEdit:focus {{
+                background: {_WIN10_ADDRESS_BG};
+                color: {_WIN10_TEXT};
+                border: 1px solid {_WIN10_ACCENT};
+                padding: 2px 6px;
+            }}
+        """)
+
+    def mousePressEvent(self, event):
+        if not self._editing:
+            self._enter_edit_mode()
+        super().mousePressEvent(event)
+
+    def focusInEvent(self, event):
+        if not self._editing:
+            self._enter_edit_mode()
+        super().focusInEvent(event)
+
+    def _enter_edit_mode(self):
+        self._editing = True
+        self.setReadOnly(False)
+        self.setText(self._pane._current_dir)
+        self.selectAll()
+        self.setCursor(Qt.CursorShape.IBeamCursor)
+        self.setStyleSheet(f"""
+            QLineEdit {{
+                background: {_WIN10_ADDRESS_BG};
+                color: {_WIN10_TEXT};
+                border: 1px solid {_WIN10_ACCENT};
+                border-radius: 2px;
+                padding: 2px 6px;
+                font-size: 12px;
+                min-height: 20px;
+                selection-background-color: {_WIN10_ACCENT_DIM};
+            }}
+        """)
+
+    def _exit_edit_mode(self):
+        self._editing = False
+        self.setReadOnly(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pane.rebuild_breadcrumb()
+        self.setStyleSheet(f"""
+            QLineEdit {{
+                background: transparent;
+                color: {_WIN10_TEXT};
+                border: 1px solid transparent;
+                border-radius: 2px;
+                padding: 2px 6px;
+                font-size: 12px;
+                min-height: 20px;
+            }}
+            QLineEdit:focus {{
+                background: {_WIN10_ADDRESS_BG};
+                color: {_WIN10_TEXT};
+                border: 1px solid {_WIN10_ACCENT};
+                padding: 2px 6px;
+            }}
+        """)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            path = self.text().strip()
+            if path and os.path.isdir(path):
+                self._pane.populate_files(path)
+                self._pane._panel._push_history(path)
+            self._exit_edit_mode()
+            return
+        if event.key() == Qt.Key.Key_Escape:
+            self._exit_edit_mode()
+            return
+        super().keyPressEvent(event)
+
+    def focusOutEvent(self, event):
+        self._exit_edit_mode()
+        super().focusOutEvent(event)
+
+
 class _FilePane(QWidget):
     def __init__(self, panel: ProjectPanel, parent=None):
         super().__init__(parent)
         self._panel = panel
         self._current_dir = panel._project_root
         self._active = False
+        self._view_mode_cache = panel._view_mode
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setSpacing(0)
 
-        self._breadcrumb = QWidget()
-        self._breadcrumb_layout = QHBoxLayout(self._breadcrumb)
-        self._breadcrumb_layout.setContentsMargins(0, 0, 0, 0)
-        self._breadcrumb_layout.setSpacing(0)
-        layout.addWidget(self._breadcrumb)
-
-        self._search = QLineEdit()
-        self._search.setPlaceholderText("Search assets...")
-        self._search.textChanged.connect(self._on_search)
-        layout.addWidget(self._search)
+        self._breadcrumb_bar = _AddressBreadcrumb(self)
+        layout.addWidget(self._breadcrumb_bar)
 
         self._stack = QStackedWidget()
 
         self._file_list = FileListWidget(panel)
         self._file_list.setDragEnabled(True)
         self._file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._file_list.setIconSize(QSize(scale(20), scale(20)))
+        self._file_list.setSpacing(1)
+        from PyQt6.QtWidgets import QStyledItemDelegate
+        self._file_list.setItemDelegate(_FileListDelegate(panel))
         self._file_list.itemClicked.connect(panel._on_file_single_click)
         self._file_list.itemDoubleClicked.connect(panel._on_file_double_click)
         self._file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -213,37 +676,42 @@ class _FilePane(QWidget):
         self._detail_tree.itemDoubleClicked.connect(panel._on_file_double_click)
         self._detail_tree.itemChanged.connect(panel._on_tree_item_changed)
         self._detail_tree.setSortingEnabled(True)
+        self._detail_tree.setIndentation(0)
         header = self._detail_tree.header()
         header.setStretchLastSection(True)
         header.setSectionsClickable(True)
+        header.setSectionsMovable(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(0, scale(280))
+        header.resizeSection(1, scale(80))
+        header.resizeSection(2, scale(140))
+        header.resizeSection(3, scale(120))
+        self._detail_tree.setIconSize(QSize(scale(16), scale(16)))
         self._stack.addWidget(self._detail_tree)
 
         layout.addWidget(self._stack, 1)
 
     def set_active(self, active: bool):
         self._active = active
-        style = ("border: 2px solid #4af;" if active else "") if self._panel._dual_pane else ""
-        self._stack.setStyleSheet(style)
+        if self._panel._dual_pane:
+            border = f"border: 1px solid {_WIN10_ACCENT};" if active else "border: 1px solid transparent;"
+            self._stack.setStyleSheet(border)
+        else:
+            self._stack.setStyleSheet("")
 
     def rebuild_breadcrumb(self):
-        for i in reversed(range(self._breadcrumb_layout.count())):
-            w = self._breadcrumb_layout.itemAt(i).widget()
-            if w: w.deleteLater()
-        rel = os.path.relpath(self._current_dir, self._panel._project_root)
-        parts = rel.split(os.sep if os.sep else "/") if rel != "." else []
-        crumbs = [self._panel._project_root] + [os.path.join(self._panel._project_root, *parts[:i+1]) for i in range(len(parts))]
-        for i, p in enumerate(crumbs):
-            if i > 0:
-                sep = QLabel(" > ")
-                sep.setStyleSheet("color: #888; padding: 0 2px;")
-                self._breadcrumb_layout.addWidget(sep)
-            label = "Assets" if p == self._panel._project_root else os.path.basename(p)
-            btn = QPushButton(label)
-            btn.setFlat(True)
-            btn.setStyleSheet("QPushButton { color: #4af; padding: 0 4px; } QPushButton:hover { color: #8cf; }")
-            btn.clicked.connect(lambda checked, path=p: self.populate_files(path))
-            self._breadcrumb_layout.addWidget(btn)
-        self._breadcrumb_layout.addStretch()
+        if self._breadcrumb_bar._editing:
+            return
+        nav_bar = self._panel._nav_bar
+        if nav_bar:
+            nav_bar._back_btn.setEnabled(len(self._panel._history[0]) > 1 if hasattr(self._panel, '_history') else False)
+            nav_bar._forward_btn.setEnabled(len(self._panel._history[1]) > 0 if hasattr(self._panel, '_history') else False)
+        display = self._current_dir.replace(self._panel._project_root, os.path.basename(self._panel._project_root))
+        display = display.replace("\\", " \u25B8 ").replace("/", " \u25B8 ")
+        self._breadcrumb_bar.setText(display)
 
     def _on_search(self, text: str):
         if text:
@@ -312,31 +780,95 @@ class _FilePane(QWidget):
             entries = sorted(os.listdir(dirpath))
         except PermissionError:
             return
+        visible = [e for e in entries if not e.startswith(".") and not e.endswith(".import")]
+        if filter_text:
+            visible = [e for e in visible if filter_text.lower() in e.lower()]
         if self._panel._view_mode == VIEW_DETAILS:
-            self._populate_detail_tree(dirpath, entries, filter_text)
+            self._populate_detail_tree(dirpath, visible, filter_text)
         else:
-            self._populate_list_view(dirpath, entries, filter_text)
+            self._populate_list_view(dirpath, visible, filter_text)
+        if self._panel._status_bar:
+            self._panel._status_bar.update_counts(len(visible))
+        if self._panel._nav_bar:
+            self._panel._nav_bar.update_address(dirpath)
+        if self._panel._status_bar:
+            self._panel._status_bar.update_path(dirpath)
 
     def _populate_list_view(self, dirpath: str, entries: list[str], filter_text: str):
         widget = self._file_list
         widget.blockSignals(True)
         widget.clear()
         is_icon = self._panel._view_mode == VIEW_ICON
+        folders = []
+        files = []
         for entry in entries:
             full = os.path.join(dirpath, entry)
-            if entry.startswith("."): continue
-            if filter_text and filter_text.lower() not in entry.lower(): continue
+            if entry.startswith("."):
+                continue
+            if filter_text and filter_text.lower() not in entry.lower():
+                continue
+            if os.path.isdir(full):
+                folders.append((entry, full))
+            else:
+                files.append((entry, full))
+
+        if is_icon and len(folders) > 0:
+            hdr = _GroupHeader(f"Folders", len(folders))
+            item = QListWidgetItem()
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            item.setSizeHint(QSize(0, hdr.height() + 4))
+            item.setData(Qt.ItemDataRole.UserRole, None)
+            item.setData(Qt.ItemDataRole.UserRole + 1, "group_header")
+            item.setData(Qt.ItemDataRole.UserRole + 2, "Folders")
+            item.setData(Qt.ItemDataRole.UserRole + 3, len(folders))
+            widget.addItem(item)
+
+        for entry, full in folders:
             item = QListWidgetItem()
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-            if os.path.isdir(full):
-                try:
-                    item.setIcon(self._panel._icon_provider.icon(QFileIconProvider.IconType.Folder))
-                except Exception:
-                    item.setIcon(QIcon())
-                item.setText(entry)
-                item.setData(Qt.ItemDataRole.UserRole, full)
-                item.setToolTip(f"Folder: {full}")
-            else:
+            try:
+                item.setIcon(self._panel._icon_provider.icon(QFileIconProvider.IconType.Folder))
+            except Exception:
+                item.setIcon(QIcon())
+            item.setText(entry)
+            item.setData(Qt.ItemDataRole.UserRole, full)
+            item.setToolTip(f"Folder: {full}")
+            widget.addItem(item)
+
+        if is_icon and len(files) > 0:
+            grouped = self._group_files_by_date(files)
+            for group_name, group_files in grouped:
+                hdr = _GroupHeader(group_name, len(group_files))
+                item = QListWidgetItem()
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                item.setSizeHint(QSize(0, hdr.height() + 4))
+                item.setData(Qt.ItemDataRole.UserRole, None)
+                item.setData(Qt.ItemDataRole.UserRole + 1, "group_header")
+                item.setData(Qt.ItemDataRole.UserRole + 2, group_name)
+                item.setData(Qt.ItemDataRole.UserRole + 3, len(group_files))
+                widget.addItem(item)
+
+                for entry, full in group_files:
+                    item = QListWidgetItem()
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+                    std_icon = self._panel._get_file_icon(full)
+                    if std_icon:
+                        item.setIcon(std_icon)
+                    else:
+                        pm = _get_thumbnail(full, self._panel._thumb_size)
+                        item.setIcon(QIcon(pm))
+                    item.setText(entry)
+                    item.setData(Qt.ItemDataRole.UserRole, full)
+                    try:
+                        sz = os.path.getsize(full)
+                    except OSError:
+                        sz = 0
+                    item.setToolTip(f"{entry}\n{_format_size(sz)}")
+                    widget.addItem(item)
+        else:
+            for entry, full in files:
+                item = QListWidgetItem()
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 if is_icon:
                     std_icon = self._panel._get_file_icon(full)
                     if std_icon:
@@ -357,18 +889,58 @@ class _FilePane(QWidget):
                 except OSError:
                     sz = 0
                 item.setToolTip(f"{entry}\n{_format_size(sz)}")
-            widget.addItem(item)
+                widget.addItem(item)
+
         widget.blockSignals(False)
+
+    def _group_files_by_date(self, files: list[tuple]) -> list[tuple[str, list]]:
+        now = datetime.datetime.now()
+        today = now.date()
+        yesterday = today - datetime.timedelta(days=1)
+
+        groups = {}
+        for entry, full in files:
+            try:
+                mtime = datetime.datetime.fromtimestamp(os.path.getmtime(full)).date()
+            except OSError:
+                mtime = today
+            if mtime == today:
+                group = "Today"
+            elif mtime == yesterday:
+                group = "Yesterday"
+            elif (today - mtime).days <= 7:
+                group = "Last week"
+            elif mtime.month == now.month and mtime.year == now.year:
+                group = "Earlier this month"
+            elif mtime.year == now.year:
+                group = mtime.strftime("%B %Y")
+            else:
+                group = str(mtime.year)
+            if group not in groups:
+                groups[group] = []
+            groups[group].append((entry, full))
+
+        order = ["Today", "Yesterday", "Last week", "Earlier this month"]
+        result = []
+        for g in order:
+            if g in groups:
+                result.append((g, groups.pop(g)))
+        for g in sorted(groups.keys()):
+            result.append((g, groups[g]))
+        return result
 
     def _populate_detail_tree(self, dirpath: str, entries: list[str], filter_text: str):
         widget = self._detail_tree
         widget.setSortingEnabled(False)
         widget.blockSignals(True)
         widget.clear()
+        use_thumbs = self._panel._thumb_size >= 20
         for entry in entries:
             full = os.path.join(dirpath, entry)
-            if entry.startswith("."): continue
-            if filter_text and filter_text.lower() not in entry.lower(): continue
+            if entry.startswith("."):
+                continue
+            if filter_text and filter_text.lower() not in entry.lower():
+                continue
             item = QTreeWidgetItem()
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             if os.path.isdir(full):
@@ -381,13 +953,26 @@ class _FilePane(QWidget):
                 item.setText(2, "File folder")
                 item.setToolTip(0, f"Folder: {full}")
             else:
-                try:
-                    fi = QFileInfo(full)
-                    icon = self._panel._icon_provider.icon(fi)
-                    if icon and not icon.isNull():
-                        item.setIcon(0, icon)
-                except Exception:
-                    pass
+                if use_thumbs:
+                    pm = _get_thumbnail(full, self._panel._thumb_size)
+                    if pm and not pm.isNull():
+                        item.setIcon(0, QIcon(pm))
+                    else:
+                        try:
+                            fi = QFileInfo(full)
+                            icon = self._panel._icon_provider.icon(fi)
+                            if icon and not icon.isNull():
+                                item.setIcon(0, icon)
+                        except Exception:
+                            pass
+                else:
+                    try:
+                        fi = QFileInfo(full)
+                        icon = self._panel._icon_provider.icon(fi)
+                        if icon and not icon.isNull():
+                            item.setIcon(0, icon)
+                    except Exception:
+                        pass
                 item.setText(0, entry)
                 try:
                     sz = os.path.getsize(full)
@@ -413,10 +998,9 @@ class _FilePane(QWidget):
                 try:
                     mtime = os.path.getmtime(full)
                     dt = datetime.datetime.fromtimestamp(mtime)
-                    item.setText(3, dt.strftime("%Y-%m-%d %H:%M"))
+                    item.setText(3, dt.strftime("%d.%m.%Y %H:%M"))
                 except OSError:
                     item.setText(3, "")
-                item.setToolTip(0, f"{entry}\n{_format_size(sz) if sz else ''}")
             item.setData(0, Qt.ItemDataRole.UserRole, full)
             widget.addTopLevelItem(item)
         widget.blockSignals(False)
@@ -429,6 +1013,183 @@ class _FilePane(QWidget):
         self.populate_files(self._current_dir)
 
 
+class _NavBar(QWidget):
+    def __init__(self, panel: ProjectPanel, parent=None):
+        super().__init__(parent)
+        self._panel = panel
+        self.setFixedHeight(scale(34))
+        self.setStyleSheet(f"""
+            QWidget {{
+                background: {_WIN10_TOOLBAR};
+                border-bottom: 1px solid {_WIN10_BORDER};
+            }}
+        """)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(scale(4), scale(2), scale(4), scale(2))
+        layout.setSpacing(scale(1))
+
+        self._back_btn = _NavButton("\u25C0", "Back (Alt+Left)")
+        self._back_btn.setEnabled(False)
+        self._back_btn.clicked.connect(self._panel._go_back)
+        layout.addWidget(self._back_btn)
+
+        self._forward_btn = _NavButton("\u25B6", "Forward (Alt+Right)")
+        self._forward_btn.setEnabled(False)
+        self._forward_btn.clicked.connect(self._panel._go_forward)
+        layout.addWidget(self._forward_btn)
+
+        self._up_btn = _NavButton("\u25B2", "Up (Alt+Up)")
+        self._up_btn.clicked.connect(self._panel._go_to_parent)
+        layout.addWidget(self._up_btn)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setStyleSheet(f"color: {_WIN10_BORDER};")
+        sep.setFixedWidth(1)
+        layout.addWidget(sep)
+
+        self._address_bar = QLineEdit()
+        self._address_bar.setReadOnly(True)
+        self._address_bar.setStyleSheet(f"""
+            QLineEdit {{
+                background: {_WIN10_ADDRESS_BG};
+                color: {_WIN10_TEXT};
+                border: 1px solid {_WIN10_BORDER};
+                border-radius: 2px;
+                padding: 3px 8px;
+                font-size: 12px;
+                min-height: 22px;
+                selection-background-color: {_WIN10_ACCENT_DIM};
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {_WIN10_ACCENT};
+            }}
+        """)
+        layout.addWidget(self._address_bar, 1)
+
+        self._search_bar = QLineEdit()
+        self._search_bar.setPlaceholderText("\U0001F50D Search...")
+        self._search_bar.setClearButtonEnabled(True)
+        self._search_bar.setMaximumWidth(scale(200))
+        self._search_bar.textChanged.connect(self._on_search)
+        self._search_bar.setStyleSheet(f"""
+            QLineEdit {{
+                background: {_WIN10_SEARCH_BG};
+                color: {_WIN10_TEXT};
+                border: 1px solid {_WIN10_BORDER};
+                border-radius: 2px;
+                padding: 2px 24px 2px 8px;
+                font-size: 11px;
+                min-height: 20px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {_WIN10_ACCENT};
+            }}
+            QLineEdit::placeholder {{
+                color: {_WIN10_TEXT_DIM};
+            }}
+        """)
+        layout.addWidget(self._search_bar)
+
+    def _on_search(self, text):
+        self._panel._active_pane()._on_search(text)
+
+    def update_address(self, path: str):
+        display = path.replace(self._panel._project_root, os.path.basename(self._panel._project_root))
+        display = display.replace("\\", " \u25B8 ").replace("/", " \u25B8 ")
+        self._address_bar.setText(display)
+
+
+class _StatusBar(QWidget):
+    def __init__(self, panel: ProjectPanel, parent=None):
+        super().__init__(parent)
+        self._panel = panel
+        self.setFixedHeight(scale(22))
+        self.setStyleSheet(f"""
+            QWidget {{
+                background: {_WIN10_TOOLBAR};
+                border-top: 1px solid {_WIN10_BORDER};
+            }}
+        """)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(scale(10), 0, scale(10), 0)
+        layout.setSpacing(scale(20))
+
+        self._count_label = QLabel("0 items")
+        self._count_label.setStyleSheet(f"color: {_WIN10_TEXT}; font-size: 11px; border: none; background: transparent;")
+        layout.addWidget(self._count_label)
+
+        sep = QLabel("|")
+        sep.setStyleSheet(f"color: {_WIN10_BORDER}; font-size: 11px; border: none; background: transparent;")
+        layout.addWidget(sep)
+
+        self._selected_label = QLabel("")
+        self._selected_label.setStyleSheet(f"color: {_WIN10_TEXT_DIM}; font-size: 11px; border: none; background: transparent;")
+        layout.addWidget(self._selected_label)
+
+        layout.addStretch()
+
+        self._path_label = QLabel("")
+        self._path_label.setStyleSheet(f"color: {_WIN10_TEXT_DIM}; font-size: 11px; border: none; background: transparent;")
+        layout.addWidget(self._path_label)
+
+    def update_counts(self, total: int, selected: int = 0):
+        self._count_label.setText(f"{total} item{'s' if total != 1 else ''}")
+        if selected > 0:
+            self._selected_label.setText(f"{selected} selected")
+        else:
+            self._selected_label.setText("")
+
+    def update_path(self, path: str):
+        short = path
+        if len(short) > 60:
+            short = "..." + short[-57:]
+        self._path_label.setText(short)
+
+
+class _FileListDelegate(QStyledItemDelegate):
+    def __init__(self, panel, parent=None):
+        super().__init__(parent)
+        self._panel = panel
+
+    def paint(self, painter, option, index):
+        group_type = index.data(Qt.ItemDataRole.UserRole + 1)
+        if group_type == "group_header":
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            rect = option.rect
+            painter.fillRect(rect, QColor(_WIN10_GROUP_HEADER))
+            line_pen = QPen(QColor(_WIN10_BORDER), 1)
+            painter.setPen(line_pen)
+            painter.drawLine(rect.x(), rect.y(), rect.x() + rect.width(), rect.y())
+            painter.drawLine(rect.x(), rect.y() + rect.height() - 1, rect.x() + rect.width(), rect.y() + rect.height() - 1)
+            font = painter.font()
+            font.setPointSize(9)
+            font.setBold(False)
+            painter.setFont(font)
+            text = index.data(Qt.ItemDataRole.UserRole + 2) or ""
+            count = index.data(Qt.ItemDataRole.UserRole + 3) or 0
+            fm = QFontMetrics(font)
+            x = rect.x() + scale(8)
+            y = rect.y() + (rect.height() + fm.ascent() - fm.descent()) // 2
+            painter.setPen(QPen(QColor(_WIN10_TEXT), 1))
+            painter.drawText(x, y, text)
+            if count > 0:
+                count_text = f" ({count})"
+                painter.setPen(QPen(QColor(_WIN10_TEXT_DIM), 1))
+                text_w = fm.horizontalAdvance(text)
+                painter.drawText(x + text_w + scale(2), y, count_text)
+            painter.restore()
+        else:
+            super().paint(painter, option, index)
+
+    def sizeHint(self, option, index):
+        group_type = index.data(Qt.ItemDataRole.UserRole + 1)
+        if group_type == "group_header":
+            return QSize(0, scale(24))
+        return super().sizeHint(option, index)
+
+
 class ProjectPanel(QDockWidget):
     file_double_clicked = pyqtSignal(str)
     prefab_drag_started = pyqtSignal(str)
@@ -436,15 +1197,21 @@ class ProjectPanel(QDockWidget):
     file_selected = pyqtSignal(str)
 
     def __init__(self, engine: Engine, project_root: str = "assets", parent=None):
-        super().__init__("Assets", parent)
+        super().__init__("Project", parent)
         self._engine = engine
         self._project_root = os.path.abspath(project_root)
         self._thumb_size = 64
         self._icon_provider = QFileIconProvider()
-        self._view_mode = VIEW_ICON
+        self._view_mode = VIEW_DETAILS
         self._dual_pane = False
+        self._history = [[], []]
+        self._history_index = 0
+        self._nav_bar = None
+        self._status_bar = None
         self._setup_ui()
         self._populate_tree()
+        self._push_history(self._project_root)
+        self.setStyleSheet(_WIN10_STYLE)
 
     def load_config(self, config) -> None:
         thumb_size = config.get("project.thumb_size", self._thumb_size)
@@ -484,18 +1251,76 @@ class ProjectPanel(QDockWidget):
                 return self._pane_b
         return self._pane_a
 
+    def _push_history(self, path: str):
+        if self._history_index < len(self._history[0]):
+            self._history[0] = self._history[0][:self._history_index + 1]
+        if self._history[0] and self._history[0][-1] == path:
+            return
+        self._history[0].append(path)
+        self._history[1].clear()
+        self._update_nav_buttons()
+
+    def _go_back(self):
+        if len(self._history[0]) > 1:
+            self._history[1].append(self._history[0].pop())
+            self._history_index = len(self._history[0]) - 1
+            path = self._history[0][-1]
+            self._active_pane().populate_files(path)
+            self._update_nav_buttons()
+
+    def _go_forward(self):
+        if self._history[1]:
+            path = self._history[1].pop()
+            self._history[0].append(path)
+            self._history_index = len(self._history[0]) - 1
+            self._active_pane().populate_files(path)
+            self._update_nav_buttons()
+
+    def _update_nav_buttons(self):
+        if self._nav_bar:
+            self._nav_bar._back_btn.setEnabled(len(self._history[0]) > 1)
+            self._nav_bar._forward_btn.setEnabled(len(self._history[1]) > 0)
+
     def _setup_ui(self):
         w = QWidget()
         main_layout = QVBoxLayout(w)
-        main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.setSpacing(2)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        toolbar = QHBoxLayout()
+        toolbar = QWidget()
+        toolbar.setFixedHeight(scale(32))
+        toolbar.setStyleSheet(f"""
+            QWidget {{
+                background: {_WIN10_TOOLBAR};
+                border-bottom: 1px solid {_WIN10_BORDER};
+            }}
+        """)
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(scale(4), scale(2), scale(4), scale(2))
+        toolbar_layout.setSpacing(scale(2))
 
         create_btn = QToolButton()
-        create_btn.setText("Create")
+        create_btn.setText("+ New")
+        create_btn.setToolTip("Create new asset")
+        create_btn.setFixedHeight(scale(26))
         create_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        create_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder))
+        create_btn.setStyleSheet(f"""
+            QToolButton {{
+                background: transparent;
+                color: {_WIN10_TEXT};
+                border: 1px solid transparent;
+                border-radius: 3px;
+                font-size: 11px;
+                padding: 0 8px;
+            }}
+            QToolButton:hover {{
+                background: {_WIN10_HOVER};
+                border: 1px solid {_WIN10_BORDER};
+            }}
+            QToolButton:pressed {{
+                background: #444;
+            }}
+        """)
         create_menu = QMenu(self)
         for name, cb in [
             ("Folder", self._create_new_folder),
@@ -509,46 +1334,120 @@ class ProjectPanel(QDockWidget):
             a.triggered.connect(cb)
             create_menu.addAction(a)
         create_btn.setMenu(create_menu)
-        toolbar.addWidget(create_btn)
+        toolbar_layout.addWidget(create_btn)
 
-        self._view_mode_btn = QPushButton()
-        self._view_mode_btn.setFixedWidth(scale(28))
-        self._view_mode_btn.setToolTip("Toggle View Mode")
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.VLine)
+        sep1.setStyleSheet(f"color: {_WIN10_BORDER};")
+        sep1.setFixedWidth(1)
+        toolbar_layout.addWidget(sep1)
+
+        self._view_mode_btn = QToolButton()
+        self._view_mode_btn.setFixedSize(scale(26), scale(26))
+        self._view_mode_btn.setToolTip("View Mode")
         self._view_mode_btn.clicked.connect(self._toggle_view_mode)
         self._update_view_mode_icon()
-        toolbar.addWidget(self._view_mode_btn)
+        self._view_mode_btn.setStyleSheet(f"""
+            QToolButton {{
+                background: transparent;
+                color: {_WIN10_TEXT_DIM};
+                border: 1px solid transparent;
+                border-radius: 3px;
+                font-size: 13px;
+            }}
+            QToolButton:hover {{
+                background: {_WIN10_HOVER};
+                border: 1px solid {_WIN10_BORDER};
+                color: {_WIN10_TEXT};
+            }}
+        """)
+        toolbar_layout.addWidget(self._view_mode_btn)
 
         self._zoom_slider = QSlider(Qt.Orientation.Horizontal)
         self._zoom_slider.setFixedWidth(scale(80))
         self._zoom_slider.setRange(MIN_THUMB, MAX_THUMB)
         self._zoom_slider.setValue(self._thumb_size)
         self._zoom_slider.valueChanged.connect(self._on_zoom_changed)
-        toolbar.addWidget(self._zoom_slider)
+        toolbar_layout.addWidget(self._zoom_slider)
 
-        self._dual_pane_btn = QPushButton()
-        self._dual_pane_btn.setFixedWidth(scale(28))
-        self._dual_pane_btn.setToolTip("Toggle Dual Pane Mode")
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.VLine)
+        sep2.setStyleSheet(f"color: {_WIN10_BORDER};")
+        sep2.setFixedWidth(1)
+        toolbar_layout.addWidget(sep2)
+
+        self._dual_pane_btn = QToolButton()
+        self._dual_pane_btn.setFixedSize(scale(26), scale(26))
+        self._dual_pane_btn.setToolTip("Dual Pane")
         self._dual_pane_btn.setCheckable(True)
         self._dual_pane_btn.setChecked(False)
-        self._dual_pane_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView))
+        self._dual_pane_btn.setText("\u258C\u2590")
         self._dual_pane_btn.toggled.connect(self._toggle_dual_pane)
-        toolbar.addWidget(self._dual_pane_btn)
+        self._dual_pane_btn.setStyleSheet(f"""
+            QToolButton {{
+                background: transparent;
+                color: {_WIN10_TEXT_DIM};
+                border: 1px solid transparent;
+                border-radius: 3px;
+                font-size: 11px;
+            }}
+            QToolButton:hover {{
+                background: {_WIN10_HOVER};
+                border: 1px solid {_WIN10_BORDER};
+                color: {_WIN10_TEXT};
+            }}
+            QToolButton:checked {{
+                background: {_WIN10_ACCENT_DIM};
+                border: 1px solid {_WIN10_ACCENT};
+                color: {_WIN10_ACCENT};
+            }}
+        """)
+        toolbar_layout.addWidget(self._dual_pane_btn)
 
-        refresh_btn = QPushButton()
-        refresh_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
-        refresh_btn.setFixedWidth(scale(28))
-        refresh_btn.setToolTip("Refresh")
+        refresh_btn = QToolButton()
+        refresh_btn.setFixedSize(scale(26), scale(26))
+        refresh_btn.setToolTip("Refresh (F5)")
+        refresh_btn.setText("\u21BB")
         refresh_btn.clicked.connect(self._refresh)
-        toolbar.addWidget(refresh_btn)
-        main_layout.addLayout(toolbar)
+        refresh_btn.setStyleSheet(f"""
+            QToolButton {{
+                background: transparent;
+                color: {_WIN10_TEXT_DIM};
+                border: 1px solid transparent;
+                border-radius: 3px;
+                font-size: 14px;
+            }}
+            QToolButton:hover {{
+                background: {_WIN10_HOVER};
+                border: 1px solid {_WIN10_BORDER};
+                color: {_WIN10_TEXT};
+            }}
+        """)
+        toolbar_layout.addWidget(refresh_btn)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        toolbar_layout.addStretch()
+        main_layout.addWidget(toolbar)
+
+        self._nav_bar = _NavBar(self)
+        main_layout.addWidget(self._nav_bar)
+
+        content = QWidget()
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+
         self._folder_tree = FolderTreeWidget(self)
-        self._folder_tree.setHeaderHidden(True)
-        self._folder_tree.setMinimumWidth(120)
+        self._folder_tree.setMinimumWidth(scale(160))
+        self._folder_tree.setMaximumWidth(scale(280))
         self._folder_tree.itemClicked.connect(self._on_folder_selected)
         self._folder_tree.setDragEnabled(True)
-        splitter.addWidget(self._folder_tree)
+        content_layout.addWidget(self._folder_tree)
+
+        tree_separator = QFrame()
+        tree_separator.setFrameShape(QFrame.Shape.VLine)
+        tree_separator.setStyleSheet(f"color: {_WIN10_BORDER}; background: {_WIN10_BORDER};")
+        tree_separator.setFixedWidth(1)
+        content_layout.addWidget(tree_separator)
 
         self._pane_a = _FilePane(self)
         self._pane_a.set_active(True)
@@ -556,14 +1455,58 @@ class ProjectPanel(QDockWidget):
 
         self._pane_b = None
         self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter.setHandleWidth(1)
+        self._pane_splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background: {_WIN10_BORDER};
+            }}
+            QSplitter::handle:horizontal {{
+                width: 1px;
+            }}
+        """)
         self._pane_splitter.addWidget(self._pane_a)
 
         self._setup_shortcuts()
         self._apply_view_mode()
-        splitter.addWidget(self._pane_splitter)
-        splitter.setSizes([150, 350])
-        main_layout.addWidget(splitter, 1)
+        content_layout.addWidget(self._pane_splitter, 1)
+        main_layout.addWidget(content, 1)
+
+        self._status_bar = _StatusBar(self)
+        main_layout.addWidget(self._status_bar)
+
         self.setWidget(w)
+
+        self._connect_mesh_loader()
+        self._pane_a.populate_files(self._project_root)
+
+    def _connect_mesh_loader(self):
+        from editor.resource_picker import _get_mesh_loader
+        loader = _get_mesh_loader()
+        loader.mesh_data_ready.connect(self._on_mesh_data_ready, Qt.ConnectionType.QueuedConnection)
+
+    def _on_mesh_data_ready(self, path: str, size: int, verts, indices):
+        from editor.resource_picker import _render_mesh_for_cache
+        pixmap = _render_mesh_for_cache(path, size, verts, indices)
+        if pixmap is None:
+            return
+        icon = QIcon(pixmap)
+        for pane in (self._pane_a, self._pane_b):
+            if not pane:
+                continue
+            if self._view_mode == VIEW_DETAILS:
+                tree = pane._detail_tree
+                for i in range(tree.topLevelItemCount()):
+                    item = tree.topLevelItem(i)
+                    item_path = item.data(0, Qt.ItemDataRole.UserRole)
+                    if item_path == path:
+                        item.setIcon(0, icon)
+            else:
+                fl = pane._file_list
+                for i in range(fl.count()):
+                    item = fl.item(i)
+                    item_path = item.data(Qt.ItemDataRole.UserRole)
+                    if item_path == path:
+                        item.setIcon(icon)
 
     def _toggle_dual_pane(self, checked):
         self._dual_pane = checked
@@ -574,6 +1517,7 @@ class ProjectPanel(QDockWidget):
                 self._pane_splitter.setSizes([self._pane_splitter.width() // 2] * 2)
                 self._pane_b.populate_files(self._pane_a._current_dir)
                 self._install_pane_focus(self._pane_b)
+                self._apply_view_mode()
             self._pane_a.set_active(not self._pane_b._active)
             self._pane_b.set_active(not self._pane_a._active)
         else:
@@ -595,6 +1539,10 @@ class ProjectPanel(QDockWidget):
                     other = self._pane_b if pane is self._pane_a else self._pane_a
                     if other:
                         other.set_active(False)
+                    if self._nav_bar:
+                        self._nav_bar.update_address(pane._current_dir)
+                    if self._status_bar:
+                        self._status_bar.update_path(pane._current_dir)
                     break
         return super().eventFilter(obj, event)
 
@@ -607,6 +1555,9 @@ class ProjectPanel(QDockWidget):
             "Ctrl+D": self._duplicate_selected,
             "Ctrl+A": lambda: self._active_widget().selectAll(),
             "Ctrl+Shift+N": self._create_new_folder,
+            "Alt+Left": self._go_back,
+            "Alt+Right": self._go_forward,
+            "Alt+Up": self._go_to_parent,
         }
         for seq_str, cb in mapping.items():
             s = QShortcut(QKeySequence(seq_str), self)
@@ -618,14 +1569,21 @@ class ProjectPanel(QDockWidget):
 
     def _update_view_mode_icon(self):
         icons = {
-            VIEW_ICON: QStyle.StandardPixmap.SP_FileDialogContentsView,
-            VIEW_LIST: QStyle.StandardPixmap.SP_FileDialogListView,
-            VIEW_DETAILS: QStyle.StandardPixmap.SP_FileDialogDetailedView,
+            VIEW_ICON: "\u25A0",
+            VIEW_DETAILS: "\u250C\u2500",
         }
-        self._view_mode_btn.setIcon(self.style().standardIcon(icons.get(self._view_mode, VIEW_ICON)))
+        self._view_mode_btn.setText(icons.get(self._view_mode, "\u25A0"))
+        tooltips = {
+            VIEW_ICON: "Icon View",
+            VIEW_DETAILS: "Details View",
+        }
+        self._view_mode_btn.setToolTip(tooltips.get(self._view_mode, "View Mode"))
 
     def _toggle_view_mode(self):
-        self._view_mode = (self._view_mode + 1) % 3
+        if self._view_mode == VIEW_ICON:
+            self._view_mode = VIEW_DETAILS
+        else:
+            self._view_mode = VIEW_ICON
         self._apply_view_mode()
         self._update_view_mode_icon()
         self._pane_a.refresh()
@@ -635,27 +1593,23 @@ class ProjectPanel(QDockWidget):
     def _apply_view_mode(self):
         is_detail = self._view_mode == VIEW_DETAILS
         for pane in (self._pane_a, self._pane_b):
-            if not pane: continue
+            if not pane:
+                continue
             pane._stack.setCurrentIndex(1 if is_detail else 0)
             fl = pane._file_list
             if not is_detail:
-                is_list = self._view_mode == VIEW_LIST
-                if is_list:
-                    fl.setViewMode(QListWidget.ViewMode.ListMode)
-                    fl.setIconSize(QSize(16, 16))
-                    fl.setSpacing(0)
-                    fl.setUniformItemSizes(True)
-                    fl.setWordWrap(False)
-                    fl.setGridSize(QSize(-1, -1))
-                else:
-                    fl.setViewMode(QListWidget.ViewMode.IconMode)
-                    fl.setIconSize(QSize(self._thumb_size, self._thumb_size))
-                    fl.setGridSize(QSize(self._thumb_size + 20, self._thumb_size + 36))
-                    fl.setWordWrap(True)
-                    fl.setSpacing(2)
-                    fl.setUniformItemSizes(True)
-                    fl.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self._zoom_slider.setVisible(self._view_mode == VIEW_ICON)
+                fl.setViewMode(QListWidget.ViewMode.IconMode)
+                fl.setIconSize(QSize(self._thumb_size, self._thumb_size))
+                fl.setGridSize(QSize(self._thumb_size + scale(20), self._thumb_size + scale(36)))
+                fl.setWordWrap(True)
+                fl.setSpacing(2)
+                fl.setUniformItemSizes(True)
+                fl.setResizeMode(QListWidget.ResizeMode.Adjust)
+            else:
+                pt = max(7, min(20, int(self._thumb_size / 6)))
+                pane._detail_tree.setStyleSheet(
+                    f"font-size: {pt}px; background: {_WIN10_BG}; color: {_WIN10_TEXT}; border: none;")
+        self._zoom_slider.setVisible(True)
 
     def wheelEvent(self, event: QWheelEvent):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -674,15 +1628,29 @@ class ProjectPanel(QDockWidget):
         self._thumb_size = val
         if self._view_mode == VIEW_ICON:
             for pane in (self._pane_a, self._pane_b):
-                if not pane: continue
+                if not pane:
+                    continue
                 pane._file_list.setIconSize(QSize(val, val))
-                pane._file_list.setGridSize(QSize(val + 20, val + 36))
-            self._active_pane().refresh()
+                pane._file_list.setGridSize(QSize(val + scale(20), val + scale(36)))
+        else:
+            pt = max(7, min(20, int(val / 6)))
+            icon_sz = max(16, min(64, int(val * 0.5)))
+            for pane in (self._pane_a, self._pane_b):
+                if not pane:
+                    continue
+                pane._detail_tree.setStyleSheet(
+                    f"font-size: {pt}px; background: {_WIN10_BG}; color: {_WIN10_TEXT}; border: none;")
+                pane._detail_tree.setIconSize(QSize(icon_sz, icon_sz))
 
     def _open_path(self, path: str):
         pane = self._active_pane()
         if os.path.isdir(path):
             pane.populate_files(path)
+            self._push_history(path)
+            if self._nav_bar:
+                self._nav_bar.update_address(path)
+            if self._status_bar:
+                self._status_bar.update_path(path)
         else:
             ext = os.path.splitext(path)[1].lower()
             if ext == ".zpes":
@@ -705,19 +1673,28 @@ class ProjectPanel(QDockWidget):
         parent = os.path.dirname(pane._current_dir)
         if parent and os.path.commonpath([parent, self._project_root]) == self._project_root:
             pane.populate_files(parent)
+            self._push_history(parent)
+            if self._nav_bar:
+                self._nav_bar.update_address(parent)
+            if self._status_bar:
+                self._status_bar.update_path(parent)
 
     def _go_to_root(self):
         self._active_pane().populate_files(self._project_root)
+        self._push_history(self._project_root)
+        if self._nav_bar:
+            self._nav_bar.update_address(self._project_root)
+        if self._status_bar:
+            self._status_bar.update_path(self._project_root)
 
     def _populate_tree(self):
         self._folder_tree.clear()
         root_item = QTreeWidgetItem(self._folder_tree)
-        root_item.setText(0, "Assets")
+        root_item.setText(0, os.path.basename(self._project_root))
         root_item.setData(0, Qt.ItemDataRole.UserRole, self._project_root)
         root_item.setIcon(0, self._icon_provider.icon(QFileIconProvider.IconType.Folder))
         self._add_subfolders(root_item, self._project_root)
         root_item.setExpanded(True)
-        self._pane_a.populate_files(self._project_root)
 
     def _add_subfolders(self, parent_item: QTreeWidgetItem, dirpath: str):
         try:
@@ -732,6 +1709,7 @@ class ProjectPanel(QDockWidget):
                 item.setData(0, Qt.ItemDataRole.UserRole, full)
                 item.setIcon(0, self._icon_provider.icon(QFileIconProvider.IconType.Folder))
                 self._add_subfolders(item, full)
+
     def _on_list_item_changed(self, item: QListWidgetItem):
         old_path = item.data(Qt.ItemDataRole.UserRole)
         if not old_path or not os.path.exists(old_path):
@@ -797,7 +1775,12 @@ class ProjectPanel(QDockWidget):
             pass
 
     def _on_file_single_click(self, item):
-        path = item.data(Qt.ItemDataRole.UserRole) if hasattr(item, 'data') else None
+        if isinstance(item, QTreeWidgetItem):
+            path = item.data(0, Qt.ItemDataRole.UserRole)
+        elif hasattr(item, 'data'):
+            path = item.data(Qt.ItemDataRole.UserRole)
+        else:
+            path = None
         if path and os.path.isfile(path):
             self.file_selected.emit(path)
 
@@ -806,11 +1789,17 @@ class ProjectPanel(QDockWidget):
             path = item.data(0, Qt.ItemDataRole.UserRole)
         else:
             path = item.data(Qt.ItemDataRole.UserRole)
-        if not path: return
+        if not path:
+            return
         if os.path.isdir(path):
             pane = self._active_pane()
             pane.populate_files(path)
+            self._push_history(path)
             self._sync_tree_selection(path)
+            if self._nav_bar:
+                self._nav_bar.update_address(path)
+            if self._status_bar:
+                self._status_bar.update_path(path)
         else:
             ext = os.path.splitext(path)[1].lower()
             if ext == ".zpes":
@@ -826,12 +1815,14 @@ class ProjectPanel(QDockWidget):
 
     def _sync_tree_selection(self, dirpath: str):
         root = self._folder_tree.topLevelItem(0)
-        if not root: return
+        if not root:
+            return
         stack = [(root, root.data(0, Qt.ItemDataRole.UserRole))]
         while stack:
             item, path = stack.pop()
             if path == dirpath:
                 self._folder_tree.setCurrentItem(item)
+                self._folder_tree.scrollToItem(item)
                 return
             for i in range(item.childCount()):
                 child = item.child(i)
@@ -839,6 +1830,7 @@ class ProjectPanel(QDockWidget):
 
     def _refresh(self):
         self._populate_tree()
+        self._pane_a.refresh()
         if self._pane_b:
             self._pane_b.refresh()
 
@@ -846,15 +1838,23 @@ class ProjectPanel(QDockWidget):
         dirpath = item.data(0, Qt.ItemDataRole.UserRole)
         if dirpath and os.path.isdir(dirpath):
             self._active_pane().populate_files(dirpath)
+            self._push_history(dirpath)
+            if self._nav_bar:
+                self._nav_bar.update_address(dirpath)
+            if self._status_bar:
+                self._status_bar.update_path(dirpath)
 
     def _show_file_context_menu(self, pos):
         widget = self.sender()
         item = widget.itemAt(pos) if isinstance(widget, (QTreeWidget, QListWidget)) else None
         menu = QMenu(self)
+        menu.setStyleSheet(_WIN10_STYLE)
         if item:
             path = (item.data(0, Qt.ItemDataRole.UserRole) if isinstance(item, QTreeWidgetItem)
                     else item.data(Qt.ItemDataRole.UserRole))
-            if os.path.isdir(path):
+            if not path:
+                pass
+            elif os.path.isdir(path):
                 open_act = QAction("Open", self)
                 open_act.triggered.connect(lambda p=path: self._active_pane().populate_files(p))
                 menu.addAction(open_act)
@@ -888,31 +1888,31 @@ class ProjectPanel(QDockWidget):
                     act = QAction("Open", self)
                     act.triggered.connect(lambda: self.file_double_clicked.emit(path))
                     menu.addAction(act)
-            menu.addSeparator()
-            cut_act = QAction("Cut\tCtrl+X", self)
-            cut_act.triggered.connect(lambda: self._cut_selected())
-            menu.addAction(cut_act)
-            copy_act = QAction("Copy\tCtrl+C", self)
-            copy_act.triggered.connect(lambda: self._copy_selected())
-            menu.addAction(copy_act)
-            paste_act = QAction("Paste\tCtrl+V", self)
-            paste_act.triggered.connect(self._paste_clipboard)
-            menu.addAction(paste_act)
-            menu.addSeparator()
-            rename_act = QAction("Rename\tF2", self)
-            rename_act.triggered.connect(lambda: self._rename_item(widget, item))
-            menu.addAction(rename_act)
-            delete_act = QAction("Delete\tDel", self)
-            delete_act.triggered.connect(lambda: self._delete_selected())
-            menu.addAction(delete_act)
-            menu.addSeparator()
-            dup_act = QAction("Duplicate\tCtrl+D", self)
-            dup_act.triggered.connect(lambda: self._duplicate_selected())
-            menu.addAction(dup_act)
-            menu.addSeparator()
-            reveal_act = QAction("Show in File Manager", self)
-            reveal_act.triggered.connect(lambda: self._reveal_file(path))
-            menu.addAction(reveal_act)
+                menu.addSeparator()
+                cut_act = QAction("Cut\tCtrl+X", self)
+                cut_act.triggered.connect(lambda: self._cut_selected())
+                menu.addAction(cut_act)
+                copy_act = QAction("Copy\tCtrl+C", self)
+                copy_act.triggered.connect(lambda: self._copy_selected())
+                menu.addAction(copy_act)
+                paste_act = QAction("Paste\tCtrl+V", self)
+                paste_act.triggered.connect(self._paste_clipboard)
+                menu.addAction(paste_act)
+                menu.addSeparator()
+                rename_act = QAction("Rename\tF2", self)
+                rename_act.triggered.connect(lambda: self._rename_item(widget, item))
+                menu.addAction(rename_act)
+                delete_act = QAction("Delete\tDel", self)
+                delete_act.triggered.connect(lambda: self._delete_selected())
+                menu.addAction(delete_act)
+                menu.addSeparator()
+                dup_act = QAction("Duplicate\tCtrl+D", self)
+                dup_act.triggered.connect(lambda: self._duplicate_selected())
+                menu.addAction(dup_act)
+                menu.addSeparator()
+                reveal_act = QAction("Show in File Manager", self)
+                reveal_act.triggered.connect(lambda: self._reveal_file(path))
+                menu.addAction(reveal_act)
         menu.addSeparator()
         copy_path_act = QAction("Copy Path", self)
         if item:
@@ -933,9 +1933,11 @@ class ProjectPanel(QDockWidget):
     def _start_drag_list(self, supported_actions):
         fl = self._active_pane()._file_list
         items = fl.selectedItems()
-        if not items: return
+        if not items:
+            return
         paths = [i.data(Qt.ItemDataRole.UserRole) for i in items if i.data(Qt.ItemDataRole.UserRole)]
-        if not paths: return
+        if not paths:
+            return
         drag = QDrag(fl)
         mime = QMimeData()
         uri_paths = ["file:///" + os.path.abspath(p).replace("\\", "/") for p in paths]
@@ -950,19 +1952,22 @@ class ProjectPanel(QDockWidget):
 
     def _on_file_list_drop(self, event):
         paths = self._extract_drop_paths(event)
-        if not paths: return
+        if not paths:
+            return
         self._move_or_copy_files(paths, dest_dir=self._active_pane()._current_dir)
         event.acceptProposedAction()
 
     def _on_detail_tree_drop(self, event):
         paths = self._extract_drop_paths(event)
-        if not paths: return
+        if not paths:
+            return
         self._move_or_copy_files(paths, dest_dir=self._active_pane()._current_dir)
         event.acceptProposedAction()
 
     def _on_folder_tree_drop(self, event):
         paths = self._extract_drop_paths(event)
-        if not paths: return
+        if not paths:
+            return
         target_item = self._folder_tree.itemAt(event.pos())
         if target_item:
             target_path = target_item.data(0, Qt.ItemDataRole.UserRole)
@@ -989,10 +1994,12 @@ class ProjectPanel(QDockWidget):
             dest_dir = self._active_pane()._current_dir
         errors = []
         for src in paths:
-            if not os.path.exists(src): continue
+            if not os.path.exists(src):
+                continue
             name = os.path.basename(src)
             dst = os.path.join(dest_dir, name)
-            if src == dst or src.startswith(dst + os.sep): continue
+            if src == dst or src.startswith(dst + os.sep):
+                continue
             if os.path.exists(dst):
                 base, ext = os.path.splitext(name)
                 counter = 1
@@ -1023,9 +2030,11 @@ class ProjectPanel(QDockWidget):
     def _start_drag_detail(self, supported_actions):
         dt = self._active_pane()._detail_tree
         items = dt.selectedItems()
-        if not items: return
+        if not items:
+            return
         paths = [i.data(0, Qt.ItemDataRole.UserRole) for i in items]
-        if not paths: return
+        if not paths:
+            return
         drag = QDrag(dt)
         mime = QMimeData()
         uri_paths = ["file:///" + os.path.abspath(p).replace("\\", "/") for p in paths]
@@ -1038,13 +2047,15 @@ class ProjectPanel(QDockWidget):
         drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
 
     def _instantiate_prefab(self, path: str):
-        if not self._engine.scene: return
+        if not self._engine.scene:
+            return
         from core.prefab import Prefab
         from core.engine import Engine
         pref = Prefab.load(path)
         if pref:
             e = pref.instantiate(self._engine.scene, Engine.instance()._component_registry)
-            if e: self._engine._emit_event("entity_created", e)
+            if e:
+                self._engine._emit_event("entity_created", e)
 
     def _reveal_file(self, path: str):
         import subprocess, sys
@@ -1185,8 +2196,10 @@ class ProjectPanel(QDockWidget):
 
     def _create_new_scene(self):
         path, _ = QFileDialog.getSaveFileName(self, "Create Scene", self._current_dir(), "Scenes (*.zpes)")
-        if not path: return
-        if not path.endswith(".zpes"): path += ".zpes"
+        if not path:
+            return
+        if not path.endswith(".zpes"):
+            path += ".zpes"
         import json
         data = {"name": os.path.splitext(os.path.basename(path))[0], "entities": {}}
         with open(path, "w") as f:
@@ -1195,9 +2208,11 @@ class ProjectPanel(QDockWidget):
 
     def _create_new_material(self):
         path, _ = QFileDialog.getSaveFileName(self, "Create Material", self._current_dir(), "Materials (*.mat)")
-        if not path: return
+        if not path:
+            return
         ext = os.path.splitext(path)[1].lower()
-        if ext != ".mat": path += ".mat"
+        if ext != ".mat":
+            path += ".mat"
         from core.material import Material
         mat = Material(os.path.splitext(os.path.basename(path))[0])
         mat.save(path, self._engine.project_root)
@@ -1205,8 +2220,10 @@ class ProjectPanel(QDockWidget):
 
     def _create_new_animclip(self):
         path, _ = QFileDialog.getSaveFileName(self, "Create Animation Clip", self._current_dir(), "Animation Clips (*.animclip)")
-        if not path: return
-        if not path.endswith(".animclip"): path += ".animclip"
+        if not path:
+            return
+        if not path.endswith(".animclip"):
+            path += ".animclip"
         from core.components.animation.animation_clip import AnimationClip
         clip = AnimationClip(os.path.splitext(os.path.basename(path))[0])
         clip.save(path)
@@ -1214,8 +2231,10 @@ class ProjectPanel(QDockWidget):
 
     def _create_new_animcontroller(self):
         path, _ = QFileDialog.getSaveFileName(self, "Create Animator Controller", self._current_dir(), "Animator Controllers (*.animcontroller)")
-        if not path: return
-        if not path.endswith(".animcontroller"): path += ".animcontroller"
+        if not path:
+            return
+        if not path.endswith(".animcontroller"):
+            path += ".animcontroller"
         from core.components.animation.animator_controller import AnimatorController
         ctrl = AnimatorController(os.path.splitext(os.path.basename(path))[0])
         ctrl.save(path)
@@ -1223,8 +2242,10 @@ class ProjectPanel(QDockWidget):
 
     def _create_new_script(self):
         path, _ = QFileDialog.getSaveFileName(self, "Create Script", self._current_dir(), "Python Scripts (*.py)")
-        if not path: return
-        if not path.endswith(".py"): path += ".py"
+        if not path:
+            return
+        if not path.endswith(".py"):
+            path += ".py"
         template = '''from __future__ import annotations
 from core.ecs import Component, ComponentRegistry
 @ComponentRegistry.register
