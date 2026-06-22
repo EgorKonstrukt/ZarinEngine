@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QPushButton, QLabel,
                              QSpinBox, QCheckBox, QFileDialog, QMessageBox, QComboBox)
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -8,7 +9,7 @@ def _separator():
     s = QFrame()
     s.setFrameShape(QFrame.Shape.VLine)
     s.setStyleSheet("QFrame { color: #555; margin: 2px 0; }")
-    s.setFixedWidth(2)
+    s.setFixedWidth(scale(2))
     return s
 
 
@@ -105,14 +106,14 @@ class GuiEditorToolbar(QFrame):
         layout.addWidget(self._screen_h_sb)
         layout.addWidget(_separator())
         self._zoom_out_btn = QPushButton("−")
-        self._zoom_out_btn.setFixedWidth(24)
+        self._zoom_out_btn.setFixedWidth(scale(24))
         self._zoom_out_btn.clicked.connect(lambda: self.zoom_changed.emit(-0.1))
         layout.addWidget(self._zoom_out_btn)
         self._zoom_label = QLabel("100%")
         self._zoom_label.setStyleSheet("color: #ddd; font-size: 11px; min-width: 36px; text-align: center;")
         layout.addWidget(self._zoom_label)
         self._zoom_in_btn = QPushButton("+")
-        self._zoom_in_btn.setFixedWidth(24)
+        self._zoom_in_btn.setFixedWidth(scale(24))
         self._zoom_in_btn.clicked.connect(lambda: self.zoom_changed.emit(0.1))
         layout.addWidget(self._zoom_in_btn)
         layout.addStretch()

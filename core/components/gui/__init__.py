@@ -30,6 +30,7 @@ from core.components.gui.scrollbar_component import ScrollBarComponent
 from core.components.gui.toolbutton_component import ToolButtonComponent
 from core.components.gui.fontcombo_component import FontComboComponent
 from core.components.gui.mdiarea_component import MdiAreaComponent
+from core.components.gui.tooltip_component import TooltipComponent
 from core.components.gui.layout_element_component import LayoutElementComponent
 from core.components.gui.horizontal_layout_component import (
     HorizontalLayoutComponent, VerticalLayoutComponent, GridLayoutComponent,
@@ -106,6 +107,7 @@ __all__ = [
     "ToolButtonComponent",
     "FontComboComponent",
     "MdiAreaComponent",
+    "TooltipComponent",
     "LayoutElementComponent",
     "HorizontalLayoutComponent",
     "VerticalLayoutComponent",

@@ -7,6 +7,7 @@ from PyQt6.QtGui import QFont
 from core.logger import Logger, LogLevel, LogEntry
 import time as _time
 import re
+from core.editor_scale import scale, scale_xy
 
 _LEVEL_META = {
     LogLevel.DEBUG:   ("#c0c0c0", "#2d2d2d", QStyle.StandardPixmap.SP_ArrowRight),
@@ -99,14 +100,14 @@ class ConsolePanel(QDockWidget):
         clear_btn = QPushButton()
         clear_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
         clear_btn.setToolTip("Clear Console")
-        clear_btn.setFixedWidth(28)
+        clear_btn.setFixedWidth(scale(28))
         clear_btn.clicked.connect(self._clear)
         toolbar.addWidget(clear_btn)
 
         coll_btn = QPushButton()
         coll_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
         coll_btn.setToolTip("Collapse All")
-        coll_btn.setFixedWidth(28)
+        coll_btn.setFixedWidth(scale(28))
         coll_btn.clicked.connect(self._collapse_all)
         toolbar.addWidget(coll_btn)
 

@@ -17,6 +17,8 @@ from editor.panels.terminal_panel import TerminalPanel
 from editor.panels.undo_history_panel import UndoHistoryPanel
 from editor.panels.collaboration_panel import CollaborationPanel
 from editor.panels.mesh_editor_panel import MeshEditorPanel
+from editor.panels.animation_panel import AnimationPanel
+from editor.panels.animator_panel import AnimatorPanel
 from editor.gui_editor.gui_viewport import GuiEditorViewport
 
 _AREA_MAP = {
@@ -171,6 +173,27 @@ def register_default_docks(mw):
     mw._mesh_editor = MeshEditorPanel(mw._engine, mw)
     mw._mesh_editor.setObjectName("MeshEditorDock")
     register_dock(mw, mw._mesh_editor, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._animation = AnimationPanel(mw._engine, mw)
+    mw._animation.load_config(get_global_config())
+    mw._animation.setObjectName("AnimationDock")
+    mw._animation.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._animation.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._animation, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._animator = AnimatorPanel(mw._engine, mw)
+    mw._animator.load_config(get_global_config())
+    mw._animator.setObjectName("AnimatorDock")
+    mw._animator.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._animator.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._animator, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._animator.state_selected_signal.connect(mw._inspector.show_animator_state)
+    mw._animator.transition_selected_signal.connect(mw._inspector.show_animator_transition)
+    mw._animator.selection_cleared.connect(mw._inspector.clear_animator_mode)
 
 
 def register_plugin_docks(mw):
@@ -208,12 +231,14 @@ def add_all_docks(mw):
     mw.addDockWidget(area, mw._plugin_mgr)
     mw.addDockWidget(area, mw._collab_panel)
     mw.addDockWidget(area, mw._mesh_editor)
+    mw.addDockWidget(area, mw._animation)
+    mw.addDockWidget(area, mw._animator)
     for dock in mw._docks:
         if dock not in (mw._hierarchy, mw._viewport_dock, mw._inspector,
                         mw._play_dock, mw._gui_editor, mw._prefab_editor,
                         mw._console, mw._profiler, mw._project,
                         mw._terminal, mw._undo_history, mw._plugin_mgr,
-                        mw._collab_panel):
+                        mw._collab_panel, mw._mesh_editor, mw._animation, mw._animator):
             mw.addDockWidget(area, dock)
 
 
@@ -221,6 +246,8 @@ def build_dock_layout(mw):
     mw.tabifyDockWidget(mw._viewport_dock, mw._play_dock)
     mw.tabifyDockWidget(mw._viewport_dock, mw._gui_editor)
     mw.tabifyDockWidget(mw._viewport_dock, mw._prefab_editor)
+    mw.tabifyDockWidget(mw._viewport_dock, mw._animation)
+    mw.tabifyDockWidget(mw._viewport_dock, mw._animator)
     mw.tabifyDockWidget(mw._inspector, mw._console)
     mw.tabifyDockWidget(mw._inspector, mw._profiler)
     mw.tabifyDockWidget(mw._inspector, mw._project)

@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QTabWidget, QWidget)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
+from core.editor_scale import scale, scale_xy
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -276,15 +277,15 @@ class BuildDialog(QDialog):
         toolbar.addWidget(self._profile_combo)
 
         self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedWidth(60)
+        self._save_btn.setFixedWidth(scale(60))
         toolbar.addWidget(self._save_btn)
 
         self._save_as_btn = QPushButton("Save As...")
-        self._save_as_btn.setFixedWidth(80)
+        self._save_as_btn.setFixedWidth(scale(80))
         toolbar.addWidget(self._save_as_btn)
 
         self._delete_btn = QPushButton("Delete")
-        self._delete_btn.setFixedWidth(60)
+        self._delete_btn.setFixedWidth(scale(60))
         toolbar.addWidget(self._delete_btn)
 
         toolbar.addStretch()
@@ -292,7 +293,7 @@ class BuildDialog(QDialog):
         self._backend_combo = QComboBox()
         self._backend_combo.addItem("Nuitka", "nuitka")
         self._backend_combo.addItem("PyInstaller", "pyinstaller")
-        self._backend_combo.setFixedWidth(120)
+        self._backend_combo.setFixedWidth(scale(120))
         toolbar.addWidget(self._backend_combo)
 
         main.addLayout(toolbar)
@@ -369,7 +370,7 @@ class BuildDialog(QDialog):
         self._output_dir_edit = QLineEdit()
         self._output_dir_edit.setPlaceholderText("Output directory...")
         browse_btn = QPushButton("...")
-        browse_btn.setFixedWidth(32)
+        browse_btn.setFixedWidth(scale(32))
         browse_btn.clicked.connect(self._browse_output_dir)
         h = QHBoxLayout()
         h.addWidget(self._output_dir_edit, 1)

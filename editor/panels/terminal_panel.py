@@ -12,6 +12,7 @@ from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QFont, QKeyEvent
 
 from core.engine import Engine
 from core.logger import Logger
+from core.editor_scale import scale, scale_xy
 
 
 class CodeInput(QLineEdit):
@@ -357,13 +358,13 @@ class TerminalPanel(QDockWidget):
 
         add_btn = QPushButton("+")
         add_btn.setToolTip("New Python Tab")
-        add_btn.setFixedWidth(24)
+        add_btn.setFixedWidth(scale(24))
         add_btn.clicked.connect(self._add_tab)
         toolbar.addWidget(add_btn)
 
         ps_btn = QPushButton("PS")
         ps_btn.setToolTip("New PowerShell Tab (embedded)")
-        ps_btn.setFixedWidth(28)
+        ps_btn.setFixedWidth(scale(28))
         ps_btn.clicked.connect(self._open_powershell)
         toolbar.addWidget(ps_btn)
 
@@ -371,13 +372,13 @@ class TerminalPanel(QDockWidget):
 
         clear_btn = QPushButton("C")
         clear_btn.setToolTip("Clear Current Tab")
-        clear_btn.setFixedWidth(24)
+        clear_btn.setFixedWidth(scale(24))
         clear_btn.clicked.connect(self._clear_current)
         toolbar.addWidget(clear_btn)
 
         reset_btn = QPushButton("R")
         reset_btn.setToolTip("Reset Python Namespace")
-        reset_btn.setFixedWidth(24)
+        reset_btn.setFixedWidth(scale(24))
         reset_btn.clicked.connect(self._reset_namespace)
         toolbar.addWidget(reset_btn)
 

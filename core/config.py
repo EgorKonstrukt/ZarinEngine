@@ -102,6 +102,7 @@ def get_global_config() -> Config:
             "editor": {
                 "theme": "dark",
                 "font_size": 12,
+                "ui_scale": 100,
                 "language": "en",
                 "auto_save": True,
                 "auto_save_interval": 300,
@@ -212,14 +213,15 @@ def get_global_config() -> Config:
                 "refresh_interval": 100
             },
             "project": {
-                "thumb_size": 64
+                "thumb_size": 64,
+                "dual_pane": True
             },
             "file_assoc": {
                 "registered_extensions": ""
             }
         })
         _global_config._data.pop("physics", None)
-        for _rk in ["editor.theme", "editor.font_size", "editor.language"]:
+        for _rk in ["editor.theme", "editor.font_size", "editor.ui_scale", "editor.language"]:
             _global_config.mark_restart(_rk)
     return _global_config
 def get_project_config(project_path: str) -> Config:

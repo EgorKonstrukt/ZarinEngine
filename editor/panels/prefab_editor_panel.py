@@ -12,6 +12,7 @@ from core.logger import Logger
 if TYPE_CHECKING:
     from core.engine import Engine
     from core.ecs import Scene
+from core.editor_scale import scale, scale_xy
 
 class PrefabViewport(QOpenGLWidget):
     def __init__(self, engine: Engine, parent=None):
@@ -148,12 +149,12 @@ class PrefabEditorPanel(QDockWidget):
         toolbar.addWidget(self._prefab_name_label)
         toolbar.addStretch()
         self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedHeight(24)
+        self._save_btn.setFixedHeight(scale(24))
         self._save_btn.clicked.connect(self._on_save)
         self._save_btn.setEnabled(False)
         toolbar.addWidget(self._save_btn)
         self._return_btn = QPushButton("Return to Scene")
-        self._return_btn.setFixedHeight(24)
+        self._return_btn.setFixedHeight(scale(24))
         self._return_btn.clicked.connect(self._on_return)
         self._return_btn.setEnabled(False)
         toolbar.addWidget(self._return_btn)

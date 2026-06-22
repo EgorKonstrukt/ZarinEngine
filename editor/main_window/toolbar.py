@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import QToolBar, QPushButton
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QIcon
@@ -14,11 +15,11 @@ def setup_toolbar(mw):
     mw._main_toolbar.setMovable(False)
     mw.addToolBar(Qt.ToolBarArea.TopToolBarArea, mw._main_toolbar)
     mw._play_btn = QPushButton("Play")
-    mw._play_btn.setFixedWidth(60)
+    mw._play_btn.setFixedWidth(scale(60))
     mw._play_btn.clicked.connect(lambda: toggle_play_stop(mw))
     mw._main_toolbar.addWidget(mw._play_btn)
     mw._pause_btn = QPushButton("Pause")
-    mw._pause_btn.setFixedWidth(60)
+    mw._pause_btn.setFixedWidth(scale(60))
     mw._pause_btn.setEnabled(False)
     mw._main_toolbar.addWidget(mw._pause_btn)
     mw._gizmo_vis_act = QAction(QIcon.fromTheme("transform-both", QIcon("")), "Gizmo", mw)

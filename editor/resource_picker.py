@@ -20,11 +20,14 @@ _thumbnail_cache: dict[str, QPixmap] = {}
 _thumbnail_mutex = QMutex()
 
 from editor.constants import THUMB_SIZE, PREVIEW_SIZE
+from core.editor_scale import scale, scale_xy
 
 EXTENSION_FILTERS = {
     "Models (*.obj *.fbx *.stl *.gltf *.glb *.usdz)": (".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz"),
     "Audio (*.wav *.mp3 *.ogg)": (".wav", ".mp3", ".ogg"),
     "Python Scripts (*.py)": (".py",),
+    "Animation Clips (*.animclip)": (".animclip",),
+    "Animator Controllers (*.animcontroller)": (".animcontroller",),
     "All Files (*)": (),
 }
 
@@ -396,6 +399,10 @@ def _get_thumbnail_raw(path: str, size: int) -> QPixmap:
         return _draw_material_icon(size)
     if ext in (".vert", ".frag"):
         return _draw_shader_icon(size)
+    if ext == ".animclip":
+        return _draw_file_icon(size)
+    if ext == ".animcontroller":
+        return _draw_file_icon(size)
     return _draw_file_icon(size)
 
 def _get_material_thumbnail(path: str, size: int) -> Optional[QPixmap]:
@@ -550,7 +557,7 @@ class ResourcePickerDialog(QDialog):
 
         self._preview_icon = QLabel()
         self._preview_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._preview_icon.setFixedSize(PREVIEW_SIZE + 20, PREVIEW_SIZE + 20)
+        self._preview_icon.setFixedSize(*scale_xy(PREVIEW_SIZE + 20, PREVIEW_SIZE + 20))
         self._preview_icon.setStyleSheet("background: #2a2a2a; border: 1px solid #444; border-radius: 4px;")
         preview_layout.addWidget(self._preview_icon)
 
@@ -675,6 +682,7 @@ class ResourcePickerDialog(QDialog):
             ".png": "Image", ".jpg": "Image", ".jpeg": "Image",
             ".zpes": "Scene", ".zpep": "Prefab", ".mat": "Material",
             ".vert": "Vertex Shader", ".frag": "Fragment Shader",
+            ".animclip": "Animation Clip", ".animcontroller": "Animator Controller",
         }
         type_name = type_map.get(ext, "File")
 

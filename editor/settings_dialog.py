@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
 from PyQt6.QtCore import Qt, pyqtSignal
 from core.config import Config
 from core.physics.collision_layers import MAX_LAYERS, DEFAULT_LAYER_NAMES
+from core.editor_scale import scale, scale_xy
 
 SECTION_ICONS = {
     "editor": QStyle.StandardPixmap.SP_FileDialogDetailedView,
@@ -58,6 +59,7 @@ FIELD_TOOLTIPS = {
     "physics.multi_threaded": "Run physics simulation in a separate process for better performance",
     "editor.theme": "Editor color theme (restart required)",
     "editor.font_size": "Base font size in the editor (restart required)",
+    "editor.ui_scale": "Global UI scale percentage (50-200, restart required)",
     "editor.language": "Editor UI language (restart required)",
     "editor.auto_save": "Automatically save the current scene",
     "editor.auto_save_interval": "Auto-save interval in seconds",
@@ -181,6 +183,7 @@ FIELD_TOOLTIPS = {
 
 _FIELD_RANGES = {
     "editor.font_size": (8, 72),
+    "editor.ui_scale": (50, 200),
     "editor.auto_save_interval": (10, 600),
     "camera.fov": (1, 179),
     "camera.near": (0.001, 10.0),
@@ -310,7 +313,7 @@ class SliderSpinBox(QWidget):
             self._spin = QSpinBox()
             self._spin.setRange(-999999, 999999)
             self._spin.setValue(int(value))
-        self._spin.setFixedWidth(100)
+        self._spin.setFixedWidth(scale(100))
         if slider_range:
             lo, hi = slider_range
             if is_float:
@@ -394,7 +397,7 @@ class SettingsDialog(QDialog):
         content_layout.setSpacing(0)
 
         self._list_widget = QListWidget()
-        self._list_widget.setFixedWidth(180)
+        self._list_widget.setFixedWidth(scale(180))
         self._list_widget.setFrameShape(QFrame.Shape.StyledPanel)
         self._list_widget.currentRowChanged.connect(self._on_list_row_changed)
 
@@ -427,7 +430,7 @@ class SettingsDialog(QDialog):
         restore_btn = QPushButton("Restore Defaults")
         restore_btn.clicked.connect(self._on_restore)
         close_btn = QPushButton("Close")
-        close_btn.setFixedWidth(80)
+        close_btn.setFixedWidth(scale(80))
         close_btn.clicked.connect(self.close)
         bar_layout.addWidget(restore_btn)
         bar_layout.addStretch()
@@ -569,13 +572,13 @@ class SettingsDialog(QDialog):
         btn_layout.setSpacing(12)
 
         register_btn = QPushButton("Register File Associations")
-        register_btn.setFixedHeight(32)
+        register_btn.setFixedHeight(scale(32))
         register_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 4px 16px; }")
         register_btn.clicked.connect(self._on_register_assoc)
         btn_layout.addWidget(register_btn)
 
         unregister_btn = QPushButton("Unregister File Associations")
-        unregister_btn.setFixedHeight(32)
+        unregister_btn.setFixedHeight(scale(32))
         unregister_btn.setStyleSheet("QPushButton { padding: 4px 16px; }")
         unregister_btn.clicked.connect(self._on_unregister_assoc)
         btn_layout.addWidget(unregister_btn)
@@ -584,7 +587,7 @@ class SettingsDialog(QDialog):
         outer_layout.addWidget(btn_group)
 
         self._assoc_refresh_btn = QPushButton("Refresh Status")
-        self._assoc_refresh_btn.setFixedWidth(120)
+        self._assoc_refresh_btn.setFixedWidth(scale(120))
         self._assoc_refresh_btn.clicked.connect(self._refresh_assoc_status)
         br_layout = QHBoxLayout()
         br_layout.setContentsMargins(16, 4, 16, 12)
@@ -692,9 +695,9 @@ class SettingsDialog(QDialog):
         for i in range(MAX_LAYERS):
             name = layer_names[i] if i < len(layer_names) else DEFAULT_LAYER_NAMES[i]
             lbl = QLabel(f"{i}:")
-            lbl.setFixedWidth(24)
+            lbl.setFixedWidth(scale(24))
             le = QLineEdit(name)
-            le.setFixedWidth(160)
+            le.setFixedWidth(scale(160))
             le.textChanged.connect(lambda _, idx=i: self._on_layer_name_changed(idx))
             self._layer_edits.append(le)
             gl.addWidget(lbl, i, 0)
@@ -761,18 +764,18 @@ class CollisionMatrixDialog(QDialog):
         self._checks = []
         for i in range(MAX_LAYERS):
             lbl = QLabel(f"{i}:{layer_names[i] if i < len(layer_names) else ''}")
-            lbl.setFixedWidth(140)
+            lbl.setFixedWidth(scale(140))
             grid.addWidget(lbl, i + 1, 0)
             lbl_top = QLabel(str(i))
             lbl_top.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl_top.setFixedWidth(24)
+            lbl_top.setFixedWidth(scale(24))
             grid.addWidget(lbl_top, 0, i + 1)
             row_checks = []
             for j in range(MAX_LAYERS):
                 chk = QCheckBox()
                 chk.setChecked(bool(self._matrix[i] & (1 << j)))
                 chk.stateChanged.connect(lambda _, ri=i, cj=j: self._on_toggle(ri, cj))
-                chk.setFixedWidth(24)
+                chk.setFixedWidth(scale(24))
                 grid.addWidget(chk, i + 1, j + 1, Qt.AlignmentFlag.AlignCenter)
                 row_checks.append(chk)
             self._checks.append(row_checks)

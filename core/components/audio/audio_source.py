@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+from typing import Callable
 from core.ecs import Component, ComponentRegistry
 from core.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
@@ -25,6 +26,9 @@ class AudioSource(Component):
             InspectorField("volume_rolloff", "Volume Rolloff", FieldType.CURVE),
             InspectorField("min_distance", "Min Distance", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("max_distance", "Max Distance", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=1.0, decimals=2),
+            InspectorField("offset", "Offset (sec)", FieldType.FLOAT, min_val=0.0, max_val=3600.0, step=0.01, decimals=2),
+            InspectorField("fade_in_time", "Fade In Time", FieldType.FLOAT, min_val=0.0, max_val=60.0, step=0.1, decimals=2),
+            InspectorField("fade_out_time", "Fade Out Time", FieldType.FLOAT, min_val=0.0, max_val=60.0, step=0.1, decimals=2),
         ]
 
     def __init__(self):
@@ -38,8 +42,22 @@ class AudioSource(Component):
         self.volume_rolloff: list[list[float]] = [[0, 1], [1, 0]]
         self.min_distance: float = 1.0
         self.max_distance: float = 50.0
+        self.offset: float = 0.0
+        self.fade_in_time: float = 0.0
+        self.fade_out_time: float = 0.0
         self._source_id: int = 0
         self._playing: bool = False
+        self._fade_volume: float = 1.0
+        self._fade_duration: float = 0.0
+        self._fade_elapsed: float = 0.0
+        self._fade_from: float = 1.0
+        self._fade_to: float = 1.0
+        self._fade_active: bool = False
+        self._fade_stop_requested: bool = False
+        self._callback_finished_fired: bool = False
+        self._prev_pos: Vec3 | None = None
+        self.on_finished: Callable[[], None] | None = None
+        self.on_stopped: Callable[[], None] | None = None
 
     def on_start(self):
         if self.play_on_awake and self.clip_path and not self._playing:
@@ -51,18 +69,11 @@ class AudioSource(Component):
 
     def on_disable(self):
         if self._source_id:
-            mgr = AudioSourceManager.instance()
-            if mgr:
-                mgr.stop(self._source_id)
-                self._source_id = 0
-            self._playing = False
+            self._stop_immediate()
 
     def on_destroy(self):
         if self._source_id:
-            mgr = AudioSourceManager.instance()
-            if mgr:
-                mgr.stop(self._source_id)
-                self._source_id = 0
+            self._stop_immediate()
 
     @staticmethod
     def linear_preset() -> list[list[float]]:
@@ -75,6 +86,48 @@ class AudioSource(Component):
             keys.append([t, 1.0 / (1.0 + 2.0 * t)])
         keys.append([1.0, 0.0])
         return keys
+
+    def fade_in(self, duration: float):
+        self._fade_from = 0.0
+        self._fade_to = 1.0
+        self._fade_duration = duration
+        self._fade_elapsed = 0.0
+        self._fade_volume = 0.0
+        self._fade_active = True
+
+    def fade_out(self, duration: float):
+        self._fade_from = self._fade_volume
+        self._fade_to = 0.0
+        self._fade_duration = duration
+        self._fade_elapsed = 0.0
+        self._fade_active = True
+
+    def _process_fade(self, dt: float):
+        if not self._fade_active:
+            return
+        self._fade_elapsed += dt
+        t = min(self._fade_elapsed / self._fade_duration, 1.0) if self._fade_duration > 0 else 1.0
+        self._fade_volume = self._fade_from + (self._fade_to - self._fade_from) * t
+        if t >= 1.0:
+            self._fade_volume = self._fade_to
+            self._fade_active = False
+            if self._fade_to == 0.0:
+                self._stop_immediate()
+                if self.on_stopped:
+                    try:
+                        self.on_stopped()
+                    except Exception as e:
+                        Logger.error(f"AudioSource.on_stopped error: {e}")
+
+    def _stop_immediate(self):
+        if self._source_id:
+            mgr = AudioSourceManager.instance()
+            if mgr:
+                mgr.stop(self._source_id)
+                self._source_id = 0
+        self._playing = False
+        self._fade_active = False
+        self._fade_stop_requested = False
 
     def play(self):
         if not self.clip_path or self._playing: return
@@ -91,33 +144,65 @@ class AudioSource(Component):
             min_distance=self.min_distance,
             max_distance=self.max_distance,
             volume_rolloff=self.volume_rolloff,
+            offset=self.offset,
         )
         if source:
             self._source_id = source
             self._playing = True
+            self._callback_finished_fired = False
+            self._fade_stop_requested = False
+            self._prev_pos = None
+            if self.fade_in_time > 0:
+                import openal as al
+                al.alSourcef(self._source_id, al.AL_GAIN, 0.0)
+                self.fade_in(self.fade_in_time)
+            else:
+                self._fade_volume = 1.0
+                self._fade_active = False
 
     def stop(self):
         if not self._source_id or not self._playing: return
-        mgr = AudioSourceManager.instance()
-        if mgr:
-            mgr.stop(self._source_id)
-            self._source_id = 0
-        self._playing = False
+        if self.fade_out_time > 0 and not self._fade_stop_requested:
+            self._fade_stop_requested = True
+            self.fade_out(self.fade_out_time)
+            return
+        self._stop_immediate()
+        if self.on_stopped:
+            try:
+                self.on_stopped()
+            except Exception as e:
+                Logger.error(f"AudioSource.on_stopped error: {e}")
 
     @property
     def is_playing(self) -> bool: return self._playing
 
     def on_update(self, dt: float):
         if not self._source_id or not self._playing: return
+        self._process_fade(dt)
         try:
             import openal as al
             state = al.ctypes.c_int()
             al.alGetSourcei(self._source_id, al.AL_SOURCE_STATE, state)
             if state.value != al.AL_PLAYING and self.clip_path:
-                # Logger.debug(f"AudioSource stopped, restarting loop={self.loop}")
-                self.stop()
-                if self.loop:
+                was_looping = self.loop
+                was_fade_requested = self._fade_stop_requested
+                self._stop_immediate()
+                if was_looping:
                     self.play()
+                else:
+                    if was_fade_requested:
+                        if self.on_stopped:
+                            try:
+                                self.on_stopped()
+                            except Exception as e:
+                                Logger.error(f"AudioSource.on_stopped error: {e}")
+                    else:
+                        if self.on_finished and not self._callback_finished_fired:
+                            self._callback_finished_fired = True
+                            try:
+                                self.on_finished()
+                            except Exception as e:
+                                Logger.error(f"AudioSource.on_finished error: {e}")
                 return
 
             mgr = AudioSourceManager.instance()
@@ -128,11 +213,19 @@ class AudioSource(Component):
             if tr:
                 p = tr.position
                 pos = (p.x, p.y, p.z)
-            # else:
-            #     Logger.debug("AudioSource: no Transform, using (0,0,0)")
 
-            # Logger.debug(f"AudioSource src={self._source_id} entity_pos=({pos[0]:.2f},{pos[1]:.2f},{pos[2]:.2f})")
-            mgr.update_source(self._source_id, self.volume, self.pitch, pos, self.spatial_blend)
+            if self._prev_pos is not None and dt > 0:
+                vel = (
+                    (pos[0] - self._prev_pos[0]) / dt,
+                    (pos[1] - self._prev_pos[1]) / dt,
+                    (pos[2] - self._prev_pos[2]) / dt,
+                )
+            else:
+                vel = (0.0, 0.0, 0.0)
+            self._prev_pos = pos
+
+            effective_volume = self.volume * self._fade_volume
+            mgr.update_source(self._source_id, effective_volume, self.pitch, pos, self.spatial_blend, vel)
         except Exception as e:
             Logger.error(f"AudioSource.on_update error: {e}")
 
@@ -184,7 +277,10 @@ class AudioSource(Component):
             "loop": self.loop, "play_on_awake": self.play_on_awake,
             "spatial_blend": self.spatial_blend,
             "volume_rolloff": self.volume_rolloff or [[0, 1], [1, 0]],
-            "min_distance": self.min_distance, "max_distance": self.max_distance
+            "min_distance": self.min_distance, "max_distance": self.max_distance,
+            "offset": self.offset,
+            "fade_in_time": self.fade_in_time,
+            "fade_out_time": self.fade_out_time,
         })
         return d
 
@@ -201,4 +297,7 @@ class AudioSource(Component):
         a.volume_rolloff = data.get("volume_rolloff", [[0, 1], [1, 0]])
         a.min_distance = data.get("min_distance", 1.0)
         a.max_distance = data.get("max_distance", 50.0)
+        a.offset = data.get("offset", 0.0)
+        a.fade_in_time = data.get("fade_in_time", 0.0)
+        a.fade_out_time = data.get("fade_out_time", 0.0)
         return a

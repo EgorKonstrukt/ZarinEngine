@@ -17,6 +17,7 @@ from core.gui.system import GuiCanvasSystem
 from core.components.gui import GUI_COMPONENT_MAP
 from editor.gui_editor.gui_toolbar import GuiEditorToolbar
 from editor.gui_editor.widget_palette import WidgetPalette
+from core.editor_scale import scale, scale_xy
 
 
 WIDGET_TYPE_MAP = {
@@ -66,7 +67,7 @@ class GuiEditorViewport(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self._toolbar = GuiEditorToolbar()
-        self._toolbar.setFixedHeight(32)
+        self._toolbar.setFixedHeight(scale(32))
         layout.addWidget(self._toolbar)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self._palette = WidgetPalette()

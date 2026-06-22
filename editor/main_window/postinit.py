@@ -11,6 +11,15 @@ from editor.splash import SplashScreen
 
 def post_init(mw):
     try:
+        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtGui import QFont
+        from core.config import get_global_config
+        cfg = get_global_config()
+        scale = cfg.get("editor.ui_scale", 100)
+        base_size = cfg.get("editor.font_size", 12)
+        f = QFont()
+        f.setPointSizeF(base_size * scale / 100.0)
+        QApplication.setFont(f)
         recent = _get_recent_projects(1)
         if recent:
             project_path = recent[0].get("path", "")

@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QHeaderView, QFrame, QStyledItemDelegate)
 from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QFontMetrics
+from core.editor_scale import scale, scale_xy
 
 def _name_to_color(name: str) -> QColor:
     raw = name.replace("_ms", "").replace("_", "").replace(" ", "").strip().lower()
@@ -35,7 +36,7 @@ class TimelineOverview(QWidget):
         self._hover_index = -1
         self._budget_ms = 16.67
         self.setMouseTracking(True)
-        self.setFixedHeight(self.HEIGHT)
+        self.setFixedHeight(scale(self.HEIGHT))
         self.setMinimumWidth(100)
     def add_frame(self, flat_data: dict, frame_time_ms: float):
         self._frames_data.append({"flat": dict(flat_data), "total": frame_time_ms})
@@ -587,7 +588,7 @@ class ProfilerHeader(QFrame):
         layout.addWidget(self._max_lbl)
         layout.addStretch()
         self._budget_indicator = QLabel("")
-        self._budget_indicator.setFixedSize(10, 10)
+        self._budget_indicator.setFixedSize(*scale_xy(10, 10))
         layout.addWidget(self._budget_indicator)
     def update_stats(self, fps: float, frame_count: int, frame_time_ms: float,
                      min_ms: float, avg_ms: float, max_ms: float):

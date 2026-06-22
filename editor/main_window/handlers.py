@@ -18,6 +18,8 @@ def on_entity_selected(mw, entity):
     mw._viewport.set_selected_entity(entity)
     if hasattr(mw, '_mesh_editor') and mw._mesh_editor:
         mw._mesh_editor.set_entity(entity)
+    if hasattr(mw, '_animation') and mw._animation:
+        mw._animation.set_entity(entity)
 
 
 def on_entities_selected(mw, entities):
@@ -26,6 +28,8 @@ def on_entities_selected(mw, entities):
     mw._viewport.set_selected_entities(entities)
     if entities:
         mw._inspector.set_selected_entities(entities)
+    if hasattr(mw, '_animation') and mw._animation:
+        mw._animation.set_entity(entities[0] if entities else None)
 
 
 def on_entity_selected_from_viewport(mw, entity):
@@ -35,6 +39,8 @@ def on_entity_selected_from_viewport(mw, entity):
     mw._hierarchy.set_selected_entity(entity)
     if hasattr(mw, '_mesh_editor') and mw._mesh_editor:
         mw._mesh_editor.set_entity(entity)
+    if hasattr(mw, '_animation') and mw._animation:
+        mw._animation.set_entity(entity)
 
 
 def on_entities_selected_from_viewport(mw, entities):
@@ -46,6 +52,8 @@ def on_entities_selected_from_viewport(mw, entities):
     else:
         mw._inspector.set_entity(None)
         mw._hierarchy.set_selected_entity(None)
+    if hasattr(mw, '_animation') and mw._animation:
+        mw._animation.set_entity(entities[0] if entities else None)
 
 
 def on_entity_double_clicked(mw, eid: str):
@@ -521,11 +529,15 @@ def sync_after_undo(mw):
         mw._inspector.set_entity(sel)
         mw._inspector.setUpdatesEnabled(True)
         mw._viewport.set_selected_entity(sel)
+        if hasattr(mw, '_animation') and mw._animation:
+            mw._animation.set_entity(sel)
     else:
         mw._hierarchy.refresh()
         sel_ent = mw._hierarchy._selected_entity
         mw._inspector.set_entity(sel_ent if sel_ent else None)
         mw._viewport.set_selected_entity(sel_ent if sel_ent else None)
+        if hasattr(mw, '_animation') and mw._animation:
+            mw._animation.set_entity(sel_ent if sel_ent else None)
     mw._hierarchy.blockSignals(False)
     if mw._engine.scene:
         mw._engine.scene.mark_dirty()
@@ -593,6 +605,14 @@ def open_global_settings(mw):
 def on_global_config_changed(mw, key: str, value):
     from core.config import get_global_config
     cfg = get_global_config()
+    if key == "editor.ui_scale":
+        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtGui import QFont
+        base_size = cfg.get("editor.font_size", 12)
+        f = QFont()
+        f.setPointSizeF(base_size * value / 100.0)
+        QApplication.setFont(f)
+        return
     mw._viewport.load_config(cfg)
     mw._viewport.camera.load_config(cfg)
     mw._viewport.gizmo.load_config(cfg)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QSpinBox, QVBoxLayout, QWidget, QWidgetAction
 
 from core.math3d import Vec3
@@ -86,7 +87,7 @@ def setup_toolbar(vp):
 
     vp._depth_spin.valueChanged.connect(vp._on_depth_changed)
     vp._depth_spin.installEventFilter(vp)
-    vp._toolbar.setFixedHeight(35)
+    vp._toolbar.setFixedHeight(scale(35))
 
 
 def create_camera_menu(vp):

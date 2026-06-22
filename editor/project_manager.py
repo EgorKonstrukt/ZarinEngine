@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QIcon, QAction
 
 from editor.constants import PROJECTS_DB_PATH
+from core.editor_scale import scale, scale_xy
 
 
 def _load_projects_db() -> list[dict]:
@@ -250,7 +251,7 @@ class _NewProjectDialog(QDialog):
         self._path_edit.setPlaceholderText(os.path.expanduser("~"))
         path_layout.addWidget(self._path_edit, 1)
         browse_btn = QPushButton("...")
-        browse_btn.setFixedWidth(32)
+        browse_btn.setFixedWidth(scale(32))
         browse_btn.clicked.connect(self._on_browse)
         path_layout.addWidget(browse_btn)
         layout.addLayout(path_layout)

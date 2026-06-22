@@ -22,7 +22,7 @@ from core.logger import Logger
 if TYPE_CHECKING:
     from core.ecs import Entity
     from core.engine import Engine
-
+from core.editor_scale import scale, scale_xy
 
 _STYLE_BTN = ("QPushButton { color: #ccc; background: #2d2d2d; border: 1px solid #4a4a4a; "
               "border-radius: 3px; padding: 4px 8px; font-size: 11px; } "
@@ -146,7 +146,7 @@ class MeshEditorPanel(QDockWidget):
         self._size_slider.setValue(50)
         self._size_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self._size_label = QLabel("1.0")
-        self._size_label.setFixedWidth(28)
+        self._size_label.setFixedWidth(scale(28))
         self._size_label.setStyleSheet("color: #aaa;")
         self._size_slider.valueChanged.connect(lambda v: self._size_label.setText(f"{v/50:.1f}"))
         size_row.addWidget(self._size_slider)
@@ -161,7 +161,7 @@ class MeshEditorPanel(QDockWidget):
         self._detail_slider.setValue(50)
         self._detail_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self._detail_label = QLabel("32")
-        self._detail_label.setFixedWidth(28)
+        self._detail_label.setFixedWidth(scale(28))
         self._detail_label.setStyleSheet("color: #aaa;")
         self._detail_slider.valueChanged.connect(lambda v: self._detail_label.setText(f"{max(4, v*32//50)}"))
         detail_row.addWidget(self._detail_slider)
@@ -282,7 +282,7 @@ class MeshEditorPanel(QDockWidget):
         self._smooth_angle.valueChanged.connect(self._on_smooth_changed)
         smooth_row.addWidget(self._smooth_angle)
         self._smooth_label = QLabel("45")
-        self._smooth_label.setFixedWidth(24)
+        self._smooth_label.setFixedWidth(scale(24))
         self._smooth_label.setStyleSheet("color: #aaa;")
         smooth_row.addWidget(self._smooth_label)
         layout.addLayout(smooth_row)

@@ -17,6 +17,8 @@ RESOURCE_TYPE_FILTERS = {
     "script": "Python Scripts (*.py)",
     "prefab": "Prefabs (*.zpep)",
     "scene": "Scenes (*.zpes)",
+    "animclip": "Animation Clips (*.animclip)",
+    "animcontroller": "Animator Controllers (*.animcontroller)",
 }
 
 PY_TYPE_TO_FIELD = {

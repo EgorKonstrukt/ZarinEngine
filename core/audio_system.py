@@ -160,6 +160,8 @@ class AudioSystem:
             if not al.oalGetInit():
                 raise RuntimeError("OpenAL oalInit returned not initialized")
             al.alDistanceModel(al.AL_INVERSE_DISTANCE_CLAMPED)
+            al.alDopplerFactor(1.0)
+            al.alSpeedOfSound(343.3)
             AudioSourceManager()
             self._initialized = True
         except Exception as e:
@@ -238,6 +240,10 @@ class AudioSystem:
         if not self._initialized or not al.oalGetInit(): return
         al.alListener3f(al.AL_POSITION, *pos)
 
+    def set_listener_velocity(self, vel: tuple[float, float, float]):
+        if not self._initialized or not al.oalGetInit(): return
+        al.alListener3f(al.AL_VELOCITY, *vel)
+
     def set_listener_orientation(self, at: tuple[float, float, float], up: tuple[float, float, float]):
         if not self._initialized or not al.oalGetInit(): return
         arr = (al.ALfloat * 6)(at[0], at[1], at[2], up[0], up[1], up[2])
@@ -246,6 +252,14 @@ class AudioSystem:
     def set_master_volume(self, volume: float):
         if not self._initialized or not al.oalGetInit(): return
         al.alListenerf(al.AL_GAIN, volume)
+
+    def set_doppler_factor(self, factor: float):
+        if not self._initialized or not al.oalGetInit(): return
+        al.alDopplerFactor(factor)
+
+    def set_speed_of_sound(self, speed: float):
+        if not self._initialized or not al.oalGetInit(): return
+        al.alSpeedOfSound(speed)
 
 
 _AL_AUX_SEND_FILTER = None
@@ -280,7 +294,8 @@ class AudioSourceManager:
 
     def play(self, clip_path: str, loop: bool = False, volume: float = 1.0, pitch: float = 1.0,
              spatial_blend: float = 1.0, min_distance: float = 1.0, max_distance: float = 50.0,
-             volume_rolloff: list[list[float]] = None) -> int | None:
+             volume_rolloff: list[list[float]] = None, offset: float = 0.0,
+             velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> int | None:
         if not al.oalGetInit(): return None
         audio_sys = AudioSystem.instance()
         if not audio_sys: return None
@@ -303,11 +318,14 @@ class AudioSourceManager:
             pass
 
         al.alSource3f(src_val, al.AL_POSITION, 0.0, 0.0, 0.0)
-        al.alSource3f(src_val, al.AL_VELOCITY, 0.0, 0.0, 0.0)
+        al.alSource3f(src_val, al.AL_VELOCITY, *velocity)
         al.alSourcef(src_val, al.AL_REFERENCE_DISTANCE, min_distance)
         al.alSourcef(src_val, al.AL_MAX_DISTANCE, max_distance)
         al.alSourcef(src_val, al.AL_ROLLOFF_FACTOR, 0.0)
         al.alSourcei(src_val, al.AL_SOURCE_RELATIVE, 0 if spatial_blend > 0 else 1)
+
+        if offset > 0.0:
+            al.alSourcef(src_val, 0x1024, offset)
 
         self._active_sources[src_val] = src_val
         self._source_info[src_val] = {
@@ -315,6 +333,8 @@ class AudioSourceManager:
             "max_distance": max_distance,
             "spatial_blend": spatial_blend,
             "volume_rolloff": volume_rolloff or [[0, 1], [1, 0]],
+            "offset": offset,
+            "velocity": velocity,
         }
         self._source_positions[src_val] = (0.0, 0.0, 0.0)
         self._source_aux_slot[src_val] = 0
@@ -322,13 +342,20 @@ class AudioSourceManager:
         return src_val
 
     def update_source(self, source: int, volume: float, pitch: float, position: tuple[float, float, float],
-                      spatial_blend: float | None = None):
+                      spatial_blend: float | None = None,
+                      velocity: tuple[float, float, float] | None = None):
         if not source or not al.oalGetInit(): return
         try:
             state = al.ctypes.c_int()
             al.alGetSourcei(source, al.AL_SOURCE_STATE, state)
             if state.value in (al.AL_PLAYING, al.AL_PAUSED):
                 al.alSourcef(source, al.AL_PITCH, pitch)
+
+                if velocity is not None:
+                    al.alSource3f(source, al.AL_VELOCITY, *velocity)
+                    info = self._source_info.get(source)
+                    if info:
+                        info["velocity"] = velocity
 
                 info = self._source_info.get(source)
                 if spatial_blend is not None and info:

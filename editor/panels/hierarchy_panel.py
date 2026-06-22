@@ -14,6 +14,8 @@ _ENTITY_MIME = "application/x-zpe-entity"
 _COMPONENT_MIME = "application/x-zpe-component"
 
 import os
+from core.editor_scale import scale, scale_xy
+
 def _get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
     icon_name = getattr(cls, '_icon', None)
     if icon_name:
@@ -306,7 +308,7 @@ class HierarchyPanel(QDockWidget):
         self._search.textChanged.connect(self._on_search)
         toolbar.addWidget(self._search, 1)
         add_btn = QPushButton("+")
-        add_btn.setFixedSize(24, 24)
+        add_btn.setFixedSize(*scale_xy(24, 24))
         add_btn.setToolTip("Create Entity")
         add_btn.clicked.connect(self._show_create_menu)
         toolbar.addWidget(add_btn)

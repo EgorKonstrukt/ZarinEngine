@@ -25,6 +25,7 @@ class FieldType(Enum):
     INT_SLIDER = "int_slider"
     LAYER = "layer"
     LAYER_MASK = "layer_mask"
+    ASSET = "asset"
 
 
 @dataclass

@@ -19,10 +19,15 @@ from editor.curve_editor import CurvePreview, CurveEditorDialog
 from core.gui.widgets import AnchorPresetSelector
 from core.config import get_project_config
 from core.physics.collision_layers import MAX_LAYERS, DEFAULT_LAYER_NAMES
+from core.components.animation.animator_controller import (
+    AnimatorController, AnimatorState, AnimatorTransition,
+    AnimatorCondition, AnimatorConditionMode,
+)
 if TYPE_CHECKING:
     from core.ecs import Entity, Component, Scene
     from core.engine import Engine
 
+from core.editor_scale import scale, scale_xy
 _PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)))
 
 _FUSION_BG = "#1e1e1e"
@@ -194,7 +199,7 @@ class _DragLabel(QLabel):
         self._dragging = False
         self._start_x = 0
         self._start_val = 0
-        self.setFixedWidth(14)
+        self.setFixedWidth(scale(14))
         self.setCursor(Qt.CursorShape.SizeHorCursor)
         self.setStyleSheet(f"color: {color}; font-weight: bold;")
     def mousePressEvent(self, event):
@@ -303,7 +308,7 @@ def _make_spinbox(val: float, lo: float = -1e9, hi: float = 1e9, step: float = 0
 
 def _make_color_swatch(rgb: Optional[list[float]], callback) -> QPushButton:
     btn = QPushButton()
-    btn.setFixedSize(28, 22)
+    btn.setFixedSize(*scale_xy(28, 22))
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     _update_swatch(btn, rgb or [0.0, 0.0, 0.0])
     def _pick():
@@ -553,7 +558,7 @@ def _make_resource_picker(path: str, filter_str: str, callback: Callable[[str], 
 
     name = os.path.basename(path) if path else ""
     icon_lbl = QLabel()
-    icon_lbl.setFixedSize(20, 20)
+    icon_lbl.setFixedSize(*scale_xy(20, 20))
     icon_lbl.setStyleSheet(f"border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 2px; background: {_FUSION_BG};")
     _update_resource_icon(icon_lbl, path, 20)
     layout.addWidget(icon_lbl)
@@ -577,7 +582,7 @@ def _make_resource_picker(path: str, filter_str: str, callback: Callable[[str], 
         callback(p)
 
     btn = QPushButton("\u25CB")
-    btn.setFixedSize(22, 22)
+    btn.setFixedSize(*scale_xy(22, 22))
     btn.setToolTip("Pick Resource")
     btn.setStyleSheet(f"""
         QPushButton {{ color: {_FUSION_TEXT_DIM}; border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 11px;
@@ -592,7 +597,7 @@ def _make_resource_picker(path: str, filter_str: str, callback: Callable[[str], 
     layout.addWidget(btn)
 
     clear_btn = QPushButton("x")
-    clear_btn.setFixedSize(20, 20)
+    clear_btn.setFixedSize(*scale_xy(20, 20))
     clear_btn.setToolTip("Clear")
     clear_btn.setStyleSheet(f"""
         QPushButton {{ color: {_FUSION_TEXT_DIM}; border: none; border-radius: {_FUSION_INPUT_RADIUS}; font-size: 10px; background: transparent; }}
@@ -615,7 +620,7 @@ def _make_gameobject_picker(entity_id: str, scene, callback: Callable[[str], Non
     target_entity = scene.get_entity(entity_id) if scene and entity_id else None
     name = target_entity.name if target_entity else ""
     icon_lbl = QLabel()
-    icon_lbl.setFixedSize(20, 20)
+    icon_lbl.setFixedSize(*scale_xy(20, 20))
     icon_lbl.setStyleSheet(f"border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 2px; background: {_FUSION_BG};")
     icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     if target_entity:
@@ -653,7 +658,7 @@ def _make_gameobject_picker(entity_id: str, scene, callback: Callable[[str], Non
         callback(eid)
 
     btn = QPushButton("\u25CB")
-    btn.setFixedSize(22, 22)
+    btn.setFixedSize(*scale_xy(22, 22))
     btn.setToolTip("Pick Entity")
     btn.setStyleSheet(f"""
         QPushButton {{ color: {_FUSION_TEXT_DIM}; border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 11px;
@@ -670,7 +675,7 @@ def _make_gameobject_picker(entity_id: str, scene, callback: Callable[[str], Non
     layout.addWidget(btn)
 
     clear_btn = QPushButton("x")
-    clear_btn.setFixedSize(20, 20)
+    clear_btn.setFixedSize(*scale_xy(20, 20))
     clear_btn.setToolTip("Clear")
     clear_btn.setStyleSheet(f"""
         QPushButton {{ color: {_FUSION_TEXT_DIM}; border: none; border-radius: {_FUSION_INPUT_RADIUS}; font-size: 10px; background: transparent; }}
@@ -695,7 +700,7 @@ def _make_resource_type_picker(path: str, resource_type: str, callback: Callable
 
     name = os.path.basename(path) if path else ""
     icon_lbl = QLabel()
-    icon_lbl.setFixedSize(20, 20)
+    icon_lbl.setFixedSize(*scale_xy(20, 20))
     icon_lbl.setStyleSheet(f"border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 2px; background: {_FUSION_BG};")
     _update_resource_icon(icon_lbl, path, 20)
     layout.addWidget(icon_lbl)
@@ -719,7 +724,7 @@ def _make_resource_type_picker(path: str, resource_type: str, callback: Callable
         callback(p)
 
     btn = QPushButton("\u25CB")
-    btn.setFixedSize(22, 22)
+    btn.setFixedSize(*scale_xy(22, 22))
     btn.setToolTip(f"Pick {resource_type}")
     btn.setStyleSheet(f"""
         QPushButton {{ color: {_FUSION_TEXT_DIM}; border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 11px;
@@ -734,7 +739,7 @@ def _make_resource_type_picker(path: str, resource_type: str, callback: Callable
     layout.addWidget(btn)
 
     clear_btn = QPushButton("x")
-    clear_btn.setFixedSize(20, 20)
+    clear_btn.setFixedSize(*scale_xy(20, 20))
     clear_btn.setToolTip("Clear")
     clear_btn.setStyleSheet(f"""
         QPushButton {{ color: {_FUSION_TEXT_DIM}; border: none; border-radius: {_FUSION_INPUT_RADIUS}; font-size: 10px; background: transparent; }}
@@ -747,6 +752,112 @@ def _make_resource_type_picker(path: str, resource_type: str, callback: Callable
     layout.addWidget(clear_btn)
     return w
 
+
+def _make_asset_picker(path: str, asset_type: str, callback: Callable[[str], None]) -> QWidget:
+    from editor.resource_picker import pick_resource
+    from core.components.scripting.script_component import RESOURCE_TYPE_FILTERS
+    filter_str = RESOURCE_TYPE_FILTERS.get(asset_type, "All Files (*)")
+    w = QWidget()
+    layout = QHBoxLayout(w)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+
+    name = os.path.basename(path) if path else ""
+    icon_lbl = QLabel()
+    icon_lbl.setFixedSize(*scale_xy(20, 20))
+    icon_lbl.setStyleSheet(f"border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 2px; background: {_FUSION_BG};")
+    _update_resource_icon(icon_lbl, path, 20)
+    layout.addWidget(icon_lbl)
+
+    def _on_asset_drop(p: str):
+        _update_display(p)
+    name_lbl = _ResourceDropLabel(_on_asset_drop, name if name else f"None ({asset_type})")
+    name_lbl.setStyleSheet(
+        f"color: {_FUSION_TEXT}; background: {_FUSION_BG_INPUT}; border: 1px solid {_FUSION_BORDER}; border-radius: {_FUSION_INPUT_RADIUS}; padding: 2px 6px;"
+    )
+    name_lbl.setMinimumHeight(22)
+    name_lbl.setToolTip(path if path else f"No {asset_type} selected")
+    layout.addWidget(name_lbl, 1)
+
+    def _update_display(p: str):
+        new_name = os.path.basename(p) if p else ""
+        name_lbl.setText(new_name if new_name else f"None ({asset_type})")
+        name_lbl.setToolTip(p if p else f"No {asset_type} selected")
+        _update_resource_icon(icon_lbl, p, 20)
+        clear_btn.setVisible(bool(p))
+        callback(p)
+
+    btn = QPushButton("\u25CB")
+    btn.setFixedSize(*scale_xy(22, 22))
+    btn.setToolTip(f"Pick {asset_type}")
+    btn.setStyleSheet(f"""
+        QPushButton {{ color: {_FUSION_TEXT_DIM}; border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 11px;
+        background: {_FUSION_BG_INPUT}; font-size: 14px; }}
+        QPushButton:hover {{ background: {_FUSION_BG_HOVER}; color: {_FUSION_TEXT_BRIGHT}; }}
+    """)
+    def _pick():
+        p = pick_resource(w, f"Select {asset_type}", filter_str, path)
+        if p:
+            _update_display(p)
+    btn.clicked.connect(_pick)
+    layout.addWidget(btn)
+
+    create_btn = QPushButton("+")
+    create_btn.setFixedSize(*scale_xy(22, 22))
+    create_btn.setToolTip(f"Create new {asset_type}")
+    create_btn.setStyleSheet(f"""
+        QPushButton {{ color: {_FUSION_TEXT_DIM}; border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: 11px;
+        background: {_FUSION_BG_INPUT}; font-size: 14px; }}
+        QPushButton:hover {{ background: {_FUSION_BG_HOVER}; color: #4ec9b0; }}
+    """)
+    def _create():
+        _create_asset_dialog(w, asset_type, _update_display)
+    create_btn.clicked.connect(_create)
+    layout.addWidget(create_btn)
+
+    clear_btn = QPushButton("x")
+    clear_btn.setFixedSize(*scale_xy(20, 20))
+    clear_btn.setToolTip("Clear")
+    clear_btn.setStyleSheet(f"""
+        QPushButton {{ color: {_FUSION_TEXT_DIM}; border: none; border-radius: {_FUSION_INPUT_RADIUS}; font-size: 10px; background: transparent; }}
+        QPushButton:hover {{ color: {_FUSION_ACCENT_RED}; background: #3a1a1a; }}
+    """)
+    def _clear():
+        _update_display("")
+    clear_btn.clicked.connect(_clear)
+    clear_btn.setVisible(bool(path))
+    layout.addWidget(clear_btn)
+    return w
+
+
+def _create_asset_dialog(parent, asset_type: str, callback: Callable[[str], None]):
+    from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+    from core.components.scripting.script_component import RESOURCE_TYPE_FILTERS
+    project_root = getattr(parent, '_project_root', os.getcwd())
+    name, ok = QInputDialog.getText(parent, f"New {asset_type}", f"Asset name:")
+    if not ok or not name.strip():
+        return
+    fname = name.strip()
+    exts = {"animclip": ".animclip", "animcontroller": ".animcontroller"}
+    ext = exts.get(asset_type, ".asset")
+    if not fname.endswith(ext):
+        fname += ext
+    default_path = os.path.join(project_root, "Assets", fname)
+    path, _ = QFileDialog.getSaveFileName(parent, f"Save {asset_type}", default_path,
+                                          RESOURCE_TYPE_FILTERS.get(asset_type, "All Files (*)"))
+    if not path:
+        return
+    from core.components.animation.animation_clip import AnimationClip
+    if asset_type == "animclip":
+        clip = AnimationClip(name.strip())
+        clip.save(path)
+    elif asset_type == "animcontroller":
+        from core.components.animation.animator_controller import AnimatorController
+        ctrl = AnimatorController(name.strip())
+        ctrl.save(path)
+    callback(path)
+
+
 _XYZ_COLORS = {"X": "#f44747", "Y": "#4ec9b0", "Z": "#5a9cf5"}
 
 
@@ -756,12 +867,12 @@ def _make_vec2_row(label: str, vec: Vec2, callback) -> tuple[QWidget, list[QDoub
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(2)
     lbl = QLabel(label)
-    lbl.setFixedWidth(80)
+    lbl.setFixedWidth(scale(80))
     layout.addWidget(lbl)
     spinboxes = []
     for val, comp_label in [(vec.x, "X"), (vec.y, "Y")]:
         lbl_c = QLabel(comp_label)
-        lbl_c.setFixedWidth(14)
+        lbl_c.setFixedWidth(scale(14))
         color = _XYZ_COLORS.get(comp_label, "#aaa")
         lbl_c.setStyleSheet(f"color: {color}; font-weight: bold;")
         sb = _make_spinbox(val)
@@ -778,7 +889,7 @@ def _make_vec3_row(label: str, vec: Vec3, callback, reset_to: Optional[list] = N
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(2)
     lbl = QLabel(label)
-    lbl.setFixedWidth(80)
+    lbl.setFixedWidth(scale(80))
     layout.addWidget(lbl)
     spinboxes = []
     for val, comp_label in [(vec.x, "X"), (vec.y, "Y"), (vec.z, "Z")]:
@@ -791,7 +902,7 @@ def _make_vec3_row(label: str, vec: Vec3, callback, reset_to: Optional[list] = N
     if reset_to is not None:
         btn = QPushButton()
         btn.setText("\u21ba")
-        btn.setFixedSize(18, 18)
+        btn.setFixedSize(*scale_xy(18, 18))
         btn.setToolTip(f"Reset {label}")
         btn.setStyleSheet(f"""
             QPushButton {{ font-size: 12px; color: {_FUSION_TEXT_DIM}; border: 1px solid {_FUSION_BORDER}; border-radius: {_FUSION_INPUT_RADIUS}; background: transparent; }}
@@ -881,7 +992,7 @@ class ComponentWidget(QWidget):
         header_layout.setSpacing(4)
 
         self._collapse_btn = QPushButton("\u25bc")
-        self._collapse_btn.setFixedSize(14, 14)
+        self._collapse_btn.setFixedSize(*scale_xy(14, 14))
         self._collapse_btn.setFlat(True)
         self._collapse_btn.setStyleSheet(f"""
             QPushButton {{ color: {_FUSION_TEXT_DIM}; font-size: 8px; border: none; background: transparent; }}
@@ -891,7 +1002,7 @@ class ComponentWidget(QWidget):
         header_layout.addWidget(self._collapse_btn)
 
         self._icon_label = QLabel()
-        self._icon_label.setFixedSize(16, 16)
+        self._icon_label.setFixedSize(*scale_xy(16, 16))
         comp_cls = type(component)
         pix = _get_component_icon_pixmap(comp_cls, 16)
         self._icon_label.setPixmap(pix)
@@ -913,7 +1024,7 @@ class ComponentWidget(QWidget):
         header_layout.addWidget(self._enabled_cb)
 
         self._move_up_btn = QPushButton("^")
-        self._move_up_btn.setFixedSize(16, 16)
+        self._move_up_btn.setFixedSize(*scale_xy(16, 16))
         self._move_up_btn.setFlat(True)
         self._move_up_btn.setStyleSheet(f"""
             QPushButton {{ color: {_FUSION_TEXT_DIM}; font-size: 9px; font-weight: bold; border: none; background: transparent; }}
@@ -924,7 +1035,7 @@ class ComponentWidget(QWidget):
         header_layout.addWidget(self._move_up_btn)
 
         self._move_down_btn = QPushButton("v")
-        self._move_down_btn.setFixedSize(16, 16)
+        self._move_down_btn.setFixedSize(*scale_xy(16, 16))
         self._move_down_btn.setFlat(True)
         self._move_down_btn.setStyleSheet(f"""
             QPushButton {{ color: {_FUSION_TEXT_DIM}; font-size: 9px; font-weight: bold; border: none; background: transparent; }}
@@ -1250,7 +1361,7 @@ class ComponentWidget(QWidget):
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(4)
         lbl = QLabel(label)
-        lbl.setFixedWidth(100)
+        lbl.setFixedWidth(scale(100))
         lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
         rl.addWidget(lbl)
         rl.addWidget(widget, 1)
@@ -1532,10 +1643,14 @@ class ComponentWidget(QWidget):
             picker = _make_resource_type_picker(value or "", field.resource_type or "mesh", lambda p: get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, getattr(c, prop_name), p)))
             self._add_field(field.label, picker, prop_name)
 
+        elif field.field_type.value == "asset":
+            picker = _make_asset_picker(value or "", field.resource_type or "animclip", lambda p: get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, getattr(c, prop_name), p)))
+            self._add_field(field.label, picker, prop_name)
+
         elif field.field_type.value == "color":
             old_val = list(value) if value else [0.0, 0.0, 0.0]
             swatch = _make_color_swatch(value, lambda new_val: get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, old_val, list(new_val))))
-            swatch.setFixedSize(28, 22)
+            swatch.setFixedSize(*scale_xy(28, 22))
             self._add_field(field.label, swatch, prop_name)
 
         elif field.field_type.value == "curve":
@@ -1705,11 +1820,11 @@ class ComponentWidget(QWidget):
         rl_header.setContentsMargins(0, 0, 0, 0)
         rl_header.setSpacing(4)
         label = QLabel(field.label)
-        label.setFixedWidth(110)
+        label.setFixedWidth(scale(110))
         rl_header.addWidget(label)
 
         add_btn = QPushButton("+")
-        add_btn.setFixedSize(20, 18)
+        add_btn.setFixedSize(*scale_xy(20, 18))
         add_btn.setToolTip("Add item")
         add_btn.setStyleSheet(f"""
             QPushButton {{ color: {_FUSION_ACCENT_GREEN}; border: 1px solid #3a5a3a; background: {_FUSION_BG_INPUT}; font-weight: bold; font-size: 12px; padding: 0; }}
@@ -1749,7 +1864,7 @@ class ComponentWidget(QWidget):
         rl.setSpacing(3)
 
         idx_label = QLabel(str(index))
-        idx_label.setFixedWidth(16)
+        idx_label.setFixedWidth(scale(16))
         idx_label.setStyleSheet(f"color: {_FUSION_TEXT_DIM}; font-size: 9px;")
         rl.addWidget(idx_label)
 
@@ -1760,7 +1875,7 @@ class ComponentWidget(QWidget):
                 rl.addWidget(widget, 1 if ef.field_type.value in ("gameobject", "string") else 0)
 
         remove_btn = QPushButton("-")
-        remove_btn.setFixedSize(18, 18)
+        remove_btn.setFixedSize(*scale_xy(18, 18))
         remove_btn.setToolTip("Remove item")
         remove_btn.setStyleSheet(f"""
             QPushButton {{ color: {_FUSION_ACCENT_RED}; border: 1px solid #5a2a2a; background: {_FUSION_BG_INPUT}; font-weight: bold; font-size: 12px; padding: 0; }}
@@ -2144,6 +2259,10 @@ class ComponentWidget(QWidget):
             picker = _make_resource_type_picker(value or "", rtype, lambda v, n=prop_name: self._on_script_resource_changed(comp, n, v))
             self._add_field(field.label, picker)
 
+        elif field.field_type.value == "asset":
+            picker = _make_asset_picker(value or "", field.resource_type or "animclip", lambda v, n=prop_name: self._on_script_resource_changed(comp, n, v))
+            self._add_field(field.label, picker)
+
         elif field.field_type.value == "enum":
             enum_class = field.enum_class
             if enum_class:
@@ -2474,6 +2593,12 @@ class InspectorPanel(QDockWidget):
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh_transform)
         self._refresh_timer.start(100)
+        self._animator_mode = False
+        self._animator_state: Optional[AnimatorState] = None
+        self._animator_transition: Optional[AnimatorTransition] = None
+        self._animator_controller: Optional[AnimatorController] = None
+        self._saved_entity: Optional[Entity] = None
+        self._saved_entities: list[Entity] = []
         self._setup_ui()
 
     def load_config(self, config) -> None:
@@ -2493,7 +2618,7 @@ class InspectorPanel(QDockWidget):
         header_layout.setContentsMargins(6, 4, 6, 4)
         header_layout.setSpacing(4)
         self._lock_btn = QPushButton("\U0001F512")
-        self._lock_btn.setFixedSize(22, 22)
+        self._lock_btn.setFixedSize(*scale_xy(22, 22))
         self._lock_btn.setCheckable(True)
         self._lock_btn.setChecked(False)
         self._lock_btn.setToolTip("Lock Inspector")
@@ -2526,7 +2651,7 @@ class InspectorPanel(QDockWidget):
         header_layout.addWidget(self._name_edit, 1)
         self._tag_edit = QLineEdit()
         self._tag_edit.setPlaceholderText("Tag")
-        self._tag_edit.setFixedWidth(80)
+        self._tag_edit.setFixedWidth(scale(80))
         self._tag_edit.setStyleSheet(f"""
             QLineEdit {{
                 background: {_FUSION_BG};
@@ -2545,7 +2670,7 @@ class InspectorPanel(QDockWidget):
         header_layout.addWidget(layer_lbl)
         self._layer_sb = QSpinBox()
         self._layer_sb.setRange(0, 31)
-        self._layer_sb.setFixedWidth(46)
+        self._layer_sb.setFixedWidth(scale(46))
         self._layer_sb.setStyleSheet(_FUSION_SPINBOX_STYLE)
         self._layer_sb.valueChanged.connect(self._on_layer_changed)
         header_layout.addWidget(self._layer_sb)
@@ -2571,17 +2696,17 @@ class InspectorPanel(QDockWidget):
             QPushButton:hover {{ background: {_FUSION_BG_HOVER}; color: {_FUSION_TEXT_BRIGHT}; }}
         """
         self._apply_btn = QPushButton("Apply")
-        self._apply_btn.setFixedHeight(22)
+        self._apply_btn.setFixedHeight(scale(22))
         self._apply_btn.setStyleSheet(_prefab_btn_style)
         self._apply_btn.clicked.connect(self._on_apply_prefab)
         prefab_bar_layout.addWidget(self._apply_btn)
         self._revert_btn = QPushButton("Revert")
-        self._revert_btn.setFixedHeight(22)
+        self._revert_btn.setFixedHeight(scale(22))
         self._revert_btn.setStyleSheet(_prefab_btn_style)
         self._revert_btn.clicked.connect(self._on_revert_prefab)
         prefab_bar_layout.addWidget(self._revert_btn)
         self._select_prefab_btn = QPushButton("Select")
-        self._select_prefab_btn.setFixedHeight(22)
+        self._select_prefab_btn.setFixedHeight(scale(22))
         self._select_prefab_btn.setStyleSheet(_prefab_btn_style)
         self._select_prefab_btn.clicked.connect(self._on_select_prefab_asset)
         prefab_bar_layout.addWidget(self._select_prefab_btn)
@@ -2631,7 +2756,7 @@ class InspectorPanel(QDockWidget):
         bottom_layout = QVBoxLayout(bottom)
         bottom_layout.setContentsMargins(6, 4, 6, 6)
         self._add_comp_btn = QPushButton("+ Add Component")
-        self._add_comp_btn.setFixedHeight(24)
+        self._add_comp_btn.setFixedHeight(scale(24))
         self._add_comp_btn.setStyleSheet(f"""
             QPushButton {{
                 color: {_FUSION_TEXT_BRIGHT};
@@ -2663,6 +2788,10 @@ class InspectorPanel(QDockWidget):
     def set_entity(self, entity: Optional[Entity]):
         if self._locked:
             return
+        self._animator_mode = False
+        self._animator_state = None
+        self._animator_transition = None
+        self._animator_controller = None
         self._entity = entity
         self._selected_entities = [entity] if entity else []
         self._asset_path = None
@@ -2671,6 +2800,10 @@ class InspectorPanel(QDockWidget):
     def set_selected_entities(self, entities: list):
         if self._locked:
             return
+        self._animator_mode = False
+        self._animator_state = None
+        self._animator_transition = None
+        self._animator_controller = None
         self._selected_entities = list(entities)
         self._entity = entities[0] if entities else None
         self._asset_path = None
@@ -2680,6 +2813,38 @@ class InspectorPanel(QDockWidget):
         self._entity = None
         self._asset_path = path
         self._rebuild()
+
+    def show_animator_state(self, state: AnimatorState, controller: AnimatorController):
+        self._saved_entity = self._entity
+        self._saved_entities = list(self._selected_entities)
+        self._entity = None
+        self._asset_path = None
+        self._animator_mode = True
+        self._animator_state = state
+        self._animator_transition = None
+        self._animator_controller = controller
+        self._rebuild()
+
+    def show_animator_transition(self, trans: AnimatorTransition, controller: AnimatorController):
+        self._saved_entity = self._entity
+        self._saved_entities = list(self._selected_entities)
+        self._entity = None
+        self._asset_path = None
+        self._animator_mode = True
+        self._animator_transition = trans
+        self._animator_state = None
+        self._animator_controller = controller
+        self._rebuild()
+
+    def clear_animator_mode(self):
+        if self._animator_mode:
+            self._animator_mode = False
+            self._animator_state = None
+            self._animator_transition = None
+            self._entity = self._saved_entity
+            self._selected_entities = self._saved_entities
+            self._animator_controller = None
+            self._rebuild()
 
     def _add_asset_widget(self, w: QWidget):
         self._asset_widgets.append(w)
@@ -2722,7 +2887,7 @@ class InspectorPanel(QDockWidget):
         rl.setContentsMargins(0, 2, 0, 2)
         rl.setSpacing(4)
         lbl = QLabel(label)
-        lbl.setFixedWidth(120)
+        lbl.setFixedWidth(scale(120))
         lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
         rl.addWidget(lbl)
         rl.addWidget(widget)
@@ -2946,7 +3111,7 @@ class InspectorPanel(QDockWidget):
         shader_rl = QHBoxLayout(shader_row)
         shader_rl.setContentsMargins(0, 2, 0, 2)
         shader_lbl = QLabel("Shader")
-        shader_lbl.setFixedWidth(120)
+        shader_lbl.setFixedWidth(scale(120))
         shader_lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px;")
         shader_rl.addWidget(shader_lbl)
         def _on_shader_pick(p):
@@ -3015,7 +3180,7 @@ class InspectorPanel(QDockWidget):
             rl.setContentsMargins(0, 2, 0, 2)
             row.setStyleSheet("background: transparent;")
             lbl = QLabel(label)
-            lbl.setFixedWidth(120)
+            lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
             def _on_pick(p):
@@ -3032,12 +3197,12 @@ class InspectorPanel(QDockWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 2, 0, 2)
             lbl = QLabel(label)
-            lbl.setFixedWidth(120)
+            lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
             val = props.get(key, [1.0, 1.0, 1.0, 1.0])
             swatch = QPushButton()
-            swatch.setFixedSize(28, 22)
+            swatch.setFixedSize(*scale_xy(28, 22))
             r = int(val[0]*255) if len(val) > 0 else 255
             g = int(val[1]*255) if len(val) > 1 else 255
             b = int(val[2]*255) if len(val) > 2 else 255
@@ -3070,7 +3235,7 @@ class InspectorPanel(QDockWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 2, 0, 2)
             lbl = QLabel(label)
-            lbl.setFixedWidth(120)
+            lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
             sb = QDoubleSpinBox()
@@ -3091,7 +3256,7 @@ class InspectorPanel(QDockWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 2, 0, 2)
             lbl = QLabel(label)
-            lbl.setFixedWidth(120)
+            lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
             if prop_type == "Int":
@@ -3125,7 +3290,7 @@ class InspectorPanel(QDockWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 2, 0, 2)
             lbl = QLabel(label)
-            lbl.setFixedWidth(120)
+            lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
             def _on_pick(p, _key=key):
@@ -3142,12 +3307,12 @@ class InspectorPanel(QDockWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 2, 0, 2)
             lbl = QLabel(label)
-            lbl.setFixedWidth(120)
+            lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
             val = props.get(key, [1.0, 1.0, 1.0, 1.0])
             swatch = QPushButton()
-            swatch.setFixedSize(28, 22)
+            swatch.setFixedSize(*scale_xy(28, 22))
             r = int(val[0]*255) if len(val) > 0 else 255
             g = int(val[1]*255) if len(val) > 1 else 255
             b = int(val[2]*255) if len(val) > 2 else 255
@@ -3179,7 +3344,7 @@ class InspectorPanel(QDockWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 2, 0, 2)
             lbl = QLabel(label)
-            lbl.setFixedWidth(120)
+            lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
             sb = QDoubleSpinBox()
@@ -3193,6 +3358,120 @@ class InspectorPanel(QDockWidget):
             sb.valueChanged.connect(_on_change)
             rl.addWidget(sb, 1)
             self._add_asset_widget(row)
+
+    def _build_animator_state_inspector(self, state: AnimatorState):
+        self._build_section_title(f"State: {state.name}")
+        name_edit = QLineEdit(state.name)
+        name_edit.setStyleSheet(self._animator_input_style())
+        name_edit.textChanged.connect(lambda t: self._on_animator_state_name_changed(state, t))
+        self._content_layout.addWidget(QLabel("Name"))
+        self._content_layout.addWidget(name_edit)
+        speed_sb = QDoubleSpinBox()
+        speed_sb.setRange(-100.0, 100.0)
+        speed_sb.setValue(state.speed)
+        speed_sb.valueChanged.connect(lambda v: setattr(state, 'speed', v))
+        speed_sb.setStyleSheet(self._animator_input_style())
+        self._content_layout.addWidget(QLabel("Speed"))
+        self._content_layout.addWidget(speed_sb)
+        tag_edit = QLineEdit(state.tag)
+        tag_edit.setStyleSheet(self._animator_input_style())
+        tag_edit.textChanged.connect(lambda t: setattr(state, 'tag', t))
+        self._content_layout.addWidget(QLabel("Tag"))
+        self._content_layout.addWidget(tag_edit)
+
+    def _build_animator_transition_inspector(self, trans: AnimatorTransition):
+        self._build_section_title("Transition")
+        dur_sb = QDoubleSpinBox()
+        dur_sb.setRange(0.0, 10.0)
+        dur_sb.setSingleStep(0.05)
+        dur_sb.setValue(trans.transition_duration)
+        dur_sb.valueChanged.connect(lambda v: setattr(trans, 'transition_duration', v))
+        dur_sb.setStyleSheet(self._animator_input_style())
+        self._content_layout.addWidget(QLabel("Duration"))
+        self._content_layout.addWidget(dur_sb)
+        exit_sb = QDoubleSpinBox()
+        exit_sb.setRange(0.0, 1.0)
+        exit_sb.setSingleStep(0.05)
+        exit_sb.setValue(trans.exit_time)
+        exit_sb.valueChanged.connect(lambda v: setattr(trans, 'exit_time', v))
+        exit_sb.setStyleSheet(self._animator_input_style())
+        self._content_layout.addWidget(QLabel("Exit Time"))
+        self._content_layout.addWidget(exit_sb)
+        has_exit_cb = QCheckBox("Has Exit Time")
+        has_exit_cb.setChecked(trans.has_exit_time)
+        has_exit_cb.toggled.connect(lambda v: setattr(trans, 'has_exit_time', v))
+        has_exit_cb.setStyleSheet("color: #ccc; font-size: 10px;")
+        self._content_layout.addWidget(has_exit_cb)
+        fixed_dur_cb = QCheckBox("Fixed Duration")
+        fixed_dur_cb.setChecked(trans.has_fixed_duration)
+        fixed_dur_cb.toggled.connect(lambda v: setattr(trans, 'has_fixed_duration', v))
+        fixed_dur_cb.setStyleSheet("color: #ccc; font-size: 10px;")
+        self._content_layout.addWidget(fixed_dur_cb)
+        self._build_section_title("Conditions")
+        for cond in trans.conditions:
+            self._build_animator_condition_row(trans, cond)
+        add_cond_btn = QPushButton("+ Add Condition")
+        add_cond_btn.clicked.connect(lambda: self._add_animator_condition(trans))
+        add_cond_btn.setStyleSheet(self._animator_btn_style())
+        self._content_layout.addWidget(add_cond_btn)
+
+    def _build_animator_condition_row(self, trans, cond):
+        row = QHBoxLayout()
+        param_combo = QComboBox()
+        ctrl = self._animator_controller
+        if ctrl:
+            for p in ctrl.parameters:
+                param_combo.addItem(p.name)
+        param_combo.setCurrentText(cond.parameter)
+        param_combo.textActivated.connect(lambda text, c=cond: setattr(c, 'parameter', text))
+        param_combo.setStyleSheet(self._animator_input_style())
+        row.addWidget(param_combo)
+        mode_combo = QComboBox()
+        modes = ["if", "if_not", "greater", "less", "equals", "not_equal"]
+        mode_combo.addItems(modes)
+        mode_combo.setCurrentText(cond.mode.value)
+        mode_combo.textActivated.connect(lambda text, c=cond: setattr(c, 'mode', AnimatorConditionMode(text)))
+        mode_combo.setStyleSheet(self._animator_input_style())
+        row.addWidget(mode_combo)
+        thresh_sb = QDoubleSpinBox()
+        thresh_sb.setRange(-99999.0, 99999.0)
+        thresh_sb.setValue(cond.threshold)
+        thresh_sb.valueChanged.connect(lambda v, c=cond: setattr(c, 'threshold', v))
+        thresh_sb.setStyleSheet(self._animator_input_style())
+        row.addWidget(thresh_sb)
+        del_btn = QPushButton("x")
+        del_btn.setFixedSize(*scale_xy(20, 20))
+        del_btn.clicked.connect(lambda: self._remove_animator_condition(trans, cond))
+        del_btn.setStyleSheet("QPushButton { color: #c66; border: none; font-size: 10px; } QPushButton:hover { color: #f88; }")
+        row.addWidget(del_btn)
+        self._content_layout.addLayout(row)
+
+    def _add_animator_condition(self, trans):
+        trans.conditions.append(AnimatorCondition())
+        self._rebuild()
+
+    def _remove_animator_condition(self, trans, cond):
+        if cond in trans.conditions:
+            trans.conditions.remove(cond)
+        self._rebuild()
+
+    def _on_animator_state_name_changed(self, state, new_name):
+        old_name = state.name
+        state.name = new_name
+        self._rebuild()
+
+    def _build_section_title(self, text: str):
+        lbl = QLabel(text)
+        lbl.setStyleSheet("color: #aaa; font-size: 10px; font-weight: bold; padding: 4px 0;")
+        self._content_layout.addWidget(lbl)
+
+    def _animator_input_style(self) -> str:
+        return f"background: {_FUSION_BG_INPUT}; color: {_FUSION_TEXT}; border: 1px solid {_FUSION_BORDER}; border-radius: {_FUSION_INPUT_RADIUS}; padding: 2px 4px; font-size: 10px;"
+
+    def _animator_btn_style(self) -> str:
+        return (f"QPushButton {{ background: #3a3a3a; color: {_FUSION_TEXT}; border: 1px solid #555; "
+                f"border-radius: 3px; font-size: 10px; padding: 2px 8px; }} "
+                f"QPushButton:hover {{ background: #4a4a4a; }}")
 
     def _rebuild(self):
         self._content_widget.setVisible(False)
@@ -3209,6 +3488,15 @@ class InspectorPanel(QDockWidget):
                     item.widget().deleteLater()
             self._asset_widgets.clear()
             stretch = self._content_layout.takeAt(self._content_layout.count() - 1)
+            if self._animator_mode:
+                self._header_widget.setVisible(False)
+                self._add_comp_btn.setVisible(False)
+                if self._animator_state:
+                    self._build_animator_state_inspector(self._animator_state)
+                elif self._animator_transition:
+                    self._build_animator_transition_inspector(self._animator_transition)
+                self._content_layout.addStretch()
+                return
             if self._asset_path:
                 self._header_widget.setVisible(False)
                 self._add_comp_btn.setVisible(False)

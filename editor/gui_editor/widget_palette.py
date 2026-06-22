@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton,
                              QLabel, QScrollArea, QFrame, QLineEdit, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -57,7 +58,7 @@ class WidgetPaletteButton(QPushButton):
         super().__init__(text, parent)
         self._widget_type = widget_type
         self._color = color
-        self.setFixedHeight(28)
+        self.setFixedHeight(scale(28))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(tooltip)
         self.setStyleSheet(f"""
