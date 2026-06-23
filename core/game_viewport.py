@@ -5,6 +5,7 @@ from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtCore import Qt, QTimer, QPoint
 from PyQt6.QtGui import QSurfaceFormat, QKeyEvent, QMouseEvent, QCursor, QGuiApplication
 from core.input_system import Input
+from core.input.input_manager import InputManager
 from core.logger import Logger
 
 if TYPE_CHECKING:
@@ -21,6 +22,7 @@ class GameViewport(QOpenGLWidget):
         self._renderer = None
         self._screen_fbo = None
         self._mouse_captured: bool = False
+        self._input_manager = InputManager.instance()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(16)
@@ -103,6 +105,7 @@ class GameViewport(QOpenGLWidget):
             prof = self._engine._profiler
             if prof:
                 prof.capture_frame()
+            self._input_manager.new_frame()
             self._engine.tick()
             self.update()
 
