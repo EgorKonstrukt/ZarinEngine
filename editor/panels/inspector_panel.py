@@ -2316,6 +2316,7 @@ class ComponentWidget(QWidget):
             """)
 
             def _on_click(m=prop_name, c=comp):
+                m = str(m)
                 if not c._py_instance:
                     c._load_script()
                 if c._py_instance and hasattr(c._py_instance, m):

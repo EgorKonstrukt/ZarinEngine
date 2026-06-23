@@ -85,7 +85,7 @@ class ScriptComponent(Component):
             self._py_module = mod
             for attr in dir(mod):
                 obj = getattr(mod, attr)
-                if isinstance(obj, type) and hasattr(obj, "on_update"):
+                if isinstance(obj, type) and (hasattr(obj, "on_update") or hasattr(obj, "_inspector_buttons")):
                     if getattr(obj, "__module__", None) == mod.__name__:
                         self._py_class = obj
                         return
