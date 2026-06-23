@@ -100,6 +100,10 @@ class GameViewport(QOpenGLWidget):
 
     def _tick(self):
         if self._engine.play_mode and self.isVisible():
+            prof = self._engine._profiler
+            if prof:
+                prof.capture_frame()
+            self._engine.tick()
             self.update()
 
     def _capture_mouse(self):

@@ -321,16 +321,14 @@ class PhysicsScene:
         if not self._scene:
             return
         eng = self._scene._engine
-        prof = eng._profiler if eng and hasattr(eng, '_profiler') else None
+        if eng is None:
+            return
+        prof = eng._profiler if hasattr(eng, '_profiler') else None
 
         if prof: prof.start("phys_register")
         self._register_new_entities()
         if prof: prof.stop("phys_register")
 
-        # ХУЙНЯ: проверка формы РАЗ В 60 КАДРОВ.
-        #  60 кадров (если 60fps = 1 секунда) коллайдер живёт со старыми размерами.
-        #  Почему не каждый кадр? Потому что ЛЕНЬ. Или "оптимизация" блять.
-        #  Магическая константа, не конфигурируется, нихуя не документирована.
         self._shape_check_counter += 1
         if self._shape_check_counter >= 60:
             self._shape_check_counter = 0
