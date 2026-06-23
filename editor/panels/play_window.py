@@ -118,7 +118,7 @@ class PlayViewport(QOpenGLWidget):
         Input.set_cursor_locked(True)
         QGuiApplication.setOverrideCursor(Qt.CursorShape.BlankCursor)
         self._center_cursor()
-        from editor.input_manager import InputManager
+        from core.input.input_manager import InputManager
         im = InputManager.instance()
         center = self.mapToGlobal(QPoint(self.width() // 2, self.height() // 2))
         im._mouse_x = center.x()
@@ -138,7 +138,7 @@ class PlayViewport(QOpenGLWidget):
 
     def keyPressEvent(self, event: QKeyEvent):
         if self._engine.play_mode:
-            from editor.input_manager import InputManager
+            from core.input.input_manager import InputManager
             im = InputManager.instance()
             with im._lock:
                 im._pending.append((event.nativeVirtualKey(), True))
@@ -150,7 +150,7 @@ class PlayViewport(QOpenGLWidget):
 
     def keyReleaseEvent(self, event: QKeyEvent):
         if self._engine.play_mode:
-            from editor.input_manager import InputManager
+            from core.input.input_manager import InputManager
             im = InputManager.instance()
             with im._lock:
                 im._pending.append((event.nativeVirtualKey(), False))
@@ -172,7 +172,7 @@ class PlayViewport(QOpenGLWidget):
             local_pos = event.position()
             dx = local_pos.x() - center.x()
             dy = local_pos.y() - center.y()
-            from editor.input_manager import InputManager
+            from core.input.input_manager import InputManager
             im = InputManager.instance()
             with im._lock:
                 im._pending_mouse_delta.append((dx, dy))

@@ -1,0 +1,20 @@
+# Build output
+build_output/
+player.build/
+
+# Temp build directories
+_build_scenes/
+_build_assets/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

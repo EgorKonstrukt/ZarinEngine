@@ -8,8 +8,8 @@ if TYPE_CHECKING:
 
 
 def _find_entity_widget(entity):
-    from core.components.gui import GUI_COMPONENT_MAP
-    for c in GUI_COMPONENT_MAP.values():
+    from core.components.gui import _ensure_component_map
+    for c in _ensure_component_map().values():
         comp = entity.get_component_by_name(c.__name__)
         if comp and hasattr(comp, '_widget_ref') and comp._widget_ref:
             return comp._widget_ref

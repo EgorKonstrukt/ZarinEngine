@@ -261,6 +261,19 @@ class PluginManager:
         except Exception as e:
             Logger.error(f"Failed to load plugin package '{dirpath}': {e}")
 
+    def load_module(self, module_name: str):
+        """Load a plugin from a compiled (Nuitka) module by dotted name."""
+        try:
+            mod = importlib.import_module(module_name)
+            for attr in dir(mod):
+                obj = getattr(mod, attr)
+                if isinstance(obj, type) and issubclass(obj, PluginBase) and obj is not PluginBase:
+                    inst = obj()
+                    inst._native_plugin_path = module_name
+                    self.register(inst)
+        except Exception as e:
+            Logger.error(f"Failed to load plugin module '{module_name}': {e}", e)
+
     def get(self, name: str) -> Optional[PluginBase]:
         return self._plugins.get(name)
 

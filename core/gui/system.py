@@ -15,8 +15,8 @@ _LAYOUT_ELEMENT_NAME: str = ""
 def _get_gui_comp_names() -> list[str]:
     global _GUI_COMP_NAMES
     if not _GUI_COMP_NAMES:
-        from core.components.gui import GUI_COMPONENT_MAP
-        _GUI_COMP_NAMES = [c.__name__ for c in GUI_COMPONENT_MAP.values()]
+        from core.components.gui import _ensure_component_map
+        _GUI_COMP_NAMES = [c.__name__ for c in _ensure_component_map().values()]
     return _GUI_COMP_NAMES
 
 
@@ -107,8 +107,8 @@ class GuiCanvasSystem:
                 lc._sync_layout(canvas)
         le = entity.get_component_by_name(_get_layout_element_name())
         if le and hasattr(le, '_sync_layout_element'):
-            from core.components.gui import GUI_COMPONENT_MAP
-            for c in GUI_COMPONENT_MAP.values():
+            from core.components.gui import _ensure_component_map
+            for c in _ensure_component_map().values():
                 comp = entity.get_component_by_name(c.__name__)
                 if comp and hasattr(comp, '_widget_ref'):
                     le._sync_layout_element(comp._widget_ref)

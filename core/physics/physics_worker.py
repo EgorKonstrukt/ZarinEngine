@@ -1,22 +1,21 @@
 from __future__ import annotations
+import threading
 from queue import Queue, Empty
-from typing import Optional
-from PyQt6.QtCore import QThread, pyqtSignal as Signal
+from typing import Optional, Callable
 
 from core.logger import Logger
 
 
-class PhysicsWorker(QThread):
-    step_finished = Signal(object)
-
+class PhysicsWorker(threading.Thread):
     def __init__(self):
-        super().__init__()
+        super().__init__(daemon=True)
         self._cmd_queue: Queue = Queue()
         self._result_queue: Queue = Queue()
         self._running = False
         self._initialized = False
         self._solver = None
         self._physics_scene = None
+        self._on_step_finished: Optional[Callable] = None
 
     def run(self):
         self._running = True
@@ -159,7 +158,8 @@ class PhysicsWorker(QThread):
             }
 
             self._result_queue.put(result)
-            self.step_finished.emit(result)
+            if self._on_step_finished:
+                self._on_step_finished(result)
 
         elif t == "remove_bodies":
             for eid in cmd["entity_ids"]:
@@ -238,6 +238,6 @@ class PhysicsWorker(QThread):
                 return r
         return None
 
-    def shutdown(self, timeout: int = 3000):
+    def shutdown(self, timeout: float = 3.0):
         self.send({"type": "shutdown"})
-        self.wait(timeout)
+        self.join(timeout=timeout)

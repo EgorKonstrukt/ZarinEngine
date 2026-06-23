@@ -146,7 +146,7 @@ class PhysicsPlugin(PluginBase):
         self._enabled = v
 
     def _get_physics_settings(self) -> dict:
-        project_path = getattr(self._engine, "_project_path", ".") if self._engine else "."
+        project_path = getattr(self._engine, "_project_path", None) or "." if self._engine else "."
         cfg = get_project_config(project_path)
         out = {}
         prefix = "physics."
@@ -167,6 +167,12 @@ class PhysicsPlugin(PluginBase):
         super().initialize(engine)
         settings = self._get_physics_settings()
         self._simulation_mode = settings.get("simulation_mode", "multi_threaded")
+        # Force single-threaded mode in Nuitka builds (multiprocessing spawn is unreliable)
+        try:
+            if __compiled__:
+                self._simulation_mode = "single"
+        except NameError:
+            pass
         solver_name = settings.get("solver", "pybullet")
         solver_module = ""
         solver_class = ""
@@ -183,7 +189,7 @@ class PhysicsPlugin(PluginBase):
                 mod = importlib.import_module(solver_module)
                 cls = getattr(mod, solver_class)
                 self._solver = cls()
-                self._solver.init(settings)
+                self._solver.initialize(settings)
                 self._physics_scene = PhysicsScene(self._solver)
                 Logger.info(f"PhysicsPlugin: {solver_name} in-process (single-threaded).")
             except Exception as e:
@@ -295,18 +301,23 @@ class PhysicsPlugin(PluginBase):
                 self._physics_process.send({"type": "unload_all"})
 
     def on_play_start(self):
+        from core.logger import Logger
+        Logger.info(f"[PhysicsPlugin] on_play_start called, mode={self._simulation_mode}")
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
         self._prev_frame_contacts.clear()
         self._last_result_ver = -1
         if self._engine is None:
+            Logger.info("[PhysicsPlugin] on_play_start: engine is None, returning")
             return
         scene = self._engine.scene
         if scene is None:
+            Logger.info("[PhysicsPlugin] on_play_start: scene is None, returning")
             return
 
         if self._simulation_mode == "single":
             if self._physics_scene is None:
+                Logger.info("[PhysicsPlugin] on_play_start: physics_scene is None, returning")
                 return
             self._physics_scene.load_scene(scene)
             Logger.info(f"[PhysicsPlugin] Scene loaded (single-threaded).")
@@ -401,13 +412,22 @@ class PhysicsPlugin(PluginBase):
         if self._simulation_mode == "single":
             if self._physics_scene is None:
                 return
-            for entity in scene.get_all_entities():
-                rb = entity._components.get("Rigidbody")
-                rb2d = entity._components.get("Rigidbody2D")
-                tr = entity._components.get("Transform")
-                if (not rb and not rb2d) or not tr:
-                    continue
-                self._physics_scene._create_entity_bodies(entity)
+            entity_count = len(scene._entities)
+            if entity_count != self._last_entity_count or not self._scanned_entity_ids:
+                self._last_entity_count = entity_count
+                scanned = self._scanned_entity_ids
+                for eid, entity in scene._entities.items():
+                    if eid in scanned:
+                        continue
+                    scanned.add(eid)
+                    rb = entity._components.get("Rigidbody")
+                    rb2d = entity._components.get("Rigidbody2D")
+                    tr = entity._components.get("Transform")
+                    if (not rb and not rb2d) or not tr:
+                        continue
+                    if eid in self._physics_scene._entity_to_body:
+                        continue
+                    self._physics_scene._create_entity_bodies(entity)
             return
 
         if self._simulation_mode == "per_layer_process":

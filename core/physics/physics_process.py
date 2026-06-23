@@ -53,6 +53,7 @@ class PhysicsProcess:
         self._solver_module = solver_module
         self._solver_class = solver_class
         self._shared.set_num_entities(0)
+        from core.logger import Logger
         self._process = multiprocessing.Process(
             target=_physics_loop,
             args=(self._cmd_queue, self._result_queue,
@@ -64,6 +65,10 @@ class PhysicsProcess:
         result = self.wait_for_result("init", timeout=10.0)
         ok = result is not None and result.get("success", False)
         if not ok:
+            Logger.warning(f"  PhysicsProcess.start FAILED, killing process")
+            if self._process and self._process.is_alive():
+                self._process.terminate()
+                self._process.join(2)
             self._process = None
         return ok
 
@@ -124,6 +129,8 @@ def _physics_loop(
     solver_class_name: str,
     settings: dict,
 ):
+    import sys
+    import os
     project_root = os.path.normpath(project_root)
     if project_root not in sys.path:
         sys.path.insert(0, project_root)

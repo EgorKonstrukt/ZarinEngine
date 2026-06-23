@@ -7,18 +7,16 @@ from core.ecs import Component, ComponentRegistry
 from core.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 
-try:
-    from numba import njit, prange
-    _numba_available = True
-except Exception:
-    _numba_available = False
-    def njit(*args, **kwargs):
-        if args and callable(args[0]):
-            return args[0]
-        def wrapper(f):
-            return f
-        return wrapper
-    prange = range
+_numba_available = False
+
+def njit(*args, **kwargs):
+    if args and callable(args[0]):
+        return args[0]
+    def wrapper(f):
+        return f
+    return wrapper
+
+prange = range
 
 class ShapeType(Enum):
     CONE = "cone"

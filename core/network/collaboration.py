@@ -5,13 +5,25 @@ import uuid
 import threading
 import asyncio
 from typing import Optional, Callable
-from PyQt6.QtCore import QTimer
 from core.logger import Logger
 from core.network.protocol import MessageType
 from core.network.server import CollabServer
 from core.network.client import CollabClient
 from core.ecs import Scene, Entity, ComponentRegistry
 from core.config import get_global_config
+
+
+class _PollThread(threading.Thread):
+    def __init__(self, callback, interval_ms, stop_event):
+        super().__init__(daemon=True)
+        self._callback = callback
+        self._interval = interval_ms / 1000.0
+        self._stop_event = stop_event
+
+    def run(self):
+        while not self._stop_event.is_set():
+            self._callback()
+            self._stop_event.wait(self._interval)
 
 
 class RemotePeer:
@@ -69,22 +81,23 @@ class CollaborationManager:
         self._entity_synced_ids: dict[str, str] = {}
         self._local_entity_ids: dict[str, str] = {}
         self._pending_scene_sync = False
-        self._poll_timer = QTimer()
-        self._poll_timer.timeout.connect(self._poll_messages)
-        self._poll_timer.setInterval(8)
-        self._poll_timer.start()
+        self._stop_events: list[threading.Event] = []
+        self.settings = CollabSettings()
+        self._load_settings_from_config()
+        self._poll_thread = _PollThread(self._poll_messages, self.settings.poll_interval, self._make_stop_event())
+        self._poll_thread.start()
         self._as_host = False
         self._server_ready: Optional[threading.Event] = None
         self._play_mode_active = False
         self._latency_ms: float = 0.0
         self._ping_timestamp: float = 0.0
-        self.settings = CollabSettings()
-        self._load_settings_from_config()
-        self._ping_timer = QTimer()
-        self._ping_timer.timeout.connect(self._send_ping)
-        self._ping_timer.setInterval(int(self.settings.ping_interval * 1000))
-        self._ping_timer.start()
-        self._poll_timer.setInterval(self.settings.poll_interval)
+        self._ping_thread = _PollThread(self._send_ping, int(self.settings.ping_interval * 1000), self._make_stop_event())
+        self._ping_thread.start()
+
+    def _make_stop_event(self) -> threading.Event:
+        ev = threading.Event()
+        self._stop_events.append(ev)
+        return ev
 
     @property
     def peers(self) -> dict[str, RemotePeer]:
@@ -166,6 +179,9 @@ class CollaborationManager:
         self._client.connect(host, port, name)
 
     def stop(self):
+        for ev in self._stop_events:
+            ev.set()
+        self._stop_events.clear()
         if self._client:
             self._client.disconnect()
             self._client = None
@@ -371,8 +387,13 @@ class CollaborationManager:
             self._play_mode_active = active
 
     def apply_settings(self):
-        self._ping_timer.setInterval(int(self.settings.ping_interval * 1000))
-        self._poll_timer.setInterval(self.settings.poll_interval)
+        for ev in self._stop_events:
+            ev.set()
+        self._stop_events.clear()
+        self._poll_thread = _PollThread(self._poll_messages, self.settings.poll_interval, self._make_stop_event())
+        self._poll_thread.start()
+        self._ping_thread = _PollThread(self._send_ping, int(self.settings.ping_interval * 1000), self._make_stop_event())
+        self._ping_thread.start()
 
     def _load_settings_from_config(self):
         cfg = get_global_config()

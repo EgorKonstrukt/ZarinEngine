@@ -1,6 +1,14 @@
 import sys
 import os
+import json
 import traceback
+import multiprocessing
+
+try:
+    if __compiled__:
+        sys.frozen = True
+except NameError:
+    pass
 
 from core.logger import Logger
 
@@ -57,6 +65,7 @@ def run_headless_mcp():
     engine.plugin_manager.load_package("plugins/zarin_mcp")
 
 def main():
+    multiprocessing.freeze_support()
     import argparse
     parser = argparse.ArgumentParser(description="Zarin Engine")
     parser.add_argument("--mcp", action="store_true", help="Run in headless MCP stdio server mode")
@@ -96,9 +105,27 @@ def main():
     splash.advance("Running engine subsystems...")
     engine.initialize()
     splash.advance("Loading plugins...")
-    engine.plugin_manager.load_directory("plugins")
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    build_settings_path = os.path.join(project_root, "BuildSettings.json")
+    build_plugins = []
+    if os.path.exists(build_settings_path):
+        try:
+            with open(build_settings_path) as f:
+                bs = json.load(f)
+            build_plugins = bs.get("build_plugins", [])
+        except Exception:
+            pass
+    if build_plugins:
+        for name in build_plugins:
+            module_name = "plugins." + name if not name.startswith("plugins.") else name
+            engine.plugin_manager.load_module(module_name)
+    else:
+        engine.plugin_manager.load_directory("plugins")
     splash.advance("Loading user plugins...")
-    engine.plugin_manager.load_directory("plugins/user")
+    if build_plugins:
+        pass  # user plugins included in build_plugins list
+    else:
+        engine.plugin_manager.load_directory("plugins/user")
     splash.advance("Setting up collaboration...")
     from core.network.collaboration import CollaborationManager
     engine.collab_manager = CollaborationManager(engine)

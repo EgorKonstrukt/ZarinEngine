@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Optional
 from core.ecs import ComponentRegistry
 from core.components.gui.base_widget_component import GuiWidgetComponentBase
-from core.components.gui import GUI_COMPONENT_MAP
 from core.components.inspector_meta import InspectorField, FieldType
 
 
@@ -19,7 +18,8 @@ class GuiWidgetComponent(GuiWidgetComponentBase):
         ] + cls._common_inspector_fields()
 
     def _create_widget_from_type(self, canvas):
-        comp_class = GUI_COMPONENT_MAP.get(self.widget_type)
+        from core.components.gui import _ensure_component_map
+        comp_class = _ensure_component_map().get(self.widget_type)
         if not comp_class:
             return
         t = self.transform

@@ -88,7 +88,7 @@ class SceneToolbar(QToolBar):
         self._cam_2d_btn.clicked.connect(self.mode_2d_toggled)
         self.addWidget(self._cam_2d_btn)
         self._skybox_cb = QCheckBox("Skybox")
-        self._skybox_cb.setChecked(False)
+        self._skybox_cb.setChecked(True)
         self._skybox_cb.toggled.connect(self.skybox_toggled)
         self.addWidget(self._skybox_cb)
         self._effects_cb = QCheckBox("FX")

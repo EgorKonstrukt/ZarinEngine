@@ -1,7 +1,13 @@
 from __future__ import annotations
 from typing import Optional, Tuple, Dict
-import pybullet as p
-import pybullet_data
+try:
+    import pybullet as p
+except ImportError:
+    p = None
+try:
+    import pybullet_data
+except ImportError:
+    pybullet_data = None
 import os
 import numpy as np
 from core.logger import Logger
@@ -84,7 +90,7 @@ class PyBulletSolver(IPhysicsSolver):
             if self._client < 0:
                 Logger.error("PyBullet failed to connect.")
                 return False
-            p.setAdditionalSearchPath(pybullet_data.getDataPath())
+            p.setAdditionalSearchPath(pybullet_data.getDataPath() if pybullet_data else "")
 
             gx = opts.get("gravity_x", 0.0)
             gy = opts.get("gravity_y", -9.81)

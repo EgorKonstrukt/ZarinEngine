@@ -375,8 +375,8 @@ class GuiWidgetComponentBase(Component):
 
 
 def _find_gui_comp_from_entity(entity: Entity):
-    from core.components.gui import GUI_COMPONENT_MAP
-    for c in GUI_COMPONENT_MAP.values():
+    from core.components.gui import _ensure_component_map
+    for c in _ensure_component_map().values():
         comp = entity.get_component_by_name(c.__name__)
         if comp:
             return comp

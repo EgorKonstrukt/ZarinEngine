@@ -77,7 +77,7 @@ def _load_mesh_data(path: str) -> Optional[dict]:
     if cached is not _SENTINEL:
         return cached
 
-    from editor.renderer.mesh_loader import MeshLoader
+    from core.renderer.mesh_loader import MeshLoader
     if cache_key in MeshLoader._shared_import_cache:
         data = MeshLoader._shared_import_cache[cache_key]
     else:

@@ -32,6 +32,12 @@ def _do_switch_project(mw, project_path: str):
     _add_recent_project(name, project_path)
     mw._engine._project_path = project_path
     mw._project.set_project_root(assets_dir)
+
+    # Reload BuildSettings for this project
+    from core.build_settings import BuildSettings
+    bs = BuildSettings.instance() or BuildSettings()
+    bs.load(os.path.join(project_path, "BuildSettings.json"))
+
     if os.path.isdir(os.path.join(project_path, "scenes")):
         scenes_dir = os.path.join(project_path, "scenes")
     else:

@@ -14,10 +14,12 @@ from core.gui.widgets import (
     PlainText, ScrollBar, ToolButton, FontCombo, MdiArea,
 )
 from core.gui.system import GuiCanvasSystem
-from core.components.gui import GUI_COMPONENT_MAP
+from core.components.gui import _ensure_component_map
 from editor.gui_editor.gui_toolbar import GuiEditorToolbar
 from editor.gui_editor.widget_palette import WidgetPalette
 from core.editor_scale import scale, scale_xy
+
+GUI_COMPONENT_MAP = _ensure_component_map()
 
 
 WIDGET_TYPE_MAP = {

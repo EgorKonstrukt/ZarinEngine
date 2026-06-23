@@ -11,14 +11,11 @@ for _module_info in pkgutil.iter_modules([_package_dir]):
     if _module_info.name in ("inspector_meta",):
         continue
     importlib.import_module(f"{__name__}.{_module_info.name}")
-
-for _sub in os.listdir(_package_dir):
-    _sub_path = os.path.join(_package_dir, _sub)
-    if os.path.isdir(_sub_path) and not _sub.startswith("_"):
-        for _module_info in pkgutil.iter_modules([_sub_path]):
-            if _module_info.name.startswith("_"):
+    if _module_info.ispkg:
+        for _sub_info in pkgutil.iter_modules([os.path.join(_package_dir, _module_info.name)]):
+            if _sub_info.name.startswith("_"):
                 continue
-            importlib.import_module(f"{__name__}.{_sub}.{_module_info.name}")
+            importlib.import_module(f"{__name__}.{_module_info.name}.{_sub_info.name}")
 
 from core.ecs import ComponentRegistry
 from core.components.rendering.camera import CameraProjection

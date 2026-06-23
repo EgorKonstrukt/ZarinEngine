@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from PyQt6.QtCore import Qt, QRectF
-from core.input_system import KeyCode
 from core.constants import APP_VERSION_DISPLAY
+from core.input.constants import (KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q, KEY_E, KEY_R, KEY_F,
+                                  KEY_SHIFT, KEY_DELETE, KEY_CTRL, KEY_ALT, KEY_SPACE,
+                                  MOUSE_L, MOUSE_R, MOUSE_M, MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE)
 
 IPC_HOST = "127.0.0.1"
 IPC_PORT = 9101
@@ -30,27 +32,6 @@ EXTENSIONS = {
         "prog_id": "ZarinEngine.Prefab",
     },
 }
-
-MOUSE_L = 0
-MOUSE_R = 1
-MOUSE_M = 2
-MOUSE_LEFT = 0
-MOUSE_RIGHT = 1
-MOUSE_MIDDLE = 2
-
-KEY_W = KeyCode.W
-KEY_A = KeyCode.A
-KEY_S = KeyCode.S
-KEY_D = KeyCode.D
-KEY_Q = KeyCode.Q
-KEY_E = KeyCode.E
-KEY_R = KeyCode.R
-KEY_F = KeyCode.F
-KEY_SHIFT = KeyCode.LEFT_SHIFT
-KEY_DELETE = KeyCode.DELETE
-KEY_CTRL = KeyCode.LEFT_CONTROL
-KEY_ALT = KeyCode.LEFT_ALT
-KEY_SPACE = KeyCode.SPACE
 
 SPLASH_WIDTH = 640
 SPLASH_HEIGHT = 420

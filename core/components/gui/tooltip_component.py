@@ -34,8 +34,8 @@ class TooltipComponent(Component):
         prev = getattr(self, '_prev_key', None)
         if key == prev:
             return
-        from core.components.gui import GUI_COMPONENT_MAP
-        for name, comp_cls in GUI_COMPONENT_MAP.items():
+        from core.components.gui import _ensure_component_map
+        for name, comp_cls in _ensure_component_map().items():
             comp = self.entity.get_component_by_name(comp_cls.__name__)
             if comp and getattr(comp, '_widget_ref', None):
                 try:

@@ -21,8 +21,8 @@ from editor.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
 from editor.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS, _apply_line_style
 from editor.gizmo.pb_scale_gizmo import PbScaleGizmo
 from core.input_system import Input, KeyCode
-from editor.input_manager import InputManager
-from editor.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
+from core.input.input_manager import InputManager
+from core.input.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
                               KEY_SPACE, KEY_S, KEY_D, KEY_A, MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE,
                               MOUSE_L, MOUSE_R, MOUSE_M)
 from editor.viewport.overlay_widget import OverlayWidget

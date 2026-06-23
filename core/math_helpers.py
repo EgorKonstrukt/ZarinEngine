@@ -3,18 +3,16 @@ import numpy as np
 import math
 from core.math3d import FLOAT_TYPE
 
-try:
-    from numba import njit, prange
-    _numba_available = True
-except Exception:
-    _numba_available = False
-    def njit(*args, **kwargs):
-        if args and callable(args[0]):
-            return args[0]
-        def wrapper(f):
-            return f
-        return wrapper
-    prange = range
+_numba_available = False
+
+def njit(*args, **kwargs):
+    if args and callable(args[0]):
+        return args[0]
+    def wrapper(f):
+        return f
+    return wrapper
+
+prange = range
 
 @njit(cache=True, fastmath=True)
 def mat4_mul_fast(a: np.ndarray, b: np.ndarray) -> np.ndarray:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections import defaultdict
 
 from PyQt6.QtGui import QAction, QKeySequence
@@ -115,6 +116,10 @@ def setup_menu(mw):
     gui_act.triggered.connect(lambda: mw._gui_editor.show() or mw._gui_editor.raise_())
     tools_menu.addAction(gui_act)
     tools_menu.addSeparator()
+    bs_act = QAction("Build Settings...", mw)
+    bs_act.setShortcut(QKeySequence("Ctrl+Shift+U"))
+    bs_act.triggered.connect(lambda: _show_build_settings(mw))
+    tools_menu.addAction(bs_act)
     build_act = QAction("Build Project...", mw)
     build_act.setShortcut(QKeySequence("Ctrl+Shift+B"))
     build_act.triggered.connect(lambda: show_build_dialog(mw))
@@ -134,6 +139,13 @@ def _show_mesh_editor(mw):
     sel = getattr(mw._viewport, '_selected_entities', None)
     if sel and len(sel) > 0:
         mw._mesh_editor.set_entity(sel[0])
+
+
+def _show_build_settings(mw):
+    from editor.build_settings_dialog import BuildSettingsDialog
+    project_root = mw._engine._project_path or os.getcwd()
+    dlg = BuildSettingsDialog(project_root, mw)
+    dlg.exec()
 
 
 def add_plugin_menu_items(mw, mb):

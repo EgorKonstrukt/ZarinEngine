@@ -1,26 +1,22 @@
 from __future__ import annotations
 import math
 import numpy as np
-from numba import njit
 from typing import Union
 
 FLOAT_TYPE = np.float64
 
 
-# ─── Quat njit kernels ───────────────────────────────────────────────────────
+# ─── Quat math (pure Python — scalar functions, no JIT needed) ────────────────
 
-@njit(fastmath=True, cache=True)
 def _q_mul(x1, y1, z1, w1, x2, y2, z2, w2):
     return (w1*x2 + x1*w2 + y1*z2 - z1*y2,
             w1*y2 - x1*z2 + y1*w2 + z1*x2,
             w1*z2 + x1*y2 - y1*x2 + z1*w2,
             w1*w2 - x1*x2 - y1*y2 - z1*z2)
 
-@njit(fastmath=True, cache=True)
 def _q_conjugate(x, y, z, w):
     return -x, -y, -z, w
 
-@njit(fastmath=True, cache=True)
 def _q_normalized(x, y, z, w):
     n = math.sqrt(x*x + y*y + z*z + w*w)
     if n > 1e-10:
@@ -28,7 +24,6 @@ def _q_normalized(x, y, z, w):
         return x*inv, y*inv, z*inv, w*inv
     return 0.0, 0.0, 0.0, 1.0
 
-@njit(fastmath=True, cache=True)
 def _q_rotate_vec3(qx, qy, qz, qw, vx, vy, vz):
     n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
     if n > 1e-10:
@@ -42,7 +37,6 @@ def _q_rotate_vec3(qx, qy, qz, qw, vx, vy, vz):
             tw*-qy - tx*-qz + ty*qw + tz*-qx,
             tw*-qz + tx*-qy - ty*-qx + tz*qw)
 
-@njit(fastmath=True, cache=True)
 def _q_to_euler(x, y, z, w):
     sinx_cosp = 2*(w*x + y*z)
     cosx_cosp = 1 - 2*(x*x + y*y)
@@ -54,7 +48,6 @@ def _q_to_euler(x, y, z, w):
     rz = math.degrees(math.atan2(sinz_cosp, cosz_cosp))
     return rx, ry, rz
 
-@njit(fastmath=True, cache=True)
 def _q_from_euler(x_deg, y_deg, z_deg):
     hx = math.radians(x_deg) * 0.5
     hy = math.radians(y_deg) * 0.5
@@ -67,7 +60,6 @@ def _q_from_euler(x_deg, y_deg, z_deg):
             cx*cy*sz - sx*sy*cz,
             cx*cy*cz + sx*sy*sz)
 
-@njit(fastmath=True, cache=True)
 def _q_slerp(x1, y1, z1, w1, x2, y2, z2, w2, t):
     d = x1*x2 + y1*y2 + z1*z2 + w1*w2
     if d < 0:

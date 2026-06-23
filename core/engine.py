@@ -180,6 +180,8 @@ class Engine:
             "toolbar_actions": [],
             "menu_items": [],
         }
+        self._project_path: Optional[str] = None
+        self._project_settings_path: Optional[str] = None
     @classmethod
     def instance(cls) -> Optional[Engine]: return cls._instance
     @property
@@ -282,6 +284,12 @@ class Engine:
         except Exception as e:
             Logger.error(f"Audio system init failed: {e}")
 
+        # Initialize BuildSettings
+        from core.build_settings import BuildSettings
+        bs = BuildSettings()
+        if self._project_path:
+            bs.load(os.path.join(self._project_path, "BuildSettings.json"))
+
         Logger.info("Zarin Engine initialized.")
     def load_scene(self, path: str) -> Optional[Scene]:
         try:
@@ -379,8 +387,7 @@ class Engine:
         self._fixed_accum += dt
         self._profiler.start("fixed_update")
         MAX_FIXED_STEPS = 5
-        if self._fixed_accum >= self._fixed_dt:
-            sys_plugins = self._plugin_manager.get_system_plugins()
+        sys_plugins = self._plugin_manager.get_system_plugins()
         steps = 0
         while self._fixed_accum >= self._fixed_dt and steps < MAX_FIXED_STEPS:
             for p in sys_plugins:

@@ -1,0 +1,335 @@
+from __future__ import annotations
+import math
+import numpy as np
+import moderngl
+from typing import Optional, Any
+from core.math3d import Vec3, Mat4
+from core.components.lighting.light import Light, LightType
+from core.components.transform import Transform
+from core.components.rendering.mesh_filter import MeshFilter
+from core.components.rendering.mesh_renderer import MeshRenderer
+from core.renderer.mesh_data import MeshData
+from core.logger import Logger
+
+
+class ShadowRenderer:
+    def __init__(self, ctx: moderngl.Context, shadow_prog: moderngl.Program,
+                 shadow_resolution: int = 1024, shadow_distance: float = 50.0):
+        self._ctx = ctx
+        self._prog = shadow_prog
+        self._shadow_resolution = shadow_resolution
+        self._shadow_distance = shadow_distance
+        self._shadow_maps: list[Any] = []
+        self._shadow_fbos: list[Any] = []
+        self._cascade_splits: list[float] = [1000000.0] * 3
+        self._light_space_matrices: list[np.ndarray] = [np.eye(4, dtype=np.float32) for _ in range(3)]
+        self._point_shadow_resolution: int = 1024
+        self._point_shadow_maps: list[Any] = []
+        self._point_shadow_fbos: list[Any] = []
+        self._point_light_vps: list[np.ndarray] = [np.eye(4, dtype=np.float32) for _ in range(6)]
+        self._has_point_shadow: bool = False
+        self._point_light_world_pos: Vec3 = Vec3.zero()
+        self._point_light_range: float = 10.0
+        self._point_light_idx: int = -1
+        self._spot_shadow_map: Optional[Any] = None
+        self._spot_shadow_fbo: Optional[Any] = None
+        self._spot_light_vp: np.ndarray = np.eye(4, dtype=np.float32)
+        self._has_spot_shadow: bool = False
+        self._spot_light_idx: int = -1
+        self._create_csm_resources()
+
+    def _create_csm_resources(self):
+        for sm in self._shadow_maps:
+            try:
+                sm.release()
+            except Exception:
+                pass
+        for fbo in self._shadow_fbos:
+            try:
+                fbo.release()
+            except Exception:
+                pass
+        self._shadow_maps = []
+        self._shadow_fbos = []
+        res = self._shadow_resolution
+        for _ in range(3):
+            tex = self._ctx.depth_texture((res, res))
+            fbo = self._ctx.framebuffer(depth_attachment=tex)
+            self._shadow_maps.append(tex)
+            self._shadow_fbos.append(fbo)
+
+    def _create_point_shadow_resources(self):
+        res = self._point_shadow_resolution
+        for _ in range(6):
+            tex = self._ctx.depth_texture((res, res))
+            fbo = self._ctx.framebuffer(depth_attachment=tex)
+            self._point_shadow_maps.append(tex)
+            self._point_shadow_fbos.append(fbo)
+
+    def _create_spot_shadow_resources(self):
+        res = self._shadow_resolution
+        tex = self._ctx.depth_texture((res, res))
+        self._spot_shadow_map = tex
+        self._spot_shadow_fbo = self._ctx.framebuffer(depth_attachment=self._spot_shadow_map)
+
+    def _build_renderable_shadow(self, scene) -> list[tuple[MeshData, Mat4]]:
+        result = []
+        for ent in scene.get_entities_with_component(MeshFilter):
+            if not ent.active:
+                continue
+            mf = ent.get_component(MeshFilter)
+            mr = ent.get_component(MeshRenderer)
+            tr = ent.get_component(Transform)
+            if not tr or not mr or not mr.enabled:
+                continue
+            if not mr.cast_shadows:
+                continue
+            cache_key = f"{mf.mesh_path or mf.mesh_name}|s=1.0|cp=False|fu=False"
+            mesh = None
+            if hasattr(self, '_get_mesh'):
+                mesh = self._get_mesh(cache_key)
+                if mesh is None and not mf.mesh_path:
+                    mesh = self._get_mesh(mf.mesh_name)
+            if mesh:
+                result.append((mesh, tr.world_matrix))
+        return result
+
+    def _get_mesh(self, cache_key: str) -> Optional[MeshData]:
+        return None
+
+    def render_geometry(self, vp: np.ndarray, fbo, renderable_shadow: list, resolution: int = 1024):
+        fbo.clear(depth=1.0)
+        fbo.use()
+        self._ctx.viewport = (0, 0, resolution, resolution)
+        self._ctx.enable(moderngl.DEPTH_TEST)
+        self._ctx.depth_mask = True
+        self._ctx.disable(moderngl.CULL_FACE)
+        prog = self._prog
+        vp_bytes = vp.astype(np.float32).tobytes()
+        for mesh, model_mat in renderable_shadow:
+            prog["u_model"].write(model_mat.to_f32().tobytes())
+            prog["u_light_vp"].write(vp_bytes)
+            mesh.render(prog)
+        self._ctx.enable(moderngl.CULL_FACE)
+
+    def render_pass(self, scene, cam_near: float, cam_far: float, cam_fov: float,
+                    aspect: float, view_mat: Mat4, lights: list, meshes: dict) -> None:
+        if not self._prog:
+            # Logger.warning("ShadowRenderer: no shadow program")
+            return
+        self._get_mesh = lambda k: meshes.get(k)
+        renderable_shadow = self._build_renderable_shadow(scene)
+        # Logger.info(f"ShadowRenderer: {len(renderable_shadow)} shadow casters")
+        sun_light = None
+        sun_transform = None
+        for l, lt in lights:
+            if l.light_type == LightType.DIRECTIONAL and l.cast_shadows:
+                sun_light = l
+                sun_transform = lt
+                break
+        if sun_light and renderable_shadow:
+            self._cascade_splits = [1000000.0] * 3
+            self._render_directional_shadow(sun_transform, renderable_shadow,
+                                            cam_near, cam_far, cam_fov, aspect, view_mat)
+        else:
+            self._cascade_splits = [0.0] * 3
+        point_light = None
+        point_transform = None
+        for l, lt in lights:
+            if l.light_type == LightType.POINT and l.cast_shadows:
+                point_light = l
+                point_transform = lt
+                break
+        if point_light:
+            self._render_point_shadow(point_light, point_transform, renderable_shadow, lights)
+        else:
+            self._has_point_shadow = False
+        spot_light = None
+        spot_transform = None
+        for l, lt in lights:
+            if l.light_type == LightType.SPOT and l.cast_shadows:
+                spot_light = l
+                spot_transform = lt
+                break
+        if spot_light:
+            self._render_spot_shadow(spot_light, spot_transform, renderable_shadow, lights)
+        else:
+            self._has_spot_shadow = False
+        self._get_mesh = None
+
+    def _render_directional_shadow(self, sun_transform, renderable_shadow,
+                                   cam_near, cam_far, cam_fov, aspect, view_mat):
+        light_dir = sun_transform.forward.normalized()
+        inv_view = np.linalg.inv(view_mat._d)
+        tan_half_fov = math.tan(math.radians(cam_fov) * 0.5)
+        csm_far = min(cam_far, self._shadow_distance)
+        corners = []
+        for z in (cam_near, csm_far):
+            half_h = tan_half_fov * z
+            half_w = half_h * aspect
+            for y_sign in (-1, 1):
+                for x_sign in (-1, 1):
+                    view_pt = np.array([x_sign * half_w, y_sign * half_h, -z, 1.0], dtype=np.float32)
+                    world_pt = view_pt @ inv_view
+                    world_pt = world_pt / world_pt[3]
+                    corners.append(world_pt[:3])
+        center = np.mean(corners, axis=0)
+        light_pos = Vec3(*center) - light_dir * self._shadow_distance
+        light_up = Vec3(0.0, 1.0, 0.0)
+        if abs(light_dir.dot(light_up)) > 0.999:
+            light_up = Vec3(0.0, 0.0, 1.0)
+        view = Mat4.look_at(light_pos, Vec3(*center), light_up)
+        corners_light = []
+        for c in corners:
+            p = np.append(c, 1.0) @ view._d
+            corners_light.append(p[:3] / p[3])
+        corners_light = np.array(corners_light)
+        min_pt = np.min(corners_light, axis=0)
+        max_pt = np.max(corners_light, axis=0)
+        r = max(abs(min_pt[0]), abs(max_pt[0])) + self._shadow_distance * 0.08
+        t = max(abs(min_pt[1]), abs(max_pt[1])) + self._shadow_distance * 0.08
+        z_margin = self._shadow_distance * 0.1
+        n_val = max(-max_pt[2] - z_margin, 0.01)
+        f_val = max(-min_pt[2] + z_margin, n_val + 0.01)
+        proj = Mat4.orthographic(-r, r, -t, t, n_val, f_val)
+        vp = view._d @ proj._d
+        self._light_space_matrices[0] = vp
+        # Logger.info(f"DirShadow: r={r:.2f} t={t:.2f} n={n_val:.2f} f={f_val:.2f} res={self._shadow_resolution}")
+        self.render_geometry(vp, self._shadow_fbos[0], renderable_shadow, resolution=self._shadow_resolution)
+
+    def _render_point_shadow(self, point_light, point_transform, renderable_shadow, lights):
+        if not self._point_shadow_maps:
+            self._create_point_shadow_resources()
+        light_pos = point_transform.position
+        light_range = max(point_light.range, 0.1)
+        face_configs = [
+            (Vec3(1, 0, 0), Vec3(0, -1, 0)),
+            (Vec3(-1, 0, 0), Vec3(0, -1, 0)),
+            (Vec3(0, 1, 0), Vec3(0, 0, 1)),
+            (Vec3(0, -1, 0), Vec3(0, 0, -1)),
+            (Vec3(0, 0, 1), Vec3(0, -1, 0)),
+            (Vec3(0, 0, -1), Vec3(0, -1, 0)),
+        ]
+        near_plane = 0.1
+        far_plane = light_range
+        proj = Mat4.perspective(90.0, 1.0, near_plane, far_plane)
+        proj_np = proj._d
+        self._has_point_shadow = True
+        self._point_light_world_pos = light_pos
+        self._point_light_range = light_range
+        self._point_light_idx = next(
+            (i for i, (l, lt) in enumerate(lights) if l is point_light and lt is point_transform), -1
+        )
+        for face_idx, (face_dir, face_up) in enumerate(face_configs):
+            view = Mat4.look_at(light_pos, light_pos + face_dir, face_up)
+            view_np = view._d
+            vp = view_np @ proj_np
+            self._point_light_vps[face_idx] = vp
+            self.render_geometry(vp, self._point_shadow_fbos[face_idx], renderable_shadow, resolution=self._point_shadow_resolution)
+
+    def _render_spot_shadow(self, spot_light, spot_transform, renderable_shadow, lights):
+        if not self._spot_shadow_map:
+            self._create_spot_shadow_resources()
+        light_pos = spot_transform.position
+        light_dir = spot_transform.forward.normalized()
+        light_range = max(spot_light.range, 0.1)
+        spot_fov = max(spot_light.spot_angle * 2.0, 1.0)
+        near_plane = 0.1
+        far_plane = light_range
+        view = Mat4.look_at(light_pos, light_pos + light_dir, Vec3.up())
+        proj = Mat4.perspective(spot_fov, 1.0, near_plane, far_plane)
+        vp = view._d @ proj._d
+        self._spot_light_vp = vp
+        self._has_spot_shadow = True
+        self._spot_light_idx = next(
+            (i for i, (l, lt) in enumerate(lights) if l is spot_light and lt is spot_transform), -1
+        )
+        self.render_geometry(vp, self._spot_shadow_fbo, renderable_shadow, resolution=self._shadow_resolution)
+
+    def set_uniforms(self, prog):
+        has_csm = self._cascade_splits[2] > 0.0
+        if has_csm and "u_cascade_count" in prog:
+            prog["u_cascade_count"].value = 3
+            if "u_light_space_matrices" in prog:
+                all_mats = np.array([self._light_space_matrices[ci].astype(np.float32) for ci in range(3)])
+                prog["u_light_space_matrices"].write(all_mats.tobytes())
+            if "u_cascade_splits" in prog:
+                prog["u_cascade_splits"].write(np.array(self._cascade_splits, dtype=np.float32).tobytes())
+            for ci in range(3):
+                tex_unit = 3 + ci
+                self._shadow_maps[ci].use(tex_unit)
+                si = f"u_shadow_map_{ci}"
+                if si in prog:
+                    prog[si].value = tex_unit
+        else:
+            if "u_cascade_count" in prog:
+                prog["u_cascade_count"].value = 0
+        if "u_shadow_bias" in prog:
+            prog["u_shadow_bias"].value = 0.002
+        if self._has_point_shadow and "u_point_shadow_count" in prog:
+            prog["u_point_shadow_count"].value = 1
+            if "u_point_light_vps" in prog:
+                all_vps = np.array([self._point_light_vps[fi].astype(np.float32) for fi in range(6)])
+                prog["u_point_light_vps"].write(all_vps.tobytes())
+            for fi in range(6):
+                tex_unit = 6 + fi
+                self._point_shadow_maps[fi].use(tex_unit)
+                si = f"u_point_shadow_map_{fi}"
+                if si in prog:
+                    prog[si].value = tex_unit
+            if "u_point_light_pos" in prog:
+                prog["u_point_light_pos"].write(
+                    np.array(self._point_light_world_pos.to_array(), dtype=np.float32).tobytes()
+                )
+            if "u_point_light_range" in prog:
+                prog["u_point_light_range"].value = float(self._point_light_range)
+            if "u_point_shadow_light_index" in prog:
+                prog["u_point_shadow_light_index"].value = self._point_light_idx if self._point_light_idx >= 0 else -1
+        else:
+            if "u_point_shadow_count" in prog:
+                prog["u_point_shadow_count"].value = 0
+        if self._has_spot_shadow and "u_spot_shadow_count" in prog:
+            prog["u_spot_shadow_count"].value = 1
+            tex_unit = 12
+            self._spot_shadow_map.use(tex_unit)
+            if "u_spot_shadow_map" in prog:
+                prog["u_spot_shadow_map"].value = tex_unit
+            if "u_spot_light_vp" in prog:
+                prog["u_spot_light_vp"].write(self._spot_light_vp.astype(np.float32).tobytes())
+            if "u_spot_shadow_light_index" in prog:
+                prog["u_spot_shadow_light_index"].value = self._spot_light_idx if self._spot_light_idx >= 0 else -1
+        else:
+            if "u_spot_shadow_count" in prog:
+                prog["u_spot_shadow_count"].value = 0
+
+    def release(self):
+        for sm in self._shadow_maps:
+            try:
+                sm.release()
+            except Exception:
+                pass
+        for fbo in self._shadow_fbos:
+            try:
+                fbo.release()
+            except Exception:
+                pass
+        for sm in self._point_shadow_maps:
+            try:
+                sm.release()
+            except Exception:
+                pass
+        for fbo in self._point_shadow_fbos:
+            try:
+                fbo.release()
+            except Exception:
+                pass
+        if self._spot_shadow_map:
+            try:
+                self._spot_shadow_map.release()
+            except Exception:
+                pass
+        if self._spot_shadow_fbo:
+            try:
+                self._spot_shadow_fbo.release()
+            except Exception:
+                pass
