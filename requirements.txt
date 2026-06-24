@@ -8,3 +8,4 @@ pybullet>=3.2.7
 ovphysx>=0.4.13
 pynput>=1.7.6
 msgpack>=1.0.0
+setuptools
