@@ -6,6 +6,17 @@ from typing import Optional
 from core.logger import Logger
 from core.renderer.mesh_data import SHADER_DIR
 
+_ENGINE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _resolve_shader_path(shader_path: str) -> str:
+    if os.path.isabs(shader_path) or os.path.exists(shader_path):
+        return shader_path
+    resolved = os.path.join(_ENGINE_ROOT, shader_path)
+    if os.path.exists(resolved):
+        return resolved
+    return shader_path
+
 
 class ShaderManager:
     """Compiles, caches and retrieves shader programs."""
@@ -49,8 +60,9 @@ class ShaderManager:
     def _compile_shader_file(self, shader_path: str) -> Optional[moderngl.Program]:
         """Compile a .shader file containing GLSLPROGRAM...ENDGLSL blocks."""
         from core.material import _extract_glsl_from_shader
+        resolved = _resolve_shader_path(shader_path)
         try:
-            with open(shader_path, "r", encoding="utf-8") as f:
+            with open(resolved, "r", encoding="utf-8") as f:
                 text = f.read()
         except Exception as e:
             Logger.error(f"Failed to read '{shader_path}': {e}", e)

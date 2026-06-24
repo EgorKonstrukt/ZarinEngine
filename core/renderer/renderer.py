@@ -213,7 +213,7 @@ void main() {
                 self._quad_ibo
             )
             self._shaders = ShaderManager(self._ctx)
-            self._shaders.store("assets/shaders/default", self._default_prog)
+            self._shaders.store("core/shaders/default", self._default_prog)
             self._materials = MaterialManager(self._ctx)
             self._mesh_loader = MeshLoader(self._ctx, self._default_prog, self._outline_prog)
             self._mesh_loader.register_primitives()

@@ -19,7 +19,7 @@ class Sky(Component):
 
     def __init__(self):
         super().__init__()
-        self.material_path: str = "assets/shaders/Sky.shader"
+        self.material_path: str = "core/shaders/Sky.shader"
 
     def render_sky(self, ctx, shaders, view_mat, proj_mat, dir_light, cube_mesh):
         prog = shaders.get_or_compile(self.material_path) if shaders else None
@@ -64,5 +64,5 @@ class Sky(Component):
     def deserialize(cls, data: dict) -> Sky:
         c = cls()
         c.enabled = data.get("enabled", True)
-        c.material_path = data.get("material_path", "assets/shaders/Sky.shader")
+        c.material_path = data.get("material_path", "core/shaders/Sky.shader")
         return c

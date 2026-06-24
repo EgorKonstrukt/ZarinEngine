@@ -27,7 +27,7 @@ class Cloud(Component):
 
     def __init__(self):
         super().__init__()
-        self.material_path: str = "assets/shaders/Clouds.shader"
+        self.material_path: str = "core/shaders/Clouds.shader"
         self.coverage: float = 0.5
         self.density: float = 1.0
         self.speed: float = 0.1
@@ -94,7 +94,7 @@ class Cloud(Component):
     def deserialize(cls, data: dict) -> Cloud:
         c = cls()
         c.enabled = data.get("enabled", True)
-        c.material_path = data.get("material_path", "assets/shaders/Clouds.shader")
+        c.material_path = data.get("material_path", "core/shaders/Clouds.shader")
         c.coverage = data.get("coverage", 0.5)
         c.density = data.get("density", 1.0)
         c.speed = data.get("speed", 0.1)

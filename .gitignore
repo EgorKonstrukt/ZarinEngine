@@ -18,3 +18,9 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+/assets/scripts/
+/assets/
+/build/
+/_build_assets_11904/
+/_build_scenes_11904/
+/config/
