@@ -778,8 +778,12 @@ class _FilePane(QWidget):
         self.rebuild_breadcrumb()
         try:
             entries = sorted(os.listdir(dirpath))
-        except PermissionError:
-            return
+        except (PermissionError, FileNotFoundError) as e:
+            if isinstance(e, FileNotFoundError):
+                os.makedirs(dirpath, exist_ok=True)
+                entries = []
+            else:
+                return
         visible = [e for e in entries if not e.startswith(".") and not e.endswith(".import")]
         if filter_text:
             visible = [e for e in visible if filter_text.lower() in e.lower()]

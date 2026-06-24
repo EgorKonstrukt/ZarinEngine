@@ -1,11 +1,11 @@
 PyQt6
 moderngl
 numpy
-numba
 pyopenal
 pyogg
 pybullet
 ovphysx
 pynput
 msgpack
+cython
 setuptools
