@@ -25,7 +25,7 @@ parser.add_argument("--onefile", action="store_true", help="Single file build")
 parser.add_argument("--strip-unused", action="store_true", default=None, help="Strip unused assets (scans scenes)")
 parser.add_argument("--no-strip-unused", action="store_true", dest="no_strip", help="Include all assets")
 parser.add_argument("--no-winrt", action="store_true", help="Disable Windows Runtime DLL inclusion (smaller distributable)")
-parser.add_argument("--include-physx", action="store_true", help="Include PhysX solver (ovphysx) in addition to pybullet")
+
 _args, remaining = parser.parse_known_args()
 
 OUTPUT_DIR = Path(_args.output_dir)
@@ -36,9 +36,58 @@ ONEFILE = _args.onefile
 CLI_STRIP = _args.strip_unused
 CLI_NO_STRIP = _args.no_strip
 NO_WINRT = _args.no_winrt
-INCLUDE_PHYSX = _args.include_physx
 
 print("=== " + ("EDITOR BUILD" if BUILD_EDITOR else "PLAYER BUILD") + " ===")
+
+
+def _resolve_physics_solver() -> str:
+    """Read the active physics solver from ProjectSettings.json."""
+    ps_path = ROOT / "ProjectSettings.json"
+    if not ps_path.exists():
+        return "pybullet"
+    try:
+        with open(ps_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        solver = data.get("physics", {}).get("solver", "pybullet")
+        return solver if solver in ("pybullet", "physx") else "pybullet"
+    except Exception:
+        return "pybullet"
+
+
+def _minify_pil():
+    """Temporarily reduce PIL._plugins to exclude heavy C extensions."""
+    import PIL
+    pil_dir = Path(PIL.__file__).parent
+    src = pil_dir / "__init__.py"
+    bak = pil_dir / "__init__.py.__bak__"
+    if bak.exists():
+        return
+    original = src.read_text(encoding="utf-8")
+    bak.write_text(original, encoding="utf-8")
+    # Keep only plugins loaded by preinit() — drops _avif, _webp, _imagingcms, etc.
+    kept = {
+        "BmpImagePlugin", "GifImagePlugin", "JpegImagePlugin",
+        "PpmImagePlugin", "PngImagePlugin",
+    }
+    new_plugins = [f'    "{p}",' for p in sorted(kept)]
+    import re
+    modified = re.sub(
+        r'_plugins\s*=\s*\[.*?^\]',
+        '_plugins = [\n' + '\n'.join(new_plugins) + '\n]',
+        original, flags=re.DOTALL | re.MULTILINE
+    )
+    src.write_text(modified, encoding="utf-8")
+    print(f"  PIL minified: {len(kept)} plugins kept (was {original.count('ImagePlugin')})")
+
+
+def _restore_pil():
+    import PIL
+    pil_dir = Path(PIL.__file__).parent
+    bak = pil_dir / "__init__.py.__bak__"
+    if bak.exists():
+        (pil_dir / "__init__.py").write_text(bak.read_text(encoding="utf-8"), encoding="utf-8")
+        bak.unlink()
+        print("  PIL restored")
 
 
 def _load_build_settings() -> dict:
@@ -276,7 +325,7 @@ def build():
         # Core packages (runtime)
         "--include-package=core",
         "--include-package=plugins",
-        "--include-package=physics_solvers.pybullet_solver",
+        f"--include-package=physics_solvers.{_resolve_physics_solver()}_solver",
         # Data — use RELATIVE paths (Nuitka resolves relative to CWD which is ROOT)
         "--include-data-file=" + _ASSIMP_SRC + "=" + _ASSIMP_SRC,
         # Use auto-generated BuildSettings if build_plugins was empty (includes auto-discovered plugins)
@@ -294,8 +343,6 @@ def build():
         NUITKA_OPTIONS.append("--disable-console")
     if NO_WINRT:
         NUITKA_OPTIONS.append("--include-windows-runtime-dlls=no")
-    if INCLUDE_PHYSX:
-        NUITKA_OPTIONS.append("--include-package=physics_solvers.physx_solver")
 
     # Include only specified scenes
     scenes_dir = ROOT / "scenes"
@@ -370,7 +417,11 @@ def build():
             print(f"  ENTRY: {opt}")
     print()
 
-    result = subprocess.run(NUITKA_OPTIONS, cwd=str(ROOT))
+    _minify_pil()
+    try:
+        result = subprocess.run(NUITKA_OPTIONS, cwd=str(ROOT))
+    finally:
+        _restore_pil()
 
     # Cleanup temp files and directories
     temp_bs = ROOT / "_build_BuildSettings.json"

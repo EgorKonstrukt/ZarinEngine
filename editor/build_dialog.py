@@ -71,11 +71,6 @@ class BuildDialog(QDialog):
         self._winrt_cb.setToolTip("Disable to reduce distribution size. Only affects Windows builds.")
         form.addRow("WinRT:", self._winrt_cb)
 
-        self._physx_cb = QCheckBox("Include PhysX solver (ovphysx) — adds ~20 MB")
-        self._physx_cb.setChecked(False)
-        self._physx_cb.setToolTip("Enable to include the PhysX physics solver. By default only pybullet is included.")
-        form.addRow("Physics:", self._physx_cb)
-
         main.addWidget(settings_group)
 
         # Output
@@ -147,8 +142,6 @@ class BuildDialog(QDialog):
             args.append("--no-strip-unused")
         if not self._winrt_cb.isChecked():
             args.append("--no-winrt")
-        if self._physx_cb.isChecked():
-            args.append("--include-physx")
         return args
 
     def _start_build(self):
