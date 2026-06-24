@@ -138,8 +138,8 @@ def main():
         screen = app.primaryScreen()
         if screen:
             sg = screen.availableGeometry()
-            window.resize(1280, 720)
-            window.move((sg.width() - 1280) // 2, (sg.height() - 720) // 2)
+            window.resize(1920, 1080)
+            window.move((sg.width() - 1920) // 2, (sg.height() - 1080) // 2)
     splash.advance("Ready!")
     app.processEvents()
     from editor.ipc_server import IpcServer

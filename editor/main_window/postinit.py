@@ -15,7 +15,7 @@ def post_init(mw):
         from PyQt6.QtGui import QFont
         from core.config import get_global_config
         cfg = get_global_config()
-        scale = cfg.get("editor.ui_scale", 100)
+        scale = cfg.get("editor.ui_scale", 75)
         base_size = cfg.get("editor.font_size", 12)
         f = QFont()
         f.setPointSizeF(base_size * scale / 100.0)
@@ -57,8 +57,6 @@ def post_init(mw):
         cam.add_component(Camera())
         sky_ent = scene.create_entity("Sky")
         sky_ent.add_component(Sky())
-        cloud_ent = scene.create_entity("Clouds")
-        cloud_ent.add_component(Cloud())
         mw._hierarchy.refresh()
         QTimer.singleShot(0, lambda: initial_dock_sizes(mw))
         from core.config import get_global_config
@@ -76,7 +74,16 @@ def initial_dock_sizes(mw):
         return
     mw.resizeDocks(
         [mw._hierarchy, mw._viewport_dock, mw._inspector],
-        [180, 500, 300], Qt.Orientation.Vertical)
+        [200, 1420, 300], Qt.Orientation.Horizontal)
+    mw.resizeDocks(
+        [mw._hierarchy, mw._collab_panel],
+        [620, 370], Qt.Orientation.Vertical)
+    mw.resizeDocks(
+        [mw._viewport_dock, mw._project],
+        [620, 370], Qt.Orientation.Vertical)
+    mw.resizeDocks(
+        [mw._inspector, mw._console],
+        [620, 370], Qt.Orientation.Vertical)
 
 
 def load_renderer_config(mw):

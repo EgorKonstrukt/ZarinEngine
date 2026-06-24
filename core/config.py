@@ -102,7 +102,7 @@ def get_global_config() -> Config:
             "editor": {
                 "theme": "dark",
                 "font_size": 12,
-                "ui_scale": 100,
+                "ui_scale": 75,
                 "language": "en",
                 "auto_save": True,
                 "auto_save_interval": 300,
