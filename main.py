@@ -19,6 +19,11 @@ def _ensure_extensions():
         return
     if not os.path.exists(_pyx):
         return
+    import glob as _glob
+    if _glob.glob(os.path.join(_dir, "core", "_convex_hull*.pyd")):
+        with open(_marker, "w") as f:
+            f.write("ok")
+        return
     print("[Zarin Engine] Building native extensions...", file=sys.stderr)
     try:
         subprocess.check_call(
