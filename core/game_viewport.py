@@ -137,10 +137,10 @@ class GameViewport(QOpenGLWidget):
 
     def keyPressEvent(self, event: QKeyEvent):
         if self._engine.play_mode:
-            from core.input.input_manager import InputManager
-            im = InputManager.instance()
-            with im._lock:
-                im._pending.append((event.nativeVirtualKey(), True))
+            kc = self._input_manager.qt_key_to_vk(event.key())
+            if kc is not None:
+                with self._input_manager._lock:
+                    self._input_manager._pending.append((kc, True))
             if event.key() == Qt.Key.Key_Escape and self._mouse_captured:
                 self._release_mouse()
             event.accept()
@@ -149,16 +149,28 @@ class GameViewport(QOpenGLWidget):
 
     def keyReleaseEvent(self, event: QKeyEvent):
         if self._engine.play_mode:
-            from core.input.input_manager import InputManager
-            im = InputManager.instance()
-            with im._lock:
-                im._pending.append((event.nativeVirtualKey(), False))
+            kc = self._input_manager.qt_key_to_vk(event.key())
+            if kc is not None:
+                with self._input_manager._lock:
+                    self._input_manager._pending.append((kc, False))
             event.accept()
             return
         event.ignore()
 
+    def _mouse_button_index(self, qt_btn) -> int:
+        from PyQt6.QtCore import Qt
+        if qt_btn == Qt.MouseButton.LeftButton:
+            return 0
+        if qt_btn == Qt.MouseButton.RightButton:
+            return 1
+        if qt_btn == Qt.MouseButton.MiddleButton:
+            return 2
+        return 0
+
     def mousePressEvent(self, event: QMouseEvent):
         if self._engine.play_mode:
+            btn = self._mouse_button_index(event.button())
+            self._input_manager.feed_mouse_button(btn, True)
             if not self._mouse_captured:
                 self._capture_mouse()
             event.accept()
@@ -171,10 +183,8 @@ class GameViewport(QOpenGLWidget):
             local_pos = event.position()
             dx = local_pos.x() - center.x()
             dy = local_pos.y() - center.y()
-            from core.input.input_manager import InputManager
-            im = InputManager.instance()
-            with im._lock:
-                im._pending_mouse_delta.append((dx, dy))
+            with self._input_manager._lock:
+                self._input_manager._pending_mouse_delta.append((dx, dy))
             self._center_cursor()
             event.accept()
             return
@@ -182,7 +192,17 @@ class GameViewport(QOpenGLWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if self._mouse_captured:
+            btn = self._mouse_button_index(event.button())
+            self._input_manager.feed_mouse_button(btn, False)
             self.grabMouse()
+            event.accept()
+            return
+        event.ignore()
+
+    def wheelEvent(self, event):
+        if self._engine.play_mode:
+            delta = event.angleDelta()
+            self._input_manager.feed_scroll(delta.x(), delta.y())
             event.accept()
             return
         event.ignore()

@@ -167,12 +167,7 @@ class PhysicsPlugin(PluginBase):
         super().initialize(engine)
         settings = self._get_physics_settings()
         self._simulation_mode = settings.get("simulation_mode", "multi_threaded")
-        # Force single-threaded mode in Nuitka builds (multiprocessing spawn is unreliable)
-        try:
-            if __compiled__:
-                self._simulation_mode = "single"
-        except NameError:
-            pass
+
         solver_name = settings.get("solver", "pybullet")
         solver_module = ""
         solver_class = ""
@@ -184,28 +179,33 @@ class PhysicsPlugin(PluginBase):
             solver_class = "PyBulletSolver"
 
         if self._simulation_mode == "single":
-            import importlib
-            try:
-                mod = importlib.import_module(solver_module)
-                cls = getattr(mod, solver_class)
-                self._solver = cls()
-                self._solver.initialize(settings)
-                self._physics_scene = PhysicsScene(self._solver)
-                Logger.info(f"PhysicsPlugin: {solver_name} in-process (single-threaded).")
-            except Exception as e:
-                Logger.error(f"PhysicsPlugin: single-threaded init failed: {e}")
-                self._solver = None
-                self._physics_scene = None
+            self._init_single(solver_module, solver_class, settings, solver_name)
         elif self._simulation_mode == "per_layer_process":
             Logger.info(f"PhysicsPlugin: per-layer process mode (processes spawned on demand).")
         else:
             self._physics_process = PhysicsProcess(project_root=self._project_root)
             ok = self._physics_process.start(solver_module, solver_class, settings)
             if not ok:
-                Logger.error("PhysicsPlugin: process init failed.")
+                Logger.warning("PhysicsPlugin: multi-threaded init failed, falling back to single-threaded mode")
                 self._physics_process = None
-                return
-            Logger.info(f"PhysicsPlugin: solver {solver_name} started (shared-memory).")
+                self._simulation_mode = "single"
+                self._init_single(solver_module, solver_class, settings, solver_name)
+            else:
+                Logger.info(f"PhysicsPlugin: solver {solver_name} started (shared-memory).")
+
+    def _init_single(self, solver_module: str, solver_class: str, settings: dict, solver_name: str):
+        import importlib
+        try:
+            mod = importlib.import_module(solver_module)
+            cls = getattr(mod, solver_class)
+            self._solver = cls()
+            self._solver.initialize(settings)
+            self._physics_scene = PhysicsScene(self._solver)
+            Logger.info(f"PhysicsPlugin: {solver_name} in-process (single-threaded).")
+        except Exception as e:
+            Logger.error(f"PhysicsPlugin: single-threaded init failed: {e}")
+            self._solver = None
+            self._physics_scene = None
 
     def _solver_module_class(self) -> tuple[str, str]:
         settings = self._get_physics_settings()
