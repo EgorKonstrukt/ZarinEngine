@@ -175,6 +175,24 @@ class CollabServer:
                 snap_data = {"scene": scene, "requesting_id": info.peer_id}
                 info.writer.write(make_msg(MessageType.SCENE_SNAPSHOT, snap_data))
                 await info.writer.drain()
+        elif msg_type == MessageType.ASSET_LIST_REQ:
+            data["id"] = info.peer_id
+            self._broadcast(MessageType.ASSET_LIST_REQ, data, exclude=info.peer_id)
+        elif msg_type == MessageType.ASSET_LIST:
+            data["id"] = info.peer_id
+            self._broadcast(MessageType.ASSET_LIST, data, exclude=info.peer_id)
+        elif msg_type == MessageType.ASSET_SYNC:
+            data["id"] = info.peer_id
+            self._broadcast(MessageType.ASSET_SYNC, data, exclude=info.peer_id)
+        elif msg_type == MessageType.ASSET_WATCH:
+            data["id"] = info.peer_id
+            self._broadcast(MessageType.ASSET_WATCH, data, exclude=info.peer_id)
+        elif msg_type == MessageType.ASSET_DELETE:
+            data["id"] = info.peer_id
+            self._broadcast(MessageType.ASSET_DELETE, data, exclude=info.peer_id)
+        elif msg_type == MessageType.ASSET_REQUEST:
+            data["id"] = info.peer_id
+            self._broadcast(MessageType.ASSET_REQUEST, data, exclude=info.peer_id)
 
     def _broadcast(self, msg_type: int, data: dict, exclude: Optional[str] = None):
         msg = make_msg(msg_type, data)

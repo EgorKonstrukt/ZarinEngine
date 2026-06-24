@@ -3,7 +3,7 @@ from typing import Optional
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QPushButton, QLineEdit, QSpinBox,
                               QListWidget, QListWidgetItem, QFrame,
-                              QMessageBox, QFileDialog)
+                              QProgressBar, QMessageBox, QFileDialog)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QFont
 
@@ -143,6 +143,35 @@ class CollaborationPanel(QDockWidget):
         self._latency_label.setStyleSheet("color: #888; font-size: 9px;")
         layout.addWidget(self._latency_label)
 
+        sep_assets = QFrame()
+        sep_assets.setFrameShape(QFrame.Shape.HLine)
+        sep_assets.setStyleSheet("color: #333;")
+        layout.addWidget(sep_assets)
+
+        asset_title = QLabel("Asset Sync")
+        asset_title.setStyleSheet("color: #aaa; font-size: 10px; font-weight: bold;")
+        layout.addWidget(asset_title)
+
+        self._asset_status = QLabel("Idle")
+        self._asset_status.setStyleSheet("color: #888; font-size: 9px;")
+        layout.addWidget(self._asset_status)
+
+        self._asset_progress = QProgressBar()
+        self._asset_progress.setRange(0, 100)
+        self._asset_progress.setValue(0)
+        self._asset_progress.setFixedHeight(12)
+        self._asset_progress.setStyleSheet(
+            "QProgressBar { background: #2a2a2a; border: 1px solid #444; text-align: center; font-size: 8px; color: #aaa; }"
+            "QProgressBar::chunk { background: #2d5a8e; }"
+        )
+        self._asset_progress.setVisible(False)
+        layout.addWidget(self._asset_progress)
+
+        self._sync_btn = QPushButton("Sync Assets")
+        self._sync_btn.setStyleSheet("background: #3a4a6a; color: #ddd; border: 1px solid #5a7a9a; padding: 3px;")
+        self._sync_btn.clicked.connect(self._on_sync_assets)
+        layout.addWidget(self._sync_btn)
+
         sep3 = QFrame()
         sep3.setFrameShape(QFrame.Shape.HLine)
         sep3.setStyleSheet("color: #333;")
@@ -229,6 +258,42 @@ class CollaborationPanel(QDockWidget):
         self._latency_label.setText(f"Latency: {latency:.0f} ms" if latency > 0 else "Latency: -- ms")
         self._play_btn.setEnabled(collab.is_host)
         self._play_btn.setChecked(collab.play_mode_active)
+        self._update_asset_sync()
+
+    def _update_asset_sync(self):
+        if not self._collab:
+            return
+        progress = self._collab.asset_sync_progress
+        total = progress["total"]
+        current = progress["current"]
+        file_name = progress["current_file"]
+        failed = progress["failed"]
+        syncing = self._collab.asset_syncing
+        if syncing and total > 0:
+            pct = int(current / total * 100) if total > 0 else 0
+            self._asset_progress.setValue(pct)
+            self._asset_progress.setVisible(True)
+            self._asset_status.setText(f"Syncing: {file_name} ({current}/{total})")
+            self._sync_btn.setEnabled(False)
+        else:
+            self._asset_progress.setVisible(total > 0 and not syncing)
+            if total > 0 and not syncing:
+                self._asset_progress.setValue(100)
+            if failed:
+                self._asset_status.setText(f"Synced ({failed} failed)")
+                self._asset_status.setStyleSheet("color: #c44; font-size: 9px;")
+            elif total > 0 and not syncing:
+                self._asset_status.setText("Synced")
+                self._asset_status.setStyleSheet("color: #4c4; font-size: 9px;")
+            else:
+                self._asset_status.setText("Idle")
+                self._asset_status.setStyleSheet("color: #888; font-size: 9px;")
+            self._sync_btn.setEnabled(self._collab.connected)
+
+    def _on_sync_assets(self):
+        if not self._collab or not self._collab.connected:
+            return
+        self._collab.request_asset_list()
 
     @staticmethod
     def _format_bytes(b: int) -> str:

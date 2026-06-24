@@ -1,7 +1,9 @@
 from __future__ import annotations
 import json
+import os
 import time
 import uuid
+import hashlib
 import threading
 import asyncio
 from typing import Optional, Callable
@@ -11,6 +13,89 @@ from core.network.server import CollabServer
 from core.network.client import CollabClient
 from core.ecs import Scene, Entity, ComponentRegistry
 from core.config import get_global_config
+
+
+def _compute_hash(path: str) -> str:
+    h = hashlib.md5()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+    except Exception:
+        return ""
+    return h.hexdigest()
+
+
+def _scan_assets_dir(assets_dir: str) -> dict[str, dict]:
+    result = {}
+    if not os.path.isdir(assets_dir):
+        return result
+    for root, dirs, files in os.walk(assets_dir):
+        for fn in sorted(files):
+            full = os.path.join(root, fn)
+            rel = os.path.relpath(full, assets_dir)
+            try:
+                size = os.path.getsize(full)
+                mtime = os.path.getmtime(full)
+            except Exception:
+                continue
+            result[rel] = {"size": size, "mtime": mtime, "hash": ""}
+    return result
+
+
+class _AssetWatcher(threading.Thread):
+    def __init__(self, assets_dir: str, interval: float, on_change: Callable, on_delete: Callable):
+        super().__init__(daemon=True)
+        self._assets_dir = assets_dir
+        self._interval = interval
+        self._on_change = on_change
+        self._on_delete = on_delete
+        self._stop_event = threading.Event()
+        self._snapshots: dict[str, float] = {}
+        self._refresh()
+
+    def _refresh(self):
+        self._snapshots.clear()
+        if not os.path.isdir(self._assets_dir):
+            return
+        for root, dirs, files in os.walk(self._assets_dir):
+            for fn in files:
+                full = os.path.join(root, fn)
+                rel = os.path.relpath(full, self._assets_dir)
+                try:
+                    self._snapshots[rel] = os.path.getmtime(full)
+                except Exception:
+                    pass
+
+    def stop(self):
+        self._stop_event.set()
+
+    def run(self):
+        while not self._stop_event.is_set():
+            self._stop_event.wait(self._interval)
+            if self._stop_event.is_set():
+                return
+            if not os.path.isdir(self._assets_dir):
+                continue
+            current: dict[str, float] = {}
+            for root, dirs, files in os.walk(self._assets_dir):
+                for fn in files:
+                    full = os.path.join(root, fn)
+                    rel = os.path.relpath(full, self._assets_dir)
+                    try:
+                        current[rel] = os.path.getmtime(full)
+                    except Exception:
+                        pass
+            for rel, mtime in current.items():
+                old = self._snapshots.get(rel)
+                if old is None:
+                    self._on_change(rel)
+                elif abs(mtime - old) > 0.1:
+                    self._on_change(rel)
+            for rel in list(self._snapshots.keys()):
+                if rel not in current:
+                    self._on_delete(rel)
+            self._snapshots = current
 
 
 class _PollThread(threading.Thread):
@@ -93,6 +178,13 @@ class CollaborationManager:
         self._ping_timestamp: float = 0.0
         self._ping_thread = _PollThread(self._send_ping, int(self.settings.ping_interval * 1000), self._make_stop_event())
         self._ping_thread.start()
+        self._asset_syncing = False
+        self._asset_sync_progress: dict = {"total": 0, "current": 0, "current_file": "", "failed": 0}
+        self._asset_checksums: dict[str, str] = {}
+        self._asset_watcher: Optional[_AssetWatcher] = None
+        self._on_asset_progress: Optional[Callable[[dict], None]] = None
+        self._asset_write_lock = 0
+        self._suppressed_paths: set[str] = set()
 
     def _make_stop_event(self) -> threading.Event:
         ev = threading.Event()
@@ -165,6 +257,7 @@ class CollaborationManager:
         self._server_thread = threading.Thread(target=_run, daemon=True)
         self._server_thread.start()
         self._server_ready.wait(timeout=5)
+        self._start_asset_watcher()
         Logger.info(f"Collab server started on {host}:{port}")
 
     def connect(self, host: str = "127.0.0.1", port: int = 9876, name: str = "User"):
@@ -179,6 +272,7 @@ class CollaborationManager:
         self._client.connect(host, port, name)
 
     def stop(self):
+        self._stop_asset_watcher()
         for ev in self._stop_events:
             ev.set()
         self._stop_events.clear()
@@ -198,6 +292,7 @@ class CollaborationManager:
         self._entity_synced_ids.clear()
         self._local_entity_ids.clear()
         self._as_host = False
+        self._asset_syncing = False
         Logger.info("Collab stopped")
 
     def _on_disconnected(self):
@@ -234,6 +329,9 @@ class CollaborationManager:
                 self._apply_scene_snapshot(data["scene"])
             if self._scene_snapshot_callback:
                 self._scene_snapshot_callback(data)
+            if not self._as_host:
+                self.request_asset_list()
+            self._start_asset_watcher()
         elif msg_type == MessageType.PEER_JOINED:
             pid = data.get("id", "")
             if pid and pid not in self._peers and pid != self._client.peer_id:
@@ -312,6 +410,125 @@ class CollaborationManager:
                 pass
             elif scene_data:
                 self._apply_scene_snapshot(scene_data)
+        elif msg_type == MessageType.ASSET_LIST_REQ:
+            pid = data.get("id", "")
+            if self._as_host and pid:
+                self.send_asset_list(pid)
+        elif msg_type == MessageType.ASSET_LIST:
+            pid = data.get("id", "")
+            if pid != self._client.peer_id:
+                return
+            self._handle_asset_list(data)
+        elif msg_type == MessageType.ASSET_SYNC:
+            pid = data.get("id", "")
+            if pid != self._client.peer_id:
+                self._handle_asset_sync(data)
+        elif msg_type == MessageType.ASSET_WATCH:
+            pid = data.get("id", "")
+            if pid != self._client.peer_id:
+                self._handle_asset_watch(data)
+        elif msg_type == MessageType.ASSET_DELETE:
+            pid = data.get("id", "")
+            if pid != self._client.peer_id:
+                self._handle_asset_delete(data)
+        elif msg_type == MessageType.ASSET_REQUEST:
+            pid = data.get("id", "")
+            if pid != self._client.peer_id and self._as_host:
+                self._handle_asset_request(data)
+
+    def _handle_asset_list(self, data: dict):
+        paths = data.get("assets", [])
+        checksums = data.get("checksums", {})
+        assets_dir = self._get_assets_dir()
+        os.makedirs(assets_dir, exist_ok=True)
+        need_sync = []
+        for rel in paths:
+            full = os.path.join(assets_dir, rel)
+            expected = checksums.get(rel, "")
+            if os.path.exists(full):
+                actual = _compute_hash(full)
+                if actual == expected:
+                    continue
+            need_sync.append(rel)
+        self._asset_syncing = True
+        self._asset_sync_progress = {"total": len(need_sync), "current": 0, "current_file": "", "failed": 0}
+        for rel in need_sync:
+            self._asset_sync_progress["current_file"] = rel
+            if self._on_asset_progress:
+                self._on_asset_progress(self._asset_sync_progress)
+            self.send_asset_request(rel)
+        if not need_sync:
+            self._asset_syncing = False
+            self._asset_sync_progress["current_file"] = ""
+            self._asset_sync_progress["current"] = 0
+            if self._on_asset_progress:
+                self._on_asset_progress(self._asset_sync_progress)
+
+    def _handle_asset_sync(self, data: dict):
+        rel = data.get("path", "")
+        raw = data.get("data")
+        checksum = data.get("checksum", "")
+        if not rel or raw is None:
+            return
+        assets_dir = self._get_assets_dir()
+        full = os.path.join(assets_dir, rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        self._asset_write_lock += 1
+        self._suppressed_paths.add(rel)
+        try:
+            with open(full, "wb") as f:
+                f.write(raw)
+        except Exception as e:
+            Logger.error(f"Collab: failed to write asset '{rel}': {e}")
+            self._asset_sync_progress["failed"] += 1
+            self._asset_write_lock -= 1
+            return
+        self._asset_write_lock -= 1
+        if checksum:
+            actual = _compute_hash(full)
+            if actual != checksum:
+                Logger.warning(f"Collab: asset '{rel}' checksum mismatch")
+        self._asset_sync_progress["current"] += 1
+        if self._asset_sync_progress["current"] >= self._asset_sync_progress["total"]:
+            self._asset_syncing = False
+            self._asset_sync_progress["current_file"] = ""
+        if self._on_asset_progress:
+            self._on_asset_progress(self._asset_sync_progress)
+
+    def _handle_asset_watch(self, data: dict):
+        rel = data.get("path", "")
+        raw = data.get("data")
+        if not rel or raw is None:
+            return
+        assets_dir = self._get_assets_dir()
+        full = os.path.join(assets_dir, rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        self._asset_write_lock += 1
+        self._suppressed_paths.add(rel)
+        try:
+            with open(full, "wb") as f:
+                f.write(raw)
+        except Exception as e:
+            Logger.error(f"Collab: failed to write watched asset '{rel}': {e}")
+        finally:
+            self._asset_write_lock -= 1
+
+    def _handle_asset_delete(self, data: dict):
+        rel = data.get("path", "")
+        if not rel:
+            return
+        assets_dir = self._get_assets_dir()
+        full = os.path.join(assets_dir, rel)
+        self._asset_write_lock += 1
+        self._suppressed_paths.add(rel)
+        try:
+            if os.path.exists(full):
+                os.remove(full)
+                Logger.info(f"Collab: removed asset '{rel}'")
+        except Exception as e:
+            Logger.error(f"Collab: failed to remove asset '{rel}': {e}")
+        finally:
+            self._asset_write_lock -= 1
 
     def send_cursor(self, screen_x: float, screen_y: float, hit_pos: Optional[list[float]] = None):
         if self._client and self._client.connected:
@@ -415,6 +632,130 @@ class CollaborationManager:
         cfg.set("collab.ping_interval", s.ping_interval)
         cfg.set("collab.poll_interval", s.poll_interval)
         cfg.save()
+
+    def set_asset_progress_callback(self, cb: Callable[[dict], None]):
+        self._on_asset_progress = cb
+
+    @property
+    def asset_syncing(self) -> bool:
+        return self._asset_syncing
+
+    @property
+    def asset_sync_progress(self) -> dict:
+        return dict(self._asset_sync_progress)
+
+    def _get_assets_dir(self) -> str:
+        root = self._engine.project_root if self._engine.project_root else os.getcwd()
+        return os.path.join(root, "assets")
+
+    def _scan_assets(self) -> dict[str, dict]:
+        return _scan_assets_dir(self._get_assets_dir())
+
+    def _load_checksums(self, manifest: dict[str, dict]) -> dict[str, str]:
+        cache = {}
+        for rel, info in manifest.items():
+            full = os.path.join(self._get_assets_dir(), rel)
+            if os.path.exists(full):
+                cache[rel] = _compute_hash(full)
+            else:
+                cache[rel] = ""
+        return cache
+
+    def request_asset_list(self):
+        if self._client and self._client.connected:
+            self._client.send(MessageType.ASSET_LIST_REQ, {})
+
+    def send_asset_list(self, target_peer_id: str):
+        manifest = self._scan_assets()
+        self._asset_checksums = self._load_checksums(manifest)
+        paths = list(manifest.keys())
+        self._client.send(MessageType.ASSET_LIST, {
+            "target": target_peer_id,
+            "assets": paths,
+            "checksums": {p: self._asset_checksums.get(p, "") for p in paths},
+        })
+
+    def send_asset_file(self, relative_path: str):
+        full = os.path.join(self._get_assets_dir(), relative_path)
+        if not os.path.exists(full):
+            return
+        try:
+            with open(full, "rb") as f:
+                raw = f.read()
+        except Exception as e:
+            Logger.error(f"Collab: failed to read asset '{relative_path}': {e}")
+            return
+        checksum = _compute_hash(full)
+        self._client.send(MessageType.ASSET_SYNC, {
+            "path": relative_path,
+            "data": raw,
+            "checksum": checksum,
+            "size": len(raw),
+        })
+
+    def send_asset_request(self, relative_path: str):
+        if self._client and self._client.connected:
+            self._client.send(MessageType.ASSET_REQUEST, {
+                "path": relative_path,
+            })
+
+    def _handle_asset_request(self, data: dict):
+        rel = data.get("path", "")
+        if not rel:
+            return
+        self.send_asset_file(rel)
+
+    def send_asset_delete(self, relative_path: str):
+        if self._client and self._client.connected:
+            self._client.send(MessageType.ASSET_DELETE, {
+                "path": relative_path,
+            })
+
+    def _send_watch_update(self, relative_path: str):
+        if not self._client or not self._client.connected:
+            return
+        if self._asset_syncing or self._asset_write_lock > 0:
+            return
+        full = os.path.join(self._get_assets_dir(), relative_path)
+        if not os.path.exists(full):
+            return
+        try:
+            with open(full, "rb") as f:
+                raw = f.read()
+        except Exception:
+            return
+        self._client.send(MessageType.ASSET_WATCH, {
+            "path": relative_path,
+            "data": raw,
+            "size": len(raw),
+        })
+
+    def _start_asset_watcher(self):
+        self._stop_asset_watcher()
+        ad = self._get_assets_dir()
+        if not os.path.isdir(ad):
+            return
+        def _on_watch_change(rel):
+            if rel in self._suppressed_paths:
+                self._suppressed_paths.discard(rel)
+                return
+            self._send_watch_update(rel)
+        def _on_watch_delete(rel):
+            if rel in self._suppressed_paths:
+                self._suppressed_paths.discard(rel)
+                return
+            self.send_asset_delete(rel)
+        self._asset_watcher = _AssetWatcher(
+            ad, 2.0,
+            on_change=_on_watch_change,
+            on_delete=_on_watch_delete,
+        )
+        self._asset_watcher.start()
+
+    def _stop_asset_watcher(self):
+        if self._asset_watcher:
+            self._asset_watcher.stop()
+            self._asset_watcher = None
 
     def send_gizmo_state(self, mode: str, hover_axis: int, dragging: bool):
         if self._client and self._client.connected:

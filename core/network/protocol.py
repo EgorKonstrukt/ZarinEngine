@@ -36,6 +36,13 @@ class MessageType(IntEnum):
     COMPONENT_REMOVE = 28
     COMPONENT_ADDED = 29
     COMPONENT_REMOVED = 30
+    ASSET_LIST_REQ = 31
+    ASSET_LIST = 32
+    ASSET_SYNC = 33
+    ASSET_SYNC_END = 34
+    ASSET_WATCH = 35
+    ASSET_DELETE = 36
+    ASSET_REQUEST = 37
 
 
 def make_msg(msg_type: int, data: dict) -> bytes:

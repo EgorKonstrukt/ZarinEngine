@@ -619,22 +619,92 @@ class HierarchyPanel(QDockWidget):
         create_empty = QAction("Create Empty", self)
         create_empty.triggered.connect(self._create_entity)
         menu.addAction(create_empty)
-        primitives_menu = menu.addMenu("3D Object")
+
+        obj_3d = menu.addMenu("3D Object")
         for name in ["Cube", "Sphere", "Plane"]:
             act = QAction(name, self)
             act.triggered.connect(lambda checked=False, n=name.lower(): self._create_primitive(n))
-            primitives_menu.addAction(act)
-        probuilder_menu = menu.addMenu("ProBuilder Shape")
+            obj_3d.addAction(act)
+        probuilder = obj_3d.addMenu("ProBuilder Shape")
         from core.components.mesh_editor.primitives import get_primitive_names
         for name in get_primitive_names():
             act = QAction(name, self)
             act.triggered.connect(lambda checked=False, n=name: self._create_probuilder_primitive(n))
-            probuilder_menu.addAction(act)
+            probuilder.addAction(act)
+
         lights_menu = menu.addMenu("Light")
         for ltype, label in [("directional", "Directional Light"), ("point", "Point Light"), ("spot", "Spot Light")]:
             act = QAction(label, self)
             act.triggered.connect(lambda checked=False, lt=ltype: self._create_light(lt))
             lights_menu.addAction(act)
+
+        effects = menu.addMenu("Effects")
+        for label, comp_cls, setup_fn in [
+            ("Sky", "Sky", None),
+            ("Clouds", "Cloud", None),
+            ("Particle System", "ParticleSystem", None),
+        ]:
+            act = QAction(label, self)
+            act.triggered.connect(
+                lambda checked=False, n=label, cc=comp_cls, sf=setup_fn:
+                self._create_from_component(n, cc, sf)
+            )
+            effects.addAction(act)
+
+        audio_menu = menu.addMenu("Audio")
+        for label, comp_cls in [("Audio Source", "AudioSource"), ("Audio Listener", "AudioListener"), ("Reverb Zone", "ReverbZone")]:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
+            audio_menu.addAction(act)
+
+        physics_menu = menu.addMenu("Physics")
+        for label, comp_cls in [("Rigidbody", "Rigidbody"), ("Box Collider", "BoxCollider"), ("Sphere Collider", "SphereCollider"), ("Capsule Collider", "CapsuleCollider"), ("Mesh Collider", "MeshCollider"), ("Character Controller", "CharacterController"), ("Joint", "Joint")]:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
+            physics_menu.addAction(act)
+
+        physics2d_menu = menu.addMenu("Physics 2D")
+        for label, comp_cls in [("Rigidbody 2D", "Rigidbody2D"), ("Box Collider 2D", "BoxCollider2D"), ("Circle Collider 2D", "CircleCollider2D")]:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
+            physics2d_menu.addAction(act)
+
+        rendering_menu = menu.addMenu("Rendering")
+        for label, comp_cls in [("Sprite Renderer", "SpriteRenderer"), ("SVG Renderer", "SvgRenderer")]:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
+            rendering_menu.addAction(act)
+
+        anim_menu = menu.addMenu("Animation")
+        for label, comp_cls in [("Animation", "Animation"), ("Animator", "Animator")]:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
+            anim_menu.addAction(act)
+
+        constraints_menu = menu.addMenu("Constraints")
+        for label, comp_cls in [
+            ("Aim Constraint", "AimConstraint"),
+            ("Follow Transform", "FollowTransformConstraint"),
+            ("Look At", "LookAtConstraint"),
+            ("Move Towards", "MoveTowardsConstraint"),
+            ("Parent", "ParentConstraint"),
+            ("Position", "PositionConstraint"),
+            ("Rotate Towards", "RotateTowardsConstraint"),
+            ("Rotation", "RotationConstraint"),
+            ("Scale", "ScaleConstraint"),
+            ("Scale To", "ScaleToConstraint"),
+        ]:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
+            constraints_menu.addAction(act)
+
+        net_menu = menu.addMenu("Networking")
+        for label, comp_cls in [("Network Identity", "NetworkIdentity"), ("Remote Collaborator", "RemoteCollaborator")]:
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
+            net_menu.addAction(act)
+
+        menu.addSeparator()
         cam_act = QAction("Camera", self)
         cam_act.triggered.connect(self._create_camera)
         menu.addAction(cam_act)
@@ -808,6 +878,31 @@ class HierarchyPanel(QDockWidget):
         item = self._find_item(new_e.id, self._tree.invisibleRootItem())
         if item:
             self._tree.setCurrentItem(item)
+    def _create_from_component(self, name: str, comp_cls_name: str, extra_setup=None):
+        if not self._scene:
+            return
+        from core.commands import CreateEntityCommand, get_history
+        from core.ecs import ComponentRegistry
+        from core.components import Transform
+        cls = ComponentRegistry.get(comp_cls_name)
+        if not cls:
+            return
+        cmd = CreateEntityCommand(self._scene, name)
+        get_history().execute(cmd)
+        e = self._scene.get_entity(cmd._entity_id)
+        if e:
+            e.add_component(Transform())
+            e.add_component(cls())
+            if extra_setup:
+                extra_setup(e)
+        self._refresh()
+        if e:
+            self._collab_sync_create(e)
+            self._selected_entity = e
+            self.entity_selected.emit(e)
+            item = self._find_item(e.id, self._tree.invisibleRootItem())
+            if item:
+                self._tree.setCurrentItem(item)
     def _delete_entity(self, entity: Entity):
         if not self._scene:
             return
