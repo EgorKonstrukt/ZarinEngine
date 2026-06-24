@@ -24,6 +24,8 @@ parser.add_argument("--no-console", action="store_true", help="Disable console w
 parser.add_argument("--onefile", action="store_true", help="Single file build")
 parser.add_argument("--strip-unused", action="store_true", default=None, help="Strip unused assets (scans scenes)")
 parser.add_argument("--no-strip-unused", action="store_true", dest="no_strip", help="Include all assets")
+parser.add_argument("--no-winrt", action="store_true", help="Disable Windows Runtime DLL inclusion (smaller distributable)")
+parser.add_argument("--include-physx", action="store_true", help="Include PhysX solver (ovphysx) in addition to pybullet")
 _args, remaining = parser.parse_known_args()
 
 OUTPUT_DIR = Path(_args.output_dir)
@@ -33,6 +35,8 @@ NO_CONSOLE = _args.no_console
 ONEFILE = _args.onefile
 CLI_STRIP = _args.strip_unused
 CLI_NO_STRIP = _args.no_strip
+NO_WINRT = _args.no_winrt
+INCLUDE_PHYSX = _args.include_physx
 
 print("=== " + ("EDITOR BUILD" if BUILD_EDITOR else "PLAYER BUILD") + " ===")
 
@@ -272,7 +276,7 @@ def build():
         # Core packages (runtime)
         "--include-package=core",
         "--include-package=plugins",
-        "--include-package=physics_solvers",
+        "--include-package=physics_solvers.pybullet_solver",
         # Data — use RELATIVE paths (Nuitka resolves relative to CWD which is ROOT)
         "--include-data-file=" + _ASSIMP_SRC + "=" + _ASSIMP_SRC,
         # Use auto-generated BuildSettings if build_plugins was empty (includes auto-discovered plugins)
@@ -288,6 +292,10 @@ def build():
         NUITKA_OPTIONS.append("--onefile")
     if NO_CONSOLE:
         NUITKA_OPTIONS.append("--disable-console")
+    if NO_WINRT:
+        NUITKA_OPTIONS.append("--include-windows-runtime-dlls=no")
+    if INCLUDE_PHYSX:
+        NUITKA_OPTIONS.append("--include-package=physics_solvers.physx_solver")
 
     # Include only specified scenes
     scenes_dir = ROOT / "scenes"
