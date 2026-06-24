@@ -29,7 +29,7 @@ class MeshRenderer(Component):
     def deserialize(cls, data: dict) -> MeshRenderer:
         mr = cls()
         mr.enabled = data.get("enabled", True)
-        mr.material_path = data.get("material_path", "")
+        mr.material_path = data.get("material_path", "") or ""
         mr.cast_shadows = data.get("cast_shadows", True)
         mr.receive_shadows = data.get("receive_shadows", True)
         return mr

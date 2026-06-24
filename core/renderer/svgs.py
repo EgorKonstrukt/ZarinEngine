@@ -65,7 +65,7 @@ class SvgRendererGL:
             else:
                 from core.engine import Engine
                 eng = Engine.instance()
-                root = eng.project_root if eng else os.getcwd()
+                root = eng.project_root if eng and eng.project_root else os.getcwd()
                 candidate = os.path.normpath(os.path.join(root, path))
                 if os.path.exists(candidate):
                     abs_path = candidate

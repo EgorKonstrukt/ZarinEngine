@@ -928,8 +928,8 @@ class ParticleSystem(Component):
         ps.shape_box = data.get("shape_box", [1,1,1])
         ps.shape_arc = data.get("shape_arc", 360.0)
         ps.render_mode = ParticleRenderMode(data.get("render_mode", "billboard"))
-        ps.material_path = data.get("material_path", "")
-        ps.texture_path = data.get("texture_path", "")
+        ps.material_path = data.get("material_path", "") or ""
+        ps.texture_path = data.get("texture_path", "") or ""
         ps.sort_mode = ParticleSortMode(data.get("sort_mode", "none"))
         ps.sorting_fudge = data.get("sorting_fudge", 0.0)
         ps.flipbook_columns = data.get("flipbook_columns", 1)

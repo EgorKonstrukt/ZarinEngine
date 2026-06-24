@@ -29,6 +29,6 @@ class MeshFilter(Component):
     def deserialize(cls, data: dict) -> MeshFilter:
         mf = cls()
         mf.enabled = data.get("enabled", True)
-        mf.mesh_path = data.get("mesh_path", "")
-        mf.mesh_name = data.get("mesh_name", "")
+        mf.mesh_path = data.get("mesh_path", "") or ""
+        mf.mesh_name = data.get("mesh_name", "") or ""
         return mf

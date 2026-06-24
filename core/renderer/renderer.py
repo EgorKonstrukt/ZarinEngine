@@ -3,6 +3,7 @@ import os
 import json
 import threading
 import time
+import traceback
 
 import numpy as np
 import moderngl
@@ -502,7 +503,7 @@ void main() {
             mf = ent.get_component(MeshFilter)
             mesh_name = mf.mesh_name
             scale, cp, fuvs = 1.0, False, False
-            mesh_path = mf.mesh_path
+            mesh_path = mf.mesh_path or ""
             if mesh_path:
                 meta = self._import_meta_cache.get(mesh_path)
                 if meta is None:
@@ -511,7 +512,7 @@ void main() {
                 scale, cp, fuvs = meta
             if not mesh_name and not mesh_path:
                 mesh_name = "cube"
-            elif not mesh_name:
+            elif not mesh_name and mesh_path:
                 mesh_name = os.path.splitext(os.path.basename(mesh_path))[0]
             mesh = self.get_or_create_mesh(mesh_name, mesh_path, scale, cp, fuvs)
             if mesh:

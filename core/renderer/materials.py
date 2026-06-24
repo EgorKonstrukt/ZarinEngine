@@ -36,7 +36,7 @@ class MaterialManager:
         if not path:
             return None
         eng = Engine.instance()
-        root = eng.project_root if eng else os.getcwd()
+        root = eng.project_root if eng and eng.project_root else os.getcwd()
         abs_path = path if os.path.isabs(path) else os.path.normpath(os.path.join(root, path))
         cached = self._material_cache.get(abs_path)
         if cached is not None:
@@ -88,7 +88,7 @@ class MaterialManager:
             if os.path.exists(candidate):
                 return candidate
         eng = Engine.instance()
-        root = eng.project_root if eng else os.getcwd()
+        root = eng.project_root if eng and eng.project_root else os.getcwd()
         if len(path) > 1 and path[1] == ":":
             parts = path.replace("\\", "/").split("/")
             for i in range(len(parts)):

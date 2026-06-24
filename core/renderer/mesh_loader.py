@@ -122,7 +122,7 @@ class MeshLoader:
             if os.path.exists(rel):
                 return rel
             eng = Engine.instance()
-            root = eng.project_root if eng else os.getcwd()
+            root = eng.project_root if eng and eng.project_root else os.getcwd()
             if len(file_path) > 1 and file_path[1] == ":":
                 parts = file_path.replace("\\", "/").split("/")
                 for i in range(len(parts)):

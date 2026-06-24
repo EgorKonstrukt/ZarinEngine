@@ -4,6 +4,7 @@ import copy
 import math
 import os
 import time
+import traceback
 import uuid
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -465,6 +466,7 @@ class SceneViewport(QOpenGLWidget):
             if not self._vsync_enabled and self.isVisible():
                 self.update()
         except Exception as e:
+            traceback.print_exc()
             Logger.error(f"Render error: {e}", e)
 
     def update_scene(self):

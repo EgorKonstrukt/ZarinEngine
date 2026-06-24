@@ -178,7 +178,7 @@ class Bloom(GraphicsEffect):
         inst._downsample = int(data.get("_downsample", 4))
         inst._iterations = int(data.get("_iterations", 1))
         inst._diffusion = float(data.get("_diffusion", 1.0))
-        inst._dirt_texture = str(data.get("_dirt_texture", ""))
+        inst._dirt_texture = str(data.get("_dirt_texture", "") or "")
         inst._dirt_intensity = float(data.get("_dirt_intensity", 0.0))
         inst._prog = None
         inst._extract_prog = None

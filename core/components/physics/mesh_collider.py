@@ -68,7 +68,7 @@ class MeshCollider(Component):
         mc = cls()
         mc.enabled = data.get("enabled", True)
         mc.center = Vec3(*data.get("center", [0, 0, 0]))
-        mc.mesh_path = data.get("mesh_path", "")
+        mc.mesh_path = data.get("mesh_path", "") or ""
         mc.collision_mode = CollisionMode(data.get("collision_mode", "auto"))
         mc.max_vertices = data.get("max_vertices", 2000)
         mc.is_trigger = data.get("is_trigger", False)

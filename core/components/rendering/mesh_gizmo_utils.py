@@ -126,10 +126,12 @@ def _decimate_verts(verts: np.ndarray, max_vertices: int) -> np.ndarray:
 
 def _compute_hull_edges_from_verts(verts: np.ndarray) -> Optional[list]:
     try:
-        from scipy.spatial import ConvexHull
-        hull = ConvexHull(verts)
+        from core.convex_hull import convex_hull_simplices
+        simplices = convex_hull_simplices(verts)
+        if len(simplices) == 0:
+            return None
         edges_set: set[tuple[int, int]] = set()
-        for simplex in hull.simplices:
+        for simplex in simplices:
             a, b, c = int(simplex[0]), int(simplex[1]), int(simplex[2])
             for ia, ib in ((a, b), (b, c), (c, a)):
                 edges_set.add((ia, ib) if ia < ib else (ib, ia))

@@ -53,7 +53,7 @@ class SpriteRenderer(Component):
     def deserialize(cls, data: dict) -> SpriteRenderer:
         sr = cls()
         sr.enabled = data.get("enabled", True)
-        sr.texture_path = data.get("texture_path", "")
+        sr.texture_path = data.get("texture_path", "") or ""
         sr.color = data.get("color", [1, 1, 1, 1])
         sr.flip_x = data.get("flip_x", False)
         sr.flip_y = data.get("flip_y", False)

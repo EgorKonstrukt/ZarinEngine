@@ -57,7 +57,7 @@ class SvgRenderer(Component):
     def deserialize(cls, data: dict) -> SvgRenderer:
         sr = cls()
         sr.enabled = data.get("enabled", True)
-        sr.svg_path = data.get("svg_path", "")
+        sr.svg_path = data.get("svg_path", "") or ""
         sr.color = data.get("color", [1, 1, 1, 1])
         sr.flip_x = data.get("flip_x", False)
         sr.flip_y = data.get("flip_y", False)
