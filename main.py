@@ -102,7 +102,7 @@ def main():
     if args.mcp:
         run_headless_mcp()
         return
-    if args.file:
+    if args.file and args.file.endswith(".zpes"):
         from editor.ipc_server import send_file_to_running_instance
         if send_file_to_running_instance(args.file):
             print(f"[Zarin Engine] Sent '{args.file}' to running editor instance.")
@@ -180,7 +180,7 @@ def main():
     ipc_server.try_bind()
     window.destroyed.connect(ipc_server.stop)
 
-    if args.file and os.path.exists(args.file):
+    if args.file and args.file.endswith(".zpes") and os.path.exists(args.file):
         from editor.main_window.handlers import open_scene_by_path
         open_scene_by_path(window, args.file)
 

@@ -6,8 +6,10 @@ from core.components.rendering.svg_renderer import SvgRenderer
 from core.components.rendering.particle_system import ParticleSystem
 from core.components.rendering.sky import Sky
 from core.components.rendering.clouds import Cloud
+from core.components.rendering.text_renderer import TextRenderer
 
 __all__ = [
     "Camera", "CameraProjection", "MeshFilter", "MeshRenderer",
     "SpriteRenderer", "SvgRenderer", "ParticleSystem", "Sky", "Cloud",
+    "TextRenderer",
 ]

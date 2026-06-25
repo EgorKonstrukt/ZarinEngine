@@ -32,6 +32,7 @@ from core.renderer.particles import ParticleRenderer
 from core.renderer.sprites import SpriteRendererGL
 from core.renderer.svgs import SvgRendererGL
 from core.renderer.icons import IconRenderer
+from core.renderer.text import TextRendererGL
 from core.renderer.materials import MaterialManager
 from core.renderer.shaders import ShaderManager
 from core.renderer.mesh_loader import MeshLoader
@@ -57,6 +58,7 @@ class Renderer:
         self._icon_prog: Optional[moderngl.Program] = None
         self._icon_textures: dict = {}
         self._sprite_prog: Optional[moderngl.Program] = None
+        self._text_prog: Optional[moderngl.Program] = None
         self._overlay_prog: Optional[moderngl.Program] = None
         self._quad_vbo: Optional[moderngl.Buffer] = None
         self._quad_ibo: Optional[moderngl.Buffer] = None
@@ -108,6 +110,7 @@ class Renderer:
         self._skybox_enabled: bool = True
         self._particles: Optional[ParticleRenderer] = None
         self._sprites: Optional[SpriteRendererGL] = None
+        self._text: Optional[TextRendererGL] = None
         self._svgs: Optional[SvgRendererGL] = None
         self._culler: Optional[Any] = None
         self._icons: Optional[IconRenderer] = None
@@ -181,6 +184,10 @@ class Renderer:
                 vertex_shader=read_shader("sprite.vert"),
                 fragment_shader=read_shader("sprite.frag")
             )
+            self._text_prog = self._ctx.program(
+                vertex_shader=read_shader("text.vert"),
+                fragment_shader=read_shader("text.frag")
+            )
             self._overlay_prog = self._ctx.program(
                 vertex_shader=read_shader("shadow_overlay.vert"),
                 fragment_shader=read_shader("shadow_overlay.frag")
@@ -236,6 +243,7 @@ void main() {
             self._particles = ParticleRenderer(self._ctx, self._particle_prog)
             self._sprites = SpriteRendererGL(self._ctx, self._sprite_prog)
             self._sprites.set_texture_loader(self._materials.load_texture)
+            self._text = TextRendererGL(self._ctx, self._text_prog)
             self._svgs = SvgRendererGL(self._ctx, self._sprite_prog)
             self._icons = IconRenderer(self._ctx, self._icon_prog)
             self._initialized = True
@@ -712,6 +720,12 @@ void main() {
         if prof:
             prof.stop("render_sprites")
         if prof:
+            prof.start("render_text")
+        if self._text:
+            self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h)
+        if prof:
+            prof.stop("render_text")
+        if prof:
             prof.start("render_svgs")
         self._svgs.render(scene, view_mat, proj_mat)
         if prof:
@@ -1044,6 +1058,8 @@ void main() {
             self._particles.release()
         if self._svgs:
             self._svgs.release()
+        if self._text:
+            self._text.release()
         if self._cloud_quad:
             self._cloud_quad.release()
         if self._icons:
@@ -1072,7 +1088,7 @@ void main() {
                      self._wireframe_prog, self._outline_prog,
                      self._gizmo_fatline_prog, self._gizmo_solid_prog,
                      self._shadow_prog, self._particle_prog, self._icon_prog, self._sprite_prog,
-                     self._overlay_prog, self._pp_copy_prog]:
+                     self._text_prog, self._overlay_prog, self._pp_copy_prog]:
             if prog:
                 try:
                     prog.release()

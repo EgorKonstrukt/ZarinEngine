@@ -26,6 +26,7 @@ class FieldType(Enum):
     LAYER = "layer"
     LAYER_MASK = "layer_mask"
     ASSET = "asset"
+    TEXTAREA = "textarea"
 
 
 @dataclass

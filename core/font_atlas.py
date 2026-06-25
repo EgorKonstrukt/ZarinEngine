@@ -1,0 +1,247 @@
+from __future__ import annotations
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+import os
+import platform
+from typing import Optional
+
+
+_SYSTEM_FONT_CANDIDATES: list[str] = []
+
+if platform.system() == "Windows":
+    _windir = os.environ.get("WINDIR", "C:\\Windows")
+    _SYSTEM_FONT_CANDIDATES = [
+        os.path.join(_windir, "Fonts", "seguiui.ttf"),
+        os.path.join(_windir, "Fonts", "arial.ttf"),
+        os.path.join(_windir, "Fonts", "tahoma.ttf"),
+        os.path.join(_windir, "Fonts", "calibri.ttf"),
+        os.path.join(_windir, "Fonts", "consola.ttf"),
+    ]
+elif platform.system() == "Darwin":
+    _SYSTEM_FONT_CANDIDATES = [
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/SFNS.ttf",
+        "/Library/Fonts/Arial.ttf",
+    ]
+else:
+    _SYSTEM_FONT_CANDIDATES = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+
+_UNICODE_RANGES = [
+    (32, 127),
+    (160, 256),
+    (1024, 1280),
+    (0x400, 0x4FF + 1),
+]
+
+
+def get_default_font_path() -> str:
+    for p in _SYSTEM_FONT_CANDIDATES:
+        if os.path.exists(p):
+            return p
+    return ""
+
+
+def _collect_chars() -> list[str]:
+    seen: set[int] = set()
+    chars: list[str] = []
+    for start, end in _UNICODE_RANGES:
+        for cp in range(start, end):
+            if cp not in seen:
+                seen.add(cp)
+                try:
+                    chars.append(chr(cp))
+                except ValueError:
+                    pass
+    return chars
+
+
+class FontAtlas:
+    font_path: str
+    base_size: int
+    texture: Optional[np.ndarray]
+    glyphs: dict[str, dict]
+    texture_width: int
+    texture_height: int
+    line_height: float
+    ascender: float
+    descender: float
+
+    def __init__(self, font_path: str, base_size: int = 128):
+        self.font_path = font_path
+        self.base_size = base_size
+        self.texture = None
+        self.glyphs = {}
+        self.texture_width = 0
+        self.texture_height = 0
+        self.line_height = 1.0
+        self.ascender = 0.0
+        self.descender = 0.0
+        self._build()
+
+    def _load_font(self) -> ImageFont.FreeTypeFont:
+        path = self.font_path
+        if not path or not os.path.exists(path):
+            default = get_default_font_path()
+            if default:
+                path = default
+            else:
+                return ImageFont.load_default()
+        return ImageFont.truetype(path, self.base_size)
+
+    def _build(self):
+        font = self._load_font()
+        ascent, descent = font.getmetrics()
+        self.ascender = float(ascent)
+        self.descender = float(descent)
+        self.line_height = float(ascent + descent)
+
+        chars = _collect_chars()
+        rendered: list[tuple[str, Image.Image, int, int, int, int]] = []
+        total_width = 0
+
+        space_bbox = font.getbbox(" ")
+        space_advance = font.getlength(" ") if space_bbox else float(self.base_size) * 0.25
+
+        for ch in chars:
+            if ch == " ":
+                sw = max(int(space_advance) + 2, 4)
+                img = Image.new("L", (sw, 2), 0)
+                rendered.append((ch, img, sw, 2, 0, 0))
+                total_width += sw + 4
+                continue
+            bbox = font.getbbox(ch)
+            if bbox is None:
+                continue
+            x0, y0, x1, y1 = bbox
+            gw = x1 - x0
+            gh = y1 - y0
+            if gw <= 0 or gh <= 0:
+                continue
+            img = Image.new("L", (gw + 2, gh + 2), 0)
+            draw = ImageDraw.Draw(img)
+            draw.text((-x0 + 1, -y0 + 1), ch, font=font, fill=255)
+            advance = font.getlength(ch)
+            rendered.append((ch, img, gw + 2, gh + 2, x0, y0))
+            total_width += gw + 4
+
+        pad = 2
+        if not rendered:
+            self.texture = np.zeros((4, 4, 4), dtype=np.uint8)
+            self.texture_width = 4
+            self.texture_height = 4
+            return
+
+        atlas_w = 1
+        while atlas_w < total_width:
+            atlas_w <<= 1
+        if atlas_w > 8192:
+            atlas_w = 8192
+
+        rows: list[list] = []
+        current_row: list = []
+        row_y = pad
+        row_h = 0
+        cursor_x = pad
+
+        for ch, img, iw, ih, bbox_x0, bbox_y0 in rendered:
+            if cursor_x + iw + pad > atlas_w:
+                rows.append((current_row, row_y, row_h))
+                row_y += row_h + pad
+                current_row = []
+                cursor_x = pad
+                row_h = 0
+            current_row.append((ch, img, iw, ih, cursor_x, row_y, bbox_x0, bbox_y0))
+            cursor_x += iw + pad
+            if ih > row_h:
+                row_h = ih
+        if current_row:
+            rows.append((current_row, row_y, row_h))
+
+        total_h = row_y + row_h + pad
+        atlas_h = 1
+        while atlas_h < total_h:
+            atlas_h <<= 1
+        if atlas_h > 8192:
+            atlas_h = 8192
+
+        atlas = Image.new("L", (atlas_w, atlas_h), 0)
+        self.glyphs = {}
+        for row_data, base_y, _ in rows:
+            for ch, img, iw, ih, cx, cy, bbox_x0, bbox_y0 in row_data:
+                atlas.paste(img, (cx, cy))
+                advance_val = font.getlength(ch) if ch != " " else space_advance
+                self.glyphs[ch] = {
+                    "x": cx,
+                    "y": cy,
+                    "w": iw,
+                    "h": ih,
+                    "atlas_w": atlas_w,
+                    "atlas_h": atlas_h,
+                    "bearing_x": float(bbox_x0),
+                    "bearing_y": float(bbox_y0),
+                    "advance": float(advance_val),
+                    "glyph_w": iw - 2 if ch != " " else 0,
+                    "glyph_h": ih - 2 if ch != " " else 0,
+                }
+
+        self.texture_width = atlas_w
+        self.texture_height = atlas_h
+        arr = np.array(atlas, dtype=np.uint8)
+        self.texture = np.repeat(arr[:, :, np.newaxis], 4, axis=2)
+        self.texture[:, :, 3] = arr
+        for c in range(3):
+            self.texture[:, :, c] = 255
+
+    def get_glyph(self, char: str) -> Optional[dict]:
+        return self.glyphs.get(char)
+
+    def get_uv(self, char: str) -> tuple[float, float, float, float]:
+        g = self.glyphs.get(char)
+        if g is None:
+            return 0.0, 0.0, 0.0, 0.0
+        u0 = g["x"] / g["atlas_w"]
+        v0 = g["y"] / g["atlas_h"]
+        u1 = (g["x"] + g["w"]) / g["atlas_w"]
+        v1 = (g["y"] + g["h"]) / g["atlas_h"]
+        return u0, v0, u1, v1
+
+    def measure_line(self, text: str) -> tuple[float, float]:
+        total_w = 0.0
+        max_h = 0.0
+        for ch in text:
+            g = self.glyphs.get(ch)
+            if g is None:
+                continue
+            total_w += g["advance"]
+            gh = g["glyph_h"]
+            if gh > max_h:
+                max_h = gh
+        return total_w * self._inv_lh(), max_h * self._inv_lh()
+
+    def measure_multiline(self, text: str, line_spacing: float = 1.2) -> tuple[float, float]:
+        lines = text.split("\n")
+        max_w = 0.0
+        total_h = 0.0
+        for i, line in enumerate(lines):
+            w, h = self.measure_line(line)
+            if w > max_w:
+                max_w = w
+            total_h += self.line_height * self._inv_lh() * line_spacing
+        if lines:
+            total_h -= self.line_height * self._inv_lh() * (line_spacing - 1.0)
+        return max_w, total_h
+
+    def get_text_bounds(self, text: str, font_size: int, line_spacing: float = 1.2) -> tuple[float, float]:
+        w, h = self.measure_multiline(text, line_spacing)
+        scale = float(font_size) * self._inv_lh() * 0.01
+        return w * scale, h * scale
+
+    def _inv_lh(self) -> float:
+        return 1.0 / self.line_height if self.line_height > 0 else 1.0
+
+    def measure_text(self, text: str) -> tuple[float, float]:
+        return self.measure_line(text)

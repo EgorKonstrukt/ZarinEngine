@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                              QScrollArea, QLabel, QLineEdit, QPushButton,
                              QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox,
                              QGroupBox, QFrame, QSizePolicy, QMenu, QColorDialog,
-                             QDialog, QTextEdit, QHeaderView,
+                              QDialog, QTextEdit, QHeaderView, QPlainTextEdit,
                              QListWidget, QListWidgetItem, QApplication,
                              QSlider)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
@@ -1341,20 +1341,22 @@ class ComponentWidget(QWidget):
             self._build_script_fields(comp)
         else:
             self._toggle_checkboxes: dict[str, QCheckBox] = {}
-            self._toggle_curve_rows: dict[str, list[QWidget]] = {}
+            self._toggle_rows: dict[str, list[QWidget]] = {}
             fields = getattr(type(comp), "_inspector_fields", lambda: [])()
             for field in fields:
                 self._build_field_from_meta(field)
             for toggle_name, cb in self._toggle_checkboxes.items():
-                rows = self._toggle_curve_rows.get(toggle_name, [])
+                rows = self._toggle_rows.get(toggle_name, [])
                 if rows:
                     cb.toggled.connect(lambda v, rs=rows: self._on_toggle_changed(v, rs))
+                    for r in rows:
+                        r.setVisible(cb.isChecked())
 
     def _on_toggle_changed(self, v: bool, rows: list[QWidget]):
         for r in rows:
-            r.setEnabled(v)
+            r.setVisible(v)
 
-    def _add_field(self, label: str, widget: QWidget, prop_name: str = ""):
+    def _add_field(self, label: str, widget: QWidget, prop_name: str = "", toggle_field: str = ""):
         row = QWidget()
         row.setStyleSheet(f"background: transparent;")
         rl = QHBoxLayout(row)
@@ -1372,6 +1374,8 @@ class ComponentWidget(QWidget):
             source_lbl = _make_clickable_label("src", lambda sp=src_path, ln=line_num: self._show_source(sp, ln, comp_type, prop_name))
             rl.addWidget(source_lbl)
         self._layout.addWidget(row)
+        if toggle_field:
+            self._toggle_rows.setdefault(toggle_field, []).append(row)
 
     def _build_field_from_meta(self, field):
         c = self._component
@@ -1397,7 +1401,7 @@ class ComponentWidget(QWidget):
             sb = _make_spinbox(value, field.min_val, field.max_val, field.step, field.decimals)
             comp_cls = type(c)
             sb.valueChanged.connect(self._undo_setter_all(comp_cls, prop_name))
-            self._add_field(field.label, sb, prop_name)
+            self._add_field(field.label, sb, prop_name, field.toggle_field)
 
         elif field.field_type.value == "int":
             if field.readonly:
@@ -1414,7 +1418,7 @@ class ComponentWidget(QWidget):
                 sb.setStyleSheet(_FUSION_SPINBOX_STYLE)
                 comp_cls = type(c)
                 sb.valueChanged.connect(self._undo_setter_all(comp_cls, prop_name))
-                self._add_field(field.label, sb, prop_name)
+                self._add_field(field.label, sb, prop_name, field.toggle_field)
 
         elif field.field_type.value == "slider":
             row = QWidget()
@@ -1468,7 +1472,7 @@ class ComponentWidget(QWidget):
             sb.valueChanged.connect(_on_spinbox)
             rl.addWidget(slider, 1)
             rl.addWidget(sb)
-            self._add_field(field.label, row, prop_name)
+            self._add_field(field.label, row, prop_name, field.toggle_field)
 
         elif field.field_type.value == "int_slider":
             row = QWidget()
@@ -1527,7 +1531,7 @@ class ComponentWidget(QWidget):
             sb.valueChanged.connect(_on_spinbox_int)
             rl.addWidget(slider, 1)
             rl.addWidget(sb)
-            self._add_field(field.label, row, prop_name)
+            self._add_field(field.label, row, prop_name, field.toggle_field)
 
         elif field.field_type.value == "bool":
             cb = QCheckBox()
@@ -1535,7 +1539,7 @@ class ComponentWidget(QWidget):
             cb.setStyleSheet(_checkbox_style())
             comp_cls = type(c)
             cb.toggled.connect(self._undo_setter_all(comp_cls, prop_name))
-            self._add_field(field.label, cb, prop_name)
+            self._add_field(field.label, cb, prop_name, field.toggle_field)
             self._toggle_checkboxes[prop_name] = cb
 
         elif field.field_type.value == "button":
@@ -1556,7 +1560,7 @@ class ComponentWidget(QWidget):
                 if callable(method):
                     method()
             btn.clicked.connect(_on_click)
-            self._add_field(field.label, btn, prop_name)
+            self._add_field(field.label, btn, prop_name, field.toggle_field)
 
         elif field.field_type.value == "enum":
             cb = QComboBox()
@@ -1609,7 +1613,7 @@ class ComponentWidget(QWidget):
                         cmds.append(SetComponentCommand(ent, comp_cls, prop_name, old_vals[i], new_val))
                 if cmds: get_history().execute(CompoundCommand(cmds, f"Set {prop_name} on {len(entities)} entities"))
             cb.currentTextChanged.connect(_on_enum_change)
-            self._add_field(field.label, cb, prop_name)
+            self._add_field(field.label, cb, prop_name, field.toggle_field)
 
         elif field.field_type.value == "string":
             le = QLineEdit(str(value))
@@ -1628,30 +1632,50 @@ class ComponentWidget(QWidget):
                 QLineEdit:focus {{ border-color: {_accent()}; }}
             """)
             le.textChanged.connect(self._undo_setter(prop_name))
-            self._add_field(field.label, le, prop_name)
+            self._add_field(field.label, le, prop_name, field.toggle_field)
+
+        elif field.field_type.value == "textarea":
+            te = QPlainTextEdit(str(value))
+            te.setMinimumHeight(60)
+            te.setStyleSheet(f"""
+                QPlainTextEdit {{
+                    background: {_FUSION_BG_INPUT};
+                    color: {_FUSION_TEXT_BRIGHT};
+                    border: 1px solid {_FUSION_BORDER};
+                    border-radius: {_FUSION_INPUT_RADIUS};
+                    padding: 2px 4px;
+                    font-size: 11px;
+                    selection-background-color: {_accent()};
+                }}
+                QPlainTextEdit:hover {{ border-color: {_FUSION_BORDER_LIGHT}; }}
+                QPlainTextEdit:focus {{ border-color: {_accent()}; }}
+            """)
+            _setter = self._undo_setter(prop_name)
+            te.textChanged.connect(lambda: _setter(te.toPlainText()))
+            self._add_field(field.label, te, prop_name, field.toggle_field)
 
         elif field.field_type.value == "resource_path":
             picker = _make_resource_picker(value, field.file_filter or "All Files (*.*)", lambda p: get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, getattr(c, prop_name), p)))
-            self._add_field(field.label, picker, prop_name)
+            self._add_field(field.label, picker, prop_name, field.toggle_field)
 
         elif field.field_type.value == "gameobject":
             scene = self._entity._scene if self._entity else None
             picker = _make_gameobject_picker(value or "", scene, lambda eid: get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, getattr(c, prop_name), eid or "")))
-            self._add_field(field.label, picker, prop_name)
+            self._add_field(field.label, picker, prop_name, field.toggle_field)
 
         elif field.field_type.value == "resource":
             picker = _make_resource_type_picker(value or "", field.resource_type or "mesh", lambda p: get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, getattr(c, prop_name), p)))
-            self._add_field(field.label, picker, prop_name)
+            self._add_field(field.label, picker, prop_name, field.toggle_field)
 
         elif field.field_type.value == "asset":
             picker = _make_asset_picker(value or "", field.resource_type or "animclip", lambda p: get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, getattr(c, prop_name), p)))
-            self._add_field(field.label, picker, prop_name)
+            self._add_field(field.label, picker, prop_name, field.toggle_field)
 
         elif field.field_type.value == "color":
             old_val = list(value) if value else [0.0, 0.0, 0.0]
             swatch = _make_color_swatch(value, lambda new_val: get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, old_val, list(new_val))))
             swatch.setFixedSize(*scale_xy(28, 22))
-            self._add_field(field.label, swatch, prop_name)
+            self._add_field(field.label, swatch, prop_name, field.toggle_field)
 
         elif field.field_type.value == "curve":
             row = QWidget()
@@ -1665,9 +1689,6 @@ class ComponentWidget(QWidget):
             rl.addWidget(preview, 1)
             edit_btn = QPushButton("Edit")
             rl.addWidget(edit_btn)
-            toggle_field = field.toggle_field
-            if toggle_field:
-                self._toggle_curve_rows.setdefault(toggle_field, []).append(row)
             def _open_editor(*, _prop_name=prop_name, _field=field):
                 try:
                     current_data = getattr(c, _prop_name) or [[0, 1], [1, 1]]
@@ -1685,7 +1706,7 @@ class ComponentWidget(QWidget):
                     Logger.error(f"Curve editor error: {e}", e)
             edit_btn.clicked.connect(_open_editor)
             preview.clicked.connect(_open_editor)
-            self._add_field(field.label, row, prop_name)
+            self._add_field(field.label, row, prop_name, field.toggle_field)
 
         elif field.field_type.value == "list":
             self._build_list_field_standalone(field, prop_name)
@@ -1758,7 +1779,7 @@ class ComponentWidget(QWidget):
                 cb.setCurrentIndex(int(value))
             comp_cls = type(c)
             cb.currentIndexChanged.connect(self._undo_setter_all(comp_cls, prop_name))
-            self._add_field(field.label, cb, prop_name)
+            self._add_field(field.label, cb, prop_name, field.toggle_field)
 
         elif field.field_type.value == "layer_mask":
             cfg = get_project_config(os.getcwd())
@@ -1805,7 +1826,7 @@ class ComponentWidget(QWidget):
                 layer_actions.append(act)
 
             btn.clicked.connect(lambda: menu.exec(btn.mapToGlobal(btn.rect().bottomLeft())))
-            self._add_field(field.label, btn, prop_name)
+            self._add_field(field.label, btn, prop_name, field.toggle_field)
 
     def _build_list_field_standalone(self, field, prop_name):
         c = self._component

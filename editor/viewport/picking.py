@@ -4,6 +4,8 @@ import numpy as np
 from core.math3d import Vec3
 from editor.viewport.projection import screen_to_ray, world_to_screen
 
+_font_atlas_cache: dict[tuple[str, int], "FontAtlas"] = {}
+
 
 def _ray_aabb_min(ox: float, oy: float, oz: float,
                   dx: float, dy: float, dz: float,
@@ -53,6 +55,7 @@ def _world_aabb_of(entity, only_expanded: bool = False) -> tuple | None:
     from core.components.transform import Transform
     from core.components.rendering.mesh_filter import MeshFilter
     from core.components.rendering.mesh_renderer import MeshRenderer
+    from core.components.rendering.text_renderer import TextRenderer
     from core.components.physics.box_collider import BoxCollider
     from core.components.physics.sphere_collider import SphereCollider
     t = entity.get_component(Transform)
@@ -87,6 +90,47 @@ def _world_aabb_of(entity, only_expanded: bool = False) -> tuple | None:
                     bmin = np.minimum(bmin, p[:3])
                     bmax = np.maximum(bmax, p[:3])
         expanded = True
+    from core.components.rendering.text_renderer import TextRenderer
+    from core.font_atlas import FontAtlas
+    from core.font_atlas import get_default_font_path as get_def_font
+    tr_comp = entity.get_component(TextRenderer)
+    if tr_comp and tr_comp.enabled and tr_comp.text:
+        fp = tr_comp.font_path or get_def_font()
+        base_size = getattr(tr_comp, "atlas_resolution", 128)
+        ak = (fp, base_size)
+        atlas = _font_atlas_cache.get(ak)
+        if atlas is None and fp:
+            try:
+                atlas = FontAtlas(fp, base_size)
+                _font_atlas_cache[ak] = atlas
+            except Exception:
+                pass
+        if atlas is not None:
+            inv_lh = 1.0 / atlas.line_height if atlas.line_height > 0 else 1.0
+            scale = float(tr_comp.font_size) * inv_lh * 0.01
+            lines = tr_comp.text.split("\n")
+            total_w_raw = 0.0
+            for line in lines:
+                lw = 0.0
+                for c in line:
+                    g = atlas.get_glyph(c)
+                    if g:
+                        lw += g["advance"]
+                if lw > total_w_raw:
+                    total_w_raw = lw
+            total_w = total_w_raw * scale
+            line_h = atlas.line_height * scale * tr_comp.line_spacing
+            total_h = (len(lines) - 1) * line_h + atlas.line_height * scale
+            hw = total_w * 0.5
+            hh = total_h * 0.5
+            wm = t.world_matrix._d
+            for cx in (-hw, hw):
+                for cy in (-hh, hh):
+                    for cz in (0.0,):
+                        p = np.array([cx, cy, cz, 1.0]) @ wm
+                        bmin = np.minimum(bmin, p[:3])
+                        bmax = np.maximum(bmax, p[:3])
+            expanded = True
     bc = entity.get_component(BoxCollider)
     if bc:
         half = Vec3(bc.size.x * 0.5, bc.size.y * 0.5, bc.size.z * 0.5)
