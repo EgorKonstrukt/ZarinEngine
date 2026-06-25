@@ -488,7 +488,7 @@ void main() {
             if mesh:
                 wm_copy = Mat4(tr.world_matrix._d)
                 snap.renderable.append((ent, tr, mesh, mr, wm_copy))
-        snap.shadow_renderables = self._shadows.collect_shadow_data(scene)
+        snap.shadow_renderables = self._shadows.collect_shadow_data(scene, self._mesh_loader._meshes)
         for ent in scene.get_entities_with_component(SpriteRenderer):
             if not ent.active:
                 continue

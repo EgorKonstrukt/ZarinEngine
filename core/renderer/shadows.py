@@ -91,7 +91,7 @@ class ShadowRenderer:
                 if mesh is None and not mf.mesh_path:
                     mesh = self._get_mesh(mf.mesh_name)
             if mesh:
-                result.append((mesh, tr.world_matrix))
+                result.append((mesh, Mat4(tr.world_matrix._d)))
         return result
 
     def _get_mesh(self, cache_key: str) -> Optional[MeshData]:
@@ -112,8 +112,11 @@ class ShadowRenderer:
             mesh.render(prog)
         self._ctx.enable(moderngl.CULL_FACE)
 
-    def collect_shadow_data(self, scene) -> list[tuple]:
-        return self._build_renderable_shadow(scene)
+    def collect_shadow_data(self, scene, meshes: dict) -> list[tuple]:
+        self._get_mesh = lambda k: meshes.get(k)
+        result = self._build_renderable_shadow(scene)
+        self._get_mesh = None
+        return result
 
     def render_shadow_pass(self, renderable_shadow, lights, cam_near: float, cam_far: float, cam_fov: float,
                            aspect: float, view_mat: Mat4, meshes: dict) -> None:
