@@ -69,6 +69,7 @@ class FontAtlas:
     line_height: float
     ascender: float
     descender: float
+    max_cp: int = 1281
 
     def __init__(self, font_path: str, base_size: int = 128):
         self.font_path = font_path
@@ -80,6 +81,13 @@ class FontAtlas:
         self.line_height = 1.0
         self.ascender = 0.0
         self.descender = 0.0
+        self._gp_advance = np.zeros(self.max_cp, dtype=np.float32)
+        self._gp_bearing_x = np.zeros(self.max_cp, dtype=np.float32)
+        self._gp_bearing_y = np.zeros(self.max_cp, dtype=np.float32)
+        self._gp_glyph_w = np.zeros(self.max_cp, dtype=np.float32)
+        self._gp_glyph_h = np.zeros(self.max_cp, dtype=np.float32)
+        self._gp_uv = np.zeros((self.max_cp, 4), dtype=np.float32)
+        self._gp_valid = np.zeros(self.max_cp, dtype=bool)
         self._build()
 
     def _load_font(self) -> ImageFont.FreeTypeFont:
@@ -195,6 +203,24 @@ class FontAtlas:
         self.texture[:, :, 3] = arr
         for c in range(3):
             self.texture[:, :, c] = 255
+        self._populate_glyph_arrays()
+
+    def _populate_glyph_arrays(self):
+        for ch, data in self.glyphs.items():
+            cp = ord(ch)
+            if cp >= self.max_cp:
+                continue
+            self._gp_advance[cp] = data["advance"]
+            self._gp_bearing_x[cp] = data["bearing_x"]
+            self._gp_bearing_y[cp] = data["bearing_y"]
+            self._gp_glyph_w[cp] = data["glyph_w"]
+            self._gp_glyph_h[cp] = data["glyph_h"]
+            u0 = data["x"] / data["atlas_w"]
+            v0 = data["y"] / data["atlas_h"]
+            u1 = (data["x"] + data["w"]) / data["atlas_w"]
+            v1 = (data["y"] + data["h"]) / data["atlas_h"]
+            self._gp_uv[cp] = [u0, v0, u1, v1]
+            self._gp_valid[cp] = True
 
     def get_glyph(self, char: str) -> Optional[dict]:
         return self.glyphs.get(char)
