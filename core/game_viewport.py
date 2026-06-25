@@ -23,17 +23,22 @@ class GameViewport(QOpenGLWidget):
         self._screen_fbo = None
         self._mouse_captured: bool = False
         self._input_manager = InputManager.instance()
+        from core.config import get_global_config
+        cfg = get_global_config()
+        self._vsync_enabled = cfg.get("rendering.vsync", True)
+        self._target_fps = cfg.get("rendering.target_fps", 60)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(16)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)
         engine.on("play_stop", self._on_play_stop)
         fmt = QSurfaceFormat()
         fmt.setDepthBufferSize(24)
         fmt.setVersion(3, 3)
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+        fmt.setSwapInterval(1 if self._vsync_enabled else 0)
         self.setFormat(fmt)
+        self._apply_config()
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)
 
     def _on_play_stop(self, _=None):
         if self._mouse_captured:
@@ -48,10 +53,31 @@ class GameViewport(QOpenGLWidget):
         super().showEvent(event)
         self.update()
 
+    def _apply_config(self):
+        if not self._vsync_enabled:
+            self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+            self._timer.setInterval(1)
+        else:
+            fps = self._target_fps
+            if fps <= 0 or fps > 240:
+                fps = 240
+            self._timer.setInterval(max(1, int(1000.0 / fps)))
+        self._timer.start()
+
     def initializeGL(self):
         try:
             self._ctx = moderngl.create_context(standalone=False)
             self._bind_screen_fbo()
+            if not self._vsync_enabled:
+                try:
+                    import ctypes
+                    opengl32 = ctypes.windll.opengl32
+                    addr = opengl32.wglGetProcAddress(b"wglSwapIntervalEXT")
+                    if addr:
+                        func = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(addr)
+                        func(0)
+                except Exception:
+                    pass
             from core.renderer import Renderer
             self._renderer = Renderer(self._ctx)
             self._renderer.initialize()

@@ -211,6 +211,9 @@ class Entity:
             t.world_matrix = world
         if t is not None:
             t._mark_dirty()
+        sc = self._scene
+        if sc:
+            sc._roots_cache_valid = False
 
     def _invalidate_transform_cache(self):
         for c in self._components.values():
@@ -519,6 +522,33 @@ class Scene:
         self._component_entity_frame_cache: dict = {}
         self._spatial: Octree = Octree(world_size=1000.0)
         self._spatial_dirty: bool = True
+        self._roots_cache: list[Entity] = []
+        self._roots_cache_valid: bool = False
+
+    def _batch_sync_entities(self, entities: dict[str, Entity]):
+        idx = self._component_indices
+        auc = self._active_update_components
+        afc = self._active_fixed_components
+        for eid, e in entities.items():
+            is_active = e._active
+            for comp_type, clist in e._type_map.items():
+                comp_name = comp_type.__name__
+                if comp_name not in idx:
+                    idx[comp_name] = set()
+                idx[comp_name].add(eid)
+                if is_active:
+                    for comp in clist:
+                        if comp.enabled:
+                            if comp._updates:
+                                auc.add(comp)
+                            if comp._fixed_updates:
+                                afc.add(comp)
+        self._entities_cache_valid = False
+        self._roots_cache_valid = False
+        self._spatial_dirty = True
+        self._invalidate_update_cache()
+        self._dirty = True
+        self._render_version += 1
 
     def _invalidate_update_cache(self):
         self._update_cache_valid = False
@@ -617,6 +647,7 @@ class Scene:
         self._dirty = True
         self._render_version += 1
         self._entities_cache_valid = False
+        self._roots_cache_valid = False
         self._spatial_dirty = True
         return e
 
@@ -642,6 +673,7 @@ class Scene:
         self._dirty = True
         self._render_version += 1
         self._entities_cache_valid = False
+        self._roots_cache_valid = False
         self._spatial_dirty = True
 
     def remove_entity(self, eid: str):
@@ -667,6 +699,7 @@ class Scene:
         self._dirty = True
         self._render_version += 1
         self._entities_cache_valid = False
+        self._roots_cache_valid = False
         self._spatial_dirty = True
 
     def get_entity(self, eid: str) -> Optional[Entity]:
@@ -682,7 +715,10 @@ class Scene:
         return self._ensure_entities_cache()
 
     def get_root_entities(self) -> list[Entity]:
-        return [e for e in self._entities.values() if e._parent is None]
+        if not self._roots_cache_valid:
+            self._roots_cache = [e for e in self._entities.values() if e._parent is None]
+            self._roots_cache_valid = True
+        return self._roots_cache
 
     def get_entities_with_component(self, cls: Type[T]) -> list[Entity]:
         key = cls.__name__
@@ -813,5 +849,7 @@ class Scene:
             pid = parent_map.get(eid)
             if pid and pid in entities:
                 e.set_parent(entities[pid])
-            s.add_entity(e)
+            s._entities[e.id] = e
+            e._scene = s
+        s._batch_sync_entities(entities)
         return s

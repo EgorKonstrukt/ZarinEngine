@@ -377,10 +377,11 @@ class HierarchyPanel(QDockWidget):
         item.setData(0, Qt.ItemDataRole.UserRole, entity.id)
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
         icon_cls = None
-        for c in entity.get_all_components():
-            if getattr(type(c), '_show_gizmo_icon', True) and type(c).__name__ != "Transform":
-                icon_cls = type(c)
-                break
+        if len(entity._components) > 1:
+            for c in entity.get_all_components():
+                if getattr(type(c), '_show_gizmo_icon', True) and type(c).__name__ != "Transform":
+                    icon_cls = type(c)
+                    break
         if icon_cls:
             item.setIcon(0, QIcon(_get_component_icon_pixmap(icon_cls, 16)))
         if entity.is_prefab_instance:

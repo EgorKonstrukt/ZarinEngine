@@ -114,6 +114,9 @@ def main():
     fmt.setDepthBufferSize(24)
     fmt.setVersion(4, 6)
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    from core.config import get_global_config
+    _cfg = get_global_config()
+    fmt.setSwapInterval(0 if not _cfg.get("rendering.vsync", True) else 1)
     QSurfaceFormat.setDefaultFormat(fmt)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)

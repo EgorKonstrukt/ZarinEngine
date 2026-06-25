@@ -69,7 +69,7 @@ class _Profiler:
         self._frame_start: float = 0.0
         self._max_frames = max_frames
         self._flat_data: dict[str, float] = {}
-        self._enabled: bool = True
+        self._enabled: bool = False
         self._frame_number: int = 0
         self._capture_frames: bool = False
     def start(self, key: str):
@@ -107,6 +107,7 @@ class _Profiler:
             if cf is not None:
                 cf.flat_data[key] = value_ms
     def capture_frame(self):
+        if not self._enabled: return
         now = _perf_counter()
         cf = self._current_frame
         frame_start = self._frame_start
@@ -129,6 +130,7 @@ class _Profiler:
         self._current_frame = FrameProfile() if self._capture_frames else None
         self._frame_start = now
     def reset(self):
+        if not self._enabled: return
         self._frames.clear()
         self._current_frame = None
         self._stack.clear()

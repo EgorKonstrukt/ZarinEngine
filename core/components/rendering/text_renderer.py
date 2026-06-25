@@ -24,7 +24,7 @@ class TextRenderer(Component):
     _icon = "TextRenderer.png"
     _gizmo_icon_color = (60, 120, 220)
     _gizmo_icon_label = "T"
-    _show_gizmo_icon: bool = True
+    _show_gizmo_icon: bool = False
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:

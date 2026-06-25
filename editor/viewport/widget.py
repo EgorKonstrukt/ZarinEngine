@@ -68,6 +68,8 @@ class SceneViewport(QOpenGLWidget):
         set_gizmos(self._gizmos_api)
         self._selected_entities: list = []
         self._last_frame_time: float = time.perf_counter()
+        self._last_paint_time: float = time.perf_counter()
+        self._last_update_gap: float = time.perf_counter()
         self._last_dt: float = 0.016
         self._fps: float = 0.0
         self._fps_accum: float = 0.0
@@ -83,7 +85,6 @@ class SceneViewport(QOpenGLWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(100, 100)
         self.setContentsMargins(0, 0, 0, 0)
-        self._init_format()
         self._area_selecting = False
         self._area_start = (0, 0)
         self._area_end = (0, 0)
@@ -95,6 +96,7 @@ class SceneViewport(QOpenGLWidget):
         self._grid_step: float = 10.0
         self._vsync_enabled: bool = True
         self._target_fps: int = 60
+        self._init_format()
         self._stats_enabled: bool = False
         self._fps_history: list[float] = []
         self._debug_lines: list[tuple[Vec3, Vec3, list[float]]] = []
@@ -153,14 +155,13 @@ class SceneViewport(QOpenGLWidget):
         if not self._vsync_enabled:
             self._update_timer.setTimerType(Qt.TimerType.PreciseTimer)
             self._update_timer.setInterval(1)
-            self._update_timer.start()
-            self.update()
-        elif self._target_fps > 0:
-            self._update_timer.setInterval(max(1, int(1000.0 / self._target_fps)))
-            self._update_timer.start()
         else:
-            self._update_timer.setInterval(16)
-            self._update_timer.start()
+            fps = self._target_fps
+            if fps <= 0 or fps > 240:
+                fps = 240
+            interval = max(1, int(1000.0 / fps))
+            self._update_timer.setInterval(interval)
+        self._update_timer.start()
 
     def _toggle_stats(self, checked: bool):
         self._stats_enabled = checked
@@ -280,7 +281,9 @@ class SceneViewport(QOpenGLWidget):
 
     def _bind_screen_fbo(self):
         fbo_id = self.defaultFramebufferObject()
-        self._screen_fbo = self._ctx.detect_framebuffer(fbo_id)
+        if self._screen_fbo is None or not hasattr(self, '_last_fbo_id') or self._last_fbo_id != fbo_id:
+            self._screen_fbo = self._ctx.detect_framebuffer(fbo_id)
+            self._last_fbo_id = fbo_id
         self._screen_fbo.use()
 
     def _get_physical_dims(self):
@@ -378,6 +381,19 @@ class SceneViewport(QOpenGLWidget):
             self._ctx.viewport = (0, 0, pw, ph)
 
     def paintGL(self):
+        _p0 = time.perf_counter()
+        bu = getattr(self, '_before_update', 0)
+        if bu:
+            self._engine.set_profiler_data("update_to_paint_ms", (_p0 - bu) * 1000.0)
+            self._before_update = 0
+        now = _p0
+        self._fps_accum += now - self._last_paint_time
+        self._last_paint_time = now
+        self._fps_frames += 1
+        if self._fps_accum >= 0.5:
+            self._fps = self._fps_frames / self._fps_accum
+            self._fps_accum = 0.0
+            self._fps_frames = 0
         if not self._ctx or not self._renderer:
             return
         eng = self._engine
@@ -459,18 +475,22 @@ class SceneViewport(QOpenGLWidget):
                 if in_frame:
                     prof.start("overlay_draw")
                 self._overlay_widget.resize(self.width(), self.height())
-                self._overlay_widget.update()
                 if in_frame:
                     prof.stop("overlay_draw")
                 eng.set_profiler_data("overlay_time", (time.perf_counter() - t2) * 1000.0)
-            if not self._vsync_enabled and self.isVisible():
-                self.update()
+            eng.set_profiler_data("paint_total_ms", (time.perf_counter() - _p0) * 1000.0)
         except Exception as e:
             traceback.print_exc()
             Logger.error(f"Render error: {e}", e)
+        eng.set_profiler_data("paint_full_ms", (time.perf_counter() - _p0) * 1000.0)
+        if not self._vsync_enabled and self.isVisible():
+            self.update()
 
     def update_scene(self):
+        _u0 = time.perf_counter()
         eng = self._engine
+        eng.set_profiler_data("timer_interval_ms", float(self._update_timer.interval()))
+        eng.set_profiler_data("target_fps", float(self._target_fps))
         prof = eng._profiler
         prof.capture_frame()
         prof.start("frame")
@@ -529,18 +549,15 @@ class SceneViewport(QOpenGLWidget):
         prof.stop("logic_update")
         prof.start("render_widget")
         if self.isVisible():
+            _u1 = time.perf_counter()
+            eng.set_profiler_data("full_frame_ms", (_u1 - self._last_update_gap) * 1000.0)
+            self._last_update_gap = _u1
+            self._before_update = _u1
             if self._vsync_enabled:
                 self.update()
         prof.stop("render_widget")
-        prof.start("frame_overhead")
-        self._fps_accum += dt
-        self._fps_frames += 1
-        if self._fps_accum >= 0.5:
-            self._fps = self._fps_frames / self._fps_accum
-            self._fps_accum = 0.0
-            self._fps_frames = 0
         self._update_status_labels()
-        prof.stop("frame_overhead")
+        eng.set_profiler_data("logic_total_ms", (time.perf_counter() - _u0) * 1000.0)
         prof.stop("frame")
 
     def _update_editor_particles(self, dt: float, selected: list = None):

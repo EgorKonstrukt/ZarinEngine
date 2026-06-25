@@ -68,12 +68,12 @@ def render_component_icons_gl(vp):
     for entity in scene.get_all_entities():
         if not entity.active:
             continue
-        t = entity.get_component(Transform)
+        if len(entity._components) <= 1:
+            continue
+        t = entity._type_map.get(Transform)
         if not t:
             continue
-        comps = entity.get_all_components()
-        if len(comps) <= 1:
-            continue
+        t = t[0]
         dist = (t.position - cam_pos).length()
         screen_scale = ref_distance / max(dist, 0.001)
         icon_size = max(min_size, min(max_size, base_size * screen_scale))
@@ -85,7 +85,7 @@ def render_component_icons_gl(vp):
         if not sp:
             continue
         y_off = 0
-        for comp in comps:
+        for comp in entity.get_all_components():
             if isinstance(comp, Transform):
                 continue
             icon = comp.gizmo_icon
