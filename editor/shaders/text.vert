@@ -25,19 +25,13 @@ void main() {
         world_pos.xyz = center + cam_right * local_pos.x + cam_up * local_pos.y + cam_fwd * local_pos.z;
     }
     if (u_screen_space > 0.5) {
-        vec4 clip = u_proj * u_view * world_pos;
-        vec3 ndc = clip.xyz / clip.w;
-        vec2 screen = (ndc.xy * 0.5 + 0.5) * u_viewport_size;
+        vec2 screen = u_model[3].xy;
         mat4 ortho = mat4(1.0);
         ortho[0][0] = 2.0 / u_viewport_size.x;
         ortho[1][1] = -2.0 / u_viewport_size.y;
         ortho[3][0] = -1.0;
         ortho[3][1] = 1.0;
-        vec3 scale2;
-        scale2.x = length(u_model[0].xyz);
-        scale2.y = length(u_model[1].xyz);
-        scale2.z = length(u_model[2].xyz);
-        vec4 screen_pos = vec4(screen + (in_position.xy + u_offset.xy) * scale2.xy, 0.0, 1.0);
+        vec4 screen_pos = vec4(screen + (in_position.xy + u_offset.xy) * 100.0, 0.0, 1.0);
         gl_Position = ortho * screen_pos;
     } else {
         gl_Position = u_proj * u_view * world_pos;
