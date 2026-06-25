@@ -20,6 +20,7 @@ class TextRendererGL:
         self._tex_cache: dict[tuple[str, int], Any] = {}
         self._verts: Optional[np.ndarray] = None
         self._geom_cache: dict[int, tuple[int, int, float, np.ndarray, int]] = {}
+        self._rich_seg_info: list[dict] = []
         self._build_buffers()
 
     def _ensure_capacity(self, needed_chars: int):
@@ -117,7 +118,7 @@ class TextRendererGL:
         self._tex_cache[key] = tex
         return tex
 
-    def _build_line_quads(self, atlas: FontAtlas, text: str, scale: float, pen_x: float, pen_y: float, verts: np.ndarray, base_idx: int, italic: bool = False, z_offset: float = 0.0) -> tuple[int, float]:
+    def _build_line_quads(self, atlas: FontAtlas, text: str, scale: float, pen_x: float, pen_y: float, verts: np.ndarray, base_idx: int, italic: bool = False, z_offset: float = 0.0, bold: bool = False) -> tuple[int, float]:
         if not text:
             return 0, 0.0
         codes = np.frombuffer(text.encode('utf-32-le'), dtype=np.uint32)
@@ -153,10 +154,11 @@ class TextRendererGL:
         b = t - gh
         skew = 0.25 if italic else 0.0
         sh = skew * (t - pen_y)
-        u0 = atlas._gp_uv[codes, 0]
-        v0 = atlas._gp_uv[codes, 1]
-        u1 = atlas._gp_uv[codes, 2]
-        v1 = atlas._gp_uv[codes, 3]
+        uv_arr = atlas._gp_uv_bold if bold else atlas._gp_uv
+        u0 = uv_arr[codes, 0]
+        v0 = uv_arr[codes, 1]
+        u1 = uv_arr[codes, 2]
+        v1 = uv_arr[codes, 3]
         idx = vi
         e = base_idx + n * 20
         verts[base_idx + 0:e:20] = l[idx]
@@ -188,8 +190,8 @@ class TextRendererGL:
             return 0
         count = 0
         if underline:
-            line_y = pen_y - descender * scale * 0.3
-            thickness = scale * 0.08
+            line_y = pen_y - descender * scale * 0.5
+            thickness = scale * 4.0
             b = base_idx + count * 20
             verts[b + 0] = pen_x
             verts[b + 1] = line_y - thickness
@@ -214,7 +216,7 @@ class TextRendererGL:
             count += 1
         if strikethrough:
             line_y = pen_y + ascent * scale * 0.35
-            thickness = scale * 0.06
+            thickness = scale * 3.0
             b = base_idx + count * 20
             verts[b + 0] = pen_x
             verts[b + 1] = line_y - thickness
@@ -266,25 +268,112 @@ class TextRendererGL:
             tr.shadow, tuple(tr.shadow_offset), tuple(tuple(tr.shadow_color)),
             tr.use_3d, tr.extrusion_depth, tr.extrusion_layers,
             tuple(tuple(tr.extrusion_color)), tr.atlas_resolution, tr.bold,
-            atlas.font_path, atlas.base_size,
+            tr.use_rich_text, atlas.font_path, atlas.base_size,
         )
         return hash(props)
 
     def _build_text_verts(self, tr: TextRenderer, atlas: FontAtlas) -> tuple[int, int, float]:
-        lines = tr.text.split("\n")
+        self._rich_seg_info.clear()
         inv_lh = atlas._inv_lh()
         scale = float(tr.font_size) * inv_lh * 0.01
         line_h = atlas.line_height * scale * tr.line_spacing
         self._verts[:] = 0.0
         verts = self._verts
         vi = 0
-        line_starts = [0]
+        evi = 0
+        if tr.use_rich_text and tr._rich_segments:
+            line_pieces: list[list[tuple[str, list[float], bool, bool, bool, bool]]] = [[]]
+            for seg in tr._rich_segments:
+                seg_lines = seg.text.split('\n')
+                for i, piece in enumerate(seg_lines):
+                    if i > 0:
+                        line_pieces.append([])
+                    if piece:
+                        if not line_pieces:
+                            line_pieces.append([])
+                        line_pieces[-1].append((piece, seg.color, seg.bold, seg.italic, seg.underline, seg.strikethrough))
+            if not line_pieces or not line_pieces[0]:
+                return 0, 0, scale
+            line_advs = []
+            pen_y = 0.0
+            vi = 0
+            for pieces in line_pieces:
+                pen_x = 0.0
+                for piece_text, color, bold, italic, ul, st in pieces:
+                    c, pw = self._build_line_quads(atlas, piece_text, scale, pen_x, pen_y, verts, vi * 20, italic, 0.0, bold)
+                    if c > 0:
+                        self._rich_seg_info.append({
+                            'vi_start': vi, 'vi_count': c,
+                            'evi_start': 0, 'evi_count': 0,
+                            'color': color, 'bold': bold, 'italic': italic,
+                            'underline': ul, 'strikethrough': st,
+                            'width': pw,
+                        })
+                        vi += c
+                        pen_x += pw
+                line_advs.append(pen_x)
+                pen_y -= line_h
+            max_w = max(line_advs) if line_advs else 0.0
+            seg_i = 0
+            for line_idx, pieces in enumerate(line_pieces):
+                if tr.alignment == TextAlign.LEFT:
+                    off_x = 0.0
+                elif tr.alignment == TextAlign.CENTER:
+                    off_x = (max_w - line_advs[line_idx]) * 0.5
+                elif tr.alignment == TextAlign.RIGHT:
+                    off_x = max_w - line_advs[line_idx]
+                else:
+                    off_x = 0.0
+                if off_x != 0.0:
+                    for _ in pieces:
+                        seg = self._rich_seg_info[seg_i]
+                        s = seg['vi_start'] * 20
+                        e = (seg['vi_start'] + seg['vi_count']) * 20
+                        verts[s:e:5] -= off_x
+                        seg_i += 1
+                else:
+                    seg_i += len(pieces)
+            if vi > 0:
+                xs = verts[0:vi * 20:5]
+                ys = verts[1:vi * 20:5]
+                x_mid = (float(np.min(xs)) + float(np.max(xs))) * 0.5
+                y_mid = (float(np.min(ys)) + float(np.max(ys))) * 0.5
+                verts[0:vi * 20:5] -= x_mid
+                verts[1:vi * 20:5] -= y_mid
+            pen_y = 0.0
+            seg_effect_i = 0
+            for line_idx, pieces in enumerate(line_pieces):
+                for piece_text, color, bold, italic, ul, st in pieces:
+                    if ul or st:
+                        while (seg_effect_i < len(self._rich_seg_info) and
+                               not (self._rich_seg_info[seg_effect_i]['underline'] or self._rich_seg_info[seg_effect_i]['strikethrough'])):
+                            seg_effect_i += 1
+                        if seg_effect_i < len(self._rich_seg_info):
+                            seg_w = self._rich_seg_info[seg_effect_i]['width']
+                            ec = self._build_effect_quads(atlas, piece_text, scale, 0.0, pen_y, verts, (vi + evi) * 20, ul, st, 0.0, seg_w)
+                            self._rich_seg_info[seg_effect_i]['evi_start'] = evi
+                            self._rich_seg_info[seg_effect_i]['evi_count'] = ec
+                            seg_effect_i += 1
+                            evi += ec
+                pen_y -= line_h
+            if evi > 0:
+                es = vi * 20
+                ee = (vi + evi) * 20
+                xs = verts[es:ee:5]
+                ys = verts[es + 1:ee:5]
+                x_mid = (float(np.min(xs)) + float(np.max(xs))) * 0.5
+                y_mid = (float(np.min(ys)) + float(np.max(ys))) * 0.5
+                verts[es:ee:5] -= x_mid
+                verts[es + 1:ee:5] -= y_mid
+            return vi, evi, scale
+        lines = tr.text.split("\n")
+        line_start_idxs = [0]
         line_advs = []
         pen_y = 0.0
         for line in lines:
-            c, adv = self._build_line_quads(atlas, line, scale, 0.0, pen_y, verts, vi * 20, tr.italic, 0.0)
+            c, adv = self._build_line_quads(atlas, line, scale, 0.0, pen_y, verts, vi * 20, tr.italic, 0.0, tr.bold)
             vi += c
-            line_starts.append(vi)
+            line_start_idxs.append(vi)
             line_advs.append(adv)
             pen_y -= line_h
         max_w = max(line_advs) if line_advs else 0.0
@@ -298,8 +387,8 @@ class TextRendererGL:
             else:
                 off_x = 0.0
             if off_x != 0.0:
-                s = line_starts[i] * 20
-                e = line_starts[i + 1] * 20
+                s = line_start_idxs[i] * 20
+                e = line_start_idxs[i + 1] * 20
                 verts[s:e:5] -= off_x
         if vi > 0:
             xs = verts[0:vi * 20:5]
@@ -309,13 +398,12 @@ class TextRendererGL:
             verts[0:vi * 20:5] -= x_mid
             verts[1:vi * 20:5] -= y_mid
         need_effects = tr.underline or tr.strikethrough
-        evi = 0
         if need_effects:
             pen_y = 0.0
-            e_starts = [0]
+            e_start_idxs = [0]
             for i, line in enumerate(lines):
                 evi += self._build_effect_quads(atlas, line, scale, 0.0, pen_y, verts, (vi + evi) * 20, tr.underline, tr.strikethrough, 0.0, line_advs[i])
-                e_starts.append(evi)
+                e_start_idxs.append(evi)
                 pen_y -= line_h
             for i in range(len(lines)):
                 if tr.alignment == TextAlign.LEFT:
@@ -327,8 +415,8 @@ class TextRendererGL:
                 else:
                     off_x = 0.0
                 if off_x != 0.0:
-                    s = vi * 20 + e_starts[i] * 20
-                    e = vi * 20 + e_starts[i + 1] * 20
+                    s = vi * 20 + e_start_idxs[i] * 20
+                    e = vi * 20 + e_start_idxs[i + 1] * 20
                     verts[s:e:5] -= off_x
             if evi > 0:
                 es = vi * 20
@@ -403,11 +491,12 @@ class TextRendererGL:
             gh = self._geom_hash(tr, atlas)
             cached = self._geom_cache.get(ent.id)
             if cached is not None and cached[4] == gh:
-                vi, evi, scale, vdata = cached[0], cached[1], cached[2], cached[3]
+                vi, evi, scale, vdata, _, seg_info = cached
                 self._verts[:len(vdata)] = vdata
+                self._rich_seg_info = seg_info
             else:
                 vi, evi, scale = self._build_text_verts(tr, atlas)
-                self._geom_cache[ent.id] = (vi, evi, scale, self._verts[:(vi+evi)*20].copy(), gh)
+                self._geom_cache[ent.id] = (vi, evi, scale, self._verts[:(vi+evi)*20].copy(), gh, self._rich_seg_info.copy())
             if vi == 0 and evi == 0:
                 continue
             total_verts = (vi + evi) * 4
@@ -418,7 +507,6 @@ class TextRendererGL:
             has_outline = tr.outline and not is_3d and list(tr.outline_color)[3] > 0
             has_glow = tr.glow and not is_3d and list(tr.glow_color)[3] > 0
             has_3d = is_3d
-            has_bold = tr.bold and not is_3d
             clip_main = 0.05 if (has_outline or has_glow) else 0.01
             if tr.font_world_space:
                 self._ctx.enable(moderngl.DEPTH_TEST)
@@ -493,20 +581,14 @@ class TextRendererGL:
                     self._render_quads(vi, list(tr.color), tex, write_depth, False, 0, clip_main)
                 if evi > 0:
                     self._render_quads(evi, list(tr.color), tex, write_depth, True, ev)
-            elif has_bold:
-                bold_off = scale * 0.003
-                if "u_offset" in prog:
-                    prog["u_offset"].write(np.array([bold_off, 0.0, 0.0], dtype=np.float32).tobytes())
-                if vi > 0:
-                    self._render_quads(vi, list(tr.color), tex, write_depth, False, 0, clip_main)
-                if "u_offset" in prog:
-                    prog["u_offset"].write(np.array([-bold_off, 0.0, 0.0], dtype=np.float32).tobytes())
-                if vi > 0:
-                    self._render_quads(vi, list(tr.color), tex, write_depth, False, 0, clip_main)
-                if "u_offset" in prog:
-                    prog["u_offset"].write(zero3.tobytes())
-                if evi > 0:
-                    self._render_quads(evi, list(tr.color), tex, write_depth, True, ev)
+            elif self._rich_seg_info:
+                for seg in self._rich_seg_info:
+                    seg_color = list(seg['color'])
+                    seg_vc = seg['vi_count']
+                    if seg_vc > 0:
+                        self._render_quads(seg_vc, seg_color, tex, write_depth, False, seg['vi_start'], clip_main)
+                    if seg['underline'] or seg['strikethrough']:
+                        self._render_quads(seg['evi_count'], seg_color, tex, write_depth, True, ev + seg['evi_start'])
             else:
                 if vi > 0:
                     self._render_quads(vi, list(tr.color), tex, write_depth, False, 0, clip_main)

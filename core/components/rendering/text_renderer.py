@@ -3,6 +3,7 @@ from enum import Enum
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.font_atlas import get_default_font_path
+from core.rich_text_parser import parse_rich_text, RichTextSegment
 
 
 class TextFilter(Enum):
@@ -29,7 +30,7 @@ class TextRenderer(Component):
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
             InspectorField("text", "Text", FieldType.TEXTAREA),
-            InspectorField("font_path", "Font", FieldType.RESOURCE_PATH, file_filter="Fonts (*.ttf)"),
+            InspectorField("font_path", "Font", FieldType.RESOURCE_PATH, file_filter="Fonts (*.ttf *.otf)"),
             InspectorField("font_size", "Font Size", FieldType.INT, min_val=1, max_val=512, step=1),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("alignment", "Alignment", FieldType.ENUM, enum_class=TextAlign),
@@ -55,6 +56,7 @@ class TextRenderer(Component):
             InspectorField("atlas_resolution", "Atlas Resolution", FieldType.INT, min_val=32, max_val=512, step=16),
             InspectorField("font_world_space", "World Space", FieldType.BOOL),
             InspectorField("billboard", "Billboard", FieldType.BOOL),
+            InspectorField("use_rich_text", "Rich Text", FieldType.BOOL),
             InspectorField("filter_mode", "Filter", FieldType.ENUM, enum_class=TextFilter),
             InspectorField("anisotropy", "Anisotropy", FieldType.FLOAT, min_val=0.0, max_val=16.0, step=1.0, decimals=1),
             InspectorField("shader", "Shader", FieldType.RESOURCE_PATH, file_filter="Shaders (*.shader)"),
@@ -68,10 +70,10 @@ class TextRenderer(Component):
         self._color: list[float] = [1, 1, 1, 1]
         self.alignment: TextAlign = TextAlign.LEFT
         self.line_spacing: float = 1.2
-        self.bold: bool = False
-        self.italic: bool = False
-        self.underline: bool = False
-        self.strikethrough: bool = False
+        self._bold: bool = False
+        self._italic: bool = False
+        self._underline: bool = False
+        self._strikethrough: bool = False
         self.shadow: bool = False
         self._shadow_offset: list[float] = [0.02, -0.02]
         self._shadow_color: list[float] = [0, 0, 0, 0.5]
@@ -92,6 +94,8 @@ class TextRenderer(Component):
         self.filter_mode: TextFilter = TextFilter.LINEAR
         self.anisotropy: float = 4.0
         self.shader: str = "text"
+        self._use_rich_text: bool = False
+        self._rich_segments: list[RichTextSegment] = []
 
     @property
     def text(self) -> str:
@@ -105,6 +109,20 @@ class TextRenderer(Component):
             self._text = val.replace("\r", "")
         else:
             self._text = str(val).replace("\r", "")
+        self._rich_segments = []
+        if self._use_rich_text and self._text:
+            self._rich_segments = parse_rich_text(self._text, self._color, self.bold, self.italic, self.underline, self.strikethrough)
+
+    @property
+    def use_rich_text(self) -> bool:
+        return self._use_rich_text
+
+    @use_rich_text.setter
+    def use_rich_text(self, val):
+        self._use_rich_text = bool(val)
+        self._rich_segments = []
+        if self._use_rich_text and self._text:
+            self._rich_segments = parse_rich_text(self._text, self._color, self.bold, self.italic, self.underline, self.strikethrough)
 
     @property
     def color(self) -> list[float]:
@@ -120,6 +138,49 @@ class TextRenderer(Component):
             self._color = [val[0], val[1], val[2], val[3]]
         else:
             self._color = [1, 1, 1, 1]
+        self._reparse_rich_text()
+
+    @property
+    def bold(self) -> bool:
+        return self._bold
+
+    @bold.setter
+    def bold(self, val):
+        self._bold = bool(val)
+        self._reparse_rich_text()
+
+    @property
+    def italic(self) -> bool:
+        return self._italic
+
+    @italic.setter
+    def italic(self, val):
+        self._italic = bool(val)
+        self._reparse_rich_text()
+
+    @property
+    def underline(self) -> bool:
+        return self._underline
+
+    @underline.setter
+    def underline(self, val):
+        self._underline = bool(val)
+        self._reparse_rich_text()
+
+    @property
+    def strikethrough(self) -> bool:
+        return self._strikethrough
+
+    @strikethrough.setter
+    def strikethrough(self, val):
+        self._strikethrough = bool(val)
+        self._reparse_rich_text()
+
+    def _reparse_rich_text(self):
+        if self._use_rich_text and self._text:
+            self._rich_segments = parse_rich_text(self._text, self._color, self._bold, self._italic, self._underline, self._strikethrough)
+        else:
+            self._rich_segments = []
 
     @property
     def shadow_offset(self) -> list[float]:
@@ -225,6 +286,7 @@ class TextRenderer(Component):
             "filter_mode": self.filter_mode.value,
             "anisotropy": self.anisotropy,
             "shader": self.shader,
+            "use_rich_text": self._use_rich_text,
         })
         return d
 
@@ -268,4 +330,5 @@ class TextRenderer(Component):
             tr.filter_mode = TextFilter.LINEAR
         tr.anisotropy = data.get("anisotropy", 4.0)
         tr.shader = data.get("shader", "text") or "text"
+        tr.use_rich_text = data.get("use_rich_text", False)
         return tr

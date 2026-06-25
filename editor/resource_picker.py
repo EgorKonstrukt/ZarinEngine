@@ -26,6 +26,7 @@ EXTENSION_FILTERS = {
     "Models (*.obj *.fbx *.stl *.gltf *.glb *.usdz)": (".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz"),
     "Audio (*.wav *.mp3 *.ogg)": (".wav", ".mp3", ".ogg"),
     "Python Scripts (*.py)": (".py",),
+    "Fonts (*.ttf *.otf)": (".ttf", ".otf"),
     "Animation Clips (*.animclip)": (".animclip",),
     "Animator Controllers (*.animcontroller)": (".animcontroller",),
     "All Files (*)": (),
@@ -435,6 +436,32 @@ def _draw_folder_icon(size: int) -> QPixmap:
     p.end()
     return pm
 
+def _draw_font_thumbnail(path: str, size: int) -> QPixmap:
+    pm = _make_icon_bg(QColor(70, 120, 200), size)
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        fs = max(int(size * 0.45), 8)
+        font = ImageFont.truetype(path, fs)
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        bbox = font.getbbox("Aa")
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        x = (size - tw) // 2 - bbox[0]
+        y = (size - th) // 2 - bbox[1]
+        draw.text((x, y), "Aa", font=font, fill=(255, 255, 255, 255))
+        arr = np.array(img)
+        qimg = QImage(arr.data, arr.shape[1], arr.shape[0], 4 * arr.shape[1], QImage.Format.Format_RGBA8888)
+        pix = QPixmap.fromImage(qimg)
+        painter = QPainter(pm)
+        painter.drawPixmap(0, 0, pix)
+        painter.end()
+    except Exception:
+        painter = QPainter(pm)
+        _draw_text_centered(painter, "Aa", QRect(0, 0, size, size), QColor(255, 255, 255))
+        painter.end()
+    return pm
+
 def _get_thumbnail_raw(path: str, size: int) -> QPixmap:
     if os.path.isdir(path):
         return _draw_folder_icon(size)
@@ -476,6 +503,8 @@ def _get_thumbnail_raw(path: str, size: int) -> QPixmap:
         return _draw_file_icon(size)
     if ext == ".animcontroller":
         return _draw_file_icon(size)
+    if ext in (".ttf", ".otf"):
+        return _draw_font_thumbnail(path, size)
     return _draw_file_icon(size)
 
 def _get_material_thumbnail(path: str, size: int) -> Optional[QPixmap]:

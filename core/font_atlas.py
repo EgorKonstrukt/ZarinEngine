@@ -87,6 +87,7 @@ class FontAtlas:
         self._gp_glyph_w = np.zeros(self.max_cp, dtype=np.float32)
         self._gp_glyph_h = np.zeros(self.max_cp, dtype=np.float32)
         self._gp_uv = np.zeros((self.max_cp, 4), dtype=np.float32)
+        self._gp_uv_bold = np.zeros((self.max_cp, 4), dtype=np.float32)
         self._gp_valid = np.zeros(self.max_cp, dtype=bool)
         self._build()
 
@@ -169,14 +170,74 @@ class FontAtlas:
         if current_row:
             rows.append((current_row, row_y, row_h))
 
-        total_h = row_y + row_h + pad
+        regular_h = row_y + row_h + pad
+
+        bold_rendered: list[tuple[str, Image.Image, int, int, int, int]] = []
+        bold_total_w = 0
+        for ch in chars:
+            if ch == " ":
+                sw = max(int(space_advance) + 2, 4)
+                img = Image.new("L", (sw, 2), 0)
+                bold_rendered.append((ch, img, sw, 2, 0, 0))
+                bold_total_w += sw + 4
+                continue
+            bbox = font.getbbox(ch)
+            if bbox is None:
+                continue
+            x0, y0, x1, y1 = bbox
+            gw = x1 - x0
+            gh = y1 - y0
+            if gw <= 0 or gh <= 0:
+                continue
+            bp = 2
+            img_w = gw + bp * 2
+            img_h = gh + bp * 2
+            arr = np.zeros((img_h, img_w), dtype=np.uint8)
+            for dx in range(-1, 2):
+                for dy in range(-1, 2):
+                    layer = Image.new("L", (img_w, img_h), 0)
+                    d2 = ImageDraw.Draw(layer)
+                    d2.text((bp - x0 + dx, bp - y0 + dy), ch, font=font, fill=255)
+                    arr = np.maximum(arr, np.array(layer))
+            img = Image.fromarray(arr)
+            bold_rendered.append((ch, img, img_w, img_h, x0, y0))
+            bold_total_w += img_w + 4
+
+        bold_atlas_w = 1
+        while bold_atlas_w < bold_total_w:
+            bold_atlas_w <<= 1
+        if bold_atlas_w > 8192:
+            bold_atlas_w = 8192
+
+        bold_rows: list[list] = []
+        current_row = []
+        row_y = pad
+        row_h = 0
+        cursor_x = pad
+        for ch, img, iw, ih, bbox_x0, bbox_y0 in bold_rendered:
+            if cursor_x + iw + pad > bold_atlas_w:
+                bold_rows.append((current_row, row_y, row_h))
+                row_y += row_h + pad
+                current_row = []
+                cursor_x = pad
+                row_h = 0
+            current_row.append((ch, img, iw, ih, cursor_x, row_y, bbox_x0, bbox_y0))
+            cursor_x += iw + pad
+            if ih > row_h:
+                row_h = ih
+        if current_row:
+            bold_rows.append((current_row, row_y, row_h))
+
+        bold_total_h = row_y + row_h + pad
+        final_w = atlas_w + bold_atlas_w
+        final_h = max(regular_h, bold_total_h)
         atlas_h = 1
-        while atlas_h < total_h:
+        while atlas_h < final_h:
             atlas_h <<= 1
         if atlas_h > 8192:
             atlas_h = 8192
 
-        atlas = Image.new("L", (atlas_w, atlas_h), 0)
+        atlas = Image.new("L", (atlas_w + bold_atlas_w, atlas_h), 0)
         self.glyphs = {}
         for row_data, base_y, _ in rows:
             for ch, img, iw, ih, cx, cy, bbox_x0, bbox_y0 in row_data:
@@ -187,7 +248,7 @@ class FontAtlas:
                     "y": cy,
                     "w": iw,
                     "h": ih,
-                    "atlas_w": atlas_w,
+                    "atlas_w": atlas_w + bold_atlas_w,
                     "atlas_h": atlas_h,
                     "bearing_x": float(bbox_x0),
                     "bearing_y": float(bbox_y0),
@@ -196,7 +257,17 @@ class FontAtlas:
                     "glyph_h": ih - 2 if ch != " " else 0,
                 }
 
-        self.texture_width = atlas_w
+        for row_data, base_y, _ in bold_rows:
+            for ch, img, iw, ih, cx, cy, bbox_x0, bbox_y0 in row_data:
+                atlas.paste(img, (atlas_w + cx, cy))
+                if ch in self.glyphs:
+                    g = self.glyphs[ch]
+                    g["bold_x"] = atlas_w + cx
+                    g["bold_y"] = cy
+                    g["bold_w"] = iw
+                    g["bold_h"] = ih
+
+        self.texture_width = atlas_w + bold_atlas_w
         self.texture_height = atlas_h
         arr = np.array(atlas, dtype=np.uint8)
         self.texture = np.repeat(arr[:, :, np.newaxis], 4, axis=2)
@@ -220,6 +291,15 @@ class FontAtlas:
             u1 = (data["x"] + data["w"]) / data["atlas_w"]
             v1 = (data["y"] + data["h"]) / data["atlas_h"]
             self._gp_uv[cp] = [u0, v0, u1, v1]
+            bx = data.get("bold_x")
+            if bx is not None:
+                bu0 = bx / data["atlas_w"]
+                bv0 = data["bold_y"] / data["atlas_h"]
+                bu1 = (bx + data["bold_w"]) / data["atlas_w"]
+                bv1 = (data["bold_y"] + data["bold_h"]) / data["atlas_h"]
+                self._gp_uv_bold[cp] = [bu0, bv0, bu1, bv1]
+            else:
+                self._gp_uv_bold[cp] = [u0, v0, u1, v1]
             self._gp_valid[cp] = True
 
     def get_glyph(self, char: str) -> Optional[dict]:

@@ -13,15 +13,16 @@ void main() {
     v_uv = in_uv;
     vec4 world_pos = u_model * vec4(in_position + u_offset, 1.0);
     if (u_billboard > 0.5) {
-        vec3 pos = world_pos.xyz;
         vec3 cam_right = vec3(u_view[0][0], u_view[1][0], u_view[2][0]);
         vec3 cam_up = vec3(u_view[0][1], u_view[1][1], u_view[2][1]);
+        vec3 cam_fwd = vec3(u_view[0][2], u_view[1][2], u_view[2][2]);
         vec3 scale;
         scale.x = length(u_model[0].xyz);
         scale.y = length(u_model[1].xyz);
         scale.z = length(u_model[2].xyz);
         vec3 local_pos = (in_position + u_offset) * scale;
-        world_pos.xyz = pos + cam_right * local_pos.x + cam_up * local_pos.y;
+        vec3 center = u_model[3].xyz;
+        world_pos.xyz = center + cam_right * local_pos.x + cam_up * local_pos.y + cam_fwd * local_pos.z;
     }
     if (u_screen_space > 0.5) {
         vec4 clip = u_proj * u_view * world_pos;
