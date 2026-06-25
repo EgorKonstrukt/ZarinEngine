@@ -5,6 +5,12 @@ from core.components.inspector_meta import FieldType, InspectorField
 from core.font_atlas import get_default_font_path
 
 
+class TextFilter(Enum):
+    NEAREST = "nearest"
+    LINEAR = "linear"
+    TRILINEAR = "trilinear"
+
+
 class TextAlign(Enum):
     LEFT = "left"
     CENTER = "center"
@@ -42,6 +48,8 @@ class TextRenderer(Component):
             InspectorField("atlas_resolution", "Atlas Resolution", FieldType.INT, min_val=32, max_val=512, step=16),
             InspectorField("font_world_space", "World Space", FieldType.BOOL),
             InspectorField("billboard", "Billboard", FieldType.BOOL),
+            InspectorField("filter_mode", "Filter", FieldType.ENUM, enum_class=TextFilter),
+            InspectorField("anisotropy", "Anisotropy", FieldType.FLOAT, min_val=0.0, max_val=16.0, step=1.0, decimals=1),
             InspectorField("shader", "Shader", FieldType.RESOURCE_PATH, file_filter="Shaders (*.shader)"),
         ]
 
@@ -67,6 +75,8 @@ class TextRenderer(Component):
         self.atlas_resolution: int = 128
         self.font_world_space: bool = True
         self.billboard: bool = False
+        self.filter_mode: TextFilter = TextFilter.LINEAR
+        self.anisotropy: float = 4.0
         self.shader: str = "text"
 
     @property
@@ -161,6 +171,8 @@ class TextRenderer(Component):
             "atlas_resolution": self.atlas_resolution,
             "font_world_space": self.font_world_space,
             "billboard": self.billboard,
+            "filter_mode": self.filter_mode.value,
+            "anisotropy": self.anisotropy,
             "shader": self.shader,
         })
         return d
@@ -192,5 +204,10 @@ class TextRenderer(Component):
         tr.atlas_resolution = data.get("atlas_resolution", 128)
         tr.font_world_space = data.get("font_world_space", True)
         tr.billboard = data.get("billboard", False)
+        try:
+            tr.filter_mode = TextFilter(data.get("filter_mode", "linear"))
+        except (ValueError, KeyError):
+            tr.filter_mode = TextFilter.LINEAR
+        tr.anisotropy = data.get("anisotropy", 4.0)
         tr.shader = data.get("shader", "text") or "text"
         return tr

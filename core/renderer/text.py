@@ -3,7 +3,7 @@ import numpy as np
 import moderngl
 from typing import Optional, Any
 from core.math3d import Mat4
-from core.components.rendering.text_renderer import TextRenderer, TextAlign
+from core.components.rendering.text_renderer import TextRenderer, TextAlign, TextFilter
 from core.components.transform import Transform
 from core.font_atlas import FontAtlas
 
@@ -21,6 +21,41 @@ class TextRendererGL:
         self._verts: Optional[np.ndarray] = None
         self._geom_cache: dict[int, tuple[int, int, float, np.ndarray, int]] = {}
         self._build_buffers()
+
+    def _ensure_capacity(self, needed_chars: int):
+        if needed_chars <= self._max_chars:
+            return
+        new_max = 1
+        while new_max < needed_chars:
+            new_max <<= 1
+        new_verts = np.zeros(new_max * 20, dtype=np.float32)
+        old_len = self._max_chars * 20
+        new_verts[:old_len] = self._verts[:old_len]
+        self._verts = new_verts
+        new_indices = np.zeros(new_max * 6, dtype=np.uint32)
+        for i in range(new_max):
+            base = i * 4
+            bi = i * 6
+            new_indices[bi + 0] = base + 0
+            new_indices[bi + 1] = base + 1
+            new_indices[bi + 2] = base + 2
+            new_indices[bi + 3] = base + 0
+            new_indices[bi + 4] = base + 2
+            new_indices[bi + 5] = base + 3
+        if self._vbo:
+            self._vbo.release()
+        if self._ibo:
+            self._ibo.release()
+        if self._vao:
+            self._vao.release()
+        self._vbo = self._ctx.buffer(self._verts.tobytes(), dynamic=True)
+        self._ibo = self._ctx.buffer(new_indices.tobytes())
+        self._vao = self._ctx.vertex_array(
+            self._prog,
+            [(self._vbo, "3f 2f", "in_position", "in_uv")],
+            self._ibo
+        )
+        self._max_chars = new_max
 
     def _build_buffers(self):
         max_verts = self._max_chars * 4
@@ -59,15 +94,26 @@ class TextRendererGL:
     def _get_atlas(self, font_path: str, base_size: int = 128) -> Optional[FontAtlas]:
         return self.get_or_create_atlas(font_path, base_size)
 
-    def _ensure_texture(self, atlas: FontAtlas) -> Any:
+    def _ensure_texture(self, atlas: FontAtlas, filter_mode: TextFilter = TextFilter.LINEAR, anisotropy: float = 0.0) -> Any:
+        _FILTER_MAP = {
+            TextFilter.NEAREST: (moderngl.NEAREST, moderngl.NEAREST),
+            TextFilter.LINEAR: (moderngl.LINEAR, moderngl.LINEAR),
+            TextFilter.TRILINEAR: (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR),
+        }
         key = (atlas.font_path, atlas.base_size)
         if key in self._tex_cache:
-            return self._tex_cache[key]
+            tex = self._tex_cache[key]
+            tex.filter = _FILTER_MAP.get(filter_mode, (moderngl.LINEAR, moderngl.LINEAR))
+            if anisotropy > 0:
+                tex.anisotropy = anisotropy
+            return tex
         tex = self._ctx.texture((atlas.texture_width, atlas.texture_height), 4, atlas.texture.tobytes())
-        tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        tex.filter = _FILTER_MAP.get(filter_mode, (moderngl.LINEAR, moderngl.LINEAR))
         tex.repeat_x = False
         tex.repeat_y = False
         tex.build_mipmaps()
+        if anisotropy > 0:
+            tex.anisotropy = anisotropy
         self._tex_cache[key] = tex
         return tex
 
@@ -90,6 +136,14 @@ class TextRendererGL:
         total_adv = float(np.sum(advances))
         if n == 0:
             return 0, total_adv
+        max_floats = len(verts)
+        space_left = max_floats - base_idx
+        max_n = space_left // 20
+        if max_n <= 0:
+            return 0, total_adv
+        if n > max_n:
+            n = max_n
+            vi = vi[:n]
         cum = np.cumsum(advances) - advances
         ascent = atlas.ascender
         top_base = pen_y + ascent * scale
@@ -313,7 +367,8 @@ class TextRendererGL:
             atlas = self._get_atlas(tr.font_path, tr.atlas_resolution)
             if atlas is None:
                 continue
-            tex = self._ensure_texture(atlas)
+            tex = self._ensure_texture(atlas, tr.filter_mode, tr.anisotropy)
+            self._ensure_capacity(len(tr.text))
             model_f32 = t.world_matrix.to_f32()
             if "u_model" in prog:
                 prog["u_model"].write(model_f32.tobytes())
@@ -363,7 +418,7 @@ class TextRendererGL:
                             tr.extrusion_color[2] * t_factor,
                             tr.color[3],
                         ]
-                        prog["u_offset"].write(np.array([0.0, 0.0, z_off], dtype=np.float32).tobytes())
+                        prog["u_offset"].write(np.array([0.0, 0.0, -z_off], dtype=np.float32).tobytes())
                         if vi > 0:
                             self._render_quads(vi, ecolor, tex, True, False, 0)
                         if evi > 0:
