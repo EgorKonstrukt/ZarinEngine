@@ -16,6 +16,9 @@ from core.logger import Logger
 from core.components.transform import Transform
 from core.components.rendering.mesh_filter import MeshFilter
 from core.components.rendering.mesh_renderer import MeshRenderer
+from core.components.rendering.sprite_renderer import SpriteRenderer
+from core.components.rendering.svg_renderer import SvgRenderer
+from core.components.rendering.particle_system import ParticleSystem
 from core.components.mesh_editor import ProBuilderMesh
 from core.components.rendering.graphics_effect import GraphicsEffect
 from core.math3d import Mat4, Vec3
@@ -38,6 +41,53 @@ from core.renderer.shaders import ShaderManager
 from core.renderer.mesh_loader import MeshLoader
 from core.renderer.batcher import RenderBatcher
 from core.renderer.culling import GpuFrustumCuller
+
+
+class _SpriteItem:
+    __slots__ = ('world_matrix', 'color', 'flip_x', 'flip_y', 'texture_path')
+    def __init__(self, world_matrix, color, flip_x, flip_y, texture_path):
+        self.world_matrix = world_matrix
+        self.color = list(color) if color else [1, 1, 1, 1]
+        self.flip_x = flip_x
+        self.flip_y = flip_y
+        self.texture_path = texture_path
+
+class _SvgItem:
+    __slots__ = ('world_matrix', 'color', 'flip_x', 'flip_y', 'abs_path', 'pixels_per_unit')
+    def __init__(self, world_matrix, color, flip_x, flip_y, abs_path, pixels_per_unit):
+        self.world_matrix = world_matrix
+        self.color = list(color) if color else [1, 1, 1, 1]
+        self.flip_x = flip_x
+        self.flip_y = flip_y
+        self.abs_path = abs_path
+        self.pixels_per_unit = pixels_per_unit
+
+class _ParticleItem:
+    __slots__ = ('vertices', 'indices', 'texture_path')
+    def __init__(self, vertices, indices, texture_path):
+        self.vertices = vertices
+        self.indices = indices
+        self.texture_path = texture_path
+
+class _RenderSnapshot:
+    __slots__ = (
+        'lights', 'dir_light', 'sky_component', 'sky_entity', 'cloud_component',
+        'renderable', 'shadow_renderables', 'sprite_items', 'svg_items',
+        'text_items', 'particle_items', 'culling_cache',
+    )
+    def __init__(self):
+        self.lights: list = []
+        self.dir_light = None
+        self.sky_component = None
+        self.sky_entity = None
+        self.cloud_component = None
+        self.renderable: list = []
+        self.shadow_renderables: list = []
+        self.sprite_items: list = []
+        self.svg_items: list = []
+        self.text_items: list = []
+        self.particle_items: list = []
+        self.culling_cache: dict = {}
 
 
 class Renderer:
@@ -389,20 +439,116 @@ void main() {
         if not disable_shadows:
             self._shadows.set_uniforms(prog)
 
+    def _collect_snapshot(self, scene, cam_near, cam_far, cam_fov, view_mat, proj_mat, cam_pos) -> _RenderSnapshot:
+        snap = _RenderSnapshot()
+        scene.flush_transforms()
+        if not self._import_meta_cache:
+            self._preload_import_meta(scene)
+        for ent in scene.get_entities_with_component(Light):
+            if not ent.active:
+                continue
+            l = ent.get_component(Light)
+            t = ent.get_component(Transform)
+            if l and l.enabled and t:
+                snap.lights.append((l, t))
+                if snap.dir_light is None and l.light_type == LightType.DIRECTIONAL:
+                    snap.dir_light = (l, t)
+        for ent in scene.get_entities_with_component(Sky):
+            if ent.active:
+                snap.sky_component = ent.get_component(Sky)
+                snap.sky_entity = ent
+                break
+        for ent in scene.get_entities_with_component(Cloud):
+            if ent.active:
+                snap.cloud_component = ent.get_component(Cloud)
+                break
+        self._sync_probuilder_meshes(scene)
+        for ent in scene.get_entities_with_component(MeshFilter):
+            if not ent.active:
+                continue
+            mr = ent.get_component(MeshRenderer)
+            tr = ent.get_component(Transform)
+            if not tr or not mr or not mr.enabled:
+                continue
+            mf = ent.get_component(MeshFilter)
+            mesh_name = mf.mesh_name
+            scale, cp, fuvs = 1.0, False, False
+            mesh_path = mf.mesh_path or ""
+            if mesh_path:
+                meta = self._import_meta_cache.get(mesh_path)
+                if meta is None:
+                    meta = (1.0, False, False)
+                    self._import_meta_cache[mesh_path] = meta
+                scale, cp, fuvs = meta
+            if not mesh_name and not mesh_path:
+                mesh_name = "cube"
+            elif not mesh_name and mesh_path:
+                mesh_name = os.path.splitext(os.path.basename(mesh_path))[0]
+            mesh = self.get_or_create_mesh(mesh_name, mesh_path, scale, cp, fuvs)
+            if mesh:
+                wm_copy = Mat4(tr.world_matrix._d)
+                snap.renderable.append((ent, tr, mesh, mr, wm_copy))
+        snap.shadow_renderables = self._shadows.collect_shadow_data(scene)
+        for ent in scene.get_entities_with_component(SpriteRenderer):
+            if not ent.active:
+                continue
+            sr = ent.get_component(SpriteRenderer)
+            if not sr or not sr.enabled:
+                continue
+            tr = ent.get_component(Transform)
+            if not tr:
+                continue
+            snap.sprite_items.append(_SpriteItem(
+                tr.world_matrix, sr.color, sr.flip_x, sr.flip_y, sr.texture_path))
+        for ent in scene.get_entities_with_component(SvgRenderer):
+            if not ent.active:
+                continue
+            sr = ent.get_component(SvgRenderer)
+            if not sr or not sr.enabled:
+                continue
+            tr = ent.get_component(Transform)
+            if not tr:
+                continue
+            abs_path = self._svgs.resolve_path(sr.svg_path)
+            snap.svg_items.append(_SvgItem(
+                tr.world_matrix, sr.color, sr.flip_x, sr.flip_y,
+                abs_path or "", sr.pixels_per_unit))
+        cam_right = Vec3(float(view_mat._d[0, 0]), float(view_mat._d[1, 0]), float(view_mat._d[2, 0]))
+        cam_up = Vec3(float(view_mat._d[0, 1]), float(view_mat._d[1, 1]), float(view_mat._d[2, 1]))
+        for ent in scene.get_entities_with_component(ParticleSystem):
+            if not ent.active:
+                continue
+            ps = ent.get_component(ParticleSystem)
+            if not ps or not ps.enabled or ps._alive_count == 0:
+                continue
+            particle_data = ps.build_render_data(cam_right, cam_up, cam_pos)
+            if particle_data is None:
+                continue
+            snap.particle_items.append(_ParticleItem(
+                particle_data[0], particle_data[1], ps.texture_path))
+        return snap
+
     def render_scene(self, scene, view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3,
                      viewport_w: int, viewport_h: int, fbo=None,
                      selected_entities: Optional[set] = None,
                      cam_near: float = 0.01, cam_far: float = 1000.0, cam_fov: float = 60.0):
         if not self._initialized:
             return
-        scene.flush_transforms()
-        if not self._import_meta_cache:
-            self._preload_import_meta(scene)
         _render_t0 = time.perf_counter()
         eng = Engine.instance()
         prof = eng._profiler if eng and hasattr(eng, '_profiler') else None
         if prof:
             prof.start("render_scene")
+        snap = _RenderSnapshot()
+        if scene:
+            with eng._scene_lock:
+                snap = self._collect_snapshot(scene, cam_near, cam_far, cam_fov, view_mat, proj_mat, cam_pos)
+        lights = snap.lights
+        dir_light = snap.dir_light
+        sky_component = snap.sky_component
+        sky_entity = snap.sky_entity
+        cloud_component = snap.cloud_component
+        renderable = snap.renderable
         if prof:
             prof.start("gl_state_setup")
         if fbo is not None:
@@ -430,33 +576,6 @@ void main() {
         proj_f32 = proj_mat.to_f32()
         if prof:
             prof.stop("gl_state_setup")
-        if prof:
-            prof.start("collect_lights")
-        lights = []
-        dir_light = None
-        sky_component = None
-        sky_entity = None
-        for ent in scene.get_entities_with_component(Light):
-            if not ent.active:
-                continue
-            l = ent.get_component(Light)
-            t = ent.get_component(Transform)
-            if l and l.enabled and t:
-                lights.append((l, t))
-                if dir_light is None and l.light_type == LightType.DIRECTIONAL:
-                    dir_light = (l, t)
-        cloud_component = None
-        for ent in scene.get_entities_with_component(Sky):
-            if ent.active:
-                sky_component = ent.get_component(Sky)
-                sky_entity = ent
-                break
-        for ent in scene.get_entities_with_component(Cloud):
-            if ent.active:
-                cloud_component = ent.get_component(Cloud)
-                break
-        if prof:
-            prof.stop("collect_lights")
         self._ensure_scene_fbo(viewport_w, viewport_h)
         self._scene_fbo.clear(0.0, 0.0, 0.0, 1.0, 1.0)
         self._scene_fbo.use()
@@ -478,7 +597,7 @@ void main() {
         aspect = viewport_w / max(1, viewport_h)
         if prof:
             prof.start("render_shadow_pass")
-        self._shadows.render_pass(scene, cam_near, cam_far, cam_fov, aspect, view_mat, lights, self._mesh_loader._meshes)
+        self._shadows.render_shadow_pass(snap.shadow_renderables, snap.lights, cam_near, cam_far, cam_fov, aspect, view_mat, self._mesh_loader._meshes)
         if prof:
             prof.stop("render_shadow_pass")
         if prof:
@@ -497,36 +616,6 @@ void main() {
         self._mesh_loader.process_pending()
         if prof:
             prof.stop("mesh_async_load")
-        self._sync_probuilder_meshes(scene)
-        renderable = []
-        if prof:
-            prof.start("collect_renderables")
-        for ent in scene.get_entities_with_component(MeshFilter):
-            if not ent.active:
-                continue
-            mr = ent.get_component(MeshRenderer)
-            tr = ent.get_component(Transform)
-            if not tr or not mr or not mr.enabled:
-                continue
-            mf = ent.get_component(MeshFilter)
-            mesh_name = mf.mesh_name
-            scale, cp, fuvs = 1.0, False, False
-            mesh_path = mf.mesh_path or ""
-            if mesh_path:
-                meta = self._import_meta_cache.get(mesh_path)
-                if meta is None:
-                    meta = (1.0, False, False)
-                    self._import_meta_cache[mesh_path] = meta
-                scale, cp, fuvs = meta
-            if not mesh_name and not mesh_path:
-                mesh_name = "cube"
-            elif not mesh_name and mesh_path:
-                mesh_name = os.path.splitext(os.path.basename(mesh_path))[0]
-            mesh = self.get_or_create_mesh(mesh_name, mesh_path, scale, cp, fuvs)
-            if mesh:
-                renderable.append((ent, tr, mesh, mr))
-        if prof:
-            prof.stop("collect_renderables")
 
         if self._culler and renderable:
             if prof:
@@ -535,8 +624,10 @@ void main() {
                 n = len(renderable)
                 centers = np.zeros((n, 3), dtype=np.float32)
                 radii = np.zeros(n, dtype=np.float32)
-                for i, (ent, tr, mesh, mr) in enumerate(renderable):
-                    model = tr.world_matrix
+                for i, entry in enumerate(renderable):
+                    ent, tr, mesh, mr = entry[:4]
+                    wm = entry[4] if len(entry) > 4 else tr.world_matrix
+                    model = wm
                     centers[i] = [model._d[3, 0], model._d[3, 1], model._d[3, 2]]
                     sx = float(np.linalg.norm(model._d[:3, 0]))
                     sy = float(np.linalg.norm(model._d[:3, 1]))
@@ -553,7 +644,6 @@ void main() {
 
         if prof:
             prof.start("render_meshes")
-        capture_mesh = prof and prof.capture_frames
         outline_queue: list[tuple[MeshData, Mat4]] = []
         if self._batcher:
             groups = self._batcher.collect_groups(
@@ -564,13 +654,15 @@ void main() {
                 self._normal_cache,
                 selected_entities or set(), outline_queue)
         else:
-            for ent, tr, mesh, mr in renderable:
+            for entry in renderable:
+                ent, tr, mesh, mr = entry[:4]
+                wm = entry[4] if len(entry) > 4 else tr.world_matrix
                 try:
                     mat = self._materials.load_material(mr.material_path)
                     shader_path = mat.shader_path if mat else ""
                     prog = self._shaders.get_or_compile(shader_path if shader_path else "") or self._default_prog
                     self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
-                    model = tr.world_matrix
+                    model = wm
                     model_f32 = model.to_f32()
                     if "u_model" in prog:
                         prog["u_model"].write(model_f32.tobytes())
@@ -590,11 +682,11 @@ void main() {
                     self._materials.apply_material(mat, prog)
                     mesh.render(prog)
                     if selected_entities and ent in selected_entities:
-                        outline_queue.append((mesh, tr.world_matrix))
+                        outline_queue.append((mesh, wm))
                 except Exception:
                     prog = self._default_prog
                     self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
-                    model = tr.world_matrix
+                    model = wm
                     model_f32 = model.to_f32()
                     if "u_model" in prog:
                         prog["u_model"].write(model_f32.tobytes())
@@ -603,15 +695,16 @@ void main() {
                     self._materials.apply_material(None, prog)
                     mesh.render(prog)
                     if selected_entities and ent in selected_entities:
-                        outline_queue.append((mesh, tr.world_matrix))
+                        outline_queue.append((mesh, wm))
         if prof:
             prof.stop("render_meshes")
         if use_polygon_mode:
             self._ctx.wireframe = False
         if prof:
             prof.start("render_text_world")
-        if self._text:
-            self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=True)
+        if self._text and scene:
+            with eng._scene_lock:
+                self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=True)
         if prof:
             prof.stop("render_text_world")
         if self._grid and self._grid.show:
@@ -649,7 +742,8 @@ void main() {
         else:
             self._draw_calls = len(renderable) + skybox_call
         total_tris = 0
-        for ent, tr, mesh, mr in renderable:
+        for entry in renderable:
+            mesh = entry[2]
             if hasattr(mesh, 'indices') and mesh.indices is not None and len(mesh.indices) > 0:
                 total_tris += len(mesh.indices) // 3
         self._triangles_drawn = total_tris
@@ -722,23 +816,24 @@ void main() {
                 prof.stop("render_graphics_effects")
         if prof:
             prof.start("render_sprites")
-        self._sprites.render(scene, view_mat, proj_mat)
+        self._sprites.render_snapshot(snap.sprite_items, view_mat, proj_mat)
         if prof:
             prof.stop("render_sprites")
         if prof:
             prof.start("render_text")
-        if self._text:
-            self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=False)
+        if self._text and scene:
+            with eng._scene_lock:
+                self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=False)
         if prof:
             prof.stop("render_text")
         if prof:
             prof.start("render_svgs")
-        self._svgs.render(scene, view_mat, proj_mat)
+        self._svgs.render_snapshot(snap.svg_items, view_mat, proj_mat)
         if prof:
             prof.stop("render_svgs")
         if prof:
             prof.start("render_particles")
-        self._particles.render(scene, view_mat, proj_mat, cam_pos)
+        self._particles.render_snapshot(snap.particle_items, view_mat, proj_mat, cam_pos)
         if prof:
             prof.stop("render_particles")
         if outline_queue and self._outline_prog:

@@ -112,14 +112,19 @@ class ShadowRenderer:
             mesh.render(prog)
         self._ctx.enable(moderngl.CULL_FACE)
 
-    def render_pass(self, scene, cam_near: float, cam_far: float, cam_fov: float,
-                    aspect: float, view_mat: Mat4, lights: list, meshes: dict) -> None:
+    def collect_shadow_data(self, scene) -> list[tuple]:
+        return self._build_renderable_shadow(scene)
+
+    def render_shadow_pass(self, renderable_shadow, lights, cam_near: float, cam_far: float, cam_fov: float,
+                           aspect: float, view_mat: Mat4, meshes: dict) -> None:
         if not self._prog:
-            # Logger.warning("ShadowRenderer: no shadow program")
+            return
+        if not renderable_shadow:
+            self._cascade_splits = [0.0] * 3
+            self._has_point_shadow = False
+            self._has_spot_shadow = False
             return
         self._get_mesh = lambda k: meshes.get(k)
-        renderable_shadow = self._build_renderable_shadow(scene)
-        # Logger.info(f"ShadowRenderer: {len(renderable_shadow)} shadow casters")
         sun_light = None
         sun_transform = None
         for l, lt in lights:

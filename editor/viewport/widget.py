@@ -418,9 +418,8 @@ class SceneViewport(QOpenGLWidget):
                 self._renderer.grid_2d_mode = self._cam.is_2d_mode
                 self._renderer.grid_zoom_distance = self._cam._ortho_zoom_distance
                 t0 = time.perf_counter()
-                with eng._scene_lock:
-                    self._renderer.render_scene(scene, view, proj, cam_pos, fw, fh, self._screen_fbo,
-                                                set(self._selected_entities), self._cam.near, self._cam.far, self._cam.fov)
+                self._renderer.render_scene(scene, view, proj, cam_pos, fw, fh, self._screen_fbo,
+                                            set(self._selected_entities), self._cam.near, self._cam.far, self._cam.fov)
                 render_ms = (time.perf_counter() - t0) * 1000.0
                 eng.set_profiler_data("render_ms", render_ms)
                 vp_mat = view * proj

@@ -82,15 +82,16 @@ class RenderBatcher:
     _MAT_NONE = object()
 
     def collect_groups(self, renderables, materials, shaders):
-        """Group renderables by (prog_id, material_instance, mesh_id)."""
         groups = defaultdict(list)
-        for ent, tr, mesh, mr in renderables:
+        for entry in renderables:
+            ent, tr, mesh, mr = entry[:4]
+            wm = entry[4] if len(entry) > 4 else tr.world_matrix
             mat = materials.load_material(mr.material_path)
             shader_path = mat.shader_path if mat else ""
             prog = shaders.get_or_compile(shader_path) or self._default_prog
             mat_key = id(mat) if mat else id(self._MAT_NONE)
             key = (id(prog), mat_key, id(mesh))
-            groups[key].append((ent, tr, mesh, mr, mat, prog))
+            groups[key].append((ent, tr, mesh, mr, mat, prog, wm))
         return groups
 
     def render_groups(self, groups: dict, view_f32, proj_f32, cam_pos, lights,
@@ -99,7 +100,7 @@ class RenderBatcher:
                       selected_entities: set, outline_queue: list):
         self.reset_stats()
         for (prog_id, mat_path, mesh_id), group in groups.items():
-            _, _, mesh, _, mat, prog = group[0]
+            _, _, mesh, _, mat, prog, _ = group[0]
             self._stats_batches += 1
             n = len(group)
 
@@ -166,8 +167,8 @@ class RenderBatcher:
                           selected_entities, outline_queue):
         model_mats = []
         for item in group:
-            ent, tr, _, _, _, _ = item
-            model_mats.append(tr.world_matrix)
+            ent, tr, _, _, _, _, wm = item
+            model_mats.append(wm)
 
         key = (id(mesh), id(prog))
         vbo = self._build_instance_vbo(key, model_mats)
@@ -185,9 +186,9 @@ class RenderBatcher:
 
         if selected_entities:
             for item in group:
-                ent, tr, _, _, _, _ = item
+                ent, tr, _, _, _, _, wm = item
                 if ent in selected_entities:
-                    outline_queue.append((mesh, tr.world_matrix))
+                    outline_queue.append((mesh, wm))
 
     def _render_single(self, item, prog, mesh, mat,
                        view_f32, proj_f32, cam_pos, lights,
@@ -195,12 +196,12 @@ class RenderBatcher:
                        apply_material_fn, normal_cache,
                        selected_entities, outline_queue):
         self._stats_draw_calls += 1
-        ent, tr, _, _, _, _ = item
+        ent, tr, _, _, _, _, wm = item
         if "u_use_instancing" in prog:
             prog["u_use_instancing"].value = 0
         set_scene_uniforms_fn(prog, view_f32, proj_f32, cam_pos, lights,
                               disable_shadows=disable_shadows)
-        model = tr.world_matrix
+        model = wm
         model_f32 = model.to_f32()
         if "u_model" in prog:
             prog["u_model"].write(model_f32.tobytes())
@@ -220,7 +221,7 @@ class RenderBatcher:
         apply_material_fn(mat, prog)
         mesh.render(prog)
         if selected_entities and ent in selected_entities:
-            outline_queue.append((mesh, tr.world_matrix))
+            outline_queue.append((mesh, wm))
 
     @property
     def draw_calls(self) -> int:

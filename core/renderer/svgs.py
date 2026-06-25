@@ -130,6 +130,43 @@ class SvgRendererGL:
         self._texture_cache[key] = (mtime, pixels_per_unit, tex, import_mtime)
         return tex
 
+    def resolve_path(self, path: str) -> Optional[str]:
+        return self._resolve_path(path)
+
+    def render_snapshot(self, svg_items: list, view_mat: Mat4, proj_mat: Mat4):
+        if not self._vao or not svg_items:
+            return
+        prog = self._prog
+        if self._has_view:
+            prog["u_view"].write(view_mat.to_f32().tobytes())
+        if self._has_proj:
+            prog["u_proj"].write(proj_mat.to_f32().tobytes())
+        self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.enable(moderngl.BLEND)
+        self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        self._ctx.enable(moderngl.DEPTH_TEST)
+        if self._has_alpha_cutoff:
+            prog["u_alpha_cutoff"].value = self._alpha_cutoff_val
+        for item in svg_items:
+            if not item.abs_path:
+                continue
+            tex = self._get_texture(item.abs_path, item.pixels_per_unit)
+            if tex is None:
+                continue
+            if self._has_model:
+                prog["u_model"].write(item.world_matrix.to_f32().tobytes())
+            if self._has_color:
+                prog["u_color"].write(np.array(item.color, dtype=np.float32).tobytes())
+            if self._has_flip:
+                self._flip_arr[0] = 1.0 if item.flip_x else 0.0
+                self._flip_arr[1] = 1.0 if item.flip_y else 0.0
+                prog["u_flip"].write(self._flip_arr.tobytes())
+            tex.use(0)
+            if self._has_texture:
+                prog["u_texture"].value = 0
+            self._vao.render(moderngl.TRIANGLES)
+        self._ctx.enable(moderngl.CULL_FACE)
+
     def render(self, scene, view_mat: Mat4, proj_mat: Mat4):
         if not self._vao:
             return

@@ -38,6 +38,43 @@ class SpriteRendererGL:
     def set_texture_loader(self, loader):
         self._texture_loader = loader
 
+    def render_snapshot(self, sprite_items: list, view_mat: Mat4, proj_mat: Mat4):
+        if not self._prog or not self._vao or not sprite_items:
+            return
+        prog = self._prog
+        view_f32 = view_mat.to_f32()
+        proj_f32 = proj_mat.to_f32()
+        if "u_view" in prog:
+            prog["u_view"].write(view_f32.tobytes())
+        if "u_proj" in prog:
+            prog["u_proj"].write(proj_f32.tobytes())
+        self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.enable(moderngl.BLEND)
+        self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        self._ctx.enable(moderngl.DEPTH_TEST)
+        self._ctx.depth_mask = True
+        for item in sprite_items:
+            tex = self._texture_loader(item.texture_path) if item.texture_path and self._texture_loader else None
+            if tex is None:
+                continue
+            model_f32 = item.world_matrix.to_f32()
+            if "u_model" in prog:
+                prog["u_model"].write(model_f32.tobytes())
+            if "u_color" in prog:
+                prog["u_color"].write(np.array(item.color, dtype=np.float32).tobytes())
+            if "u_flip" in prog:
+                prog["u_flip"].write(np.array(
+                    [1.0 if item.flip_x else 0.0, 1.0 if item.flip_y else 0.0],
+                    dtype=np.float32
+                ).tobytes())
+            if "u_alpha_cutoff" in prog:
+                prog["u_alpha_cutoff"].value = 0.01
+            tex.use(0)
+            if "u_texture" in prog:
+                prog["u_texture"].value = 0
+            self._vao.render(moderngl.TRIANGLES)
+        self._ctx.enable(moderngl.CULL_FACE)
+
     def render(self, scene, view_mat: Mat4, proj_mat: Mat4):
         if not self._prog or not self._vao:
             return
