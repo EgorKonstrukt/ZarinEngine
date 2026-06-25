@@ -2,14 +2,18 @@ from __future__ import annotations
 import time
 import json
 import os
+import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, Any
+from typing import Optional, Any, TYPE_CHECKING
 from core.ecs import Scene, ComponentRegistry
 from core.plugin_manager import PluginManager
 from core.logger import Logger
 from core.config import get_global_config
 from core.constants import PATH_FIELDS as _PATH_FIELDS
+
+if TYPE_CHECKING:
+    from core.engine_worker import GameWorker
 
 _ENGINE_POOL = ThreadPoolExecutor(max_workers=min(8, max(2, (os.cpu_count() or 4))), thread_name_prefix="engine")
 
@@ -61,8 +65,9 @@ _PROFILER_COLORS = {
 class _Profiler:
     __slots__ = ('_frames', '_current_frame', '_stack', '_frame_start',
                  '_max_frames', '_flat_data', '_enabled', '_frame_number',
-                 '_capture_frames')
+                 '_capture_frames', '_lock')
     def __init__(self, max_frames: int = 300):
+        self._lock = threading.Lock()
         self._frames: deque[FrameProfile] = deque(maxlen=max_frames)
         self._current_frame: FrameProfile | None = None
         self._stack: list[tuple[str, float]] = []
@@ -74,69 +79,74 @@ class _Profiler:
         self._capture_frames: bool = False
     def start(self, key: str):
         if not self._enabled: return
-        self._stack.append((key, _perf_counter()))
+        with self._lock:
+            self._stack.append((key, _perf_counter()))
     def stop(self, key: str):
         if not self._enabled: return
-        stack = self._stack
-        if not stack: return
-        if stack[-1][0] == key:
-            name, t0 = stack.pop()
-        else:
-            for i in range(len(stack) - 1, -1, -1):
-                if stack[i][0] == key:
-                    name, t0 = stack.pop(i)
-                    break
+        with self._lock:
+            stack = self._stack
+            if not stack: return
+            if stack[-1][0] == key:
+                name, t0 = stack.pop()
             else:
-                return
-        now = _perf_counter()
-        duration_ms = (now - t0) * 1000.0
-        self._flat_data[name] = self._flat_data.get(name, 0.0) + duration_ms
-        if self._capture_frames:
-            cf = self._current_frame
-            if cf is not None and self._frame_start > 0:
-                start_ms = (t0 - self._frame_start) * 1000.0
-                depth = len(stack)
-                c = _PROFILER_COLORS.get(name, "#aaaaaa")
-                cf.samples.append(ProfileSample(name, depth, start_ms, duration_ms, c))
-                cf.flat_data[name] = cf.flat_data.get(name, 0.0) + duration_ms
-    def set_value(self, key: str, value_ms: float):
-        if not self._enabled: return
-        self._flat_data[key] = value_ms
-        if self._capture_frames:
-            cf = self._current_frame
-            if cf is not None:
-                cf.flat_data[key] = value_ms
-    def capture_frame(self):
-        if not self._enabled: return
-        now = _perf_counter()
-        cf = self._current_frame
-        frame_start = self._frame_start
-        if self._stack:
-            for name, t0 in self._stack:
-                duration_ms = (now - t0) * 1000.0
-                self._flat_data[name] = self._flat_data.get(name, 0.0) + duration_ms
-                if self._capture_frames and cf is not None and frame_start > 0:
-                    start_ms = (t0 - frame_start) * 1000.0
+                for i in range(len(stack) - 1, -1, -1):
+                    if stack[i][0] == key:
+                        name, t0 = stack.pop(i)
+                        break
+                else:
+                    return
+            now = _perf_counter()
+            duration_ms = (now - t0) * 1000.0
+            self._flat_data[name] = self._flat_data.get(name, 0.0) + duration_ms
+            if self._capture_frames:
+                cf = self._current_frame
+                if cf is not None and self._frame_start > 0:
+                    start_ms = (t0 - self._frame_start) * 1000.0
+                    depth = len(stack)
                     c = _PROFILER_COLORS.get(name, "#aaaaaa")
-                    depth = len(self._stack)
                     cf.samples.append(ProfileSample(name, depth, start_ms, duration_ms, c))
                     cf.flat_data[name] = cf.flat_data.get(name, 0.0) + duration_ms
-            self._stack.clear()
-        if cf is not None:
-            cf.frame_time_ms = (now - frame_start) * 1000.0
-            cf.frame_number = self._frame_number
-            self._frames.append(cf)
-            self._frame_number += 1
-        self._current_frame = FrameProfile() if self._capture_frames else None
-        self._frame_start = now
+    def set_value(self, key: str, value_ms: float):
+        if not self._enabled: return
+        with self._lock:
+            self._flat_data[key] = value_ms
+            if self._capture_frames:
+                cf = self._current_frame
+                if cf is not None:
+                    cf.flat_data[key] = value_ms
+    def capture_frame(self):
+        if not self._enabled: return
+        with self._lock:
+            now = _perf_counter()
+            cf = self._current_frame
+            frame_start = self._frame_start
+            if self._stack:
+                for name, t0 in self._stack:
+                    duration_ms = (now - t0) * 1000.0
+                    self._flat_data[name] = self._flat_data.get(name, 0.0) + duration_ms
+                    if self._capture_frames and cf is not None and frame_start > 0:
+                        start_ms = (t0 - frame_start) * 1000.0
+                        c = _PROFILER_COLORS.get(name, "#aaaaaa")
+                        depth = len(self._stack)
+                        cf.samples.append(ProfileSample(name, depth, start_ms, duration_ms, c))
+                        cf.flat_data[name] = cf.flat_data.get(name, 0.0) + duration_ms
+                self._stack.clear()
+            if cf is not None:
+                cf.frame_time_ms = (now - frame_start) * 1000.0
+                cf.frame_number = self._frame_number
+                self._frames.append(cf)
+                self._frame_number += 1
+            self._current_frame = FrameProfile() if self._capture_frames else None
+            self._frame_start = now
     def reset(self):
         if not self._enabled: return
-        self._frames.clear()
-        self._current_frame = None
-        self._stack.clear()
-        self._flat_data.clear()
-        self._frame_start = 0.0
-        self._frame_number = 0
+        with self._lock:
+            self._frames.clear()
+            self._current_frame = None
+            self._stack.clear()
+            self._flat_data.clear()
+            self._frame_start = 0.0
+            self._frame_number = 0
     @property
     def data(self) -> dict[str, float]:
         return dict(self._flat_data)
@@ -173,10 +183,15 @@ class Engine:
         self._fps: float = 0.0
         self._fps_accum: float = 0.0
         self._fps_frames: int = 0
+        self._tps: float = 0.0
+        self._tps_accum: float = 0.0
+        self._tps_frames: int = 0
+        self._scene_lock = threading.RLock()
         self._profiler = _Profiler()
         self._event_listeners: dict[str, list] = {}
         self._component_registry = ComponentRegistry
         self._collab_manager: Optional[Any] = None
+        self._game_worker: Optional[GameWorker] = None
         self._plugin_ui_registry: dict[str, list] = {
             "docks": [],
             "toolbar_actions": [],
@@ -194,6 +209,8 @@ class Engine:
     def play_mode(self) -> bool: return self._play_mode
     @property
     def fps(self) -> float: return self._fps
+    @property
+    def tps(self) -> float: return self._tps
     @property
     def frame_count(self) -> int: return self._frame_count
     @property
@@ -368,8 +385,17 @@ class Engine:
         self._plugin_manager.notify_play_start()
         self._emit_event("play_start", None)
         Logger.info("Play mode started.")
+        from core.engine_worker import GameWorker
+        cfg = get_global_config()
+        update_rate = cfg.get("rendering.tick_rate", 120.0)
+        fixed_rate = cfg.get("rendering.fixed_tick_rate", 60.0)
+        self._game_worker = GameWorker(self, update_rate, fixed_rate)
+        self._game_worker.start()
     def stop_play(self):
         if not self._play_mode: return
+        if self._game_worker:
+            self._game_worker.stop()
+            self._game_worker = None
         from core.audio_system import AudioSourceManager
         mgr = AudioSourceManager.instance()
         if mgr: mgr.stop_all()
@@ -379,6 +405,15 @@ class Engine:
         Logger.info("Play mode stopped.")
     def tick(self):
         if not self._play_mode: return
+        dt = self.tick_begin()
+        MAX_FIXED_STEPS = 5
+        for _ in range(MAX_FIXED_STEPS):
+            if not self.tick_fixed_step():
+                break
+        self.tick_update(dt)
+
+    def tick_begin(self) -> float:
+        """Stage 1: flush transforms, calc dt. Returns frame dt."""
         if self._scene:
             self._scene.flush_transforms()
         now = _perf_counter()
@@ -387,41 +422,60 @@ class Engine:
         dt = raw_dt * self._time_scale
         self._profiler.start("tick")
         self._fixed_accum += dt
+        return dt
+
+    def tick_fixed_step(self) -> bool:
+        """Stage 2: one fixed step. Returns True if step was consumed."""
+        if self._fixed_accum < self._fixed_dt:
+            return False
         self._profiler.start("fixed_update")
-        MAX_FIXED_STEPS = 5
         sys_plugins = self._plugin_manager.get_system_plugins()
-        steps = 0
-        while self._fixed_accum >= self._fixed_dt and steps < MAX_FIXED_STEPS:
-            for p in sys_plugins:
-                self._profiler.start(p.NAME)
-                try: p.pre_step(self._fixed_dt)
-                except Exception as e: Logger.error(f"Plugin {p.NAME} pre_step exception: {e}")
-                self._profiler.stop(p.NAME)
-            if self._scene:
-                try: self._scene.fixed_update(self._fixed_dt)
-                except Exception as e: Logger.error(f"FixedUpdate exception: {e}", e)
-            for p in sys_plugins:
-                self._profiler.start(p.NAME)
-                try: p.step(self._fixed_dt)
-                except Exception as e: Logger.error(f"Plugin {p.NAME} exception: {e}")
-                self._profiler.stop(p.NAME)
-            self._fixed_accum -= self._fixed_dt
-            steps += 1
-        if steps >= MAX_FIXED_STEPS:
+        for p in sys_plugins:
+            self._profiler.start(p.NAME)
+            try:
+                p.pre_step(self._fixed_dt)
+            except Exception as e:
+                Logger.error(f"Plugin {p.NAME} pre_step exception: {e}")
+            self._profiler.stop(p.NAME)
+        if self._scene:
+            try:
+                self._scene.fixed_update(self._fixed_dt)
+            except Exception as e:
+                Logger.error(f"FixedUpdate exception: {e}", e)
+        for p in sys_plugins:
+            self._profiler.start(p.NAME)
+            try:
+                p.step(self._fixed_dt)
+            except Exception as e:
+                Logger.error(f"Plugin {p.NAME} exception: {e}")
+            self._profiler.stop(p.NAME)
+        self._fixed_accum -= self._fixed_dt
+        if self._fixed_accum < 0:
             self._fixed_accum = 0.0
         self._profiler.stop("fixed_update")
+        return True
+
+    def tick_update(self, dt: float):
+        """Stage 3: script update + frame bookkeeping."""
         self._profiler.start("update")
         if self._scene:
-            try: self._scene.update(dt)
-            except Exception as e: Logger.error(f"Update exception: {e}", e)
+            try:
+                self._scene.update(dt)
+            except Exception as e:
+                Logger.error(f"Update exception: {e}", e)
         self._profiler.stop("update")
         self._frame_count += 1
-        self._fps_accum += raw_dt
+        self._fps_accum += dt / max(self._time_scale, 0.001)
         self._fps_frames += 1
+        self._tps_accum += dt / max(self._time_scale, 0.001)
+        self._tps_frames += 1
         if self._fps_accum >= 0.5:
             self._fps = self._fps_frames / self._fps_accum
             self._fps_accum = 0.0
             self._fps_frames = 0
+            self._tps = self._tps_frames / self._tps_accum
+            self._tps_accum = 0.0
+            self._tps_frames = 0
         self._profiler.stop("tick")
     def set_profiler_data(self, key: str, value_ms: float):
         self._profiler.set_value(key, value_ms)

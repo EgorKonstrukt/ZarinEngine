@@ -418,8 +418,9 @@ class SceneViewport(QOpenGLWidget):
                 self._renderer.grid_2d_mode = self._cam.is_2d_mode
                 self._renderer.grid_zoom_distance = self._cam._ortho_zoom_distance
                 t0 = time.perf_counter()
-                self._renderer.render_scene(scene, view, proj, cam_pos, fw, fh, self._screen_fbo,
-                                            set(self._selected_entities), self._cam.near, self._cam.far, self._cam.fov)
+                with eng._scene_lock:
+                    self._renderer.render_scene(scene, view, proj, cam_pos, fw, fh, self._screen_fbo,
+                                                set(self._selected_entities), self._cam.near, self._cam.far, self._cam.fov)
                 render_ms = (time.perf_counter() - t0) * 1000.0
                 eng.set_profiler_data("render_ms", render_ms)
                 vp_mat = view * proj
@@ -429,19 +430,22 @@ class SceneViewport(QOpenGLWidget):
                 if in_frame:
                     prof.start("gizmo_wireframes")
                 if self._gizmo_visible:
-                    render_collider_wireframes(self, vp_mat)
-                    render_particle_emitter_wireframes(self, vp_mat)
-                    render_camera_frustums(self, vp_mat)
-                    render_audio_source_gizmos(self, vp_mat)
-                    render_reverb_zone_gizmos(self, vp_mat)
-                    render_script_gizmos(self, vp_mat)
+                    with eng._scene_lock:
+                        render_collider_wireframes(self, vp_mat)
+                        render_particle_emitter_wireframes(self, vp_mat)
+                        render_camera_frustums(self, vp_mat)
+                        render_audio_source_gizmos(self, vp_mat)
+                        render_reverb_zone_gizmos(self, vp_mat)
+                        render_script_gizmos(self, vp_mat)
                 if in_frame:
                     prof.stop("gizmo_wireframes")
-                render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
+                with eng._scene_lock:
+                    render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
                 if in_frame:
                     prof.start("gizmo_icons")
                 try:
-                    render_component_icons_gl(self)
+                    with eng._scene_lock:
+                        render_component_icons_gl(self)
                 except Exception:
                     pass
                 if self._debug_lines:
@@ -456,7 +460,8 @@ class SceneViewport(QOpenGLWidget):
                 if in_frame:
                     prof.start("gizmo_collab")
                 try:
-                    render_remote_collaborator_gizmos(self, vp_mat, cam_pos, fw, fh)
+                    with eng._scene_lock:
+                        render_remote_collaborator_gizmos(self, vp_mat, cam_pos, fw, fh)
                 except Exception:
                     pass
                 if in_frame:
@@ -534,7 +539,7 @@ class SceneViewport(QOpenGLWidget):
         prof.stop("input_handling")
         prof.start("logic_update")
         if eng.play_mode:
-            eng.tick()
+            pass
         else:
             prof.start("editor_particles")
             self._update_editor_particles(dt, self._selected_entities)

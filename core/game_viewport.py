@@ -132,7 +132,8 @@ class GameViewport(QOpenGLWidget):
             if prof:
                 prof.capture_frame()
             self._input_manager.new_frame()
-            self._engine.tick()
+            with self._engine._scene_lock:
+                self._engine.tick()
             self.update()
 
     def _capture_mouse(self):

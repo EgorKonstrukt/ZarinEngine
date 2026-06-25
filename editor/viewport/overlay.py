@@ -20,8 +20,9 @@ def draw_stats_overlay(vp, painter):
         vp._fps_history.pop(0)
     avg_fps = sum(vp._fps_history) / max(len(vp._fps_history), 1)
     prof_data = vp._engine.profiler_data if hasattr(vp._engine, 'profiler_data') else {}
+    tps = vp._engine.tps if hasattr(vp._engine, 'tps') else 0.0
     stats_lines = [
-        f"FPS: {avg_fps:.1f}",
+        f"FPS: {avg_fps:.1f} | TPS: {tps:.0f}",
         f"Entities: {len(vp._engine.scene.get_all_entities()) if vp._engine.scene else 0}",
         f"Draw Calls: {vp._renderer._draw_calls if hasattr(vp._renderer, '_draw_calls') else 'N/A'}",
         f"Triangles: {vp._renderer._triangles_drawn if hasattr(vp._renderer, '_triangles_drawn') else 'N/A'}",

@@ -72,7 +72,10 @@ class EditorMainWindow(QMainWindow):
 
     def _update_status(self):
         if self._status_fps_lbl:
-            self._status_fps_lbl.setText(f"FPS: {self._engine.fps:.0f}")
+            vp = getattr(self._engine, 'viewport', None)
+            render_fps = vp._fps if vp and hasattr(vp, '_fps') else 0.0
+            tps = self._engine.tps
+            self._status_fps_lbl.setText(f"FPS: {render_fps:.0f} | TPS: {tps:.0f}")
         if self._engine.scene and self._engine.scene.dirty:
             name = self._engine.scene.name
             self.setWindowTitle(f"Zarin Engine Editor - {name}*")
