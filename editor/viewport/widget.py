@@ -154,7 +154,7 @@ class SceneViewport(QOpenGLWidget):
     def _apply_config(self):
         if not self._vsync_enabled:
             self._update_timer.setTimerType(Qt.TimerType.PreciseTimer)
-            self._update_timer.setInterval(1)
+            self._update_timer.setInterval(4)
         else:
             fps = self._target_fps
             if fps <= 0 or fps > 240:
