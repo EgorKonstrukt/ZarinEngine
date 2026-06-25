@@ -339,7 +339,7 @@ class TextRendererGL:
                 verts[es + 1:ee:5] -= y_mid
         return vi, evi, scale
 
-    def render(self, scene, view_mat: Mat4, proj_mat: Mat4, viewport_w: int, viewport_h: int):
+    def render(self, scene, view_mat: Mat4, proj_mat: Mat4, viewport_w: int, viewport_h: int, world_space_only: bool | None = None):
         if not self._prog or not self._vao:
             return
         prog = self._prog
@@ -361,6 +361,11 @@ class TextRendererGL:
             tr = ent.get_component(TextRenderer)
             if not tr or not tr.enabled or not tr.text:
                 continue
+            if world_space_only is not None:
+                if world_space_only and not tr.font_world_space:
+                    continue
+                if not world_space_only and tr.font_world_space:
+                    continue
             t = ent.get_component(Transform)
             if not t:
                 continue
@@ -392,6 +397,10 @@ class TextRendererGL:
             has_shadow = tr.shadow and list(tr.shadow_color)[3] > 0
             has_3d = tr.use_3d and tr.extrusion_layers > 0 and tr.extrusion_depth > 0
             has_bold = tr.bold and not has_3d
+            if tr.font_world_space:
+                self._ctx.enable(moderngl.DEPTH_TEST)
+            else:
+                self._ctx.disable(moderngl.DEPTH_TEST)
             if has_shadow:
                 self._ctx.disable(moderngl.DEPTH_TEST)
                 sx, sy = tr.shadow_offset[0], tr.shadow_offset[1]
@@ -403,9 +412,8 @@ class TextRendererGL:
                     self._render_quads(evi, list(tr.shadow_color), tex, False, True, ev)
                 if "u_offset" in prog:
                     prog["u_offset"].write(zero3.tobytes())
-                self._ctx.enable(moderngl.DEPTH_TEST)
-            else:
-                self._ctx.enable(moderngl.DEPTH_TEST)
+                if tr.font_world_space:
+                    self._ctx.enable(moderngl.DEPTH_TEST)
             if has_3d:
                 layer_step = tr.extrusion_depth / max(tr.extrusion_layers, 1)
                 if "u_offset" in prog:

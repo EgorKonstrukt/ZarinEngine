@@ -620,6 +620,12 @@ void main() {
             if prof:
                 prof.stop("render_grid")
         if prof:
+            prof.start("render_text_world")
+        if self._text:
+            self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=True)
+        if prof:
+            prof.stop("render_text_world")
+        if prof:
             prof.start("render_overlay")
         if fbo is not None:
             fbo.use()
@@ -722,7 +728,7 @@ void main() {
         if prof:
             prof.start("render_text")
         if self._text:
-            self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h)
+            self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=False)
         if prof:
             prof.stop("render_text")
         if prof:
