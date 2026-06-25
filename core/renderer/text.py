@@ -239,7 +239,7 @@ class TextRendererGL:
             count += 1
         return count
 
-    def _render_quads(self, vi: int, color: list[float], tex: Any, write_depth: bool, solid: bool, start_v: int = 0):
+    def _render_quads(self, vi: int, color: list[float], tex: Any, write_depth: bool, solid: bool, start_v: int = 0, clip_alpha: float = 0.01):
         prog = self._prog
         if vi == 0:
             return
@@ -247,6 +247,8 @@ class TextRendererGL:
             prog["u_color"].write(np.array(color, dtype=np.float32).tobytes())
         if "u_solid" in prog:
             prog["u_solid"].value = 1.0 if solid else 0.0
+        if "u_clip_alpha" in prog:
+            prog["u_clip_alpha"].value = clip_alpha
         tex.use(0)
         if "u_texture" in prog:
             prog["u_texture"].value = 0
@@ -254,7 +256,7 @@ class TextRendererGL:
             self._ctx.depth_mask = True
         else:
             self._ctx.depth_mask = False
-        self._vao.render(moderngl.TRIANGLES, vertices=vi * 6, first=start_v * 4)
+        self._vao.render(moderngl.TRIANGLES, vertices=vi * 6, first=start_v * 6)
 
     def _geom_hash(self, tr: TextRenderer, atlas: FontAtlas) -> int:
         props = (
@@ -339,9 +341,26 @@ class TextRendererGL:
                 verts[es + 1:ee:5] -= y_mid
         return vi, evi, scale
 
+    _OUTLINE_DIRS = [
+        (1.0, 0.0), (0.9239, 0.3827), (0.7071, 0.7071), (0.3827, 0.9239),
+        (0.0, 1.0), (-0.3827, 0.9239), (-0.7071, 0.7071), (-0.9239, 0.3827),
+        (-1.0, 0.0), (-0.9239, -0.3827), (-0.7071, -0.7071), (-0.3827, -0.9239),
+        (0.0, -1.0), (0.3827, -0.9239), (0.7071, -0.7071), (0.9239, -0.3827),
+    ]
+
+    _GLOW_RINGS = [
+        (1.0, 0.5),
+        (1.5, 0.3),
+        (2.5, 0.15),
+    ]
+
     def render(self, scene, view_mat: Mat4, proj_mat: Mat4, viewport_w: int, viewport_h: int, world_space_only: bool | None = None):
         if not self._prog or not self._vao:
             return
+        alive_ids = {e.id for e in scene.get_entities_with_component(TextRenderer)}
+        stale = [eid for eid in self._geom_cache if eid not in alive_ids]
+        for eid in stale:
+            del self._geom_cache[eid]
         prog = self._prog
         view_f32 = view_mat.to_f32()
         proj_f32 = proj_mat.to_f32()
@@ -393,10 +412,14 @@ class TextRendererGL:
                 continue
             total_verts = (vi + evi) * 4
             self._vbo.write(self._verts[:total_verts * 5].tobytes())
-            ev = vi * 4
+            ev = vi
+            is_3d = tr.use_3d and tr.extrusion_layers > 0 and tr.extrusion_depth > 0
             has_shadow = tr.shadow and list(tr.shadow_color)[3] > 0
-            has_3d = tr.use_3d and tr.extrusion_layers > 0 and tr.extrusion_depth > 0
-            has_bold = tr.bold and not has_3d
+            has_outline = tr.outline and not is_3d and list(tr.outline_color)[3] > 0
+            has_glow = tr.glow and not is_3d and list(tr.glow_color)[3] > 0
+            has_3d = is_3d
+            has_bold = tr.bold and not is_3d
+            clip_main = 0.05 if (has_outline or has_glow) else 0.01
             if tr.font_world_space:
                 self._ctx.enable(moderngl.DEPTH_TEST)
             else:
@@ -414,6 +437,40 @@ class TextRendererGL:
                     prog["u_offset"].write(zero3.tobytes())
                 if tr.font_world_space:
                     self._ctx.enable(moderngl.DEPTH_TEST)
+            write_depth = False
+            if has_glow or has_outline:
+                self._ctx.disable(moderngl.DEPTH_TEST)
+            if has_glow:
+                gc = list(tr.glow_color)
+                base_intensity = gc[3] * tr.glow_intensity
+                for radius, alpha_scale in self._GLOW_RINGS:
+                    r = tr.glow_size * radius
+                    a = base_intensity * alpha_scale
+                    if a < 0.005:
+                        continue
+                    gc[3] = a
+                    if "u_offset" in prog:
+                        for dx, dy in self._OUTLINE_DIRS:
+                            prog["u_offset"].write(np.array([dx * r, dy * r, 0.0], dtype=np.float32).tobytes())
+                            if vi > 0:
+                                self._render_quads(vi, gc, tex, write_depth, False, 0)
+                            if evi > 0:
+                                self._render_quads(evi, gc, tex, write_depth, False, ev)
+                        prog["u_offset"].write(zero3.tobytes())
+            if has_outline:
+                oc = list(tr.outline_color)
+                ow = tr.outline_width
+                if "u_offset" in prog:
+                    for dx, dy in self._OUTLINE_DIRS:
+                        prog["u_offset"].write(np.array([dx * ow, dy * ow, 0.0], dtype=np.float32).tobytes())
+                        if vi > 0:
+                            self._render_quads(vi, oc, tex, write_depth, False, 0)
+                        if evi > 0:
+                            self._render_quads(evi, oc, tex, write_depth, False, ev)
+                    prog["u_offset"].write(zero3.tobytes())
+            if has_glow or has_outline:
+                if tr.font_world_space:
+                    self._ctx.enable(moderngl.DEPTH_TEST)
             if has_3d:
                 layer_step = tr.extrusion_depth / max(tr.extrusion_layers, 1)
                 if "u_offset" in prog:
@@ -428,33 +485,33 @@ class TextRendererGL:
                         ]
                         prog["u_offset"].write(np.array([0.0, 0.0, -z_off], dtype=np.float32).tobytes())
                         if vi > 0:
-                            self._render_quads(vi, ecolor, tex, True, False, 0)
+                            self._render_quads(vi, ecolor, tex, write_depth, False, 0)
                         if evi > 0:
-                            self._render_quads(evi, ecolor, tex, True, True, ev)
+                            self._render_quads(evi, ecolor, tex, write_depth, True, ev)
                     prog["u_offset"].write(zero3.tobytes())
                 if vi > 0:
-                    self._render_quads(vi, list(tr.color), tex, True, False, 0)
+                    self._render_quads(vi, list(tr.color), tex, write_depth, False, 0, clip_main)
                 if evi > 0:
-                    self._render_quads(evi, list(tr.color), tex, True, True, ev)
+                    self._render_quads(evi, list(tr.color), tex, write_depth, True, ev)
             elif has_bold:
                 bold_off = scale * 0.003
                 if "u_offset" in prog:
                     prog["u_offset"].write(np.array([bold_off, 0.0, 0.0], dtype=np.float32).tobytes())
                 if vi > 0:
-                    self._render_quads(vi, list(tr.color), tex, True, False, 0)
+                    self._render_quads(vi, list(tr.color), tex, write_depth, False, 0, clip_main)
                 if "u_offset" in prog:
                     prog["u_offset"].write(np.array([-bold_off, 0.0, 0.0], dtype=np.float32).tobytes())
                 if vi > 0:
-                    self._render_quads(vi, list(tr.color), tex, True, False, 0)
+                    self._render_quads(vi, list(tr.color), tex, write_depth, False, 0, clip_main)
                 if "u_offset" in prog:
                     prog["u_offset"].write(zero3.tobytes())
                 if evi > 0:
-                    self._render_quads(evi, list(tr.color), tex, True, True, ev)
+                    self._render_quads(evi, list(tr.color), tex, write_depth, True, ev)
             else:
                 if vi > 0:
-                    self._render_quads(vi, list(tr.color), tex, True, False, 0)
+                    self._render_quads(vi, list(tr.color), tex, write_depth, False, 0, clip_main)
                 if evi > 0:
-                    self._render_quads(evi, list(tr.color), tex, True, True, ev)
+                    self._render_quads(evi, list(tr.color), tex, write_depth, True, ev)
         self._ctx.depth_mask = True
         self._ctx.enable(moderngl.CULL_FACE)
 

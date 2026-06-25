@@ -608,6 +608,12 @@ void main() {
             prof.stop("render_meshes")
         if use_polygon_mode:
             self._ctx.wireframe = False
+        if prof:
+            prof.start("render_text_world")
+        if self._text:
+            self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=True)
+        if prof:
+            prof.stop("render_text_world")
         if self._grid and self._grid.show:
             if prof:
                 prof.start("render_grid")
@@ -619,12 +625,6 @@ void main() {
             self._grid.render(view_f32, proj_f32, cam_pos, self._clear_color, viewport_h, cam_fov)
             if prof:
                 prof.stop("render_grid")
-        if prof:
-            prof.start("render_text_world")
-        if self._text:
-            self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=True)
-        if prof:
-            prof.stop("render_text_world")
         if prof:
             prof.start("render_overlay")
         if fbo is not None:

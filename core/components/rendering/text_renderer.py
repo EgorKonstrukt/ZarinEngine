@@ -41,6 +41,13 @@ class TextRenderer(Component):
             InspectorField("shadow", "Shadow", FieldType.BOOL),
             InspectorField("shadow_offset", "Shadow Offset", FieldType.VEC2),
             InspectorField("shadow_color", "Shadow Color", FieldType.COLOR),
+            InspectorField("outline", "Outline", FieldType.BOOL),
+            InspectorField("outline_color", "Outline Color", FieldType.COLOR, toggle_field="outline"),
+            InspectorField("outline_width", "Outline Width", FieldType.FLOAT, min_val=0.001, max_val=0.1, step=0.001, decimals=3, toggle_field="outline"),
+            InspectorField("glow", "Glow", FieldType.BOOL),
+            InspectorField("glow_color", "Glow Color", FieldType.COLOR, toggle_field="glow"),
+            InspectorField("glow_size", "Glow Size", FieldType.FLOAT, min_val=0.001, max_val=0.1, step=0.001, decimals=3, toggle_field="glow"),
+            InspectorField("glow_intensity", "Glow Intensity", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=2, toggle_field="glow"),
             InspectorField("use_3d", "3D Text", FieldType.BOOL),
             InspectorField("extrusion_depth", "Extrusion Depth", FieldType.FLOAT, min_val=0.001, max_val=1.0, step=0.001, decimals=4, toggle_field="use_3d"),
             InspectorField("extrusion_layers", "Extrusion Layers", FieldType.INT, min_val=1, max_val=32, step=1, toggle_field="use_3d"),
@@ -68,6 +75,13 @@ class TextRenderer(Component):
         self.shadow: bool = False
         self._shadow_offset: list[float] = [0.02, -0.02]
         self._shadow_color: list[float] = [0, 0, 0, 0.5]
+        self.outline: bool = False
+        self._outline_color: list[float] = [0, 0, 0, 1]
+        self.outline_width: float = 0.02
+        self.glow: bool = False
+        self._glow_color: list[float] = [0.3, 0.6, 1.0, 0.5]
+        self.glow_size: float = 0.02
+        self.glow_intensity: float = 0.5
         self.use_3d: bool = False
         self.extrusion_depth: float = 0.05
         self.extrusion_layers: int = 8
@@ -148,6 +162,36 @@ class TextRenderer(Component):
         else:
             self._extrusion_color = [0.3, 0.3, 0.3]
 
+    @property
+    def outline_color(self) -> list[float]:
+        return self._outline_color
+
+    @outline_color.setter
+    def outline_color(self, val):
+        if val is None:
+            self._outline_color = [0, 0, 0, 1]
+        elif len(val) == 3:
+            self._outline_color = [val[0], val[1], val[2], 1.0]
+        elif len(val) >= 4:
+            self._outline_color = [val[0], val[1], val[2], val[3]]
+        else:
+            self._outline_color = [0, 0, 0, 1]
+
+    @property
+    def glow_color(self) -> list[float]:
+        return self._glow_color
+
+    @glow_color.setter
+    def glow_color(self, val):
+        if val is None:
+            self._glow_color = [0.3, 0.6, 1.0, 0.5]
+        elif len(val) == 3:
+            self._glow_color = [val[0], val[1], val[2], 0.5]
+        elif len(val) >= 4:
+            self._glow_color = [val[0], val[1], val[2], val[3]]
+        else:
+            self._glow_color = [0.3, 0.6, 1.0, 0.5]
+
     def serialize(self) -> dict:
         d = super().serialize()
         d.update({
@@ -164,6 +208,13 @@ class TextRenderer(Component):
             "shadow": self.shadow,
             "shadow_offset": self.shadow_offset,
             "shadow_color": self.shadow_color,
+            "outline": self.outline,
+            "outline_color": self.outline_color,
+            "outline_width": self.outline_width,
+            "glow": self.glow,
+            "glow_color": self.glow_color,
+            "glow_size": self.glow_size,
+            "glow_intensity": self.glow_intensity,
             "use_3d": self.use_3d,
             "extrusion_depth": self.extrusion_depth,
             "extrusion_layers": self.extrusion_layers,
@@ -197,6 +248,13 @@ class TextRenderer(Component):
         tr.shadow = data.get("shadow", False)
         tr.shadow_offset = data.get("shadow_offset", [0.02, -0.02])
         tr.shadow_color = data.get("shadow_color", [0, 0, 0, 0.5])
+        tr.outline = data.get("outline", False)
+        tr.outline_color = data.get("outline_color", [0, 0, 0, 1])
+        tr.outline_width = data.get("outline_width", 0.02)
+        tr.glow = data.get("glow", False)
+        tr.glow_color = data.get("glow_color", [0.3, 0.6, 1.0, 0.5])
+        tr.glow_size = data.get("glow_size", 0.02)
+        tr.glow_intensity = data.get("glow_intensity", 0.5)
         tr.use_3d = data.get("use_3d", False)
         tr.extrusion_depth = data.get("extrusion_depth", 0.05)
         tr.extrusion_layers = data.get("extrusion_layers", 8)
