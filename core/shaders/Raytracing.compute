@@ -106,7 +106,7 @@ ComputeShader "Zarin/Raytracing"
         vec3 e2 = v2 - v0;
         vec3 p = cross(d, e2);
         float det = dot(e1, p);
-        if (abs(det) < 1e-12) return false;
+        if (det > -1e-12 && det < 1e-12) return false;
         float inv_det = 1.0 / det;
         vec3 t_vec = o - v0;
         float u = dot(t_vec, p) * inv_det;
@@ -116,6 +116,7 @@ ComputeShader "Zarin/Raytracing"
         if (v < 0.0 || u + v > 1.0) return false;
         t = dot(e2, q) * inv_det;
         if (t <= 0.0) return false;
+        if (det < 0.0) return false;
         bary = vec2(u, v);
         return true;
     }
@@ -268,6 +269,7 @@ ComputeShader "Zarin/Raytracing"
         out_t = best_t;
         out_pos = best_pos;
         out_N = best_N;
+        if (dot(out_N, rd) > 0.0) out_N = -out_N;
         out_mat = best_mat;
         return best_t < 1e29;
     }
@@ -337,7 +339,7 @@ ComputeShader "Zarin/Raytracing"
 
             if (smoothness > 0.01) {
                 vec3 reflect_dir = reflect(rd, hit_N);
-                ro = hit_pos + reflect_dir * 0.001;
+                ro = hit_pos + hit_N * 0.01;
                 rd = reflect_dir;
                 float fresnel_weight = mix(reflect_prob * smoothness, 1.0, metallic);
                 throughput *= mix(albedo, vec3(1.0), fresnel_weight);
@@ -349,7 +351,7 @@ ComputeShader "Zarin/Raytracing"
             if (max(max(throughput.x, throughput.y), throughput.z) < 0.005) break;
 
             vec3 diffuse_dir = normalize(hit_N + vec3(rd.yzx * 0.5));
-            ro = hit_pos + diffuse_dir * 0.001;
+            ro = hit_pos + hit_N * 0.01;
             rd = diffuse_dir;
         }
 
