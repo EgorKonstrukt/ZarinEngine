@@ -202,6 +202,66 @@ def _get_mesh_for(entity, mesh_name: str, mesh_path: str):
     return meshes.get("cube")
 
 
+def _world_aabb_from_mesh(mesh, wm):
+    ax, ay, az = mesh.aabb_min
+    bx, by, bz = mesh.aabb_max
+    corners = np.array([
+        [ax, ay, az, 1], [bx, ay, az, 1], [bx, by, az, 1], [ax, by, az, 1],
+        [ax, ay, bz, 1], [bx, ay, bz, 1], [bx, by, bz, 1], [ax, by, bz, 1],
+    ], dtype=np.float32)
+    pts = corners @ wm
+    return pts[:, :3].min(axis=0), pts[:, :3].max(axis=0)
+
+
+def _ray_mesh_intersect_np(ox, oy, oz, dx, dy, dz, verts, indices):
+    if len(indices) < 3:
+        return -1.0
+    n_tris = len(indices) // 3
+    verts3 = verts.reshape(-1, 3)
+    tri_i = indices.reshape(n_tris, 3).astype(np.intp)
+    v0 = verts3[tri_i[:, 0]]
+    v1 = verts3[tri_i[:, 1]]
+    v2 = verts3[tri_i[:, 2]]
+    e1 = v1 - v0
+    e2 = v2 - v0
+    rd = np.array([dx, dy, dz])
+    p = np.cross(rd, e2)
+    det = np.sum(e1 * p, axis=1)
+    valid = np.abs(det) > 1e-12
+    if not np.any(valid):
+        return -1.0
+    inv_det = np.where(valid, 1.0 / det, 0.0)
+    t_vec = np.array([ox, oy, oz]) - v0
+    u = np.sum(t_vec * p, axis=1) * inv_det
+    q = np.cross(t_vec, e1)
+    v = np.sum(rd * q, axis=1) * inv_det
+    t = np.sum(e2 * q, axis=1) * inv_det
+    hit = valid & (u >= 0.0) & (v >= 0.0) & (u + v <= 1.0) & (t > 0)
+    t_hit = t[hit]
+    if len(t_hit) == 0:
+        return -1.0
+    return t_hit.min()
+
+
+def _test_mesh_hit(wm, ro, rd, mesh):
+    bmin, bmax = _world_aabb_from_mesh(mesh, wm)
+    d = _ray_aabb_min(ro[0], ro[1], ro[2], rd[0], rd[1], rd[2],
+                      bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2])
+    if d < 0:
+        return -1.0
+    wm_inv = np.linalg.inv(wm)
+    local_o = ro @ wm_inv
+    local_d = rd @ wm_inv
+    if mesh.indices is not None and len(mesh.indices) > 0:
+        return _ray_mesh_intersect_np(local_o[0], local_o[1], local_o[2],
+                                      local_d[0], local_d[1], local_d[2],
+                                      mesh.vertices, mesh.indices)
+    return _ray_aabb_min(local_o[0], local_o[1], local_o[2],
+                         local_d[0], local_d[1], local_d[2],
+                         mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2],
+                         mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2])
+
+
 def pick_entity(vp, sx: int, sy: int):
     scene = vp._engine.scene
     if not scene:
@@ -212,18 +272,15 @@ def pick_entity(vp, sx: int, sy: int):
     all_ents = scene.get_all_entities()
     best_entity = None
     best_dist = float("inf")
-    fallback_entity = None
-    fallback_dist = float("inf")
+    from core.components.transform import Transform
+    from core.components.rendering.mesh_filter import MeshFilter
+    from core.components.rendering.mesh_renderer import MeshRenderer
+    from core.components.physics.mesh_collider import MeshCollider
+    from core.components.physics.box_collider import BoxCollider
+    from core.components.physics.sphere_collider import SphereCollider
     for entity in all_ents:
         if not entity.active:
             continue
-        from core.components.transform import Transform
-        from core.components.rendering.mesh_filter import MeshFilter
-        from core.components.rendering.mesh_renderer import MeshRenderer
-        from core.components.physics.mesh_collider import MeshCollider
-        from core.components.physics.box_collider import BoxCollider
-        from core.components.physics.sphere_collider import SphereCollider
-        from core.math_helpers import ray_mesh_intersect
         t = entity.get_component(Transform)
         if not t:
             continue
@@ -237,18 +294,7 @@ def pick_entity(vp, sx: int, sy: int):
             has_mesh = bool(mesh and mr and mr.enabled)
         if has_mesh:
             wm = t.world_matrix._d
-            wm_inv = np.linalg.inv(wm)
-            local_o = ro @ wm_inv
-            local_d = rd @ wm_inv
-            if mesh.indices is not None and len(mesh.indices) > 0:
-                d = ray_mesh_intersect(local_o[0], local_o[1], local_o[2],
-                                       local_d[0], local_d[1], local_d[2],
-                                       mesh.vertices, mesh.indices)
-            else:
-                d = _ray_aabb_min(local_o[0], local_o[1], local_o[2],
-                                  local_d[0], local_d[1], local_d[2],
-                                  mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2],
-                                  mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2])
+            d = _test_mesh_hit(wm, ro, rd, mesh)
             if d > 0 and d < best_dist:
                 best_dist = d
                 best_entity = entity
@@ -260,12 +306,7 @@ def pick_entity(vp, sx: int, sy: int):
                 mesh2 = _get_mesh_for(entity, mf2.mesh_name or "cube", mf2.mesh_path)
                 if mesh2 is not None and mesh2.indices is not None and len(mesh2.indices) > 0:
                     wm = t.world_matrix._d
-                    wm_inv = np.linalg.inv(wm)
-                    local_o = ro @ wm_inv
-                    local_d = rd @ wm_inv
-                    d = ray_mesh_intersect(local_o[0], local_o[1], local_o[2],
-                                           local_d[0], local_d[1], local_d[2],
-                                           mesh2.vertices, mesh2.indices)
+                    d = _test_mesh_hit(wm, ro, rd, mesh2)
                     if d > 0 and d < best_dist:
                         best_dist = d
                         best_entity = entity
@@ -319,16 +360,15 @@ def pick_entity_hit(vp, sx: int, sy: int):
     all_ents = scene.get_all_entities()
     best_entity = None
     best_dist = float("inf")
+    from core.components.transform import Transform
+    from core.components.rendering.mesh_filter import MeshFilter
+    from core.components.rendering.mesh_renderer import MeshRenderer
+    from core.components.physics.mesh_collider import MeshCollider
+    from core.components.physics.box_collider import BoxCollider
+    from core.components.physics.sphere_collider import SphereCollider
     for entity in all_ents:
         if not entity.active:
             continue
-        from core.components.transform import Transform
-        from core.components.rendering.mesh_filter import MeshFilter
-        from core.components.rendering.mesh_renderer import MeshRenderer
-        from core.components.physics.mesh_collider import MeshCollider
-        from core.components.physics.box_collider import BoxCollider
-        from core.components.physics.sphere_collider import SphereCollider
-        from core.math_helpers import ray_mesh_intersect
         t = entity.get_component(Transform)
         if not t:
             continue
@@ -342,18 +382,7 @@ def pick_entity_hit(vp, sx: int, sy: int):
             has_mesh = bool(mesh and mr and mr.enabled)
         if has_mesh:
             wm = t.world_matrix._d
-            wm_inv = np.linalg.inv(wm)
-            local_o = ro @ wm_inv
-            local_d = rd @ wm_inv
-            if mesh.indices is not None and len(mesh.indices) > 0:
-                d = ray_mesh_intersect(local_o[0], local_o[1], local_o[2],
-                                       local_d[0], local_d[1], local_d[2],
-                                       mesh.vertices, mesh.indices)
-            else:
-                d = _ray_aabb_min(local_o[0], local_o[1], local_o[2],
-                                  local_d[0], local_d[1], local_d[2],
-                                  mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2],
-                                  mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2])
+            d = _test_mesh_hit(wm, ro, rd, mesh)
             if d > 0 and d < best_dist:
                 best_dist = d
                 best_entity = entity
@@ -365,12 +394,7 @@ def pick_entity_hit(vp, sx: int, sy: int):
                 mesh2 = _get_mesh_for(entity, mf2.mesh_name or "cube", mf2.mesh_path)
                 if mesh2 is not None and mesh2.indices is not None and len(mesh2.indices) > 0:
                     wm = t.world_matrix._d
-                    wm_inv = np.linalg.inv(wm)
-                    local_o = ro @ wm_inv
-                    local_d = rd @ wm_inv
-                    d = ray_mesh_intersect(local_o[0], local_o[1], local_o[2],
-                                           local_d[0], local_d[1], local_d[2],
-                                           mesh2.vertices, mesh2.indices)
+                    d = _test_mesh_hit(wm, ro, rd, mesh2)
                     if d > 0 and d < best_dist:
                         best_dist = d
                         best_entity = entity
