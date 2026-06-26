@@ -44,6 +44,9 @@ class RaytracingRenderer(Component):
         self._fullscreen_quad: Optional[moderngl.VertexArray] = None
         self._fullscreen_prog: Optional[moderngl.Program] = None
 
+        self._sky_env_tex: Optional[moderngl.Texture] = None
+        self._sky_env_prog: Optional[moderngl.ComputeShader] = None
+
         self._bvh_buf: Optional[moderngl.Buffer] = None
         self._vert_buf: Optional[moderngl.Buffer] = None
         self._idx_buf: Optional[moderngl.Buffer] = None
@@ -162,6 +165,31 @@ class RaytracingRenderer(Component):
             self._prev_width = rw
             self._prev_height = rh
             self._accum_frame = 0
+
+        if self._sky_env_tex is None:
+            self._sky_env_tex = ctx.texture((256, 128), 4, dtype="f4")
+            self._sky_env_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self._sky_env_tex.repeat_x = False
+            self._sky_env_tex.repeat_y = False
+
+        if self._sky_env_prog is None:
+            env_path = os.path.abspath("core/shaders/SkyEnv.compute")
+            if not os.path.exists(env_path):
+                Logger.error(f"SkyEnv compute shader not found: {env_path}")
+                return False
+            try:
+                with open(env_path) as f:
+                    src = f.read()
+                glsl_start = src.find("GLSLPROGRAM")
+                glsl_end = src.find("ENDGLSL", glsl_start)
+                if glsl_start < 0 or glsl_end < 0:
+                    Logger.error("Invalid SkyEnv.compute: no GLSLPROGRAM/ENDGLSL")
+                    return False
+                source = src[glsl_start + len("GLSLPROGRAM"):glsl_end].strip()
+                self._sky_env_prog = ctx.compute_shader(source)
+            except Exception as e:
+                Logger.error(f"Failed to compile SkyEnv compute shader: {e}")
+                return False
 
         return True
 
@@ -470,10 +498,39 @@ class RaytracingRenderer(Component):
             prog["u_light_count"] = self._light_np.shape[0] if self._light_np is not None else 0
             prog["u_max_bounces"] = self._max_bounces
             prog["u_accum_frame"] = self._accum_frame if self._accumulate else 0
-            prog["u_ambient"] = (0.03, 0.03, 0.05)
         except KeyError as e:
             Logger.warning(f"Raytracing uniform missing: {e}")
             return False
+
+        if self._sky_env_tex and self._sky_env_prog:
+            sun_dir = Vec3(0, -0.3, -1)
+            sky_color, sky_intensity = [1.0, 0.95, 0.85], 1.0
+            for ent in scene.get_entities_with_component(Light):
+                l = ent.get_component(Light)
+                t = ent.get_component(Transform)
+                if l and l.enabled and t and l.light_type == LightType.DIRECTIONAL:
+                    sun_dir = -t.forward
+                    if l.procedural_sky_lighting:
+                        sky_color, sky_intensity = Light.compute_sun_light(sun_dir)
+                    else:
+                        sky_color, sky_intensity = l.color, l.intensity
+                    break
+            try:
+                self._sky_env_prog["u_sun_direction"] = (sun_dir.x, sun_dir.y, sun_dir.z)
+                self._sky_env_prog["u_sun_color"] = (sky_color[0], sky_color[1], sky_color[2])
+                self._sky_env_prog["u_sun_intensity"] = sky_intensity
+                self._sky_env_prog["u_sun_size"] = 0.0008
+                self._sky_env_prog["u_sun_convergence"] = 0.5
+            except KeyError as e:
+                Logger.warning(f"SkyEnv uniform missing: {e}")
+            self._sky_env_tex.bind_to_image(0, read=False, write=True)
+            self._sky_env_prog.run(group_x=(256 + 7) // 8, group_y=(128 + 7) // 8, group_z=1)
+            ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
+            self._sky_env_tex.use(1)
+            try:
+                prog["u_sky_env"] = 1
+            except KeyError:
+                pass
 
         self._bvh_buf.bind_to_storage_buffer(0)
         self._vert_buf.bind_to_storage_buffer(1)
@@ -539,3 +596,9 @@ class RaytracingRenderer(Component):
         if self._fullscreen_quad:
             self._fullscreen_quad.release()
             self._fullscreen_quad = None
+        if self._sky_env_tex:
+            self._sky_env_tex.release()
+            self._sky_env_tex = None
+        if self._sky_env_prog:
+            self._sky_env_prog.release()
+            self._sky_env_prog = None
