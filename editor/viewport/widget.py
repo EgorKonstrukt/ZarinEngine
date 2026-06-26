@@ -208,7 +208,7 @@ class SceneViewport(QOpenGLWidget):
         bvh = get_mesh_bvh(mesh.vertices, mesh.indices)
         if not bvh or not bvh.nodes:
             return
-        starts, ends, colors = build_bvh_arrays(bvh)
+        starts, ends, colors = build_bvh_arrays(bvh, max_depth=4)
         if starts is None:
             return
         from core.components.transform import Transform

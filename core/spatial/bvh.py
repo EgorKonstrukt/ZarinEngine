@@ -33,6 +33,7 @@ class BVH:
         self.indices = indices
         self.nodes: list[BVHNode] = []
         self.tri_indices: np.ndarray = np.array([], dtype=np.uint32)
+        self._cached_depths: list[int] | None = None
         self._build(vertices, indices)
 
     def _build(self, vertices: np.ndarray, indices: np.ndarray):
@@ -168,6 +169,12 @@ class BVH:
             return max(_max_depth(node.left, d + 1), _max_depth(node.right, d + 1))
 
         return _max_depth(len(self.nodes) - 1, 0)
+
+    @property
+    def node_depths(self) -> list[int]:
+        if self._cached_depths is None:
+            self._cached_depths = _compute_node_depths(self)
+        return self._cached_depths
 
     def enumerate_nodes(self):
         for i, node in enumerate(self.nodes):
@@ -347,26 +354,51 @@ _EDGE_PAIRS = np.array([
 ], dtype=np.intp).reshape(-1, 2)
 
 
-def build_bvh_arrays(bvh):
+def build_bvh_arrays(bvh, max_depth: int = -1):
     n = len(bvh.nodes)
     if n == 0:
         return None, None, None
-    corners = np.empty((n, 8, 3), dtype=np.float32)
-    for i, node in enumerate(bvh.nodes):
-        mn, mx = node.bmin, node.bmax
-        corners[i, 0] = (mn[0], mn[1], mn[2])
-        corners[i, 1] = (mx[0], mn[1], mn[2])
-        corners[i, 2] = (mx[0], mx[1], mn[2])
-        corners[i, 3] = (mn[0], mx[1], mn[2])
-        corners[i, 4] = (mn[0], mn[1], mx[2])
-        corners[i, 5] = (mx[0], mn[1], mx[2])
-        corners[i, 6] = (mx[0], mx[1], mx[2])
-        corners[i, 7] = (mn[0], mx[1], mx[2])
+    if max_depth < 0:
+        mask = None
+        count = n
+    else:
+        depths = bvh.node_depths
+        mask = np.array([d <= max_depth for d in depths], dtype=bool)
+        count = int(mask.sum())
+        if count == 0:
+            return None, None, None
+    corners = np.empty((count, 8, 3), dtype=np.float32)
+    if mask is None:
+        for i, node in enumerate(bvh.nodes):
+            mn, mx = node.bmin, node.bmax
+            corners[i, 0] = (mn[0], mn[1], mn[2])
+            corners[i, 1] = (mx[0], mn[1], mn[2])
+            corners[i, 2] = (mx[0], mx[1], mn[2])
+            corners[i, 3] = (mn[0], mx[1], mn[2])
+            corners[i, 4] = (mn[0], mn[1], mx[2])
+            corners[i, 5] = (mx[0], mn[1], mx[2])
+            corners[i, 6] = (mx[0], mx[1], mx[2])
+            corners[i, 7] = (mn[0], mx[1], mx[2])
+    else:
+        idx = 0
+        for i, node in enumerate(bvh.nodes):
+            if not mask[i]:
+                continue
+            mn, mx = node.bmin, node.bmax
+            corners[idx, 0] = (mn[0], mn[1], mn[2])
+            corners[idx, 1] = (mx[0], mn[1], mn[2])
+            corners[idx, 2] = (mx[0], mx[1], mn[2])
+            corners[idx, 3] = (mn[0], mx[1], mn[2])
+            corners[idx, 4] = (mn[0], mn[1], mx[2])
+            corners[idx, 5] = (mx[0], mn[1], mx[2])
+            corners[idx, 6] = (mx[0], mx[1], mx[2])
+            corners[idx, 7] = (mn[0], mx[1], mx[2])
+            idx += 1
     starts = corners[:, _EDGE_PAIRS[:, 0], :].reshape(-1, 3)
     ends = corners[:, _EDGE_PAIRS[:, 1], :].reshape(-1, 3)
-    frac = np.arange(n, dtype=np.float32) / max(1, n)
+    frac = np.arange(count, dtype=np.float32) / max(1, count)
     hue = frac * 0.66
-    sat = np.full(n, 0.8, dtype=np.float32)
+    sat = np.full(count, 0.8, dtype=np.float32)
     val = 0.6 + 0.4 * (1.0 - frac)
     h_i = (hue * 6).astype(np.intp)
     f = hue * 6 - h_i
