@@ -736,15 +736,54 @@ class Scene:
 
     def rebuild_spatial(self):
         from core.math3d import Vec3
+        import numpy as np
         self._spatial.clear()
         from core.components.transform import Transform
+        from core.components.rendering.mesh_filter import MeshFilter
+        from core.components.rendering.mesh_renderer import MeshRenderer
         for e in self._ensure_entities_cache():
             if not e.active:
                 continue
             tr = e.get_component(Transform)
-            if tr:
-                pos = tr.world_position
-                self._spatial.insert(e.id, AABB.from_center_size(pos, Vec3(0.5, 0.5, 0.5)))
+            if not tr:
+                continue
+            mf = e.get_component(MeshFilter)
+            mr = e.get_component(MeshRenderer)
+            if mf and mr and mr.enabled:
+                try:
+                    from core.engine import Engine
+                    eng = Engine.instance()
+                    if eng:
+                        r = getattr(eng, '_renderer', None)
+                        if r is None:
+                            vp = getattr(eng, 'viewport', None)
+                            if vp:
+                                r = getattr(vp, '_renderer', None)
+                        if r:
+                            name = mf.mesh_name or "cube"
+                            mesh = r._meshes.get(name)
+                            if mesh is None and mf.mesh_path:
+                                mesh = r._meshes.get(mf.mesh_path)
+                            if mesh is not None and len(mesh.vertices) > 0:
+                                ax, ay, az = mesh.aabb_min
+                                bx, by, bz = mesh.aabb_max
+                                corners = np.array([
+                                    [ax, ay, az, 1], [bx, ay, az, 1],
+                                    [bx, by, az, 1], [ax, by, az, 1],
+                                    [ax, ay, bz, 1], [bx, ay, bz, 1],
+                                    [bx, by, bz, 1], [ax, by, bz, 1],
+                                ], dtype=np.float32)
+                                pts = corners @ tr.world_matrix._d
+                                bmin = pts[:, :3].min(axis=0)
+                                bmax = pts[:, :3].max(axis=0)
+                                aabb = AABB(Vec3(float(bmin[0]), float(bmin[1]), float(bmin[2])),
+                                            Vec3(float(bmax[0]), float(bmax[1]), float(bmax[2])))
+                                self._spatial.insert(e.id, aabb)
+                                continue
+                except Exception:
+                    pass
+            pos = tr.position
+            self._spatial.insert(e.id, AABB.from_center_size(pos, Vec3(5.0, 5.0, 5.0)))
         self._spatial_dirty = False
 
     def spatial_query(self, aabb: AABB) -> list[str]:
