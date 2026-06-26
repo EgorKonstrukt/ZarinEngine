@@ -376,6 +376,28 @@ class GizmoRenderer:
         except:
             pass
 
+    def render_mesh_np(self, v_data: np.ndarray, idx_arr: np.ndarray, vp_mat: Mat4):
+        prog = self._solid_prog
+        if not prog:
+            return
+        vp_f32 = vp_mat.to_f32()
+        if "u_mvp" in prog:
+            prog["u_mvp"].write(vp_f32.tobytes())
+        self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.enable(moderngl.BLEND)
+        n_idx = len(idx_arr)
+        n = v_data.shape[0]
+        if n > self._solid_vbo_cap or n_idx > self._solid_ibo_cap:
+            self._build_solid_buffers(n, n_idx)
+        self._solid_vbo.write(v_data.tobytes())
+        self._solid_ibo.write(idx_arr.tobytes())
+        self._solid_vao.render(moderngl.TRIANGLES, vertices=n_idx)
+        self._ctx.disable(moderngl.BLEND)
+        try:
+            self._ctx.enable(moderngl.CULL_FACE)
+        except:
+            pass
+
     def render_wireframe_box(self, center: Vec3, size: Vec3, color: list[float], vp_mat: Mat4):
         h = Vec3(size.x * 0.5, size.y * 0.5, size.z * 0.5)
         corners = [

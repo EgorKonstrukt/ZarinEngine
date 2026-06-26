@@ -72,23 +72,26 @@ def _world_aabb_of(entity, only_expanded: bool = False) -> tuple | None:
         mesh = _get_mesh_for(entity, mesh_name, mf.mesh_path)
         if mesh is not None:
             wm = t.world_matrix._d
-            for cx in (mesh.aabb_min[0], mesh.aabb_max[0]):
-                for cy in (mesh.aabb_min[1], mesh.aabb_max[1]):
-                    for cz in (mesh.aabb_min[2], mesh.aabb_max[2]):
-                        p = np.array([cx, cy, cz, 1.0]) @ wm
-                        bmin = np.minimum(bmin, p[:3])
-                        bmax = np.maximum(bmax, p[:3])
+            ax, ay, az = mesh.aabb_min
+            bx, by, bz = mesh.aabb_max
+            corners = np.array([
+                [ax, ay, az, 1], [bx, ay, az, 1], [bx, by, az, 1], [ax, by, az, 1],
+                [ax, ay, bz, 1], [bx, ay, bz, 1], [bx, by, bz, 1], [ax, by, bz, 1],
+            ], dtype=np.float32)
+            pts = corners @ wm
+            np.minimum(bmin, pts[:, :3].min(axis=0), out=bmin)
+            np.maximum(bmax, pts[:, :3].max(axis=0), out=bmax)
             expanded = True
     from core.components.rendering.sprite_renderer import SpriteRenderer
     sr = entity.get_component(SpriteRenderer)
     if sr and sr.enabled and sr.texture_path:
         wm = t.world_matrix._d
-        for cx in (-0.5, 0.5):
-            for cy in (-0.5, 0.5):
-                for cz in (0.0,):
-                    p = np.array([cx, cy, cz, 1.0]) @ wm
-                    bmin = np.minimum(bmin, p[:3])
-                    bmax = np.maximum(bmax, p[:3])
+        corners = np.array([
+            [-0.5, -0.5, 0, 1], [0.5, -0.5, 0, 1], [0.5, 0.5, 0, 1], [-0.5, 0.5, 0, 1],
+        ], dtype=np.float32)
+        pts = corners @ wm
+        np.minimum(bmin, pts[:, :3].min(axis=0), out=bmin)
+        np.maximum(bmax, pts[:, :3].max(axis=0), out=bmax)
         expanded = True
     from core.components.rendering.text_renderer import TextRenderer
     from core.font_atlas import FontAtlas
@@ -124,37 +127,38 @@ def _world_aabb_of(entity, only_expanded: bool = False) -> tuple | None:
             hw = total_w * 0.5
             hh = total_h * 0.5
             wm = t.world_matrix._d
-            for cx in (-hw, hw):
-                for cy in (-hh, hh):
-                    for cz in (0.0,):
-                        p = np.array([cx, cy, cz, 1.0]) @ wm
-                        bmin = np.minimum(bmin, p[:3])
-                        bmax = np.maximum(bmax, p[:3])
+            corners = np.array([
+                [-hw, -hh, 0, 1], [hw, -hh, 0, 1], [hw, hh, 0, 1], [-hw, hh, 0, 1],
+            ], dtype=np.float32)
+            pts = corners @ wm
+            np.minimum(bmin, pts[:, :3].min(axis=0), out=bmin)
+            np.maximum(bmax, pts[:, :3].max(axis=0), out=bmax)
             expanded = True
     bc = entity.get_component(BoxCollider)
     if bc:
-        half = Vec3(bc.size.x * 0.5, bc.size.y * 0.5, bc.size.z * 0.5)
+        hx, hy, hz = bc.size.x * 0.5, bc.size.y * 0.5, bc.size.z * 0.5
         wm = t.world_matrix._d
-        for cx in (-half.x, half.x):
-            for cy in (-half.y, half.y):
-                for cz in (-half.z, half.z):
-                    p = np.array([cx, cy, cz, 1.0]) @ wm
-                    bmin = np.minimum(bmin, p[:3])
-                    bmax = np.maximum(bmax, p[:3])
+        corners = np.array([
+            [-hx, -hy, -hz, 1], [hx, -hy, -hz, 1], [hx, hy, -hz, 1], [-hx, hy, -hz, 1],
+            [-hx, -hy, hz, 1], [hx, -hy, hz, 1], [hx, hy, hz, 1], [-hx, hy, hz, 1],
+        ], dtype=np.float32)
+        pts = corners @ wm
+        np.minimum(bmin, pts[:, :3].min(axis=0), out=bmin)
+        np.maximum(bmax, pts[:, :3].max(axis=0), out=bmax)
         expanded = True
     sc = entity.get_component(SphereCollider)
     if sc:
         r = sc.radius
         wm = t.world_matrix._d
-        center = (np.array([0.0, 0.0, 0.0, 1.0]) @ wm)[:3]
-        bmin = np.minimum(bmin, center - r)
-        bmax = np.maximum(bmax, center + r)
+        center = (np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32) @ wm)[:3]
+        np.minimum(bmin, center - r, out=bmin)
+        np.maximum(bmax, center + r, out=bmax)
         expanded = True
     for child in entity.children:
         child_box = _world_aabb_of(child)
         if child_box:
-            bmin = np.minimum(bmin, child_box[0])
-            bmax = np.maximum(bmax, child_box[1])
+            np.minimum(bmin, child_box[0], out=bmin)
+            np.maximum(bmax, child_box[1], out=bmax)
             expanded = True
     if not expanded:
         if only_expanded:

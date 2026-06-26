@@ -11,7 +11,7 @@ from typing import Any, Optional, TYPE_CHECKING
 import moderngl
 import numpy as np
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtWidgets import QMenu, QSizePolicy
+from PyQt6.QtWidgets import QApplication, QMenu, QSizePolicy
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent, QSurfaceFormat
 
@@ -78,6 +78,9 @@ class SceneViewport(QOpenGLWidget):
         self._update_timer = QTimer(self)
         self._update_timer.timeout.connect(self.update_scene)
         self._update_timer.start(16)
+        self._render_timer = QTimer(self)
+        self._render_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._render_timer.timeout.connect(self._on_render_tick)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAcceptDrops(True)
         self.setMouseTracking(True)
@@ -153,15 +156,24 @@ class SceneViewport(QOpenGLWidget):
 
     def _apply_config(self):
         if not self._vsync_enabled:
-            self._update_timer.setTimerType(Qt.TimerType.PreciseTimer)
-            self._update_timer.setInterval(4)
+            self._update_timer.stop()
+            self._render_timer.start(1)
         else:
+            self._render_timer.stop()
             fps = self._target_fps
             if fps <= 0 or fps > 240:
                 fps = 240
             interval = max(1, int(1000.0 / fps))
             self._update_timer.setInterval(interval)
-        self._update_timer.start()
+            self._update_timer.start()
+
+    def _on_render_tick(self):
+        if getattr(self, '_in_render_tick', False):
+            return
+        if not self._vsync_enabled and self.isVisible():
+            self._in_render_tick = True
+            self.repaint()
+            self._in_render_tick = False
 
     def _toggle_stats(self, checked: bool):
         self._stats_enabled = checked
@@ -193,7 +205,13 @@ class SceneViewport(QOpenGLWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if not self._vsync_enabled:
+            self._render_timer.start(1)
         self.update()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._render_timer.stop()
 
     def load_config(self, config) -> None:
         self._clear_color = [
@@ -303,12 +321,14 @@ class SceneViewport(QOpenGLWidget):
             SWP_NOSIZE = 0x0001
             SWP_NOZORDER = 0x0004
             SWP_NOACTIVATE = 0x0010
-            hwnds = set()
-            hwnds.add(int(self.winId()))
-            child = user32.FindWindowExW(hwnd, None, None, None)
+            GA_ROOT = 2
+            hwnd = int(self.winId())
+            root = user32.GetAncestor(hwnd, GA_ROOT)
+            hwnds = {hwnd, root}
+            child = user32.FindWindowExW(root, None, None, None)
             while child:
                 hwnds.add(child)
-                child = user32.FindWindowExW(hwnd, child, None, None)
+                child = user32.FindWindowExW(root, child, None, None)
             for h in hwnds:
                 current = user32.GetWindowLongW(h, GWL_EXSTYLE)
                 user32.SetWindowLongW(h, GWL_EXSTYLE, current | WS_EX_NOREDIRECTIONBITMAP)
@@ -382,6 +402,8 @@ class SceneViewport(QOpenGLWidget):
 
     def paintGL(self):
         _p0 = time.perf_counter()
+        _paint_gap = _p0 - getattr(self, '_last_paint_enter', _p0)
+        self._last_paint_enter = _p0
         bu = getattr(self, '_before_update', 0)
         if bu:
             self._engine.set_profiler_data("update_to_paint_ms", (_p0 - bu) * 1000.0)
@@ -397,6 +419,48 @@ class SceneViewport(QOpenGLWidget):
         if not self._ctx or not self._renderer:
             return
         eng = self._engine
+        if not self._vsync_enabled:
+            dt = now - self._last_frame_time
+            self._last_frame_time = now
+            self._last_dt = dt
+            if self._im:
+                self._im.new_frame()
+            if self._focused and self.isActiveWindow():
+                if self._im and self._im.key_just_pressed(KEY_Q):
+                    self._gizmo.mode = GizmoMode.NONE
+                    send_collab_gizmo_state(self)
+                elif self._im and self._im.key_just_pressed(KEY_W):
+                    self._gizmo.mode = GizmoMode.TRANSLATE
+                    send_collab_gizmo_state(self)
+                elif self._im and self._im.key_just_pressed(KEY_E):
+                    self._gizmo.mode = GizmoMode.ROTATE
+                    send_collab_gizmo_state(self)
+                elif self._im and self._im.key_just_pressed(KEY_R):
+                    self._gizmo.mode = GizmoMode.SCALE
+                    send_collab_gizmo_state(self)
+                elif self._im and self._im.key_just_pressed(KEY_F):
+                    if self._selected_entities:
+                        t = self._selected_entities[0].get_component_by_name("Transform")
+                        if t:
+                            self._cam.frame_bounds(t.position)
+                elif self._im and self._im.key_just_pressed(KEY_DELETE):
+                    if self._selected_entities and eng.scene:
+                        from editor.viewport.collaboration import is_collab_locked
+                        if not is_collab_locked(self):
+                            from core.commands import DeleteEntityCommand, get_history
+                            for ent in list(self._selected_entities):
+                                cmd = DeleteEntityCommand(eng.scene, ent.id)
+                                get_history().execute(cmd)
+                            self._selected_entities.clear()
+                            self._set_gizmo_entity(None)
+                            self.entity_selected.emit(None)
+                            from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
+            if not eng.play_mode:
+                self._update_editor_particles(dt, self._selected_entities)
+            send_collab_camera(self)
+            self._cam.update(dt)
+            self._gizmos_api.update(dt)
+            self._update_status_labels()
         prof = eng._profiler if hasattr(eng, '_profiler') else None
         in_frame = prof is not None and len(prof._stack) > 0 and prof._stack[0][0] == "frame"
         try:
@@ -486,9 +550,9 @@ class SceneViewport(QOpenGLWidget):
         except Exception as e:
             traceback.print_exc()
             Logger.error(f"Render error: {e}", e)
-        eng.set_profiler_data("paint_full_ms", (time.perf_counter() - _p0) * 1000.0)
-        if not self._vsync_enabled and self.isVisible():
-            self.update()
+        _paint_dur = (time.perf_counter() - _p0) * 1000.0
+        eng.set_profiler_data("paint_full_ms", _paint_dur)
+        eng.set_profiler_data("paint_gap_ms", _paint_gap * 1000.0)
 
     def update_scene(self):
         _u0 = time.perf_counter()

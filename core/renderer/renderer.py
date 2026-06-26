@@ -975,6 +975,10 @@ void main() {
         if self._gizmo:
             self._gizmo.render_meshes(meshes, vp_mat)
 
+    def render_gizmo_mesh_np(self, v_data: np.ndarray, idx_arr: np.ndarray, vp_mat: Mat4):
+        if self._gizmo:
+            self._gizmo.render_mesh_np(v_data, idx_arr, vp_mat)
+
     def render_wireframe_box(self, center: Vec3, size: Vec3, color: list[float], vp_mat: Mat4):
         if self._gizmo:
             self._gizmo.render_wireframe_box(center, size, color, vp_mat)

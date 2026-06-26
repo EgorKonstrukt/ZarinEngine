@@ -498,61 +498,58 @@ def render_script_gizmos(vp, vp_mat: Mat4):
         vp._renderer.render_gizmo_meshes(meshes, vp_mat)
 
 
-def _box_edges(bmin: np.ndarray, bmax: np.ndarray) -> list[tuple[Vec3, Vec3]]:
-    x0, y0, z0 = float(bmin[0]), float(bmin[1]), float(bmin[2])
-    x1, y1, z1 = float(bmax[0]), float(bmax[1]), float(bmax[2])
-    pts = [
-        Vec3(x0, y0, z0), Vec3(x1, y0, z0),
-        Vec3(x1, y0, z0), Vec3(x1, y1, z0),
-        Vec3(x1, y1, z0), Vec3(x0, y1, z0),
-        Vec3(x0, y1, z0), Vec3(x0, y0, z0),
-        Vec3(x0, y0, z1), Vec3(x1, y0, z1),
-        Vec3(x1, y0, z1), Vec3(x1, y1, z1),
-        Vec3(x1, y1, z1), Vec3(x0, y1, z1),
-        Vec3(x0, y1, z1), Vec3(x0, y0, z1),
-        Vec3(x0, y0, z0), Vec3(x0, y0, z1),
-        Vec3(x1, y0, z0), Vec3(x1, y0, z1),
-        Vec3(x1, y1, z0), Vec3(x1, y1, z1),
-        Vec3(x0, y1, z0), Vec3(x0, y1, z1),
-    ]
-    return [(pts[i], pts[i + 1]) for i in range(0, len(pts), 2)]
+_BOX_EDGE_IDXS = np.array([
+    [0,1],[1,2],[2,3],[3,0],
+    [4,5],[5,6],[6,7],[7,4],
+    [0,4],[1,5],[2,6],[3,7]
+], dtype=np.int32)
+
+def _box_edges_np(bmin, bmax):
+    cx, cy, cz = float(bmin[0]), float(bmin[1]), float(bmin[2])
+    dx, dy, dz = float(bmax[0]), float(bmax[1]), float(bmax[2])
+    corners = np.array([
+        [cx, cy, cz], [dx, cy, cz], [dx, dy, cz], [cx, dy, cz],
+        [cx, cy, dz], [dx, cy, dz], [dx, dy, dz], [cx, dy, dz],
+    ], dtype=np.float32)
+    return corners[_BOX_EDGE_IDXS[:, 0]], corners[_BOX_EDGE_IDXS[:, 1]]
 
 
 DASH_LEN = 0.3
 GAP_LEN = 0.15
 
 
-def _dashed_lines(segments: list[tuple[Vec3, Vec3, list]],
-                  time_s: float) -> list[tuple[Vec3, Vec3, list]]:
+def _dashed_lines_np(starts, ends, color, time_s):
     total = DASH_LEN + GAP_LEN
     offset = (time_s * 1.2) % total
-    out = []
-    color = None
-    for start, end, c in segments:
-        if color is None:
-            color = c
-        dx = end.x - start.x
-        dy = end.y - start.y
-        dz = end.z - start.z
-        length = math.sqrt(dx * dx + dy * dy + dz * dz)
-        if length < 0.001:
-            continue
-        nx = dx / length
-        ny = dy / length
-        nz = dz / length
-        pos = offset
-        while pos < length:
-            d_end = min(pos + DASH_LEN, length)
-            out.append((
-                Vec3(start.x + nx * pos, start.y + ny * pos, start.z + nz * pos),
-                Vec3(start.x + nx * d_end, start.y + ny * d_end, start.z + nz * d_end),
-                color
-            ))
-            pos += total
-    return out
+    n = starts.shape[0]
+    dirs = ends - starts
+    lengths = np.sqrt(np.sum(dirs * dirs, axis=1))
+    lengths = np.maximum(lengths, 1e-8)
+    dirs_norm = dirs / lengths[:, None]
+
+    s_parts = []
+    e_parts = []
+    for i in range(n):
+        nd = max(int(lengths[i] / total), 1)
+        t0 = offset + np.arange(nd, dtype=np.float32) * total
+        t1 = np.minimum(t0 + DASH_LEN, lengths[i])
+        s_parts.append(starts[i] + dirs_norm[i] * t0[:, None])
+        e_parts.append(starts[i] + dirs_norm[i] * t1[:, None])
+
+    if s_parts:
+        s_arr = np.concatenate(s_parts, axis=0)
+        e_arr = np.concatenate(e_parts, axis=0)
+    else:
+        s_arr = np.empty((0, 3), dtype=np.float32)
+        e_arr = np.empty((0, 3), dtype=np.float32)
+    n_d = s_arr.shape[0]
+    c_arr = np.empty((n_d, 4), dtype=np.float32)
+    c_arr[:, 0] = color[0]; c_arr[:, 1] = color[1]
+    c_arr[:, 2] = color[2]; c_arr[:, 3] = color[3]
+    return s_arr, e_arr, c_arr
 
 
-def _build_unit_sphere_cache(segments: int = 8):
+def _build_unit_sphere_cache_np(segments=8):
     verts = []
     idx = []
     for lat in range(segments):
@@ -563,34 +560,36 @@ def _build_unit_sphere_cache(segments: int = 8):
             phi2 = 2.0 * math.pi * (lon + 1) / segments
             s = math.sin
             c = math.cos
-            p0 = (s(theta1) * c(phi1), c(theta1), s(theta1) * s(phi1))
-            p1 = (s(theta1) * c(phi2), c(theta1), s(theta1) * s(phi2))
-            p2 = (s(theta2) * c(phi2), c(theta2), s(theta2) * s(phi2))
-            p3 = (s(theta2) * c(phi1), c(theta2), s(theta2) * s(phi1))
+            p0 = (s(theta1)*c(phi1), c(theta1), s(theta1)*s(phi1))
+            p1 = (s(theta1)*c(phi2), c(theta1), s(theta1)*s(phi2))
+            p2 = (s(theta2)*c(phi2), c(theta2), s(theta2)*s(phi2))
+            p3 = (s(theta2)*c(phi1), c(theta2), s(theta2)*s(phi1))
             i0 = len(verts)
             verts.extend([p0, p1, p2, p3])
-            idx.extend([i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3])
-    return (verts, idx)
+            idx.extend([i0, i0+1, i0+2, i0, i0+2, i0+3])
+    return np.array(verts, dtype=np.float32), np.array(idx, dtype=np.int32)
 
 
-def _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, corners, radius, color):
-    cache = getattr(_render_corner_spheres, '_cache', None)
+def _render_corner_spheres_np(vp, vp_mat, corners, radius, color):
+    cache = getattr(_render_corner_spheres_np, '_cache', None)
     if cache is None:
-        cache = _build_unit_sphere_cache(segments=8)
-        _render_corner_spheres._cache = cache
+        cache = _build_unit_sphere_cache_np(8)
+        _render_corner_spheres_np._cache = cache
     cverts, cidx = cache
-    nv = len(cverts)
-    all_verts = []
-    all_idx = []
-    all_cols = []
-    for corner in corners:
-        base = len(all_verts)
-        for v in cverts:
-            all_verts.append(Vec3(corner.x + v[0] * radius, corner.y + v[1] * radius, corner.z + v[2] * radius))
-        for i in cidx:
-            all_idx.append(base + i)
-        all_cols.extend([color] * nv)
-    vp._renderer.render_gizmo_meshes([(all_verts, all_idx, all_cols)], vp_mat)
+    nv = cverts.shape[0]
+    nc = len(corners)
+    corner_pts = np.array([[c.x, c.y, c.z] for c in corners], dtype=np.float32)
+    all_verts = corner_pts[:, None, :] + cverts[None, :, :] * radius
+    all_verts = all_verts.reshape(-1, 3)
+    n_total = nc * nv
+    all_idx = np.tile(cidx, nc) + np.repeat(np.arange(nc, dtype=np.int32) * nv, len(cidx))
+    all_cols = np.empty((n_total, 4), dtype=np.float32)
+    all_cols[:, 0] = color[0]; all_cols[:, 1] = color[1]
+    all_cols[:, 2] = color[2]; all_cols[:, 3] = color[3]
+    v_data = np.empty((n_total, 7), dtype=np.float32)
+    v_data[:, :3] = all_verts
+    v_data[:, 3:] = all_cols
+    vp._renderer.render_gizmo_mesh_np(v_data, np.asarray(all_idx, dtype=np.uint32), vp_mat)
 
 
 def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
@@ -605,8 +604,8 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
             if bmin_t is None:
                 bmin_t, bmax_t = box[0].copy(), box[1].copy()
             else:
-                bmin_t = np.minimum(bmin_t, box[0])
-                bmax_t = np.maximum(bmax_t, box[1])
+                np.minimum(bmin_t, box[0], out=bmin_t)
+                np.maximum(bmax_t, box[1], out=bmax_t)
     if state is None:
         return
     if len(state) < 3:
@@ -626,8 +625,8 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
             state[1] = cur_max
             alpha = 0.0
         else:
-            cur_min = cur_min + (bmin_t - cur_min) * factor
-            cur_max = cur_max + (bmax_t - cur_max) * factor
+            np.add(cur_min, (bmin_t - cur_min) * factor, out=cur_min)
+            np.add(cur_max, (bmax_t - cur_max) * factor, out=cur_max)
             alpha = min(1.0, alpha + fade_factor)
     else:
         if cur_min is not None:
@@ -639,16 +638,16 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
                 return
             center = (cur_min + cur_max) * 0.5
             t = 1.0 - alpha
-            cur_min = cur_min + (center - cur_min) * t
-            cur_max = cur_max + (center - cur_max) * t
+            np.add(cur_min, (center - cur_min) * t, out=cur_min)
+            np.add(cur_max, (center - cur_max) * t, out=cur_max)
         else:
             return
     state[0], state[1], state[2] = cur_min, cur_max, alpha
     cam_pos = vp._cam.position if vp._cam else Vec3(0, 0, 0)
     fw, fh = vp._get_physical_dims()
-    raw_segments = [(a, b, color) for a, b in _box_edges(cur_min, cur_max)]
-    dashed = _dashed_lines(raw_segments, time_s * 1.5)
-    vp._renderer.render_gizmo_lines(dashed, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.5)
+    starts, ends = _box_edges_np(cur_min, cur_max)
+    d_starts, d_ends, d_colors = _dashed_lines_np(starts, ends, color, time_s * 1.5)
+    vp._renderer.render_gizmo_arrays(d_starts, d_ends, d_colors, vp_mat, fw, fh, thickness_multiplier=1.5)
     cx = float(cur_min[0]); cy = float(cur_min[1]); cz = float(cur_min[2])
     dx = float(cur_max[0]); dy = float(cur_max[1]); dz = float(cur_max[2])
     verts_3d = [
@@ -667,9 +666,9 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
             faded[3] = faded[3] * alpha
         else:
             faded.append(alpha)
-        _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, verts_3d, world_r, faded)
+        _render_corner_spheres_np(vp, vp_mat, verts_3d, world_r, faded)
     else:
-        _render_corner_spheres(vp, vp_mat, cam_pos, fw, fh, verts_3d, world_r, color)
+        _render_corner_spheres_np(vp, vp_mat, verts_3d, world_r, color)
 
 
 def render_selection_bounds(vp, vp_mat: Mat4, time_s: float, dt: float = 0.0):
