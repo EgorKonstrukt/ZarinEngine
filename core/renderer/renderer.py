@@ -742,8 +742,8 @@ void main() {
                     continue
                 rtr = ent.get_component(RaytracingRenderer)
                 if rtr and rtr.enabled:
-                    rtr._dispatch(self._ctx, viewport_w, viewport_h, view_mat, proj_mat, cam_pos, scene, self)
-                    rtr.blit_to_screen(self._ctx, viewport_w, viewport_h)
+                    if rtr._dispatch(self._ctx, viewport_w, viewport_h, view_mat, proj_mat, cam_pos, scene, self):
+                        rtr.blit_to_screen(self._ctx, viewport_w, viewport_h)
                     break
 
         if prof:

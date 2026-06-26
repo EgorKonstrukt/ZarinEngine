@@ -1,0 +1,403 @@
+ComputeShader "Zarin/Raytracing"
+{
+    Properties
+    {
+        _MaxBounces("Max Bounces", Int) = 1
+        _SamplesPerPixel("Samples Per Pixel", Int) = 1
+        _ResolutionScale("Resolution Scale", Float) = 1.0
+        _Accumulate("Accumulate Frames", Int) = 0
+    }
+
+    GLSLPROGRAM
+    #version 460 core
+    layout(local_size_x = 8, local_size_y = 8) in;
+
+    #define MAX_INSTANCES 256
+    #define MAX_LIGHTS 8
+    #define CASCADE_COUNT 3
+    #define PI 3.14159265359
+
+    layout(std430, binding = 0) readonly buffer BVHNodes {
+        float bvh_nodes[];
+    };
+
+    layout(std430, binding = 1) readonly buffer Vertices {
+        float vert_data[];
+    };
+
+    layout(std430, binding = 2) readonly buffer Indices {
+        uint idx_data[];
+    };
+
+    layout(std430, binding = 3) readonly buffer Materials {
+        float mat_data[];
+    };
+
+    layout(std430, binding = 4) readonly buffer Instances {
+        float inst_data[];
+    };
+
+    layout(std430, binding = 5) readonly buffer Lights {
+        float light_data[];
+    };
+
+    layout(rgba32f, binding = 0) uniform image2D output_image;
+
+    uniform vec3 u_camera_pos;
+    uniform mat4 u_inv_view_proj;
+    uniform int u_screen_width;
+    uniform int u_screen_height;
+    uniform int u_instance_count;
+    uniform int u_light_count;
+    uniform int u_max_bounces;
+    uniform int u_accum_frame;
+    uniform vec3 u_sun_dir;
+    uniform vec3 u_sun_color;
+    uniform float u_sun_intensity;
+    uniform float u_sun_size;
+    uniform float u_sun_convergence;
+
+    struct HitInfo {
+        float t;
+        vec3 position;
+        vec3 normal;
+        vec3 albedo;
+        float metallic;
+        float smoothness;
+        vec3 emission;
+        float emission_intensity;
+        float occlusion;
+    };
+
+    struct Light {
+        int type;
+        vec3 position;
+        vec3 direction;
+        vec3 color;
+        float intensity;
+        float range;
+        float spot_angle;
+        float spot_inner_angle;
+    };
+
+    Light unpack_light(int idx) {
+        int base = idx * 14;
+        Light l;
+        l.type = int(light_data[base]);
+        l.position = vec3(light_data[base + 1], light_data[base + 2], light_data[base + 3]);
+        l.direction = vec3(light_data[base + 4], light_data[base + 5], light_data[base + 6]);
+        l.color = vec3(light_data[base + 7], light_data[base + 8], light_data[base + 9]);
+        l.intensity = light_data[base + 10];
+        l.range = light_data[base + 11];
+        l.spot_angle = light_data[base + 12];
+        l.spot_inner_angle = light_data[base + 13];
+        return l;
+    }
+
+    float ray_aabb_min(vec3 o, vec3 inv_d, vec3 bmin, vec3 bmax) {
+        vec3 t1 = (bmin - o) * inv_d;
+        vec3 t2 = (bmax - o) * inv_d;
+        vec3 tmin_v = min(t1, t2);
+        vec3 tmax_v = max(t1, t2);
+        float tmin = max(max(tmin_v.x, tmin_v.y), tmin_v.z);
+        float tmax = min(min(tmax_v.x, tmax_v.y), tmax_v.z);
+        if (tmin > tmax) return -1.0;
+        return tmin > 0.0 ? tmin : (tmax > 0.0 ? tmax : -1.0);
+    }
+
+    bool moller_trumbore(vec3 o, vec3 d, vec3 v0, vec3 v1, vec3 v2, out float t, out vec2 bary) {
+        vec3 e1 = v1 - v0;
+        vec3 e2 = v2 - v0;
+        vec3 p = cross(d, e2);
+        float det = dot(e1, p);
+        if (abs(det) < 1e-12) return false;
+        float inv_det = 1.0 / det;
+        vec3 t_vec = o - v0;
+        float u = dot(t_vec, p) * inv_det;
+        if (u < 0.0 || u > 1.0) return false;
+        vec3 q = cross(t_vec, e1);
+        float v = dot(d, q) * inv_det;
+        if (v < 0.0 || u + v > 1.0) return false;
+        t = dot(e2, q) * inv_det;
+        if (t <= 0.0) return false;
+        bary = vec2(u, v);
+        return true;
+    }
+
+    bool trace_bvh(vec3 o, vec3 d, int bvh_offset, int idx_offset, out HitInfo hit) {
+        hit.t = 1e30;
+        if (bvh_offset < 0) return false;
+        int stack[64];
+        int sp = 0;
+        stack[sp++] = bvh_offset;
+
+        vec3 inv_d = 1.0 / d;
+
+        while (sp > 0) {
+            int ni = stack[--sp];
+            int base = ni * 8;
+            vec3 bmin = vec3(bvh_nodes[base], bvh_nodes[base + 1], bvh_nodes[base + 2]);
+            vec3 bmax = vec3(bvh_nodes[base + 3], bvh_nodes[base + 4], bvh_nodes[base + 5]);
+
+            float aabb_t = ray_aabb_min(o, inv_d, bmin, bmax);
+            if (aabb_t < 0.0 || aabb_t >= hit.t) continue;
+
+            int left_or_start = int(bvh_nodes[base + 6]);
+            int right_or_count = int(bvh_nodes[base + 7]);
+            bool is_leaf = right_or_count < 0;
+
+            if (is_leaf) {
+                int tri_start = left_or_start;
+                int tri_end = tri_start + (-right_or_count - 1);
+                for (int ti = tri_start; ti < tri_end; ti++) {
+                    int idx_base = (idx_offset + ti) * 3;
+                    int i0 = int(idx_data[idx_base]);
+                    int i1 = int(idx_data[idx_base + 1]);
+                    int i2 = int(idx_data[idx_base + 2]);
+                    vec3 v0 = vec3(vert_data[i0 * 6], vert_data[i0 * 6 + 1], vert_data[i0 * 6 + 2]);
+                    vec3 v1 = vec3(vert_data[i1 * 6], vert_data[i1 * 6 + 1], vert_data[i1 * 6 + 2]);
+                    vec3 v2 = vec3(vert_data[i2 * 6], vert_data[i2 * 6 + 1], vert_data[i2 * 6 + 2]);
+                    float tt;
+                    vec2 bary;
+                    if (moller_trumbore(o, d, v0, v1, v2, tt, bary) && tt < hit.t) {
+                        hit.t = tt;
+                        hit.position = o + tt * d;
+                        vec3 n0 = vec3(vert_data[i0 * 6 + 3], vert_data[i0 * 6 + 4], vert_data[i0 * 6 + 5]);
+                        vec3 n1 = vec3(vert_data[i1 * 6 + 3], vert_data[i1 * 6 + 4], vert_data[i1 * 6 + 5]);
+                        vec3 n2 = vec3(vert_data[i2 * 6 + 3], vert_data[i2 * 6 + 4], vert_data[i2 * 6 + 5]);
+                        float w = 1.0 - bary.x - bary.y;
+                        hit.normal = normalize(n0 * w + n1 * bary.x + n2 * bary.y);
+                    }
+                }
+            } else {
+                stack[sp++] = right_or_count;
+                stack[sp++] = left_or_start;
+            }
+        }
+        return hit.t < 1e29;
+    }
+
+    vec3 fresnel_schlick(float cos_theta, vec3 F0) {
+        return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+    }
+
+    float distribution_ggx(vec3 N, vec3 H, float roughness) {
+        float a = roughness * roughness;
+        float a2 = a * a;
+        float NdotH = max(dot(N, H), 0.0);
+        float NdotH2 = NdotH * NdotH;
+        float denom = NdotH2 * (a2 - 1.0) + 1.0;
+        return a2 / (PI * denom * denom);
+    }
+
+    float geometry_schlick_ggx(float NdotV, float roughness) {
+        float r = roughness + 1.0;
+        float k = r * r / 8.0;
+        return NdotV / (NdotV * (1.0 - k) + k);
+    }
+
+    float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
+        float NdotV = max(dot(N, V), 0.0);
+        float NdotL = max(dot(N, L), 0.0);
+        return geometry_schlick_ggx(NdotV, roughness) * geometry_schlick_ggx(NdotL, roughness);
+    }
+
+    vec3 shade_pbr(vec3 N, vec3 V, vec3 albedo, float roughness, float metallic, vec3 F0, 
+                   vec3 light_dir, vec3 light_color, float light_intensity, float attenuation) {
+        vec3 L = light_dir;
+        float NdotL = max(dot(N, L), 0.0);
+        if (NdotL <= 0.0) return vec3(0.0);
+        vec3 H = normalize(V + L);
+        vec3 radiance = light_color * light_intensity * attenuation;
+        vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+        float NDF = distribution_ggx(N, H, roughness);
+        float G = geometry_smith(N, V, L, roughness);
+        vec3 kS = F;
+        vec3 kD = (1.0 - kS) * (1.0 - metallic);
+        vec3 numerator = NDF * G * F;
+        float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001;
+        vec3 specular = numerator / denominator;
+        vec3 diffuse = kD * albedo / PI;
+        return (diffuse + specular) * radiance * NdotL;
+    }
+
+    bool intersect_scene(vec3 ro, vec3 rd, out float out_t, out vec3 out_pos, out vec3 out_N,
+                         out int out_mat) {
+        float best_t = 1e30;
+        vec3 best_pos = vec3(0.0);
+        vec3 best_N = vec3(0.0, 1.0, 0.0);
+        int best_mat = -1;
+
+        for (int inst = 0; inst < u_instance_count && inst < MAX_INSTANCES; inst++) {
+            int ib = inst * 40;
+            mat4 wm = mat4(
+                vec4(inst_data[ib], inst_data[ib+1], inst_data[ib+2], inst_data[ib+3]),
+                vec4(inst_data[ib+4], inst_data[ib+5], inst_data[ib+6], inst_data[ib+7]),
+                vec4(inst_data[ib+8], inst_data[ib+9], inst_data[ib+10], inst_data[ib+11]),
+                vec4(inst_data[ib+12], inst_data[ib+13], inst_data[ib+14], inst_data[ib+15])
+            );
+            mat4 inv_wm = mat4(
+                vec4(inst_data[ib+16], inst_data[ib+17], inst_data[ib+18], inst_data[ib+19]),
+                vec4(inst_data[ib+20], inst_data[ib+21], inst_data[ib+22], inst_data[ib+23]),
+                vec4(inst_data[ib+24], inst_data[ib+25], inst_data[ib+26], inst_data[ib+27]),
+                vec4(inst_data[ib+28], inst_data[ib+29], inst_data[ib+30], inst_data[ib+31])
+            );
+            int bvh_offset = int(inst_data[ib + 32]);
+            int idx_offset = int(inst_data[ib + 34]);
+            int mat_idx = int(inst_data[ib + 35]);
+
+            vec3 local_ro = (inv_wm * vec4(ro, 1.0)).xyz;
+            vec3 local_rd = normalize((inv_wm * vec4(rd, 0.0)).xyz);
+
+            HitInfo local_hit;
+            if (trace_bvh(local_ro, local_rd, bvh_offset, idx_offset, local_hit)) {
+                if (local_hit.t < best_t) {
+                    best_t = local_hit.t;
+                    best_mat = mat_idx;
+                    vec3 local_p = local_ro + local_hit.t * local_rd;
+                    best_pos = (wm * vec4(local_p, 1.0)).xyz;
+                    best_N = normalize(transpose(mat3(inv_wm)) * local_hit.normal);
+                }
+            }
+        }
+
+        out_t = best_t;
+        out_pos = best_pos;
+        out_N = best_N;
+        out_mat = best_mat;
+        return best_t < 1e29;
+    }
+
+    vec3 sample_sky(vec3 dir);
+
+    vec3 trace_ray(vec3 ro, vec3 rd) {
+        vec3 accumulated = vec3(0.0);
+        vec3 throughput = vec3(1.0);
+        float eta_scale = 1.0;
+
+        for (int bounce = 0; bounce <= u_max_bounces; bounce++) {
+            float hit_t;
+            vec3 hit_pos, hit_N;
+            int hit_mat;
+            if (!intersect_scene(ro, rd, hit_t, hit_pos, hit_N, hit_mat)) {
+                accumulated += throughput * sample_sky(rd);
+                break;
+            }
+
+            int mb = hit_mat * 12;
+            vec3 albedo = vec3(mat_data[mb], mat_data[mb+1], mat_data[mb+2]);
+            float metallic = mat_data[mb+3];
+            float smoothness = mat_data[mb+4];
+            vec3 emission = vec3(mat_data[mb+5], mat_data[mb+6], mat_data[mb+7]);
+            float emission_intensity = mat_data[mb+8];
+            float roughness = max(1.0 - smoothness, 0.001);
+            vec3 F0 = mix(vec3(0.04), albedo, metallic);
+
+            accumulated += throughput * emission * emission_intensity;
+
+            vec3 V = normalize(u_camera_pos - hit_pos);
+
+            for (int li = 0; li < u_light_count && li < MAX_LIGHTS; li++) {
+                Light light = unpack_light(li);
+                vec3 light_dir;
+                float attenuation = 1.0;
+                if (light.type == 0) {
+                    light_dir = normalize(-light.direction);
+                } else {
+                    vec3 to_light = light.position - hit_pos;
+                    float dist = length(to_light);
+                    light_dir = normalize(to_light);
+                    attenuation = clamp(1.0 - dist / light.range, 0.0, 1.0);
+                    attenuation *= attenuation;
+                    if (light.type == 2) {
+                        float theta = dot(light_dir, normalize(-light.direction));
+                        float inner = cos(radians(light.spot_inner_angle));
+                        float outer = cos(radians(light.spot_angle));
+                        float eps = inner - outer;
+                        attenuation *= clamp((theta - outer) / eps, 0.0, 1.0);
+                    }
+                }
+                accumulated += throughput * shade_pbr(hit_N, V, albedo, roughness, metallic, F0,
+                                                     light_dir, light.color, light.intensity, attenuation);
+            }
+
+            if (bounce == u_max_bounces) break;
+
+            float NdotV = max(dot(hit_N, V), 0.0);
+            vec3 F = fresnel_schlick(NdotV, F0);
+            float reflect_prob = max(max(F.x, F.y), F.z);
+
+            if (smoothness > 0.01) {
+                vec3 reflect_dir = reflect(rd, hit_N);
+                ro = hit_pos + reflect_dir * 0.001;
+                rd = reflect_dir;
+                float fresnel_weight = mix(reflect_prob * smoothness, 1.0, metallic);
+                throughput *= mix(albedo, vec3(1.0), fresnel_weight);
+                if (max(max(throughput.x, throughput.y), throughput.z) < 0.005) break;
+                continue;
+            }
+
+            throughput *= albedo;
+            if (max(max(throughput.x, throughput.y), throughput.z) < 0.005) break;
+
+            vec3 diffuse_dir = normalize(hit_N + vec3(rd.yzx * 0.5));
+            ro = hit_pos + diffuse_dir * 0.001;
+            rd = diffuse_dir;
+        }
+
+        return accumulated;
+    }
+
+    vec3 sample_sky(vec3 dir) {
+        float cos_theta = max(dir.y, 0.0);
+        float cos_gamma = dot(dir, normalize(u_sun_dir));
+        float optical_depth = 1.0 / max(cos_theta, 0.005);
+        float rayleigh_phase = 0.75 * (1.0 + cos_gamma * cos_gamma);
+        vec3 rayleigh = vec3(0.55, 0.65, 0.90) * rayleigh_phase;
+        float g = 0.76;
+        float gg = g * g;
+        float mie_phase = (1.0 - gg) / max(pow(1.0 + gg - 2.0 * g * cos_gamma, 1.5), 0.001);
+        vec3 mie = vec3(1.0, 0.80, 0.50) * mie_phase;
+        vec3 color = (rayleigh * 0.10 + mie * 0.05) * (1.0 - exp(-optical_depth * 0.4));
+        vec3 sky_top = vec3(0.08, 0.18, 0.45);
+        vec3 sky_horizon = vec3(0.75, 0.80, 0.90);
+        vec3 sky_sunset = vec3(1.0, 0.50, 0.18);
+        float sun_height = normalize(u_sun_dir).y;
+        vec3 horizon_color = mix(sky_sunset, sky_horizon, smoothstep(0.0, 0.3, sun_height));
+        float height_gradient = 1.0 - pow(1.0 - cos_theta, 4.0);
+        vec3 base_sky = mix(horizon_color, sky_top, height_gradient);
+        color = max(color + base_sky * 0.3, 0.0);
+        float sun_start = 1.0 - u_sun_size * 3.0;
+        float sun_end = 1.0 - u_sun_size * (1.0 - u_sun_convergence * 0.8);
+        float sun_disk = smoothstep(sun_start, sun_end, cos_gamma);
+        color += u_sun_color * u_sun_intensity * sun_disk;
+        float night = smoothstep(0.05, -0.4, sun_height);
+        color *= (1.0 - night * 0.85);
+        return color;
+    }
+
+    void main() {
+        ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+        ivec2 screen_size = imageSize(output_image);
+        if (pix.x >= screen_size.x || pix.y >= screen_size.y) return;
+
+        vec2 uv = (vec2(pix) + 0.5) / vec2(u_screen_width, u_screen_height);
+        vec4 ndc = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, 1.0, 1.0);
+        vec4 world_near = u_inv_view_proj * ndc;
+        vec3 near_point = world_near.xyz / world_near.w;
+        vec3 ray_o = u_camera_pos;
+        vec3 ray_d = normalize(near_point - ray_o);
+
+        vec3 color = trace_ray(ray_o, ray_d);
+
+        if (u_accum_frame <= 1) {
+            imageStore(output_image, pix, vec4(color, 1.0));
+        } else {
+            vec3 prev = imageLoad(output_image, pix).rgb;
+            float t = float(u_accum_frame);
+            color = prev * (t - 1.0) / t + color / t;
+            imageStore(output_image, pix, vec4(color, 1.0));
+        }
+    }
+    ENDGLSL
+}

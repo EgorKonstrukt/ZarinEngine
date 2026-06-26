@@ -31,7 +31,7 @@ class RaytracingRenderer(Component):
 
     def __init__(self):
         super().__init__()
-        self._compute_shader_path: str = "assets/shaders/Raytracing.compute"
+        self._compute_shader_path: str = "core/shaders/Raytracing.compute"
         self._resolution_scale: float = 0.5
         self._max_bounces: int = 1
         self._samples_per_pixel: int = 1
@@ -50,6 +50,8 @@ class RaytracingRenderer(Component):
         self._mat_buf: Optional[moderngl.Buffer] = None
         self._inst_buf: Optional[moderngl.Buffer] = None
         self._light_buf: Optional[moderngl.Buffer] = None
+
+        self._ctx_id = 0
 
         self._bvh_np: Optional[np.ndarray] = None
         self._vert_np: Optional[np.ndarray] = None
@@ -78,7 +80,7 @@ class RaytracingRenderer(Component):
     def deserialize(cls, data: dict) -> RaytracingRenderer:
         r = cls()
         r.enabled = data.get("enabled", True)
-        r._compute_shader_path = data.get("compute_shader_path", "assets/shaders/Raytracing.compute")
+        r._compute_shader_path = data.get("compute_shader_path", "core/shaders/Raytracing.compute")
         r._resolution_scale = float(data.get("resolution_scale", 0.5))
         r._max_bounces = int(data.get("max_bounces", 1))
         r._samples_per_pixel = int(data.get("samples_per_pixel", 1))
@@ -192,8 +194,19 @@ class RaytracingRenderer(Component):
             if not mr or not mr.enabled:
                 continue
             mf = ent.get_component(MeshFilter)
-            mesh_name = mf.mesh_name or "cube"
-            mesh = renderer._mesh_loader._meshes.get(mesh_name)
+            mesh_name = mf.mesh_name
+            mesh_path = mf.mesh_path or ""
+            scale, cp, fuvs = 1.0, False, False
+            if mesh_path:
+                meta = renderer._import_meta_cache.get(mesh_path) if hasattr(renderer, '_import_meta_cache') else None
+                if meta is None:
+                    meta = (1.0, False, False)
+                scale, cp, fuvs = meta
+            if not mesh_name and not mesh_path:
+                mesh_name = "cube"
+            elif not mesh_name and mesh_path:
+                mesh_name = os.path.splitext(os.path.basename(mesh_path))[0]
+            mesh = renderer.get_or_create_mesh(mesh_name, mesh_path, scale, cp, fuvs)
             if not mesh or mesh.vertices is None or len(mesh.vertices) < 3:
                 continue
             bvh = get_mesh_bvh(mesh.vertices, mesh.indices)
@@ -399,15 +412,20 @@ class RaytracingRenderer(Component):
         return True
 
     def _dispatch(self, ctx: moderngl.Context, width: int, height: int,
-                  view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3, scene, renderer):
+                  view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3, scene, renderer) -> bool:
+        ctx_id = id(ctx)
+        if self._ctx_id != ctx_id:
+            self._release_gl()
+            self._ctx_id = ctx_id
+
         rw = max(1, int(width * self._resolution_scale))
         rh = max(1, int(height * self._resolution_scale))
 
         if not self._ensure_resources(ctx, width, height):
-            return
+            return False
 
         if not self._collect_and_upload(ctx, scene, view_mat, proj_mat, cam_pos, renderer):
-            return
+            return False
 
         view_f32 = view_mat.to_f32().reshape(4, 4).T
         proj_f32 = proj_mat.to_f32().reshape(4, 4).T
@@ -423,10 +441,30 @@ class RaytracingRenderer(Component):
             prog["u_light_count"] = self._light_np.shape[0] if self._light_np is not None else 0
             prog["u_max_bounces"] = self._max_bounces
             prog["u_accum_frame"] = self._accum_frame if self._accumulate else 0
-            prog["u_ambient"] = (0.03, 0.03, 0.05)
+            sdir = (0.0, -0.3, -1.0)
+            scolor = (1.0, 0.95, 0.85)
+            sintensity = 1.0
+            ssize = 0.0008
+            sconv = 0.5
+            for ent in scene.get_entities_with_component(Light):
+                if not ent.active:
+                    continue
+                l = ent.get_component(Light)
+                t = ent.get_component(Transform)
+                if l and l.enabled and t and l.light_type == LightType.DIRECTIONAL:
+                    fwd = t.forward
+                    sdir = (-fwd.x, -fwd.y, -fwd.z)
+                    scolor = (l.color[0], l.color[1], l.color[2])
+                    sintensity = l.intensity
+                    break
+            prog["u_sun_dir"] = sdir
+            prog["u_sun_color"] = scolor
+            prog["u_sun_intensity"] = sintensity
+            prog["u_sun_size"] = ssize
+            prog["u_sun_convergence"] = sconv
         except KeyError as e:
             Logger.warning(f"Raytracing uniform missing: {e}")
-            return
+            return False
 
         self._bvh_buf.bind_to_storage_buffer(0)
         self._vert_buf.bind_to_storage_buffer(1)
@@ -451,12 +489,14 @@ class RaytracingRenderer(Component):
             self._accum_frame += 1
 
         self._output_tex.build_mipmaps()
+        return True
 
     def blit_to_screen(self, ctx: moderngl.Context, width: int, height: int):
         if not self._show_overlay or not self._output_fbo or not self._fullscreen_prog:
             return
         self._output_tex.use(0)
         self._fullscreen_prog["u_tex"].value = 0
+        ctx.viewport = (0, 0, width, height)
         ctx.disable(moderngl.DEPTH_TEST)
         self._fullscreen_quad.render(moderngl.TRIANGLES)
         ctx.enable(moderngl.DEPTH_TEST)
