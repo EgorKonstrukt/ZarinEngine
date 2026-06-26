@@ -303,12 +303,11 @@ class RaytracingRenderer(Component):
             else:
                 idx_np[io:io + nt] = idxs + vo
             bvh_flat = bvh.flatten_for_gpu()
-            if bo > 0:
+            if bo > 0 and nn > 0:
                 bvh_flat = bvh_flat.copy()
-                for j in range(nn):
-                    if bvh_flat[j, 7] >= 0:
-                        bvh_flat[j, 6] += bo
-                        bvh_flat[j, 7] += bo
+                internal = bvh_flat[:, 7] >= 0
+                bvh_flat[internal, 6] += bo
+                bvh_flat[internal, 7] += bo
             bvh_np[bo:bo + nn] = bvh_flat
             vo += nv
             io += nt
@@ -349,10 +348,14 @@ class RaytracingRenderer(Component):
         _INST_STRIDE = 46
         n_inst = len(instances)
         self._inst_np = np.empty((n_inst, _INST_STRIDE), dtype=np.float32)
+
+        wm_list = np.array([wm._d for _, _, wm in instances])
+        inv_wm_list = np.linalg.inv(wm_list)
+
         for i, (ent, tr, wm) in enumerate(instances):
-            w = wm._d
-            inv_w = np.linalg.inv(w)
-            self._inst_np[i, :16] = wm.to_f32()
+            w = wm_list[i]
+            inv_w = inv_wm_list[i]
+            self._inst_np[i, :16] = Mat4(w).to_f32()
             self._inst_np[i, 16:32] = Mat4(inv_w).to_f32()
             mat_path = ent.get_component(MeshRenderer).material_path if ent.get_component(MeshRenderer) else ""
             mi = material_map.get(mat_path, 0)

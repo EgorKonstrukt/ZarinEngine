@@ -116,7 +116,6 @@ ComputeShader "Zarin/Raytracing"
         if (v < 0.0 || u + v > 1.0) return false;
         t = dot(e2, q) * inv_det;
         if (t <= 0.0) return false;
-        if (det < 0.0) return false;
         bary = vec2(u, v);
         return true;
     }
@@ -124,7 +123,7 @@ ComputeShader "Zarin/Raytracing"
     bool trace_bvh(vec3 o, vec3 d, vec3 inv_d, int bvh_offset, int idx_offset, out HitInfo hit) {
         hit.t = 1e30;
         if (bvh_offset < 0) return false;
-        int stack[32];
+        int stack[64];
         int sp = 0;
         stack[sp++] = bvh_offset;
 

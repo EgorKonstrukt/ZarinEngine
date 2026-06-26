@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-_MAX_TRI_PER_LEAF = 8
+_MAX_TRI_PER_LEAF = 16
 _MAX_DEPTH = 32
 
 
@@ -45,8 +45,8 @@ class BVH:
         v0 = verts3[tri_i[:, 0]]
         v1 = verts3[tri_i[:, 1]]
         v2 = verts3[tri_i[:, 2]]
-        tri_bmin = np.minimum(np.minimum(v0, v1), v2)
-        tri_bmax = np.maximum(np.maximum(v0, v1), v2)
+        tri_bmin = np.minimum(np.minimum(v0, v1), v2) - 1e-5
+        tri_bmax = np.maximum(np.maximum(v0, v1), v2) + 1e-5
         centroids = (v0 + v1 + v2) / 3.0
 
         tri_order = np.arange(n_tris, dtype=np.intp)

@@ -9,3 +9,4 @@ pynput
 msgpack
 cython
 setuptools
+pillow
