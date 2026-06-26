@@ -734,6 +734,18 @@ void main() {
         self._ctx.enable(moderngl.DEPTH_TEST)
         if prof:
             prof.stop("render_overlay")
+
+        if scene:
+            from core.components.rendering.raytracing_renderer import RaytracingRenderer
+            for ent in scene.get_entities_with_component(RaytracingRenderer):
+                if not ent.active:
+                    continue
+                rtr = ent.get_component(RaytracingRenderer)
+                if rtr and rtr.enabled:
+                    rtr._dispatch(self._ctx, viewport_w, viewport_h, view_mat, proj_mat, cam_pos, scene, self)
+                    rtr.blit_to_screen(self._ctx, viewport_w, viewport_h)
+                    break
+
         if prof:
             prof.start("render_stats")
         skybox_call = 1 if (self._skybox_enabled and self._skybox_cube) else 0

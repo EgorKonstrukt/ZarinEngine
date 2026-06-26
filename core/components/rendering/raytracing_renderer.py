@@ -1,0 +1,489 @@
+from __future__ import annotations
+import os
+import numpy as np
+import moderngl
+from typing import Optional
+from core.ecs import Component, ComponentRegistry
+from core.components.inspector_meta import FieldType, InspectorField
+from core.components.rendering.mesh_filter import MeshFilter
+from core.components.rendering.mesh_renderer import MeshRenderer
+from core.components.lighting.light import Light, LightType
+from core.components.transform import Transform
+from core.math3d import Mat4, Vec3
+from core.logger import Logger
+
+
+@ComponentRegistry.register
+class RaytracingRenderer(Component):
+    _allow_multiple = False
+
+    @classmethod
+    def _inspector_fields(cls) -> list[InspectorField]:
+        return [
+            InspectorField("enabled", "Enabled", FieldType.BOOL),
+            InspectorField("_compute_shader_path", "Compute Shader", FieldType.RESOURCE_PATH, file_filter="Compute (*.compute)"),
+            InspectorField("_resolution_scale", "Resolution Scale", FieldType.FLOAT, 0.1, 1.0),
+            InspectorField("_max_bounces", "Max Bounces", FieldType.INT, 1, 16),
+            InspectorField("_samples_per_pixel", "Samples Per Pixel", FieldType.INT, 1, 16),
+            InspectorField("_accumulate", "Accumulate Frames", FieldType.BOOL),
+            InspectorField("_show_overlay", "Show Overlay", FieldType.BOOL),
+        ]
+
+    def __init__(self):
+        super().__init__()
+        self._compute_shader_path: str = "assets/shaders/Raytracing.compute"
+        self._resolution_scale: float = 0.5
+        self._max_bounces: int = 1
+        self._samples_per_pixel: int = 1
+        self._accumulate: bool = False
+        self._show_overlay: bool = True
+
+        self._program: Optional[moderngl.ComputeShader] = None
+        self._output_tex: Optional[moderngl.Texture] = None
+        self._output_fbo: Optional[moderngl.Framebuffer] = None
+        self._fullscreen_quad: Optional[moderngl.VertexArray] = None
+        self._fullscreen_prog: Optional[moderngl.Program] = None
+
+        self._bvh_buf: Optional[moderngl.Buffer] = None
+        self._vert_buf: Optional[moderngl.Buffer] = None
+        self._idx_buf: Optional[moderngl.Buffer] = None
+        self._mat_buf: Optional[moderngl.Buffer] = None
+        self._inst_buf: Optional[moderngl.Buffer] = None
+        self._light_buf: Optional[moderngl.Buffer] = None
+
+        self._bvh_np: Optional[np.ndarray] = None
+        self._vert_np: Optional[np.ndarray] = None
+        self._idx_np: Optional[np.ndarray] = None
+        self._mat_np: Optional[np.ndarray] = None
+        self._inst_np: Optional[np.ndarray] = None
+        self._light_np: Optional[np.ndarray] = None
+
+        self._accum_frame: int = 0
+        self._prev_width: int = 0
+        self._prev_height: int = 0
+
+    def serialize(self) -> dict:
+        d = super().serialize()
+        d.update({
+            "compute_shader_path": self._compute_shader_path,
+            "resolution_scale": self._resolution_scale,
+            "max_bounces": self._max_bounces,
+            "samples_per_pixel": self._samples_per_pixel,
+            "accumulate": self._accumulate,
+            "show_overlay": self._show_overlay,
+        })
+        return d
+
+    @classmethod
+    def deserialize(cls, data: dict) -> RaytracingRenderer:
+        r = cls()
+        r.enabled = data.get("enabled", True)
+        r._compute_shader_path = data.get("compute_shader_path", "assets/shaders/Raytracing.compute")
+        r._resolution_scale = float(data.get("resolution_scale", 0.5))
+        r._max_bounces = int(data.get("max_bounces", 1))
+        r._samples_per_pixel = int(data.get("samples_per_pixel", 1))
+        r._accumulate = data.get("accumulate", False)
+        r._show_overlay = data.get("show_overlay", True)
+        return r
+
+    def _ensure_resources(self, ctx: moderngl.Context, width: int, height: int):
+        rw = max(1, int(width * self._resolution_scale))
+        rh = max(1, int(height * self._resolution_scale))
+
+        if self._program is None:
+            path = os.path.abspath(self._compute_shader_path)
+            if not os.path.exists(path):
+                Logger.error(f"Raytracing compute shader not found: {path}")
+                return False
+            try:
+                with open(path) as f:
+                    src = f.read()
+                glsl_start = src.find("GLSLPROGRAM")
+                glsl_end = src.find("ENDGLSL", glsl_start)
+                if glsl_start < 0 or glsl_end < 0:
+                    Logger.error("Invalid .compute file: no GLSLPROGRAM/ENDGLSL")
+                    return False
+                source = src[glsl_start + len("GLSLPROGRAM"):glsl_end].strip()
+                self._program = ctx.compute_shader(source)
+            except Exception as e:
+                Logger.error(f"Failed to compile compute shader: {e}")
+                return False
+
+        if self._fullscreen_prog is None:
+            self._fullscreen_prog = ctx.program(
+                vertex_shader="""
+                #version 460 core
+                in vec2 in_position;
+                in vec2 in_uv;
+                out vec2 v_uv;
+                void main() {
+                    gl_Position = vec4(in_position, 0.0, 1.0);
+                    v_uv = in_uv;
+                }
+                """,
+                fragment_shader="""
+                #version 460 core
+                in vec2 v_uv;
+                uniform sampler2D u_tex;
+                out vec4 frag_color;
+                void main() {
+                    frag_color = texture(u_tex, v_uv);
+                }
+                """,
+            )
+
+        if self._fullscreen_quad is None:
+            fs_verts = np.array([
+                -1, -1, 0, 0,
+                 1, -1, 1, 0,
+                 1,  1, 1, 1,
+                -1, -1, 0, 0,
+                 1,  1, 1, 1,
+                -1,  1, 0, 1,
+            ], dtype=np.float32)
+            vbo = ctx.buffer(fs_verts.tobytes())
+            self._fullscreen_quad = ctx.vertex_array(
+                self._fullscreen_prog,
+                [(vbo, "2f 2f", "in_position", "in_uv")],
+            )
+
+        if self._output_tex is None or self._prev_width != rw or self._prev_height != rh:
+            if self._output_tex:
+                self._output_tex.release()
+            if self._output_fbo:
+                self._output_fbo.release()
+            self._output_tex = ctx.texture((rw, rh), 4, dtype="f4")
+            self._output_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self._output_tex.repeat_x = False
+            self._output_tex.repeat_y = False
+            self._output_fbo = ctx.framebuffer(color_attachments=[self._output_tex])
+            self._prev_width = rw
+            self._prev_height = rh
+            self._accum_frame = 0
+
+        return True
+
+    def _collect_and_upload(self, ctx: moderngl.Context, scene, view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3,
+                            renderer):
+        from core.spatial.bvh import get_mesh_bvh
+
+        instances = []
+        vert_offsets = []
+        idx_offsets = []
+        bvh_offsets = []
+        bvh_node_counts = []
+        tri_counts = []
+        all_verts = []
+        all_idxs = []
+        all_bvhs = []
+        meshes = []
+        material_map = {}
+        cum_verts = 0
+        cum_tris = 0
+        cum_bvh_nodes = 0
+
+        mf_list = scene.get_entities_with_component(MeshFilter)
+        mf_list = sorted(mf_list, key=lambda e: e.id)
+        for ent in mf_list:
+            mr = ent.get_component(MeshRenderer)
+            tr = ent.get_component(Transform)
+            if not tr:
+                continue
+            if not mr or not mr.enabled:
+                continue
+            mf = ent.get_component(MeshFilter)
+            mesh_name = mf.mesh_name or "cube"
+            mesh = renderer._mesh_loader._meshes.get(mesh_name)
+            if not mesh or mesh.vertices is None or len(mesh.vertices) < 3:
+                continue
+            bvh = get_mesh_bvh(mesh.vertices, mesh.indices)
+            if not bvh or not bvh.nodes:
+                continue
+
+            verts3 = mesh.vertices.reshape(-1, 3)
+            idxs = mesh.indices.reshape(-1, 3)
+            tri_count = idxs.shape[0]
+
+            all_verts.append(verts3)
+            all_idxs.append(idxs)
+            all_bvhs.append(bvh)
+
+            mat_idx = 0
+            mat_path = mr.material_path
+            if mat_path:
+                if mat_path not in material_map:
+                    material_map[mat_path] = len(material_map)
+                mat_idx = material_map[mat_path]
+
+            vert_offsets.append(cum_verts)
+            idx_offsets.append(cum_tris)
+            bvh_offsets.append(cum_bvh_nodes)
+            bvh_node_counts.append(bvh.node_count())
+            tri_counts.append(tri_count)
+            instances.append((ent, tr, wm_copy := Mat4(tr.world_matrix._d)))
+            meshes.append(mesh)
+            cum_verts += verts3.shape[0]
+            cum_tris += tri_count
+            cum_bvh_nodes += bvh.node_count()
+
+        if not instances:
+            return False
+
+        total_verts = sum(v.shape[0] for v in all_verts)
+        total_tris = sum(i.shape[0] for i in all_idxs)
+        total_bvh_nodes = sum(b.node_count() for b in all_bvhs)
+
+        vert_np = np.empty((total_verts, 6), dtype=np.float32)
+        idx_np = np.empty((total_tris, 3), dtype=np.uint32)
+        bvh_np = np.empty((total_bvh_nodes, 8), dtype=np.float32)
+
+        vo, io, bo = 0, 0, 0
+        for i, (verts3, idxs, bvh) in enumerate(zip(all_verts, all_idxs, all_bvhs)):
+            nv = verts3.shape[0]
+            nt = idxs.shape[0]
+            nn = bvh.node_count()
+            vert_np[vo:vo + nv, :3] = verts3
+            m = meshes[i]
+            norms = getattr(m, 'normals', None)
+            if norms is not None and norms.shape[0] == nv * 3:
+                vert_np[vo:vo + nv, 3:] = norms.reshape(-1, 3)
+            else:
+                face_norms = np.cross(verts3[1::3] - verts3[0::3], verts3[2::3] - verts3[0::3])
+                fn_len = np.linalg.norm(face_norms, axis=1, keepdims=True)
+                fn_len[fn_len == 0] = 1
+                face_norms = face_norms / fn_len
+                norms = np.repeat(face_norms, 3, axis=0)
+                vert_np[vo:vo + nv, 3:] = norms
+            if bvh.tri_indices is not None and len(bvh.tri_indices) == nt:
+                idx_np[io:io + nt] = idxs[bvh.tri_indices] + vo
+            else:
+                idx_np[io:io + nt] = idxs + vo
+            bvh_flat = bvh.flatten_for_gpu()
+            if bo > 0:
+                for j in range(nn):
+                    if bvh_flat[j, 7] >= 0:
+                        bvh_flat[j, 6] += bo
+                        bvh_flat[j, 7] += bo
+            bvh_np[bo:bo + nn] = bvh_flat
+            vo += nv
+            io += nt
+            bo += nn
+
+        self._vert_np = vert_np
+        self._idx_np = idx_np.reshape(-1)
+        self._bvh_np = bvh_np.reshape(-1)
+
+        n_mats = max(len(material_map), 1)
+        self._mat_np = np.zeros((n_mats, 12), dtype=np.float32)
+        self._mat_np[:, :3] = 0.8
+        self._mat_np[:, 3] = 0.0
+        self._mat_np[:, 4] = 0.5
+
+        from core.engine import Engine
+        eng = Engine.instance()
+        if eng:
+            renderer = getattr(eng, '_renderer', None)
+            if renderer:
+                for mat_path, mi in material_map.items():
+                    mat = renderer._materials.get(mat_path)
+                    if mat:
+                        props = mat.get_properties()
+                        bc = props.get("_BaseColor", (1, 1, 1, 1))
+                        self._mat_np[mi, 0] = bc[0]
+                        self._mat_np[mi, 1] = bc[1]
+                        self._mat_np[mi, 2] = bc[2]
+                        self._mat_np[mi, 3] = float(props.get("_Metallic", 0.0))
+                        self._mat_np[mi, 4] = float(props.get("_Smoothness", 0.5))
+                        ec = props.get("_EmissionColor", (0, 0, 0, 0))
+                        self._mat_np[mi, 5] = ec[0]
+                        self._mat_np[mi, 6] = ec[1]
+                        self._mat_np[mi, 7] = ec[2]
+                        self._mat_np[mi, 8] = float(props.get("_EmissionIntensity", 0.0))
+                        self._mat_np[mi, 9] = float(props.get("_OcclusionStrength", 1.0))
+
+        n_inst = len(instances)
+        self._inst_np = np.empty((n_inst, 40), dtype=np.float32)
+        for i, (ent, tr, wm) in enumerate(instances):
+            w = wm._d
+            inv_w = np.linalg.inv(w)
+            self._inst_np[i, :16] = wm.to_f32()
+            self._inst_np[i, 16:32] = Mat4(inv_w).to_f32()
+            mat_path = ent.get_component(MeshRenderer).material_path if ent.get_component(MeshRenderer) else ""
+            mi = material_map.get(mat_path, 0)
+            nc = bvh_node_counts[i]
+            self._inst_np[i, 32] = float(bvh_offsets[i] + nc - 1)
+            self._inst_np[i, 33] = float(vert_offsets[i])
+            self._inst_np[i, 34] = float(idx_offsets[i])
+            self._inst_np[i, 35] = float(mi)
+            self._inst_np[i, 36] = float(tri_counts[i])
+            self._inst_np[i, 37] = float(nc)
+
+        lights_list = []
+        lights_ents = scene.get_entities_with_component(Light)
+        lights_ents = sorted(lights_ents, key=lambda e: e.id)
+        for ent in lights_ents:
+            if not ent.active:
+                continue
+            l = ent.get_component(Light)
+            t = ent.get_component(Transform)
+            if not l or not l.enabled or not t:
+                continue
+            lt = 0
+            if l.light_type == LightType.DIRECTIONAL:
+                lt = 0
+            elif l.light_type == LightType.POINT:
+                lt = 1
+            elif l.light_type == LightType.SPOT:
+                lt = 2
+            fwd = t.forward
+            c = l.color
+            lights_list.append([
+                float(lt), t.position.x, t.position.y, t.position.z,
+                fwd.x, fwd.y, fwd.z,
+                c[0], c[1], c[2],
+                l.intensity, l.range, l.spot_angle, l.spot_inner_angle,
+            ])
+        n_lights = min(len(lights_list), 8)
+        self._light_np = np.zeros((max(n_lights, 1), 14), dtype=np.float32)
+        for i in range(n_lights):
+            self._light_np[i] = lights_list[i]
+
+        bvh_bytes = self._bvh_np.nbytes
+        if self._bvh_buf is None or bvh_bytes > self._bvh_buf.size:
+            if self._bvh_buf:
+                self._bvh_buf.release()
+            self._bvh_buf = ctx.buffer(self._bvh_np.tobytes())
+        else:
+            self._bvh_buf.write(self._bvh_np.tobytes())
+
+        vert_bytes = self._vert_np.nbytes
+        if self._vert_buf is None or vert_bytes > self._vert_buf.size:
+            if self._vert_buf:
+                self._vert_buf.release()
+            self._vert_buf = ctx.buffer(self._vert_np.tobytes())
+        else:
+            self._vert_buf.write(self._vert_np.tobytes())
+
+        idx_bytes = self._idx_np.nbytes
+        if self._idx_buf is None or idx_bytes > self._idx_buf.size:
+            if self._idx_buf:
+                self._idx_buf.release()
+            self._idx_buf = ctx.buffer(self._idx_np.tobytes())
+        else:
+            self._idx_buf.write(self._idx_np.tobytes())
+
+        mat_bytes = self._mat_np.nbytes
+        if self._mat_buf is None or mat_bytes > self._mat_buf.size:
+            if self._mat_buf:
+                self._mat_buf.release()
+            self._mat_buf = ctx.buffer(self._mat_np.tobytes())
+        else:
+            self._mat_buf.write(self._mat_np.tobytes())
+
+        inst_bytes = self._inst_np.nbytes
+        if self._inst_buf is None or inst_bytes > self._inst_buf.size:
+            if self._inst_buf:
+                self._inst_buf.release()
+            self._inst_buf = ctx.buffer(self._inst_np.tobytes())
+        else:
+            self._inst_buf.write(self._inst_np.tobytes())
+
+        light_bytes = self._light_np.nbytes
+        if self._light_buf is None or light_bytes > self._light_buf.size:
+            if self._light_buf:
+                self._light_buf.release()
+            self._light_buf = ctx.buffer(self._light_np.tobytes())
+        else:
+            self._light_buf.write(self._light_np.tobytes())
+
+        return True
+
+    def _dispatch(self, ctx: moderngl.Context, width: int, height: int,
+                  view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3, scene, renderer):
+        rw = max(1, int(width * self._resolution_scale))
+        rh = max(1, int(height * self._resolution_scale))
+
+        if not self._ensure_resources(ctx, width, height):
+            return
+
+        if not self._collect_and_upload(ctx, scene, view_mat, proj_mat, cam_pos, renderer):
+            return
+
+        view_f32 = view_mat.to_f32().reshape(4, 4).T
+        proj_f32 = proj_mat.to_f32().reshape(4, 4).T
+        inv_vp = np.linalg.inv(proj_f32 @ view_f32)
+
+        prog = self._program
+        try:
+            prog["u_camera_pos"] = (cam_pos.x, cam_pos.y, cam_pos.z)
+            prog["u_inv_view_proj"].write(inv_vp.astype(np.float32).flatten(order='F').tobytes())
+            prog["u_screen_width"] = rw
+            prog["u_screen_height"] = rh
+            prog["u_instance_count"] = self._inst_np.shape[0] if self._inst_np is not None else 0
+            prog["u_light_count"] = self._light_np.shape[0] if self._light_np is not None else 0
+            prog["u_max_bounces"] = self._max_bounces
+            prog["u_accum_frame"] = self._accum_frame if self._accumulate else 0
+            prog["u_ambient"] = (0.03, 0.03, 0.05)
+        except KeyError as e:
+            Logger.warning(f"Raytracing uniform missing: {e}")
+            return
+
+        self._bvh_buf.bind_to_storage_buffer(0)
+        self._vert_buf.bind_to_storage_buffer(1)
+        self._idx_buf.bind_to_storage_buffer(2)
+        self._mat_buf.bind_to_storage_buffer(3)
+        self._inst_buf.bind_to_storage_buffer(4)
+        self._light_buf.bind_to_storage_buffer(5)
+
+        self._output_tex.bind_to_image(0, read=False, write=True)
+
+        prog.run(
+            group_x=(rw + 7) // 8,
+            group_y=(rh + 7) // 8,
+            group_z=1,
+        )
+
+        ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
+
+        self._output_tex.build_mipmaps()
+
+        if self._accumulate:
+            self._accum_frame += 1
+
+        self._output_tex.build_mipmaps()
+
+    def blit_to_screen(self, ctx: moderngl.Context, width: int, height: int):
+        if not self._show_overlay or not self._output_fbo or not self._fullscreen_prog:
+            return
+        self._output_tex.use(0)
+        self._fullscreen_prog["u_tex"].value = 0
+        ctx.disable(moderngl.DEPTH_TEST)
+        self._fullscreen_quad.render(moderngl.TRIANGLES)
+        ctx.enable(moderngl.DEPTH_TEST)
+
+    def on_destroy(self):
+        self._release_gl()
+
+    def on_disable(self):
+        self._release_gl()
+
+    def _release_gl(self):
+        for buf in [self._bvh_buf, self._vert_buf, self._idx_buf, self._mat_buf, self._inst_buf, self._light_buf]:
+            if buf:
+                buf.release()
+        self._bvh_buf = self._vert_buf = self._idx_buf = self._mat_buf = self._inst_buf = self._light_buf = None
+        if self._output_tex:
+            self._output_tex.release()
+            self._output_tex = None
+        if self._output_fbo:
+            self._output_fbo.release()
+            self._output_fbo = None
+        if self._program:
+            self._program.release()
+            self._program = None
+        if self._fullscreen_prog:
+            self._fullscreen_prog.release()
+            self._fullscreen_prog = None
+        if self._fullscreen_quad:
+            self._fullscreen_quad.release()
+            self._fullscreen_quad = None
