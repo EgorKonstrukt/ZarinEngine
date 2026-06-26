@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core.editor_scale import scale, scale_xy
-from PyQt6.QtWidgets import QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QSpinBox, QVBoxLayout, QWidget, QWidgetAction
+from PyQt6.QtWidgets import QCheckBox, QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QSpinBox, QVBoxLayout, QWidget, QWidgetAction
 
 from core.math3d import Vec3
 
@@ -56,6 +56,27 @@ def setup_toolbar(vp):
     """)
     vp._stats_btn.clicked.connect(vp._toggle_stats)
     cam_row.addWidget(vp._stats_btn)
+
+    vp._bvh_btn = QPushButton("BVH")
+    vp._bvh_btn.setCheckable(True)
+    vp._bvh_btn.setMinimumWidth(40)
+    vp._bvh_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #2a2a2a;
+            color: #ddd;
+            border: 1px solid #444;
+            border-radius: 3px;
+            padding: 3px 8px;
+            font-size: 10px;
+        }
+        QPushButton:checked {
+            background-color: #8e5d2d;
+            color: #fff;
+            border: 1px solid #b57a4a;
+        }
+    """)
+    vp._bvh_btn.clicked.connect(vp._toggle_bvh_debug)
+    cam_row.addWidget(vp._bvh_btn)
 
     vp._depth_spin = QSpinBox()
     vp._depth_spin.setRange(0, 32)

@@ -103,6 +103,7 @@ class SceneViewport(QOpenGLWidget):
         self._stats_enabled: bool = False
         self._fps_history: list[float] = []
         self._debug_lines: list[tuple[Vec3, Vec3, list[float]]] = []
+        self._show_bvh_debug: bool = False
         self._overlay_canvas = None
         try:
             self._im = InputManager.instance()
@@ -180,6 +181,50 @@ class SceneViewport(QOpenGLWidget):
         if checked:
             self._fps_history.clear()
         self.update()
+
+    def _toggle_bvh_debug(self, checked: bool):
+        self._show_bvh_debug = checked
+        self.update()
+
+    def _render_bvh_debug(self):
+        if not hasattr(self, '_engine') or not self._engine:
+            return
+        scene = self._engine.scene
+        if not scene:
+            return
+        sel_list = getattr(self, '_selected_entities', [])
+        if not sel_list:
+            return
+        sel = sel_list[0]
+        from core.components.rendering.mesh_filter import MeshFilter
+        mf = sel.get_component(MeshFilter)
+        if not mf:
+            return
+        from editor.viewport.picking import _get_mesh_for
+        mesh = _get_mesh_for(sel, mf.mesh_name or "cube", mf.mesh_path)
+        if not mesh or mesh.vertices is None or len(mesh.vertices) < 3:
+            return
+        from core.spatial.bvh import get_mesh_bvh, build_bvh_arrays
+        bvh = get_mesh_bvh(mesh.vertices, mesh.indices)
+        if not bvh or not bvh.nodes:
+            return
+        starts, ends, colors = build_bvh_arrays(bvh)
+        if starts is None:
+            return
+        from core.components.transform import Transform
+        tr = sel.get_component(Transform)
+        if not tr:
+            return
+        wm = tr.world_matrix._d
+        ones = np.ones((starts.shape[0], 1), dtype=np.float32)
+        ws_h = np.concatenate([starts, ones], axis=1)
+        we_h = np.concatenate([ends, ones], axis=1)
+        ws = (ws_h @ wm)[:, :3]
+        we = (we_h @ wm)[:, :3]
+        fw, fh = self._get_physical_dims()
+        vp_mat = self._cam.get_view_matrix() * self._cam.get_projection_matrix(
+            fw / max(1, fh))
+        self._renderer.render_gizmo_arrays(ws, we, colors, vp_mat, fw, fh, thickness_multiplier=1.5)
 
     def _on_fov_changed(self, value: float):
         self._cam._fov = value
@@ -514,6 +559,8 @@ class SceneViewport(QOpenGLWidget):
                 if self._debug_lines:
                     self._renderer.render_gizmo_lines(self._debug_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
                     self._debug_lines.clear()
+                if self._show_bvh_debug:
+                    self._render_bvh_debug()
                 draw_axis_gizmo_api(self)
                 self._render_api_gizmos()
                 if self._pb_scale_gizmo and self._pb_scale_gizmo.active:

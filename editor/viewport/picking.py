@@ -6,41 +6,6 @@ from editor.viewport.projection import screen_to_ray, world_to_screen
 
 _font_atlas_cache: dict[tuple[str, int], "FontAtlas"] = {}
 
-_CHUNK_AABB_CACHE: dict[int, tuple[np.ndarray, int]] = {}
-_CHUNK_SIZE = 20000
-
-
-def _build_chunk_aabbs(verts: np.ndarray, indices: np.ndarray) -> tuple[np.ndarray, int] | None:
-    n_tris = len(indices) // 3
-    if n_tris == 0:
-        return None
-    verts3 = verts.reshape(-1, 3)
-    tri_idx = indices.reshape(n_tris, 3).astype(np.intp)
-    n_chunks = max(1, (n_tris + _CHUNK_SIZE - 1) // _CHUNK_SIZE)
-    out = np.zeros((n_chunks, 6), dtype=np.float32)
-    for i in range(n_chunks):
-        s = i * _CHUNK_SIZE
-        e = min(s + _CHUNK_SIZE, n_tris)
-        ci = tri_idx[s:e]
-        v0 = verts3[ci[:, 0]]
-        v1 = verts3[ci[:, 1]]
-        v2 = verts3[ci[:, 2]]
-        bmin = np.minimum(np.minimum(v0, v1), v2).min(axis=0)
-        bmax = np.maximum(np.maximum(v0, v1), v2).max(axis=0)
-        out[i, :3] = bmin
-        out[i, 3:] = bmax
-    return out, n_tris
-
-
-def _get_chunk_aabbs(mesh) -> tuple[np.ndarray, int] | None:
-    key = id(mesh)
-    if key not in _CHUNK_AABB_CACHE:
-        if mesh.vertices is None or len(mesh.vertices) < 3 or mesh.indices is None or len(mesh.indices) < 3:
-            _CHUNK_AABB_CACHE[key] = None
-        else:
-            _CHUNK_AABB_CACHE[key] = _build_chunk_aabbs(mesh.vertices, mesh.indices)
-    return _CHUNK_AABB_CACHE[key]
-
 
 def _ray_aabb_min(ox: float, oy: float, oz: float,
                   dx: float, dy: float, dz: float,
@@ -248,55 +213,6 @@ def _world_aabb_from_mesh(mesh, wm):
     return pts[:, :3].min(axis=0), pts[:, :3].max(axis=0)
 
 
-def _test_chunk_tris(ox, oy, oz, dx, dy, dz, rd, verts3, tri_chunk, best_t):
-    v0 = verts3[tri_chunk[:, 0]]
-    v1 = verts3[tri_chunk[:, 1]]
-    v2 = verts3[tri_chunk[:, 2]]
-    e1 = v1 - v0
-    e2 = v2 - v0
-    p = np.cross(rd, e2)
-    det = np.sum(e1 * p, axis=1)
-    valid = np.abs(det) > 1e-12
-    if not np.any(valid):
-        return best_t
-    inv_det = np.where(valid, 1.0 / det, 0.0)
-    t_vec = np.array([ox, oy, oz]) - v0
-    u = np.sum(t_vec * p, axis=1) * inv_det
-    q = np.cross(t_vec, e1)
-    v = np.sum(rd * q, axis=1) * inv_det
-    t = np.sum(e2 * q, axis=1) * inv_det
-    hit = valid & (u >= 0.0) & (v >= 0.0) & (u + v <= 1.0) & (t > 0) & (t < best_t)
-    t_hit = t[hit]
-    if len(t_hit) > 0:
-        cb = t_hit.min()
-        if cb < best_t:
-            best_t = cb
-    return best_t
-
-
-def _ray_mesh_intersect_np(ox, oy, oz, dx, dy, dz, verts, indices, chunk_data=None):
-    if len(indices) < 3:
-        return -1.0
-    n_tris = len(indices) // 3
-    verts3 = verts.reshape(-1, 3)
-    tri_i = indices.reshape(n_tris, 3).astype(np.intp)
-    rd = np.array([dx, dy, dz])
-    best_t = float("inf")
-    if chunk_data is not None:
-        ca, _ = chunk_data
-        for i in range(len(ca)):
-            b = ca[i]
-            d = _ray_aabb_min(ox, oy, oz, dx, dy, dz, b[0], b[1], b[2], b[3], b[4], b[5])
-            if d < 0 or d >= best_t:
-                continue
-            s = i * _CHUNK_SIZE
-            e = min(s + _CHUNK_SIZE, n_tris)
-            best_t = _test_chunk_tris(ox, oy, oz, dx, dy, dz, rd, verts3, tri_i[s:e], best_t)
-    else:
-        best_t = _test_chunk_tris(ox, oy, oz, dx, dy, dz, rd, verts3, tri_i, best_t)
-    return -1.0 if best_t == float("inf") else best_t
-
-
 def _test_mesh_hit(wm, ro, rd, mesh):
     bmin, bmax = _world_aabb_from_mesh(mesh, wm)
     d = _ray_aabb_min(ro[0], ro[1], ro[2], rd[0], rd[1], rd[2],
@@ -307,10 +223,12 @@ def _test_mesh_hit(wm, ro, rd, mesh):
     local_o = ro @ wm_inv
     local_d = rd @ wm_inv
     if mesh.indices is not None and len(mesh.indices) > 0:
-        cd = _get_chunk_aabbs(mesh)
-        return _ray_mesh_intersect_np(local_o[0], local_o[1], local_o[2],
-                                      local_d[0], local_d[1], local_d[2],
-                                      mesh.vertices, mesh.indices, cd)
+        from core.spatial.bvh import get_mesh_bvh
+        bvh = get_mesh_bvh(mesh.vertices, mesh.indices)
+        if bvh and bvh.nodes:
+            return bvh.intersect(local_o[0], local_o[1], local_o[2],
+                                 local_d[0], local_d[1], local_d[2],
+                                 mesh.vertices, mesh.indices)
     return _ray_aabb_min(local_o[0], local_o[1], local_o[2],
                          local_d[0], local_d[1], local_d[2],
                          mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2],
