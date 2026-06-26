@@ -111,8 +111,8 @@ class GizmoData:
 
 
 def _np_color(c: Tuple[float, float, float, float], n: int) -> np.ndarray:
-    arr = np.zeros((n, 4), dtype=np.float32)
-    arr[:, 0] = c[0]; arr[:, 1] = c[1]; arr[:, 2] = c[2]; arr[:, 3] = c[3]
+    arr = np.empty((n, 4), dtype=np.float32)
+    arr[:] = c
     return arr
 
 
@@ -213,42 +213,58 @@ def _build_line(g: GizmoData):
 def _build_circle(g: GizmoData):
     p = g.position; n = g.normal; r = g.size; segs = g.segments
     nv = Vec3(n[0], n[1], n[2])
-    p1 = Vec3(1,0,0) if abs(n[1])<0.9 else Vec3(0,0,1)
-    p1 = nv.cross(p1).normalized()
+    ref = Vec3(1,0,0) if abs(n[1])<0.9 else Vec3(0,0,1)
+    p1 = nv.cross(ref).normalized()
     p2 = nv.cross(p1).normalized()
     theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
     ct = np.cos(theta) * r; st = np.sin(theta) * r
-    pts = np.empty((segs + 1, 3), dtype=np.float32)
-    pts[:, 0] = p[0] + p1.x * ct + p2.x * st
-    pts[:, 1] = p[1] + p1.y * ct + p2.y * st
-    pts[:, 2] = p[2] + p1.z * ct + p2.z * st
+    po = np.array([p[0], p[1], p[2]], dtype=np.float32)
+    p1a = np.array([p1.x, p1.y, p1.z], dtype=np.float32)
+    p2a = np.array([p2.x, p2.y, p2.z], dtype=np.float32)
+    pts = po + p1a * ct[:, None] + p2a * st[:, None]
     return pts[:-1], pts[1:], _np_color(g.color, segs)
 
 
-@_register(GizmoType.SPHERE)
-def _build_sphere(g: GizmoData):
-    p = g.position; r = g.size; segs = max(g.segments // 2, 4)
+_SPHERE_CACHE: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+
+def _get_sphere_edges(segs: int):
+    cached = _SPHERE_CACHE.get(segs)
+    if cached is not None:
+        return cached
     lats = np.linspace(0, math.pi, segs + 1, dtype=np.float32)
     lons = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
     lat_sin, lat_cos = np.sin(lats), np.cos(lats)
     lon_sin, lon_cos = np.sin(lons), np.cos(lons)
+    nv = segs + 1
     verts = np.empty(((segs + 1) * (segs + 1), 3), dtype=np.float32)
     idx = 0
     for li in range(segs + 1):
         for lj in range(segs + 1):
-            verts[idx, 0] = p[0] + r * lat_sin[li] * lon_cos[lj]
-            verts[idx, 1] = p[1] + r * lat_cos[li]
-            verts[idx, 2] = p[2] + r * lat_sin[li] * lon_sin[lj]
+            verts[idx, 0] = lat_sin[li] * lon_cos[lj]
+            verts[idx, 1] = lat_cos[li]
+            verts[idx, 2] = lat_sin[li] * lon_sin[lj]
             idx += 1
-    nv = segs + 1
     lines_buf = []
     for li in range(segs):
         for lj in range(segs):
             i0 = li * nv + lj; i1 = li * nv + lj + 1
             i2 = (li + 1) * nv + lj; i3 = (li + 1) * nv + lj + 1
             lines_buf.extend([i0, i1, i1, i2, i2, i3, i3, i0])
-    lidx = np.array(lines_buf)
-    return verts[lidx[0::2]], verts[lidx[1::2]], _np_color(g.color, len(lidx) // 2)
+    lidx = np.array(lines_buf, dtype=np.int32)
+    starts = verts[lidx[0::2]]
+    ends = verts[lidx[1::2]]
+    _SPHERE_CACHE[segs] = (starts, ends)
+    return starts, ends
+
+
+@_register(GizmoType.SPHERE)
+def _build_sphere(g: GizmoData):
+    p = g.position; r = g.size; segs = max(g.segments // 2, 4)
+    starts, ends = _get_sphere_edges(segs)
+    n = starts.shape[0]
+    starts = starts * r + np.array([p[0], p[1], p[2]], dtype=np.float32)
+    ends = ends * r + np.array([p[0], p[1], p[2]], dtype=np.float32)
+    return starts, ends, _np_color(g.color, n)
 
 
 @_register(GizmoType.BOX)
@@ -271,15 +287,15 @@ def _build_arc(g: GizmoData):
     a0 = math.radians(g.angle_start); a1 = math.radians(g.angle_end)
     segs = g.segments
     nv = Vec3(n[0], n[1], n[2])
-    p1 = Vec3(1,0,0) if abs(n[1])<0.9 else Vec3(0,0,1)
-    p1 = nv.cross(p1).normalized()
+    ref = Vec3(1,0,0) if abs(n[1])<0.9 else Vec3(0,0,1)
+    p1 = nv.cross(ref).normalized()
     p2 = nv.cross(p1).normalized()
     theta = np.linspace(a0, a1, segs + 1, dtype=np.float32)
     ct = np.cos(theta) * r; st = np.sin(theta) * r
-    pts = np.empty((segs + 1, 3), dtype=np.float32)
-    pts[:, 0] = p[0] + p1.x * ct + p2.x * st
-    pts[:, 1] = p[1] + p1.y * ct + p2.y * st
-    pts[:, 2] = p[2] + p1.z * ct + p2.z * st
+    po = np.array([p[0], p[1], p[2]], dtype=np.float32)
+    p1a = np.array([p1.x, p1.y, p1.z], dtype=np.float32)
+    p2a = np.array([p2.x, p2.y, p2.z], dtype=np.float32)
+    pts = po + p1a * ct[:, None] + p2a * st[:, None]
     return pts[:-1], pts[1:], _np_color(g.color, segs)
 
 
@@ -355,20 +371,21 @@ def _build_capsule(g: GizmoData):
 def _build_grid(g: GizmoData):
     p = g.position; n = g.normal; sz = g.size; divs = max(g.segments, 2)
     nv = Vec3(n[0], n[1], n[2])
-    p1 = Vec3(1,0,0) if abs(n[1])<0.9 else Vec3(0,0,1)
-    p1 = nv.cross(p1).normalized()
+    ref = Vec3(1,0,0) if abs(n[1])<0.9 else Vec3(0,0,1)
+    p1 = nv.cross(ref).normalized()
     p2 = nv.cross(p1).normalized()
     half = sz * 0.5
     vals = np.linspace(-half, half, divs + 1, dtype=np.float32)
     total_lines = (divs + 1) * 2
+    p1a = np.array([p1.x, p1.y, p1.z], dtype=np.float32)
+    p2a = np.array([p2.x, p2.y, p2.z], dtype=np.float32)
+    po = np.array([p[0], p[1], p[2]], dtype=np.float32)
     starts = np.empty((total_lines, 3), dtype=np.float32)
     ends = np.empty((total_lines, 3), dtype=np.float32)
-    for i, v in enumerate(vals):
-        starts[i] = [p[0] + p1.x * (-half) + p2.x * v, p[1] + p1.y * (-half) + p2.y * v, p[2] + p1.z * (-half) + p2.z * v]
-        ends[i]   = [p[0] + p1.x * half + p2.x * v,   p[1] + p1.y * half + p2.y * v,   p[2] + p1.z * half + p2.z * v]
-        j = i + divs + 1
-        starts[j] = [p[0] + p1.x * v + p2.x * (-half), p[1] + p1.y * v + p2.y * (-half), p[2] + p1.z * v + p2.z * (-half)]
-        ends[j]   = [p[0] + p1.x * v + p2.x * half,   p[1] + p1.y * v + p2.y * half,   p[2] + p1.z * v + p2.z * half]
+    starts[:divs+1] = po + p1a * (-half) + p2a * vals[:, None]
+    ends[:divs+1]   = po + p1a * half + p2a * vals[:, None]
+    starts[divs+1:] = po + p1a * vals[:, None] + p2a * (-half)
+    ends[divs+1:]   = po + p1a * vals[:, None] + p2a * half
     return starts, ends, _np_color(g.color, total_lines)
 
 
@@ -623,7 +640,7 @@ def _build_bbox(g: GizmoData):
     mn = g.min_point; mx = g.max_point
     corners = np.array([
         [mn[0], mn[1], mn[2]], [mx[0], mn[1], mn[2]], [mx[0], mx[1], mn[2]], [mn[0], mx[1], mn[2]],
-        [mn[0], mn[1], mx[0]], [mx[0], mn[1], mx[1]], [mx[0], mx[1], mx[2]], [mn[0], mx[1], mx[2]],
+        [mn[0], mn[1], mx[2]], [mx[0], mn[1], mx[2]], [mx[0], mx[1], mx[2]], [mn[0], mx[1], mx[2]],
     ], dtype=np.float32)
     edges = np.array([(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)])
     return corners[edges[:,0]], corners[edges[:,1]], _np_color(g.color, 12)
@@ -713,9 +730,12 @@ def _build_spline(g: GizmoData):
     return result[:-1], result[1:], _np_color(g.color, total_segs)
 
 
-@_register(GizmoType.ICOSPHERE)
-def _build_icosphere(g: GizmoData):
-    p = g.position; r = g.size
+_ICOSPHERE_CACHE: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+
+def _get_icosphere_edges(subdivisions: int):
+    cached = _ICOSPHERE_CACHE.get(subdivisions)
+    if cached is not None:
+        return cached
     phi = (1.0 + math.sqrt(5.0)) * 0.5
     verts = np.array([
         [-1, phi, 0], [1, phi, 0], [-1, -phi, 0], [1, -phi, 0],
@@ -728,33 +748,49 @@ def _build_icosphere(g: GizmoData):
         3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9,
         4,9,5, 2,4,11, 6,2,10, 8,6,7, 9,8,1,
     ], dtype=np.int32)
-    norm = np.linalg.norm(verts, axis=1, keepdims=True)
-    verts /= norm
-    for _ in range(g.subdivisions):
+    verts = verts / np.linalg.norm(verts, axis=1, keepdims=True)
+    for _ in range(subdivisions):
         edge_mid = {}
         new_faces = []
+        n_verts = verts.shape[0]
+        new_verts = []
         for i in range(0, len(faces), 3):
             a, b, c = int(faces[i]), int(faces[i+1]), int(faces[i+2])
-            ab = tuple(sorted((a,b)))
-            bc = tuple(sorted((b,c)))
-            ca = tuple(sorted((c,a)))
+            ab = (a, b) if a < b else (b, a)
+            bc = (b, c) if b < c else (c, b)
+            ca = (c, a) if c < a else (a, c)
             for pair in (ab, bc, ca):
                 if pair not in edge_mid:
                     mid = (verts[pair[0]] + verts[pair[1]]) * 0.5
                     mid /= np.linalg.norm(mid)
-                    edge_mid[pair] = len(verts)
-                    verts = np.append(verts, mid.reshape(1,3), axis=0)
+                    edge_mid[pair] = n_verts + len(new_verts)
+                    new_verts.append(mid)
             d, e, f = edge_mid[ab], edge_mid[bc], edge_mid[ca]
             new_faces.extend([a,d,f, d,b,e, f,e,c, d,e,f])
+        if new_verts:
+            verts = np.concatenate([verts, np.array(new_verts, dtype=np.float32)], axis=0)
         faces = np.array(new_faces, dtype=np.int32)
-    verts = verts * r + np.array([p[0], p[1], p[2]], dtype=np.float32)
-    edges = set()
+    edge_set = set()
     for i in range(0, len(faces), 3):
         a, b, c = int(faces[i]), int(faces[i+1]), int(faces[i+2])
         for pair in ((a,b),(b,c),(c,a)):
-            edges.add(tuple(sorted(pair)))
-    edge_list = np.array(list(edges), dtype=np.int32)
-    return verts[edge_list[:,0]], verts[edge_list[:,1]], _np_color(g.color, len(edge_list))
+            edge_set.add((a,b) if a < b else (b,a))
+    edge_list = np.array(list(edge_set), dtype=np.int32)
+    result_starts = verts[edge_list[:, 0]]
+    result_ends = verts[edge_list[:, 1]]
+    _ICOSPHERE_CACHE[subdivisions] = (result_starts, result_ends)
+    return result_starts, result_ends
+
+
+@_register(GizmoType.ICOSPHERE)
+def _build_icosphere(g: GizmoData):
+    p = g.position; r = g.size
+    starts, ends = _get_icosphere_edges(g.subdivisions)
+    n = starts.shape[0]
+    po = np.array([p[0], p[1], p[2]], dtype=np.float32)
+    starts = starts * r + po
+    ends = ends * r + po
+    return starts, ends, _np_color(g.color, n)
 
 
 @_register(GizmoType.LABEL)
@@ -1030,6 +1066,10 @@ class GizmosManager:
         self.enabled: bool = True
         self._time: float = 0.0
         self._batches: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        self._flat_starts = np.empty((0, 3), dtype=np.float32)
+        self._flat_ends = np.empty((0, 3), dtype=np.float32)
+        self._flat_colors = np.empty((0, 4), dtype=np.float32)
+        self._flat_size = 0
         self._transform_stack: List[Optional[List[float]]] = []
         self._current_transform: Optional[List[float]] = None
         self._style_stack: List[dict] = []
@@ -1061,6 +1101,7 @@ class GizmosManager:
     def clear(self):
         self.draws.clear()
         self._batches.clear()
+        self._flat_size = 0
 
     def clear_persistent(self):
         self.persistent_draws.clear()
@@ -1069,18 +1110,33 @@ class GizmosManager:
         self.unique_draws.clear()
 
     def draw_lines(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray):
-        self._batches.append((starts, ends, colors))
+        n = starts.shape[0]
+        if n == 0:
+            return
+        old_sz = self._flat_size
+        new_sz = old_sz + n
+        if new_sz > self._flat_starts.shape[0]:
+            new_cap = int(new_sz * 1.5 + 4096)
+            self._flat_starts = np.resize(self._flat_starts, (new_cap, 3))
+            self._flat_ends = np.resize(self._flat_ends, (new_cap, 3))
+            self._flat_colors = np.resize(self._flat_colors, (new_cap, 4))
+        self._flat_starts[old_sz:new_sz] = starts
+        self._flat_ends[old_sz:new_sz] = ends
+        self._flat_colors[old_sz:new_sz] = colors
+        self._flat_size = new_sz
 
     def _get_render_data(self):
-        b = self._batches
-        if not b:
-            return None
-        if len(b) == 1:
-            return b[0]
-        s_list = [x[0] for x in b]
-        e_list = [x[1] for x in b]
-        c_list = [x[2] for x in b]
-        return (np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list))
+        if self._flat_size > 0:
+            return (self._flat_starts[:self._flat_size],
+                    self._flat_ends[:self._flat_size],
+                    self._flat_colors[:self._flat_size])
+        if self._batches:
+            b = self._batches
+            if len(b) == 1:
+                return b[0]
+            s_list, e_list, c_list = zip(*b)
+            return (np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list))
+        return None
 
     def _add(self, g: GizmoData, **style_kw):
         s = self._resolve_style()

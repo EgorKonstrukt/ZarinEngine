@@ -19,7 +19,7 @@ from core.math3d import Vec3, Mat4, Quat
 from core.logger import Logger
 from editor.scene_camera import SceneCamera
 from editor.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
-from editor.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS, _apply_line_style
+from editor.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS, _apply_line_style, LineStyle
 from editor.gizmo.pb_scale_gizmo import PbScaleGizmo
 from core.input_system import Input, KeyCode
 from core.input.input_manager import InputManager
@@ -1240,30 +1240,32 @@ class SceneViewport(QOpenGLWidget):
         proj = self._cam.get_projection_matrix(fw / max(1, fh))
         vp_mat = view * proj
         np_data = gm._get_render_data()
-        gm._batches.clear()
+        all_g = gm.unique_draws.values() if gm.unique_draws else []
+        if gm.draws or gm.persistent_draws:
+            all_g = list(all_g) + gm.draws + gm.persistent_draws
+        s_list = []
+        e_list = []
+        c_list = []
         if np_data is not None:
-            gs, ge, gc = np_data
-            self._renderer.render_gizmo_arrays(gs, ge, gc, vp_mat, fw, fh, thickness_multiplier=1.0)
-        all_g = list(gm.unique_draws.values()) + gm.draws + gm.persistent_draws
-        if not all_g:
-            gm.draws.clear()
-            return
-        s_list: list[np.ndarray] = []
-        e_list: list[np.ndarray] = []
-        c_list: list[np.ndarray] = []
+            s_list.append(np_data[0])
+            e_list.append(np_data[1])
+            c_list.append(np_data[2])
         for g in all_g:
             builder = _GIZMO_LINE_BUILDERS.get(g.gizmo_type)
-            if builder is not None:
-                result = builder(g)
-                if result is not None:
-                    s, e, c = result
-                    s, e, c = _apply_line_style(s, e, c, g.line_style, g.dash_length, g.gap_length)
-                    if s.shape[0] > 0:
-                        s_list.append(s)
-                        e_list.append(e)
-                        c_list.append(c)
+            if builder is None:
+                continue
+            result = builder(g)
+            if result is None:
+                continue
+            s, e, c = result
+            if g.line_style is not LineStyle.SOLID:
+                s, e, c = _apply_line_style(s, e, c, g.line_style, g.dash_length, g.gap_length)
+            if s.shape[0] > 0:
+                s_list.append(s)
+                e_list.append(e)
+                c_list.append(c)
         if s_list:
             self._renderer.render_gizmo_arrays(
                 np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list),
                 vp_mat, fw, fh, thickness_multiplier=1.0)
-        gm.draws.clear()
+        gm.clear()

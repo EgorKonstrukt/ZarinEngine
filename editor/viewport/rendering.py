@@ -50,9 +50,8 @@ def _ring_starts_ends(pts: list[Vec3], segs: int) -> tuple[np.ndarray, np.ndarra
 
 
 def _collider_color_arr(n: int, color: list) -> np.ndarray:
-    c = np.zeros((n, 4), dtype=np.float32)
-    c[:, 0] = color[0]; c[:, 1] = color[1]; c[:, 2] = color[2]
-    c[:, 3] = color[3] if len(color) > 3 else 1.0
+    c = np.empty((n, 4), dtype=np.float32)
+    c[:] = color
     return c
 
 
@@ -80,23 +79,22 @@ def _build_sphere_np(comp, pos: Vec3, rot, sc: Vec3, color: list) -> tuple[np.nd
     c = c_local @ R + np.array([pos.x, pos.y, pos.z], dtype=np.float32)
     segs = 24
     total = segs * 3
+    theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
+    ct = np.cos(theta) * radius; st = np.sin(theta) * radius
+    base_pts = np.zeros((segs + 1, 3), dtype=np.float32)
+    base_pts[:, 1] = ct; base_pts[:, 2] = st
+    ring_x = base_pts @ R + c
+    base_pts2 = np.zeros((segs + 1, 3), dtype=np.float32)
+    base_pts2[:, 0] = ct; base_pts2[:, 2] = st
+    ring_y = base_pts2 @ R + c
+    base_pts3 = np.zeros((segs + 1, 3), dtype=np.float32)
+    base_pts3[:, 0] = ct; base_pts3[:, 1] = st
+    ring_z = base_pts3 @ R + c
     starts = np.zeros((total, 3), dtype=np.float32)
     ends = np.zeros((total, 3), dtype=np.float32)
-    idx = 0
-    for axis_idx in range(3):
-        theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
-        ct = np.cos(theta) * radius; st = np.sin(theta) * radius
-        pts = np.zeros((segs + 1, 3), dtype=np.float32)
-        if axis_idx == 0:
-            pts[:, 1] = ct; pts[:, 2] = st
-        elif axis_idx == 1:
-            pts[:, 0] = ct; pts[:, 2] = st
-        else:
-            pts[:, 0] = ct; pts[:, 1] = st
-        pts = pts @ R + c
-        starts[idx:idx+segs] = pts[:-1]
-        ends[idx:idx+segs] = pts[1:]
-        idx += segs
+    starts[0:segs] = ring_x[:-1]; ends[0:segs] = ring_x[1:]
+    starts[segs:2*segs] = ring_y[:-1]; ends[segs:2*segs] = ring_y[1:]
+    starts[2*segs:3*segs] = ring_z[:-1]; ends[2*segs:3*segs] = ring_z[1:]
     return starts, ends, _collider_color_arr(total, color)
 
 
@@ -526,7 +524,6 @@ def _dashed_lines_np(starts, ends, color, time_s):
     lengths = np.sqrt(np.sum(dirs * dirs, axis=1))
     lengths = np.maximum(lengths, 1e-8)
     dirs_norm = dirs / lengths[:, None]
-
     s_parts = []
     e_parts = []
     for i in range(n):
@@ -535,7 +532,6 @@ def _dashed_lines_np(starts, ends, color, time_s):
         t1 = np.minimum(t0 + DASH_LEN, lengths[i])
         s_parts.append(starts[i] + dirs_norm[i] * t0[:, None])
         e_parts.append(starts[i] + dirs_norm[i] * t1[:, None])
-
     if s_parts:
         s_arr = np.concatenate(s_parts, axis=0)
         e_arr = np.concatenate(e_parts, axis=0)
@@ -583,29 +579,64 @@ def _render_corner_spheres_np(vp, vp_mat, corners, radius, color):
     all_verts = all_verts.reshape(-1, 3)
     n_total = nc * nv
     all_idx = np.tile(cidx, nc) + np.repeat(np.arange(nc, dtype=np.int32) * nv, len(cidx))
-    all_cols = np.empty((n_total, 4), dtype=np.float32)
-    all_cols[:, 0] = color[0]; all_cols[:, 1] = color[1]
-    all_cols[:, 2] = color[2]; all_cols[:, 3] = color[3]
     v_data = np.empty((n_total, 7), dtype=np.float32)
     v_data[:, :3] = all_verts
-    v_data[:, 3:] = all_cols
+    v_data[:, 3] = color[0]; v_data[:, 4] = color[1]
+    v_data[:, 5] = color[2]; v_data[:, 6] = color[3]
     vp._renderer.render_gizmo_mesh_np(v_data, np.asarray(all_idx, dtype=np.uint32), vp_mat)
 
 
 def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
-    from editor.viewport.picking import _world_aabb_of
+    from core.components.transform import Transform
+    from core.components.rendering.mesh_filter import MeshFilter
+    from core.components.rendering.mesh_renderer import MeshRenderer
+    from editor.viewport.picking import _get_mesh_for
     bmin_t = None
     bmax_t = None
+    _corner_buf = np.empty((8, 4), dtype=np.float32)
+    _corner_buf[:, 3] = 1.0
     for entity in entities:
         if entity is None:
             continue
-        box = _world_aabb_of(entity)
-        if box is not None:
-            if bmin_t is None:
-                bmin_t, bmax_t = box[0].copy(), box[1].copy()
-            else:
-                np.minimum(bmin_t, box[0], out=bmin_t)
-                np.maximum(bmax_t, box[1], out=bmax_t)
+        t = entity.get_component(Transform)
+        if not t:
+            continue
+        wp = t.position
+        bx = wp.x; by = wp.y; bz = wp.z
+        bmin = np.array([bx, by, bz])
+        bmax = np.array([bx, by, bz])
+        expanded = False
+        mf = entity.get_component(MeshFilter)
+        mr = entity.get_component(MeshRenderer) if mf else None
+        if mf and mr and mr.enabled:
+            mesh_name = mf.mesh_name or "cube"
+            mesh = _get_mesh_for(entity, mesh_name, mf.mesh_path)
+            if mesh is not None:
+                wm = t.world_matrix._d
+                ax, ay, az = mesh.aabb_min
+                bx2, by2, bz2 = mesh.aabb_max
+                _corner_buf[0] = [ax, ay, az, 1]
+                _corner_buf[1] = [bx2, ay, az, 1]
+                _corner_buf[2] = [bx2, by2, az, 1]
+                _corner_buf[3] = [ax, by2, az, 1]
+                _corner_buf[4] = [ax, ay, bz2, 1]
+                _corner_buf[5] = [bx2, ay, bz2, 1]
+                _corner_buf[6] = [bx2, by2, bz2, 1]
+                _corner_buf[7] = [ax, by2, bz2, 1]
+                pts = _corner_buf @ wm
+                np.minimum(bmin, pts[:, :3].min(axis=0), out=bmin)
+                np.maximum(bmax, pts[:, :3].max(axis=0), out=bmax)
+                expanded = True
+        if not expanded:
+            s = t.local_scale
+            half = max(max(abs(s.x), abs(s.y), abs(s.z)) * 0.5, 0.5)
+            bmin = np.array([bx - half, by - half, bz - half])
+            bmax = np.array([bx + half, by + half, bz + half])
+        if bmin_t is None:
+            bmin_t, bmax_t = bmin.copy(), bmax.copy()
+        else:
+            np.minimum(bmin_t, bmin, out=bmin_t)
+            np.maximum(bmax_t, bmax, out=bmax_t)
     if state is None:
         return
     if len(state) < 3:

@@ -141,8 +141,8 @@ class GizmoRenderer:
         self._circle_mesh = make_instance_vao(ctx, prog, make_circle_ring_mesh(ctx, prog))
         self._instanced_initialized = True
 
-    def _build_fatline_buffers(self, capacity: int = 2048):
-        cap = max(capacity, 2048)
+    def _build_fatline_buffers(self, capacity: int = 32768):
+        cap = max(capacity, 32768)
         dummy3 = np.zeros(cap * 3, dtype=np.float32)
         dummy1 = np.zeros(cap, dtype=np.float32)
         dummy4 = np.zeros(cap * 4, dtype=np.float32)
@@ -176,9 +176,15 @@ class GizmoRenderer:
         self._fs_colors = np.empty((cap, 4), dtype=np.float32)
         self._fatline_capacity = cap
 
-    def _build_solid_buffers(self, vcap: int = 512, icap: int = 1024):
-        vcap = max(vcap, 512)
-        icap = max(icap, 1024)
+    def _ensure_fatline_capacity(self, n_verts: int):
+        if n_verts <= self._fatline_capacity:
+            return
+        new_cap = int(n_verts * 1.5 + 4096)
+        self._build_fatline_buffers(new_cap)
+
+    def _build_solid_buffers(self, vcap: int = 4096, icap: int = 8192):
+        vcap = max(vcap, 4096)
+        icap = max(icap, 8192)
         for buf_name in ('_solid_vbo', '_solid_ibo'):
             b = getattr(self, buf_name, None)
             if b is not None:
@@ -246,8 +252,7 @@ class GizmoRenderer:
                 ends_arr = np.repeat(pts[:, 3:], 6, axis=0)
                 ts_arr = np.tile(strip_t, n_segs)
                 side_arr = np.tile(strip_s, n_segs)
-                if n_verts > self._fatline_capacity:
-                    self._build_fatline_buffers(n_verts)
+                self._ensure_fatline_capacity(n_verts)
                 self._fatline_vbo_start.write(starts_arr.tobytes())
                 self._fatline_vbo_end.write(ends_arr.tobytes())
                 self._fatline_vbo_t.write(ts_arr.tobytes())
@@ -288,8 +293,7 @@ class GizmoRenderer:
             prog["u_thickness_ndc_x"] = float(ndc_x)
         if "u_thickness_ndc_y" in prog:
             prog["u_thickness_ndc_y"] = float(ndc_y)
-        if n_verts > self._fatline_capacity:
-            self._build_fatline_buffers(n_verts)
+        self._ensure_fatline_capacity(n_verts)
         sv = self._fs_starts[:n_verts].reshape(-1, 6, 3)
         sv[:] = starts[:, None, :]
         ev = self._fs_ends[:n_verts].reshape(-1, 6, 3)
