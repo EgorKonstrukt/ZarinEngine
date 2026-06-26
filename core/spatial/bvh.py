@@ -134,7 +134,10 @@ class BVH:
         return -1.0 if best_t == float("inf") else best_t
 
     def flatten_for_gpu(self):
+        if hasattr(self, '_gpu_flat') and self._gpu_flat is not None:
+            return self._gpu_flat
         if not self.nodes:
+            self._gpu_flat = None
             return None
         n = len(self.nodes)
         buf = np.zeros((n, 8), dtype=np.float32)
@@ -151,6 +154,7 @@ class BVH:
             else:
                 buf[i, 6] = float(node.left)
                 buf[i, 7] = float(node.right)
+        self._gpu_flat = buf
         return buf
 
     def node_count(self) -> int:

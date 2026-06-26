@@ -237,7 +237,10 @@ class RaytracingRenderer(Component):
             mesh = renderer.get_or_create_mesh(mesh_name, mesh_path, scale, cp, fuvs)
             if not mesh or mesh.vertices is None or len(mesh.vertices) < 3:
                 continue
-            bvh = get_mesh_bvh(mesh.vertices, mesh.indices)
+            bvh = getattr(mesh, '_rt_bvh', None)
+            if bvh is None:
+                bvh = get_mesh_bvh(mesh.vertices, mesh.indices)
+                mesh._rt_bvh = bvh
             if not bvh or not bvh.nodes:
                 continue
 
@@ -301,6 +304,7 @@ class RaytracingRenderer(Component):
                 idx_np[io:io + nt] = idxs + vo
             bvh_flat = bvh.flatten_for_gpu()
             if bo > 0:
+                bvh_flat = bvh_flat.copy()
                 for j in range(nn):
                     if bvh_flat[j, 7] >= 0:
                         bvh_flat[j, 6] += bo
