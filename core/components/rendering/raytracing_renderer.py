@@ -314,8 +314,9 @@ class RaytracingRenderer(Component):
                         self._mat_np[mi, 8] = float(props.get("_EmissionIntensity", 0.0))
                         self._mat_np[mi, 9] = float(props.get("_OcclusionStrength", 1.0))
 
+        _INST_STRIDE = 46
         n_inst = len(instances)
-        self._inst_np = np.empty((n_inst, 40), dtype=np.float32)
+        self._inst_np = np.empty((n_inst, _INST_STRIDE), dtype=np.float32)
         for i, (ent, tr, wm) in enumerate(instances):
             w = wm._d
             inv_w = np.linalg.inv(w)
@@ -330,6 +331,34 @@ class RaytracingRenderer(Component):
             self._inst_np[i, 35] = float(mi)
             self._inst_np[i, 36] = float(tri_counts[i])
             self._inst_np[i, 37] = float(nc)
+            bvh = all_bvhs[i]
+            if bvh and bvh.nodes:
+                root = bvh.nodes[-1]
+                lbmin = root.bmin
+                lbmax = root.bmax
+                corners = np.array([
+                    [lbmin[0], lbmin[1], lbmin[2], 1.0],
+                    [lbmax[0], lbmin[1], lbmin[2], 1.0],
+                    [lbmin[0], lbmax[1], lbmin[2], 1.0],
+                    [lbmax[0], lbmax[1], lbmin[2], 1.0],
+                    [lbmin[0], lbmin[1], lbmax[2], 1.0],
+                    [lbmax[0], lbmin[1], lbmax[2], 1.0],
+                    [lbmin[0], lbmax[1], lbmax[2], 1.0],
+                    [lbmax[0], lbmax[1], lbmax[2], 1.0],
+                ], dtype=np.float32)
+                wc = corners @ w
+                wbmin = wc[:, :3].min(axis=0)
+                wbmax = wc[:, :3].max(axis=0)
+                self._inst_np[i, 38] = wbmin[0]
+                self._inst_np[i, 39] = wbmin[1]
+                self._inst_np[i, 40] = wbmin[2]
+                self._inst_np[i, 41] = wbmax[0]
+                self._inst_np[i, 42] = wbmax[1]
+                self._inst_np[i, 43] = wbmax[2]
+                self._inst_np[i, 44] = 0.0
+                self._inst_np[i, 45] = 0.0
+            else:
+                self._inst_np[i, 38:44] = -1e30, -1e30, -1e30, 1e30, 1e30, 1e30
 
         lights_list = []
         lights_ents = scene.get_entities_with_component(Light)
@@ -441,27 +470,7 @@ class RaytracingRenderer(Component):
             prog["u_light_count"] = self._light_np.shape[0] if self._light_np is not None else 0
             prog["u_max_bounces"] = self._max_bounces
             prog["u_accum_frame"] = self._accum_frame if self._accumulate else 0
-            sdir = (0.0, -0.3, -1.0)
-            scolor = (1.0, 0.95, 0.85)
-            sintensity = 1.0
-            ssize = 0.0008
-            sconv = 0.5
-            for ent in scene.get_entities_with_component(Light):
-                if not ent.active:
-                    continue
-                l = ent.get_component(Light)
-                t = ent.get_component(Transform)
-                if l and l.enabled and t and l.light_type == LightType.DIRECTIONAL:
-                    fwd = t.forward
-                    sdir = (-fwd.x, -fwd.y, -fwd.z)
-                    scolor = (l.color[0], l.color[1], l.color[2])
-                    sintensity = l.intensity
-                    break
-            prog["u_sun_dir"] = sdir
-            prog["u_sun_color"] = scolor
-            prog["u_sun_intensity"] = sintensity
-            prog["u_sun_size"] = ssize
-            prog["u_sun_convergence"] = sconv
+            prog["u_ambient"] = (0.03, 0.03, 0.05)
         except KeyError as e:
             Logger.warning(f"Raytracing uniform missing: {e}")
             return False
@@ -498,7 +507,10 @@ class RaytracingRenderer(Component):
         self._fullscreen_prog["u_tex"].value = 0
         ctx.viewport = (0, 0, width, height)
         ctx.disable(moderngl.DEPTH_TEST)
+        ctx.enable(moderngl.BLEND)
+        ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self._fullscreen_quad.render(moderngl.TRIANGLES)
+        ctx.disable(moderngl.BLEND)
         ctx.enable(moderngl.DEPTH_TEST)
 
     def on_destroy(self):
