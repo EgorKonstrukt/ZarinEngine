@@ -553,12 +553,9 @@ class RaytracingRenderer(Component):
 
         ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
 
-        self._output_tex.build_mipmaps()
-
         if self._accumulate:
             self._accum_frame += 1
 
-        self._output_tex.build_mipmaps()
         return True
 
     def blit_to_screen(self, ctx: moderngl.Context, width: int, height: int):

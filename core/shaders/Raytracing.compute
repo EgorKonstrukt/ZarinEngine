@@ -120,14 +120,12 @@ ComputeShader "Zarin/Raytracing"
         return true;
     }
 
-    bool trace_bvh(vec3 o, vec3 d, int bvh_offset, int idx_offset, out HitInfo hit) {
+    bool trace_bvh(vec3 o, vec3 d, vec3 inv_d, int bvh_offset, int idx_offset, out HitInfo hit) {
         hit.t = 1e30;
         if (bvh_offset < 0) return false;
-        int stack[64];
+        int stack[32];
         int sp = 0;
         stack[sp++] = bvh_offset;
-
-        vec3 inv_d = 1.0 / d;
 
         while (sp > 0) {
             int ni = stack[--sp];
@@ -250,14 +248,17 @@ ComputeShader "Zarin/Raytracing"
             int mat_idx = int(inst_data[ib + 35]);
 
             vec3 local_ro = (inv_wm * vec4(ro, 1.0)).xyz;
-            vec3 local_rd = normalize((inv_wm * vec4(rd, 0.0)).xyz);
+            vec3 local_rd = (inv_wm * vec4(rd, 0.0)).xyz;
+            float local_rd_len = length(local_rd);
+            vec3 local_rd_n = local_rd / local_rd_len;
+            vec3 inv_local_rd = local_rd_len / local_rd;
 
             HitInfo local_hit;
-            if (trace_bvh(local_ro, local_rd, bvh_offset, idx_offset, local_hit)) {
+            if (trace_bvh(local_ro, local_rd_n, inv_local_rd, bvh_offset, idx_offset, local_hit)) {
                 if (local_hit.t < best_t) {
                     best_t = local_hit.t;
                     best_mat = mat_idx;
-                    vec3 local_p = local_ro + local_hit.t * local_rd;
+                    vec3 local_p = local_ro + local_hit.t * local_rd_n;
                     best_pos = (wm * vec4(local_p, 1.0)).xyz;
                     best_N = normalize(transpose(mat3(inv_wm)) * local_hit.normal);
                 }
