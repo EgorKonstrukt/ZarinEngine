@@ -95,6 +95,7 @@ class GizmoData:
     cull_distance: float = -1.0
     on_click: Optional[Callable] = None
     unique_id: Optional[str] = None
+    tag: str = ""
     _screen_pos: Optional[Tuple[int, int]] = None
     height: float = 0.0
     radius_y: float = 0.0
@@ -1077,6 +1078,7 @@ class GizmosManager:
         self.unique_draws: Dict[str, GizmoData] = {}
         self.used_unique_keys: set = set()
         self.enabled: bool = True
+        self.show_in_runtime: bool = True
         self._time: float = 0.0
         self._batches: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
         self._flat_starts = np.empty((0, 3), dtype=np.float32)
@@ -1196,6 +1198,14 @@ class GizmosManager:
     def clear_unique(self):
         with self._lock:
             self.unique_draws.clear()
+            self._revision += 1
+
+    def clear_tag(self, tag: str):
+        with self._lock:
+            old = len(self.persistent_draws)
+            self.persistent_draws[:] = [g for g in self.persistent_draws if g.tag != tag]
+            if len(self.persistent_draws) != old:
+                self._revision += 1
             self._revision += 1
 
     def draw_lines(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray):
@@ -1501,7 +1511,7 @@ def set_gizmos(gm):
 
 
 _PASSTHROUGH = {
-    'clear', 'clear_persistent', 'clear_unique', 'update', 'toggle',
+    'clear', 'clear_persistent', 'clear_unique', 'clear_tag', 'update', 'toggle',
     'set_transform', 'reset_transform', 'push_transform', 'pop_transform',
     'push_style', 'pop_style',
 }
@@ -1518,7 +1528,17 @@ class _GizmosMeta(type):
             fn = getattr(GizmosManager, name, None)
             if fn:
                 return staticmethod(fn)
+        if name in ('show_in_runtime',):
+            if _gizmos_instance:
+                return _gizmos_instance.show_in_runtime
+            return True
         raise AttributeError(f"Gizmos has no attribute '{name}'")
+
+    def __setattr__(cls, name, value):
+        if name in ('show_in_runtime',) and _gizmos_instance is not None:
+            _gizmos_instance.show_in_runtime = value
+            return
+        super().__setattr__(name, value)
 
 class Gizmos(metaclass=_GizmosMeta):
     @staticmethod

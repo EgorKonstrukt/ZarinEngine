@@ -54,6 +54,8 @@ def draw_axis_gizmo_api(vp):
     if world_len < 0.01:
         return
 
+    Gizmos.clear_tag('__axis__')
+
     neg_len = world_len * 0.5
     world_axes = [Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)]
     colors = [(1.0, 0.2, 0.2, 1.0), (0.2, 1.0, 0.2, 1.0), (0.2, 0.4, 1.0, 1.0)]
@@ -71,8 +73,8 @@ def draw_axis_gizmo_api(vp):
         tips.append(tip)
         neg_tips.append(nt)
 
-        Gizmos.draw_line(gizmo_pos, tip, color=col, thickness=2.5)
-        Gizmos.draw_line(gizmo_pos, nt, color=tuple(c * 0.3 for c in col), thickness=1.5)
+        Gizmos.draw_line(gizmo_pos, tip, color=col, thickness=2.5, tag='__axis__')
+        Gizmos.draw_line(gizmo_pos, nt, color=tuple(c * 0.3 for c in col), thickness=1.5, tag='__axis__')
 
     vp._axis_gizmo_tips_world = tips
     vp._axis_gizmo_neg_tips_world = neg_tips

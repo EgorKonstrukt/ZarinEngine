@@ -1275,6 +1275,8 @@ class SceneViewport(QOpenGLWidget):
         gm = self._gizmos_api
         if not gm or not gm.enabled:
             return
+        if self._engine and self._engine.play_mode and not gm.show_in_runtime:
+            return
         starts, ends, colors = gm.build_render_arrays()
         if starts is None:
             return
