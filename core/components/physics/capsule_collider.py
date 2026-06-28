@@ -1,6 +1,7 @@
 from __future__ import annotations
 import math
-from core.ecs import Component, ComponentRegistry
+import numpy as np
+from core.ecs import Component, ComponentRegistry, InstancePrimitive
 from core.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 @ComponentRegistry.register
@@ -30,10 +31,8 @@ class CapsuleCollider(Component):
         self.height: float = 2.0
         self.direction: int = 1
         self.is_trigger: bool = False
-        # ХУЙНЯ: нет material_friction и material_bounciness.
-        # У BoxCollider и SphereCollider есть, у капсулы — похуй.
-        # PhysicsScene._find_shape() для CapsuleCollider не читает friction/restitution,
-        # так что по дефолту 0.6/0.0. Но в инспекторе полей нет — кастомизировать нельзя.
+        self.material_friction: float = 0.6
+        self.material_bounciness: float = 0.0
     @property
     def scaled_radius(self) -> float:
         tr = self.transform
@@ -76,25 +75,31 @@ class CapsuleCollider(Component):
         cc.mask = data.get("mask", 0xFFFF)
         return cc
 
-    def gizmo_primitives(self):
+    def gizmo_instance_data(self):
         tr = self.transform
         if not tr:
             return None
-        from core.math3d import Vec3
-        from editor.gizmo.primitives import capsule_lines
-        c = (self.scaled_center.x, self.scaled_center.y, self.scaled_center.z)
-        color = [0.0, 1.0, 0.0, 0.6]
-        dir_idx = getattr(self, "direction", 1)
-        return capsule_lines(c, self.scaled_radius, self.scaled_height, dir_idx,
-                             color, tr.local_position, tr.local_rotation, Vec3.one())
-
-    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
-        prim = self.gizmo_primitives()
-        if prim is None:
-            return []
-        s, e, c = prim
-        n = s.shape[0]
-        color = [float(c[0, 0]), float(c[0, 1]), float(c[0, 2]), float(c[0, 3])]
-        return [(Vec3(float(s[i, 0]), float(s[i, 1]), float(s[i, 2])),
-                 Vec3(float(e[i, 0]), float(e[i, 1]), float(e[i, 2])),
-                 color) for i in range(n)]
+        dir_idx = self.direction
+        r = self.radius
+        half_h = max(0, self.height * 0.5 - r)
+        sc = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+        sc[dir_idx] = half_h + r
+        sc[(dir_idx + 1) % 3] = r
+        sc[(dir_idx + 2) % 3] = r
+        c = np.array([self.center.x, self.center.y, self.center.z], dtype=np.float32)
+        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
+        import math as m
+        q = tr.local_rotation
+        x, y, z, w = q.x, q.y, q.z, q.w
+        n = m.sqrt(x*x + y*y + z*z + w*w)
+        if n > 1e-10:
+            inv = 1.0/n; x *= inv; y *= inv; z *= inv; w *= inv
+        R = np.array([[1-2*(y*y+z*z), 2*(x*y-w*z), 2*(x*z+w*y)],
+                       [2*(x*y+w*z), 1-2*(x*x+z*z), 2*(y*z-w*x)],
+                       [2*(x*z-w*y), 2*(y*z+w*x), 1-2*(x*x+y*y)]], dtype=np.float32)
+        S = np.array([tr.local_scale.x, tr.local_scale.y, tr.local_scale.z], dtype=np.float32)
+        RS = R * S
+        combined = np.eye(4, dtype=np.float32)
+        combined[:3, :3] = RS * sc
+        combined[:3, 3] = RS @ c + T
+        return InstancePrimitive('capsule', combined.ravel('F'), [0.0, 1.0, 0.0, 0.6])

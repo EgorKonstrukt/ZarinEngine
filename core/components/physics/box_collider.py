@@ -63,43 +63,28 @@ class BoxCollider(Component):
         bc.mask = data.get("mask", 0xFFFF)
         return bc
 
-    def gizmo_primitives(self):
-        tr = self.transform
-        if not tr:
-            return None
-        from core.math3d import Vec3
-        from editor.gizmo.primitives import box_lines
-        c = (self.scaled_center.x, self.scaled_center.y, self.scaled_center.z)
-        sz = (self.scaled_size.x, self.scaled_size.y, self.scaled_size.z)
-        color = [0.0, 1.0, 0.0, 0.6]
-        return box_lines(c, sz, color, tr.local_position, tr.local_rotation, Vec3.one())
-
     def gizmo_instance_data(self):
         tr = self.transform
         if not tr:
             return None
         import numpy as np
-        from editor.gizmo.primitives import _quat_to_mat3
-        R = _quat_to_mat3(tr.local_rotation)
-        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
-        S = np.array([tr.local_scale.x, tr.local_scale.y, tr.local_scale.z], dtype=np.float32)
+        import math as m
         c = np.array([self.center.x, self.center.y, self.center.z], dtype=np.float32)
         h = np.array([self.size.x * 0.5, self.size.y * 0.5, self.size.z * 0.5], dtype=np.float32)
+        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
+        q = tr.local_rotation
+        x, y, z, w = q.x, q.y, q.z, q.w
+        n = m.sqrt(x*x + y*y + z*z + w*w)
+        if n > 1e-10:
+            inv = 1.0/n; x *= inv; y *= inv; z *= inv; w *= inv
+        R = np.array([[1-2*(y*y+z*z), 2*(x*y-w*z), 2*(x*z+w*y)],
+                       [2*(x*y+w*z), 1-2*(x*x+z*z), 2*(y*z-w*x)],
+                       [2*(x*z-w*y), 2*(y*z+w*x), 1-2*(x*x+y*y)]], dtype=np.float32)
+        S = np.array([tr.local_scale.x, tr.local_scale.y, tr.local_scale.z], dtype=np.float32)
         RS = R * S
         combined = np.eye(4, dtype=np.float32)
         combined[:3, :3] = RS * h
         combined[:3, 3] = RS @ c + T
         return InstancePrimitive('box', combined.ravel('F'), [0.0, 1.0, 0.0, 0.6])
-
-    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
-        prim = self.gizmo_primitives()
-        if prim is None:
-            return []
-        s, e, c = prim
-        n = s.shape[0]
-        color = [float(c[0, 0]), float(c[0, 1]), float(c[0, 2]), float(c[0, 3])]
-        return [(Vec3(float(s[i, 0]), float(s[i, 1]), float(s[i, 2])),
-                 Vec3(float(e[i, 0]), float(e[i, 1]), float(e[i, 2])),
-                 color) for i in range(n)]
 
 

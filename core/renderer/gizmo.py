@@ -6,7 +6,9 @@ from core.math3d import Vec3, Mat4
 from core.renderer.gpu_primitives import (
     GpuMesh, make_cone_mesh, make_cylinder_mesh,
     make_cube_mesh, make_quad_mesh, make_circle_ring_mesh, make_instance_vao,
-    make_unit_box_line_verts, make_unit_sphere_line_verts, make_instance_line_vao
+    make_unit_box_line_verts, make_unit_sphere_line_verts,
+    make_unit_rect_line_verts, make_unit_circle_line_verts, make_unit_capsule_line_verts,
+    make_instance_line_vao
 )
 
 _STRIP_T = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
@@ -362,6 +364,9 @@ class GizmoRenderer:
         prog = self._inst_line_prog
         self._box_inst_mesh = make_instance_line_vao(ctx, prog, make_unit_box_line_verts())
         self._sphere_inst_mesh = make_instance_line_vao(ctx, prog, make_unit_sphere_line_verts())
+        self._rect_inst_mesh = make_instance_line_vao(ctx, prog, make_unit_rect_line_verts())
+        self._circle_inst_mesh = make_instance_line_vao(ctx, prog, make_unit_circle_line_verts())
+        self._capsule_inst_mesh = make_instance_line_vao(ctx, prog, make_unit_capsule_line_verts())
         self._inst_line_initialized = True
 
     def _ensure_inst_line_prog(self):
@@ -434,6 +439,9 @@ void main() {
         mesh_map = {
             'box': self._box_inst_mesh,
             'sphere': self._sphere_inst_mesh,
+            'rect': self._rect_inst_mesh,
+            'circle': self._circle_inst_mesh,
+            'capsule': self._capsule_inst_mesh,
         }
         mesh = mesh_map.get(shape_type)
         if mesh is None or mesh.instance_vbo is None or num_instances == 0:
@@ -568,7 +576,7 @@ void main() {
         if self._instanced_prog:
             try: self._instanced_prog.release()
             except: pass
-        for mesh_name in ('_box_inst_mesh', '_sphere_inst_mesh'):
+        for mesh_name in ('_box_inst_mesh', '_sphere_inst_mesh', '_rect_inst_mesh', '_circle_inst_mesh', '_capsule_inst_mesh'):
             m = getattr(self, mesh_name, None)
             if m is not None:
                 if m.vao:

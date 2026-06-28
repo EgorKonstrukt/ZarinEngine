@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+import numpy as np
 from core.ecs import Component, ComponentRegistry, InstancePrimitive
 from core.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
@@ -41,44 +42,29 @@ class SphereCollider(Component):
         s = tr.local_scale if tr else Vec3.one()
         c = self.center if isinstance(self.center, Vec3) else Vec3(*self.center)
         return Vec3(c.x * s.x, c.y * s.y, c.z * s.z)
-    def gizmo_primitives(self):
-        tr = self.transform
-        if not tr:
-            return None
-        from core.math3d import Vec3
-        from editor.gizmo.primitives import sphere_rings
-        c = (self.scaled_center.x, self.scaled_center.y, self.scaled_center.z)
-        color = [0.0, 1.0, 0.0, 0.6]
-        return sphere_rings(c, self.scaled_radius, color, tr.local_position, tr.local_rotation, Vec3.one())
 
     def gizmo_instance_data(self):
         tr = self.transform
         if not tr:
             return None
-        import numpy as np
-        from editor.gizmo.primitives import _quat_to_mat3
-        R = _quat_to_mat3(tr.local_rotation)
-        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
         sc = tr.local_scale
         max_s = max(sc.x, sc.y, sc.z)
         c = self.center
         scaled_c = np.array([c.x * sc.x, c.y * sc.y, c.z * sc.z], dtype=np.float32)
         r = self.radius * max_s
+        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
+        q = tr.local_rotation
+        x, y, z, w = q.x, q.y, q.z, q.w
+        n = math.sqrt(x*x + y*y + z*z + w*w)
+        if n > 1e-10:
+            inv = 1.0/n; x *= inv; y *= inv; z *= inv; w *= inv
+        R = np.array([[1-2*(y*y+z*z), 2*(x*y-w*z), 2*(x*z+w*y)],
+                       [2*(x*y+w*z), 1-2*(x*x+z*z), 2*(y*z-w*x)],
+                       [2*(x*z-w*y), 2*(y*z+w*x), 1-2*(x*x+y*y)]], dtype=np.float32)
         combined = np.eye(4, dtype=np.float32)
         combined[:3, :3] = R * r
         combined[:3, 3] = R @ scaled_c + T
         return InstancePrimitive('sphere', combined.ravel('F'), [0.0, 1.0, 0.0, 0.6])
-
-    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
-        prim = self.gizmo_primitives()
-        if prim is None:
-            return []
-        s, e, c = prim
-        n = s.shape[0]
-        color = [float(c[0, 0]), float(c[0, 1]), float(c[0, 2]), float(c[0, 3])]
-        return [(Vec3(float(s[i, 0]), float(s[i, 1]), float(s[i, 2])),
-                 Vec3(float(e[i, 0]), float(e[i, 1]), float(e[i, 2])),
-                 color) for i in range(n)]
 
     def serialize(self) -> dict:
         d = super().serialize()

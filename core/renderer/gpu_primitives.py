@@ -210,6 +210,46 @@ def make_unit_sphere_line_verts(segments: int = 24) -> np.ndarray:
     return _build_unit_line_verts(all_starts, all_ends)
 
 
+def make_unit_rect_line_verts() -> np.ndarray:
+    starts = np.array([[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]], dtype=np.float32)
+    ends   = np.array([[1,-1,0],[1,1,0],[-1,1,0],[-1,-1,0]], dtype=np.float32)
+    return _build_unit_line_verts(starts, ends)
+
+
+def make_unit_circle_line_verts(segments: int = 24) -> np.ndarray:
+    theta = np.linspace(0, 2*np.pi, segments+1, dtype=np.float32)
+    pts = np.zeros((segments+1, 3), dtype=np.float32)
+    pts[:, 0] = np.cos(theta); pts[:, 1] = np.sin(theta)
+    starts = pts[:-1]; ends = pts[1:]
+    return _build_unit_line_verts(starts, ends)
+
+
+def make_unit_capsule_line_verts(segments: int = 24) -> np.ndarray:
+    r = 1.0; half_h = 1.0
+    theta = np.linspace(0, 2*np.pi, segments+1, dtype=np.float32)
+    ct = np.cos(theta); st = np.sin(theta)
+    total_segs = segments * 4 + 8
+    all_starts = np.empty((total_segs, 3), dtype=np.float32)
+    all_ends = np.empty((total_segs, 3), dtype=np.float32)
+    idx = 0
+    for ring_axis in (0, 2):
+        if ring_axis == 0:
+            u = np.array([0,1,0], dtype=np.float32); v = np.array([0,0,1], dtype=np.float32)
+        else:
+            u = np.array([1,0,0], dtype=np.float32); v = np.array([0,1,0], dtype=np.float32)
+        for y_pos in (-half_h, half_h):
+            pts = u * ct[:,None] + v * st[:,None]
+            pts[:, 1] += y_pos
+            n = segments
+            all_starts[idx:idx+n] = pts[:-1]; all_ends[idx:idx+n] = pts[1:]; idx += n
+    theta8 = np.linspace(0, 2*np.pi, 9, dtype=np.float32)[:-1]
+    ct8 = np.cos(theta8); st8 = np.sin(theta8)
+    for i in range(8):
+        all_starts[idx+i] = [ct8[i], half_h, st8[i]]
+        all_ends[idx+i]   = [ct8[i], -half_h, st8[i]]
+    return _build_unit_line_verts(all_starts, all_ends)
+
+
 def make_instance_line_vao(ctx: moderngl.Context, prog: moderngl.Program,
                             unit_verts: np.ndarray, max_instances: int = 512) -> GpuMesh:
     static_vbo = ctx.buffer(unit_verts.tobytes())
