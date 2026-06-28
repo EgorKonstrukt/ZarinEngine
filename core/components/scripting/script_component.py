@@ -74,8 +74,16 @@ class ScriptComponent(Component):
     def _load_script_class(self):
         if not self.script_path:
             return
+        script_path = self.script_path
+        if not os.path.isabs(script_path) and not os.path.exists(script_path):
+            from core.engine import Engine
+            eng = Engine.instance()
+            if eng is not None:
+                candidate = os.path.normpath(os.path.join(eng.project_root, script_path))
+                if os.path.exists(candidate):
+                    script_path = candidate
         try:
-            spec = importlib.util.spec_from_file_location("_user_script_inspect", self.script_path)
+            spec = importlib.util.spec_from_file_location("_user_script_inspect", script_path)
             if spec is None:
                 Logger.warning(f"Script inspect spec is None for '{self.script_path}'")
                 return

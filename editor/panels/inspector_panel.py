@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from core.engine import Engine
 
 from core.editor_scale import scale, scale_xy
-_PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)))
+_PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 _FUSION_BG = "#1e1e1e"
 _FUSION_BG_CARD = "#252525"
@@ -2511,12 +2511,21 @@ class ComponentPickerDialog(QDialog):
         self._list.itemSelectionChanged.connect(self._on_selection_changed)
 
     def _get_available_scripts(self) -> list[dict]:
-        scripts_dir = os.path.join(_PROJECT_ROOT, "..", "assets", "scripts")
-        scripts_dir = os.path.normpath(scripts_dir)
+        from core.engine import Engine
+        eng = Engine.instance()
+        project_root = eng.project_root if eng is not None else _PROJECT_ROOT
+        for candidate in (
+            os.path.join(project_root, "assets", "scripts"),
+            os.path.join(project_root, "scripts"),
+        ):
+            scripts_dir = os.path.normpath(candidate)
+            if os.path.isdir(scripts_dir):
+                break
+        else:
+            return []
         results = []
-        if not os.path.isdir(scripts_dir):
-            return results
         for root, dirs, files in os.walk(scripts_dir):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
             for f in sorted(files):
                 if f.endswith(".py") and not f.startswith("__"):
                     full = os.path.join(root, f)

@@ -128,10 +128,21 @@ def _quat_to_mat3(rot: Tuple[float, float, float, float]) -> np.ndarray:
     ], dtype=np.float32)
 
 
+def _euler_to_mat3(rot: Tuple[float, float, float]) -> np.ndarray:
+    cx, cy, cz = (math.cos(math.radians(a)) for a in rot)
+    sx, sy, sz = (math.sin(math.radians(a)) for a in rot)
+    Rx = np.array([[1,0,0],[0,cx,-sx],[0,sx,cx]], dtype=np.float32)
+    Ry = np.array([[cy,0,sy],[0,1,0],[-sy,0,cy]], dtype=np.float32)
+    Rz = np.array([[cz,-sz,0],[sz,cz,0],[0,0,1]], dtype=np.float32)
+    return Rz @ Ry @ Rx
+
 def _apply_rotation(pts: np.ndarray, rot: Optional[Tuple[float, float, float, float]]) -> np.ndarray:
     if rot is None:
         return pts
-    R = _quat_to_mat3(rot)
+    if len(rot) == 3:
+        R = _euler_to_mat3(rot)
+    else:
+        R = _quat_to_mat3(rot)
     return pts @ R
 
 
@@ -318,7 +329,7 @@ def _build_capsule(g: GizmoData):
     p2 = axis.cross(p1).normalized()
     theta = np.linspace(0, 2.0 * math.pi, segs + 1, dtype=np.float32)
     ct = np.cos(theta) * r; st = np.sin(theta) * r
-    n_verts = (segs + 1) * 4 + segs * 2 + 2
+    n_verts = 3 * segs + 2 * segs * (segs // 2)
     starts = np.empty((n_verts, 3), dtype=np.float32)
     ends = np.empty((n_verts, 3), dtype=np.float32)
     idx = 0
@@ -404,7 +415,7 @@ def _build_cone(g: GizmoData):
     base[:, 0] = p[0] + p1.x*ct + p2.x*st
     base[:, 1] = p[1] + p1.y*ct + p2.y*st
     base[:, 2] = p[2] + p1.z*ct + p2.z*st
-    total = segs * 2 + segs
+    total = segs * 2
     starts = np.empty((total, 3), dtype=np.float32); ends = np.empty((total, 3), dtype=np.float32)
     starts[:segs] = base[:-1]; ends[:segs] = base[1:]
     starts[segs:2*segs] = base[:-1]; ends[segs:2*segs] = tip
@@ -710,7 +721,7 @@ def _build_spline(g: GizmoData):
     p = np.array(pts, dtype=np.float32)
     n = len(p)
     total_segs = (n - 1) * segs
-    t = np.linspace(0, 1, segs + 1, dtype=np.float32)
+    t = np.linspace(0, 1, segs + 1, dtype=np.float32)[:, None]
     result = np.empty((total_segs + 1, 3), dtype=np.float32)
     idx = 0
     for i in range(n - 1):
@@ -811,7 +822,7 @@ def _build_torus(g: GizmoData):
     phi = np.linspace(0, 2.0*math.pi, segs_minor+1, dtype=np.float32)
     ct, st = np.cos(theta), np.sin(theta)
     cp, sp = np.cos(phi), np.sin(phi)
-    total = segs_major * segs_minor * 2 + segs_major * segs_minor
+    total = segs_major * segs_minor * 2
     starts = np.empty((total, 3), dtype=np.float32)
     ends = np.empty((total, 3), dtype=np.float32)
     idx = 0
@@ -1048,7 +1059,7 @@ def _build_pyramid(g: GizmoData):
     base[:, 0] = p[0] + p1.x*ct + p2.x*st
     base[:, 1] = p[1] + p1.y*ct + p2.y*st
     base[:, 2] = p[2] + p1.z*ct + p2.z*st
-    total = segs*2 + segs
+    total = segs * 2
     starts = np.empty((total, 3), dtype=np.float32); ends = np.empty((total, 3), dtype=np.float32)
     for i in range(segs):
         j = (i+1)%segs
@@ -1102,6 +1113,12 @@ class GizmosManager:
         self.draws.clear()
         self._batches.clear()
         self._flat_size = 0
+
+    def toggle(self, visible: bool = None):
+        if visible is not None:
+            self.enabled = visible
+        else:
+            self.enabled = not self.enabled
 
     def clear_persistent(self):
         self.persistent_draws.clear()
@@ -1248,7 +1265,7 @@ class GizmosManager:
         self._draw_gizmo(GizmoType.SPHERE, center, size=radius, color=color, filled=filled, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
     def draw_box(self, center, size=(1,1,1), color='white', filled=False, thickness=1.0, rotation=None, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
-        self._draw_gizmo(GizmoType.BOX, center, size=size, color=color, filled=filled, thickness=thickness, rotation=self._resolve_pos(rotation) if rotation else None, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
+        self._draw_gizmo(GizmoType.BOX, center, size=size, color=color, filled=filled, thickness=thickness, rotation=rotation, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
     def draw_arc(self, center, normal=(0,1,0), radius=1.0, angle_start=0.0, angle_end=360.0, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
         self._draw_gizmo(GizmoType.ARC, center, normal=self._resolve_pos(normal), size=radius, color=color, angle_start=angle_start, angle_end=angle_end, segments=segments, thickness=thickness, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
@@ -1296,13 +1313,13 @@ class GizmosManager:
         self._draw_gizmo(GizmoType.POLY, (cx, cy, cz), points=pts, color=color, filled=filled, thickness=thickness, duration=duration, layer=layer, world_space=world_space, **kw)
 
     def draw_cylinder(self, center, direction=(0,1,0), height=1.0, radius=0.5, color='white', filled=False, thickness=1.0, rotation=None, segments=32, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
-        self._draw_gizmo(GizmoType.CYLINDER, center, normal=self._resolve_pos(direction), size=radius, height=height, color=color, filled=filled, thickness=thickness, segments=segments, rotation=self._resolve_pos(rotation) if rotation else None, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
+        self._draw_gizmo(GizmoType.CYLINDER, center, normal=self._resolve_pos(direction), size=radius, height=height, color=color, filled=filled, thickness=thickness, segments=segments, rotation=rotation, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
     def draw_ellipse(self, center, normal=(0,1,0), radius_x=1.0, radius_y=0.5, color='white', thickness=1.0, segments=32, filled=False, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
         self._draw_gizmo(GizmoType.ELLIPSE, center, normal=self._resolve_pos(normal), size=radius_x, radius_y=radius_y, color=color, thickness=thickness, segments=segments, filled=filled, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
     def draw_rect(self, center, size=(1.0, 1.0), normal=(0, 0, 1), color='white', filled=False, thickness=1.0, rotation=None, duration=0.0, layer=0, world_space=True, cull_distance=-1.0, **kw):
-        self._draw_gizmo(GizmoType.RECT, center, size=size, normal=self._resolve_pos(normal), color=color, filled=filled, thickness=thickness, rotation=self._resolve_pos(rotation) if rotation else None, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
+        self._draw_gizmo(GizmoType.RECT, center, size=size, normal=self._resolve_pos(normal), color=color, filled=filled, thickness=thickness, rotation=rotation, duration=duration, layer=layer, world_space=world_space, cull_distance=cull_distance, **kw)
 
     def draw_ray(self, origin, direction, length=1.0, color='white', thickness=1.0, arrow_size=0.2, duration=0.0, layer=0, world_space=True, **kw):
         d = self._resolve_pos(direction)
@@ -1412,7 +1429,7 @@ def set_gizmos(gm):
 
 
 _PASSTHROUGH = {
-    'clear', 'clear_persistent', 'clear_unique', 'toggle', 'update',
+    'clear', 'clear_persistent', 'clear_unique', 'update', 'toggle',
     'set_transform', 'reset_transform', 'push_transform', 'pop_transform',
     'push_style', 'pop_style',
 }

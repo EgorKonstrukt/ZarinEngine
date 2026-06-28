@@ -545,9 +545,12 @@ class _PopulateWorker(QThread):
         self._filter_text = filter_text
 
     def run(self):
+        _skip_dirs = {"build", "build_output", ".git", ".idea", "__pycache__",
+                       "node_modules", ".venv", "venv", "tools", ".pytest_cache",
+                       "core", "editor", "physics_solvers"}
         items_data = []
         for root, dirs, files in os.walk(self._project_root):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
+            dirs[:] = [d for d in dirs if d not in _skip_dirs and not d.startswith(".")]
             for f in sorted(files):
                 if f.startswith("."):
                     continue
@@ -825,9 +828,14 @@ class ResourcePickerDialog(QDialog):
         return self._selected_path
 
 def pick_resource(parent, title: str, filter_str: str, current_path: str = "",
-                  project_root: str = ".") -> Optional[str]:
-    if current_path and os.path.exists(current_path):
-        project_root = os.path.dirname(current_path)
+                  project_root: str = "") -> Optional[str]:
+    if not project_root:
+        from core.engine import Engine
+        eng = Engine.instance()
+        if eng is not None:
+            project_root = eng.project_root
+        else:
+            project_root = os.getcwd()
     dlg = ResourcePickerDialog(title, filter_str, project_root, parent)
     if dlg.exec() == QDialog.DialogCode.Accepted:
         return dlg.selected_path()
