@@ -1112,10 +1112,6 @@ class GizmosManager:
     def update(self, dt: float):
         with self._lock:
             self._time += dt
-            old_len = len(self.draws)
-            self.draws = [g for g in self.draws if g.duration <= 0 or self._time - g.duration < 1.0]
-            if len(self.draws) != old_len:
-                self._revision += 1
             old_unique = len(self.unique_draws)
             for key in set(self.unique_draws.keys()) - self.used_unique_keys:
                 del self.unique_draws[key]
@@ -1123,25 +1119,23 @@ class GizmosManager:
                 self._revision += 1
             self.used_unique_keys.clear()
 
+    def _clear_cache(self):
+        self._cache_starts = None
+        self._cache_ends = None
+        self._cache_colors = None
+        self._cached_revision = -1
+
     def build_render_arrays(self):
         with self._lock:
-            if self._revision == self._cached_revision and self._cache_starts is not None:
-                return (self._cache_starts, self._cache_ends, self._cache_colors)
-            all_g = []
+            gizmos = list(self.persistent_draws)
+            if self.unique_draws:
+                gizmos.extend(self.unique_draws.values())
             np_data_copies = None
             enabled = self.enabled
             if enabled:
-                if self.unique_draws:
-                    all_g.extend(self.unique_draws.values())
-                if self.draws:
-                    all_g.extend(self.draws)
-                if self.persistent_draws:
-                    all_g.extend(self.persistent_draws)
                 np_data = self._get_render_data()
                 if np_data is not None:
                     np_data_copies = (np.copy(np_data[0]), np.copy(np_data[1]), np.copy(np_data[2]))
-            current_revision = self._revision
-            self.draws.clear()
             self._batches.clear()
             self._flat_size = 0
         s_list = []
@@ -1152,7 +1146,7 @@ class GizmosManager:
                 s_list.append(np_data_copies[0])
                 e_list.append(np_data_copies[1])
                 c_list.append(np_data_copies[2])
-            for g in all_g:
+            for g in gizmos:
                 builder = _GIZMO_LINE_BUILDERS.get(g.gizmo_type)
                 if builder is None:
                     continue
@@ -1170,18 +1164,13 @@ class GizmosManager:
                     e_list.append(e)
                     c_list.append(c)
         if s_list:
-            self._cache_starts = np.concatenate(s_list)
-            self._cache_ends = np.concatenate(e_list)
-            self._cache_colors = np.concatenate(c_list)
-        else:
-            self._cache_starts = None
-            self._cache_ends = None
-            self._cache_colors = None
-        with self._lock:
-            self._cached_revision = current_revision
-        return (self._cache_starts, self._cache_ends, self._cache_colors)
+            if len(s_list) == 1:
+                return (s_list[0], e_list[0], c_list[0])
+            return (np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list))
+        return (None, None, None)
 
     def _clear_internal(self):
+        self.persistent_draws.clear()
         self.draws.clear()
         self._batches.clear()
         self._flat_size = 0
@@ -1190,6 +1179,7 @@ class GizmosManager:
         with self._lock:
             self._clear_internal()
             self._revision += 1
+            self._clear_cache()
 
     def toggle(self, visible: bool = None):
         with self._lock:
@@ -1249,10 +1239,7 @@ class GizmosManager:
             elif hasattr(g, k):
                 setattr(g, k, v)
         with self._lock:
-            if g.duration < 0:
-                self.persistent_draws.append(g)
-            else:
-                self.draws.append(g)
+            self.persistent_draws.append(g)
             self._revision += 1
 
     def _resolve_color(self, color) -> Tuple[float, float, float, float]:

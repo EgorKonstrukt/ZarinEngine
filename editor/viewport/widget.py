@@ -499,7 +499,8 @@ class SceneViewport(QOpenGLWidget):
                 self._update_editor_particles(dt, self._selected_entities)
             send_collab_camera(self)
             self._cam.update(dt)
-            self._gizmos_api.update(dt)
+            with eng._scene_lock:
+                self._gizmos_api.update(dt)
         self._update_status_labels()
         prof = eng._profiler if hasattr(eng, '_profiler') else None
         in_frame = prof is not None and len(prof._stack) > 0 and prof._stack[0][0] == "frame"
@@ -551,8 +552,9 @@ class SceneViewport(QOpenGLWidget):
                     self._debug_lines.clear()
                 if self._show_bvh_debug:
                     self._render_bvh_debug()
-                draw_axis_gizmo_api(self)
-                self._render_api_gizmos()
+                with eng._scene_lock:
+                    draw_axis_gizmo_api(self)
+                    self._render_api_gizmos()
                 if self._pb_scale_gizmo and self._pb_scale_gizmo.active:
                     self._pb_scale_gizmo.render()
                 if in_frame:
@@ -650,7 +652,8 @@ class SceneViewport(QOpenGLWidget):
         prof.start("cam_update")
         self._cam.update(dt)
         prof.stop("cam_update")
-        self._gizmos_api.update(dt)
+        with eng._scene_lock:
+            self._gizmos_api.update(dt)
         prof.stop("logic_update")
         prof.start("render_widget")
         if self.isVisible():
