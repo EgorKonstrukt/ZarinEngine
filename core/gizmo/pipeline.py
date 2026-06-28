@@ -3,7 +3,7 @@ import math
 import numpy as np
 from typing import List, Tuple
 from core.ecs import GizmoPrimitive, GizmoStyle, InstancePrimitive
-from editor.gizmo.api import Gizmos
+from core.gizmo.api import Gizmos
 
 
 class GizmoPipeline:

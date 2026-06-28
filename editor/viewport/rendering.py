@@ -5,7 +5,7 @@ import numpy as np
 from core.math3d import Mat4, Vec3
 from core.config import get_global_config
 from core.ecs import _GIZMO_PASSES, _GIZMO_PASS_ORDER, Component
-from editor.gizmo.pipeline import GizmoPipeline
+from core.gizmo.pipeline import GizmoPipeline
 
 
 def render_component_gizmos(vp, vp_mat: Mat4):

@@ -18,8 +18,8 @@ from PyQt6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent, QSurfaceFormat
 from core.math3d import Vec3, Mat4, Quat
 from core.logger import Logger
 from editor.scene_camera import SceneCamera
-from editor.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
-from editor.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS, _apply_line_style, LineStyle
+from core.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
+from core.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS, _apply_line_style, LineStyle
 from editor.gizmo.pb_scale_gizmo import PbScaleGizmo
 from core.input_system import Input, KeyCode
 from core.input.input_manager import InputManager

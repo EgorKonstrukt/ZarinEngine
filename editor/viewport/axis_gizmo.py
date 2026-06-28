@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPainterPath, QFontMetrics
 
 from core.math3d import Vec3
-from editor.gizmo.api import Gizmos
+from core.gizmo.api import Gizmos
 
 
 def _get_gizmo_world_pos(vp):

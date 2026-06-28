@@ -3,7 +3,7 @@ from core.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import (QToolBar, QLabel, QPushButton, QCheckBox,
                              QDoubleSpinBox, QComboBox, QFrame)
 from PyQt6.QtCore import pyqtSignal
-from editor.gizmo.gizmo import GizmoMode, GizmoSpace
+from core.gizmo.gizmo import GizmoMode, GizmoSpace
 from editor.renderer import RenderMode
 class SceneToolbar(QToolBar):
     gizmo_mode_changed = pyqtSignal(object)
