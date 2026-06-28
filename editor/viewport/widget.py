@@ -36,6 +36,7 @@ from editor.viewport.rendering import (
     render_audio_source_gizmos,
     render_reverb_zone_gizmos,
     render_script_gizmos,
+    render_nav_agent_gizmos,
     render_selection_bounds,
 )
 from editor.viewport.component_icons import render_component_icons_gl
@@ -545,6 +546,7 @@ class SceneViewport(QOpenGLWidget):
                         render_audio_source_gizmos(self, vp_mat)
                         render_reverb_zone_gizmos(self, vp_mat)
                         render_script_gizmos(self, vp_mat)
+                        render_nav_agent_gizmos(self, vp_mat)
                 if in_frame:
                     prof.stop("gizmo_wireframes")
                 with eng._scene_lock:

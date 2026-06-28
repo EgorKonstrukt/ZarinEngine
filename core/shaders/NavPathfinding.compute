@@ -1,0 +1,54 @@
+ComputeShader "Zarin/NavPathfinding"
+{
+    Properties
+    {
+        _GridSize("Grid Size", Int) = 48
+        _WorldSize("World Size", Float) = 500.0
+    }
+
+    GLSLPROGRAM
+    #version 460 core
+    layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+    layout(std430, binding = 0) readonly buffer Grid { uint grid[]; };
+    layout(std430, binding = 1) buffer Distances { uint dist[]; };
+    layout(std430, binding = 2) readonly buffer Params {
+        uint dim_x;
+        uint dim_y;
+        uint dim_z;
+        uint _pad0;
+        uint start_idx;
+        uint end_idx;
+        float cell_size;
+    };
+    layout(std430, binding = 3) buffer Flag { uint updated; };
+
+    void main() {
+        ivec3 gid = ivec3(gl_GlobalInvocationID.xyz);
+        if (gid.x >= dim_x || gid.y >= dim_y || gid.z >= dim_z) return;
+
+        uint idx = gid.x + gid.y * dim_x + gid.z * dim_x * dim_y;
+        uint d = dist[idx];
+        if (d == 0xFFFFFFFFu) return;
+
+        ivec3 offsets[6] = ivec3[6](
+            ivec3(1,0,0), ivec3(-1,0,0),
+            ivec3(0,1,0), ivec3(0,-1,0),
+            ivec3(0,0,1), ivec3(0,0,-1)
+        );
+
+        for (int i = 0; i < 6; i++) {
+            ivec3 np = gid + offsets[i];
+            if (np.x < 0 || np.x >= int(dim_x)) continue;
+            if (np.y < 0 || np.y >= int(dim_y)) continue;
+            if (np.z < 0 || np.z >= int(dim_z)) continue;
+            uint nidx = uint(np.x) + uint(np.y) * dim_x + uint(np.z) * dim_x * dim_y;
+            if (grid[nidx] != 0u) continue;
+            uint old = atomicMin(dist[nidx], d + 1u);
+            if (old > d + 1u) {
+                atomicOr(updated, 1u);
+            }
+        }
+    }
+    ENDGLSL
+}

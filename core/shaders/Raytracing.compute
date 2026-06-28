@@ -98,7 +98,8 @@ ComputeShader "Zarin/Raytracing"
         float tmin = max(max(tmin_v.x, tmin_v.y), tmin_v.z);
         float tmax = min(min(tmax_v.x, tmax_v.y), tmax_v.z);
         if (tmin > tmax) return -1.0;
-        return tmin > 0.0 ? tmin : (tmax > 0.0 ? tmax : -1.0);
+        if (tmax <= 0.0) return -1.0;
+        return tmin > 0.0 ? tmin : 0.0;
     }
 
     bool moller_trumbore(vec3 o, vec3 d, vec3 v0, vec3 v1, vec3 v2, out float t, out vec2 bary) {

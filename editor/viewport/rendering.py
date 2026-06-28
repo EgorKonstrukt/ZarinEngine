@@ -496,6 +496,25 @@ def render_script_gizmos(vp, vp_mat: Mat4):
         vp._renderer.render_gizmo_meshes(meshes, vp_mat)
 
 
+def render_nav_agent_gizmos(vp, vp_mat: Mat4):
+    scene = vp._engine.scene if vp._engine else None
+    if not scene:
+        return
+    from core.components.navigation.nav_agent import NavAgent
+    lines = []
+    for entity in scene.get_entities_with_component(NavAgent):
+        if not entity.active:
+            continue
+        for c in entity.get_components(NavAgent):
+            try:
+                lns = c.gizmo_lines()
+                if lns:
+                    lines.extend(lns)
+            except Exception:
+                pass
+    _submit_lines_fast(lines)
+
+
 _BOX_EDGE_IDXS = np.array([
     [0,1],[1,2],[2,3],[3,0],
     [4,5],[5,6],[6,7],[7,4],
