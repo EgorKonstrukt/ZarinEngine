@@ -142,3 +142,90 @@ def make_line_vao(ctx: moderngl.Context, prog: moderngl.Program) -> GpuMesh:
     vbo = ctx.buffer(reserve=0, dynamic=True)
     vao = ctx.vertex_array(prog, [(vbo, VERT_FORMAT, *VERT_ATTRS)])
     return GpuMesh(vao=vao, vbo=vbo, vertex_count=0)
+
+
+_INST_LINE_STRIDE_T = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
+_INST_LINE_STRIDE_S = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0], dtype=np.float32)
+
+INST_LINE_ATTRS = ("a_unit_start", "a_unit_end", "a_t", "a_side")
+INST_LINE_FORMAT = "3f 3f 1f 1f"
+INST_LINE_STRIDE = 8 * 4  # 8 floats per vertex
+
+INST_INST_FORMAT = "4f 4f 4f 4f 4f /i"
+INST_INST_ATTRS = ("i_row0", "i_row1", "i_row2", "i_row3", "i_color")
+INST_INST_STRIDE = 20 * 4
+
+
+def _build_unit_line_verts(starts: np.ndarray, ends: np.ndarray) -> np.ndarray:
+    n_segs = starts.shape[0]
+    n_verts = n_segs * 6
+    verts = np.empty((n_verts, 8), dtype=np.float32)
+    verts[:, :3] = np.repeat(starts, 6, axis=0)
+    verts[:, 3:6] = np.repeat(ends, 6, axis=0)
+    verts[:, 6] = np.tile(_INST_LINE_STRIDE_T, n_segs)
+    verts[:, 7] = np.tile(_INST_LINE_STRIDE_S, n_segs)
+    return verts
+
+
+_BOX_CORNERS = np.array([
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],
+], dtype=np.float32)
+
+_BOX_EDGES = np.array([
+    (0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)
+], dtype=np.int32)
+
+
+def make_unit_box_line_verts() -> np.ndarray:
+    starts = _BOX_CORNERS[_BOX_EDGES[:, 0]]
+    ends = _BOX_CORNERS[_BOX_EDGES[:, 1]]
+    return _build_unit_line_verts(starts, ends)
+
+
+def make_unit_sphere_line_verts(segments: int = 24) -> np.ndarray:
+    theta = np.linspace(0, 2 * np.pi, segments + 1, dtype=np.float32)
+    ct = np.cos(theta); st = np.sin(theta)
+    all_starts = np.empty((segments * 3, 3), dtype=np.float32)
+    all_ends = np.empty((segments * 3, 3), dtype=np.float32)
+
+    base = np.zeros((segments, 3), dtype=np.float32)
+    base[:, 1] = ct[:-1]; base[:, 2] = st[:-1]
+    all_starts[:segments] = base
+    base[:, 1] = ct[1:]; base[:, 2] = st[1:]
+    all_ends[:segments] = base
+
+    base = np.zeros((segments, 3), dtype=np.float32)
+    base[:, 0] = ct[:-1]; base[:, 2] = st[:-1]
+    all_starts[segments:2*segments] = base
+    base[:, 0] = ct[1:]; base[:, 2] = st[1:]
+    all_ends[segments:2*segments] = base
+
+    base = np.zeros((segments, 3), dtype=np.float32)
+    base[:, 0] = ct[:-1]; base[:, 1] = st[:-1]
+    all_starts[2*segments:3*segments] = base
+    base[:, 0] = ct[1:]; base[:, 1] = st[1:]
+    all_ends[2*segments:3*segments] = base
+
+    return _build_unit_line_verts(all_starts, all_ends)
+
+
+def make_instance_line_vao(ctx: moderngl.Context, prog: moderngl.Program,
+                            unit_verts: np.ndarray, max_instances: int = 512) -> GpuMesh:
+    static_vbo = ctx.buffer(unit_verts.tobytes())
+    instance_vbo = ctx.buffer(reserve=INST_INST_STRIDE * max_instances, dynamic=True)
+    vao = ctx.vertex_array(
+        prog,
+        [
+            (static_vbo, INST_LINE_FORMAT, *INST_LINE_ATTRS),
+            (instance_vbo, INST_INST_FORMAT, *INST_INST_ATTRS),
+        ]
+    )
+    return GpuMesh(
+        vao=vao,
+        vbo=static_vbo,
+        instance_vbo=instance_vbo,
+        vertex_count=unit_verts.shape[0],
+        instance_stride=INST_INST_STRIDE,
+        num_instances=0,
+    )

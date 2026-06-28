@@ -1,12 +1,17 @@
 from __future__ import annotations
 import uuid
 from collections import deque
+from dataclasses import dataclass, field
 from typing import Any, Type, TypeVar, Optional
+import numpy as np
 from core.spatial import Octree, AABB
 
 T = TypeVar("T", bound="Component")
 
 _UNSET = object()
+
+_GIZMO_PASSES: dict[str, list[type[Component]]] = {}
+_GIZMO_PASS_ORDER: list[str] = ["collider", "particle", "camera", "audio", "script", "nav"]
 
 
 def _get_engine():
@@ -29,11 +34,17 @@ class Component:
     _gizmo_icon_path: Optional[str] = None
     _show_gizmo_icon: bool = True
     _transform: Any = _UNSET
+    _gizmo_pass: str = ""
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls._updates = cls.on_update is not Component.on_update
         cls._fixed_updates = cls.on_fixed_update is not Component.on_fixed_update
+        pname = cls.__dict__.get('_gizmo_pass', '')
+        if pname:
+            if pname not in _GIZMO_PASSES:
+                _GIZMO_PASSES[pname] = []
+            _GIZMO_PASSES[pname].append(cls)
 
     def on_awake(self): pass
     def on_start(self): pass
@@ -74,7 +85,45 @@ class Component:
     def gizmo_lines(self) -> list[tuple[Any, Any, list[float]]]:
         return []
 
+    def gizmo_primitives(self):
+        return None
+
+    def gizmo_instance_data(self):
+        return None
+
     def gizmo_meshes(self) -> list[tuple[list, list, list]]:
+        return []
+
+    def gizmo(self):
+        prims = self.gizmo_primitives()
+        if prims is not None:
+            s, e, c = prims
+            if s.shape[0] > 0:
+                return [GizmoPrimitive(s, e, c)]
+        lines = self.gizmo_lines()
+        if lines:
+            return [GizmoPrimitive.from_lines(lines)]
+        return []
+
+    @classmethod
+    def gizmo_collect(cls, pipe, scene):
+        for entity in scene.get_entities_with_component(cls):
+            if not entity.active:
+                continue
+            for comp in entity.get_components(cls):
+                try:
+                    inst = comp.gizmo_instance_data()
+                    if inst is not None:
+                        pipe.add_instance(inst.shape_type, inst.transform_flat, inst.color)
+                        continue
+                    for prim in comp.gizmo():
+                        if prim.starts.shape[0] > 0:
+                            pipe.add(prim)
+                except Exception:
+                    pass
+
+    @classmethod
+    def gizmo_collect_meshes(cls, scene):
         return []
 
     def serialize(self) -> dict:
@@ -86,6 +135,57 @@ class Component:
         inst.enabled = data.get("enabled", True)
         inst._entity = None
         return inst
+
+
+@dataclass
+class GizmoStyle:
+    glow: bool = False
+    dashed: bool = False
+    pulsating: bool = False
+    color_cycling: bool = False
+    xray: bool = False
+    line_width: float = 1.0
+    dash_length: float = 0.3
+    gap_length: float = 0.15
+    glow_layers: int = 3
+    glow_intensity: float = 0.4
+    pulse_speed: float = 2.0
+    pulse_min_alpha: float = 0.2
+    cycle_speed: float = 1.0
+    cull_distance: float = 0.0
+
+    DEFAULT: Optional[GizmoStyle] = None
+
+
+GizmoStyle.DEFAULT = GizmoStyle()
+
+
+@dataclass
+class GizmoPrimitive:
+    starts: np.ndarray
+    ends: np.ndarray
+    colors: np.ndarray
+    style: GizmoStyle = field(default_factory=lambda: GizmoStyle.DEFAULT)
+
+    @classmethod
+    def from_lines(cls, lines: list, style: GizmoStyle = None) -> GizmoPrimitive:
+        n = len(lines)
+        starts = np.zeros((n, 3), dtype=np.float32)
+        ends = np.zeros((n, 3), dtype=np.float32)
+        colors = np.zeros((n, 4), dtype=np.float32)
+        for i, (s, e, c) in enumerate(lines):
+            starts[i, 0] = s.x; starts[i, 1] = s.y; starts[i, 2] = s.z
+            ends[i, 0] = e.x; ends[i, 1] = e.y; ends[i, 2] = e.z
+            colors[i, 0] = c[0]; colors[i, 1] = c[1]; colors[i, 2] = c[2]
+            colors[i, 3] = c[3] if len(c) > 3 else 1.0
+        return cls(starts, ends, colors, style or GizmoStyle.DEFAULT)
+
+
+@dataclass
+class InstancePrimitive:
+    shape_type: str
+    transform_flat: np.ndarray
+    color: list
 
 
 class Entity:

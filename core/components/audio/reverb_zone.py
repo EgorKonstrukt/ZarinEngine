@@ -26,6 +26,7 @@ class ReverbZone(Component):
     _gizmo_icon_color = (80, 140, 220)
     _gizmo_icon_label = "RZ"
     _show_gizmo_icon: bool = True
+    _gizmo_pass = "audio"
 
     _effect_id: int = 0
     _slot_id: int = 0

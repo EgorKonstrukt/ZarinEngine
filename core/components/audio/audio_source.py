@@ -13,6 +13,7 @@ class AudioSource(Component):
     _icon = "AudioSource.png"
     _gizmo_icon_color = (80, 220, 80)
     _gizmo_icon_label = "A"
+    _gizmo_pass = "audio"
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
@@ -269,6 +270,14 @@ class AudioSource(Component):
                 for i in range(segments):
                     lines.append((pts[i], pts[i + 1], max_color))
         return lines
+
+    def gizmo(self):
+        lines = self.gizmo_lines()
+        if not lines:
+            return []
+        from core.ecs import GizmoPrimitive, GizmoStyle
+        inner = GizmoPrimitive.from_lines(lines, GizmoStyle(pulsating=True, glow=True, pulse_speed=1.5, pulse_min_alpha=0.4))
+        return [inner]
 
     def serialize(self) -> dict:
         d = super().serialize()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import math
-from core.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry, InstancePrimitive
 from core.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 @ComponentRegistry.register
@@ -9,6 +9,7 @@ class SphereCollider(Component):
     _gizmo_icon_color = (200, 80, 80)
     _gizmo_icon_label = "C"
     _show_gizmo_icon: bool = False
+    _gizmo_pass = "collider"
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
@@ -40,29 +41,44 @@ class SphereCollider(Component):
         s = tr.local_scale if tr else Vec3.one()
         c = self.center if isinstance(self.center, Vec3) else Vec3(*self.center)
         return Vec3(c.x * s.x, c.y * s.y, c.z * s.z)
-    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
+    def gizmo_primitives(self):
         tr = self.transform
         if not tr:
-            return []
-        radius = self.scaled_radius
-        c = tr.local_position + tr.local_rotation.rotate_vec3(self.scaled_center)
-        segments = 24
+            return None
+        from core.math3d import Vec3
+        from editor.gizmo.primitives import sphere_rings
+        c = (self.scaled_center.x, self.scaled_center.y, self.scaled_center.z)
         color = [0.0, 1.0, 0.0, 0.6]
-        lines: list[tuple[Vec3, Vec3, list[float]]] = []
-        for axis_idx in range(3):
-            pts = []
-            for i in range(segments + 1):
-                theta = 2.0 * math.pi * i / segments
-                if axis_idx == 0:
-                    pt = Vec3(0, math.cos(theta) * radius, math.sin(theta) * radius)
-                elif axis_idx == 1:
-                    pt = Vec3(math.cos(theta) * radius, 0, math.sin(theta) * radius)
-                else:
-                    pt = Vec3(math.cos(theta) * radius, math.sin(theta) * radius, 0)
-                pts.append(c + tr.local_rotation.rotate_vec3(pt))
-            for i in range(segments):
-                lines.append((pts[i], pts[i + 1], color))
-        return lines
+        return sphere_rings(c, self.scaled_radius, color, tr.local_position, tr.local_rotation, Vec3.one())
+
+    def gizmo_instance_data(self):
+        tr = self.transform
+        if not tr:
+            return None
+        import numpy as np
+        from editor.gizmo.primitives import _quat_to_mat3
+        R = _quat_to_mat3(tr.local_rotation)
+        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
+        sc = tr.local_scale
+        max_s = max(sc.x, sc.y, sc.z)
+        c = self.center
+        scaled_c = np.array([c.x * sc.x, c.y * sc.y, c.z * sc.z], dtype=np.float32)
+        r = self.radius * max_s
+        combined = np.eye(4, dtype=np.float32)
+        combined[:3, :3] = R * r
+        combined[:3, 3] = R @ scaled_c + T
+        return InstancePrimitive('sphere', combined.ravel('F'), [0.0, 1.0, 0.0, 0.6])
+
+    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
+        prim = self.gizmo_primitives()
+        if prim is None:
+            return []
+        s, e, c = prim
+        n = s.shape[0]
+        color = [float(c[0, 0]), float(c[0, 1]), float(c[0, 2]), float(c[0, 3])]
+        return [(Vec3(float(s[i, 0]), float(s[i, 1]), float(s[i, 2])),
+                 Vec3(float(e[i, 0]), float(e[i, 1]), float(e[i, 2])),
+                 color) for i in range(n)]
 
     def serialize(self) -> dict:
         d = super().serialize()

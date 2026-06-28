@@ -1,6 +1,7 @@
 from __future__ import annotations
 from core.ecs import Component, ComponentRegistry
-from core.math3d import Vec2
+import math
+from core.math3d import Vec2, Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 @ComponentRegistry.register
 class CircleCollider2D(Component):
@@ -8,6 +9,7 @@ class CircleCollider2D(Component):
     _gizmo_icon_color = (200, 80, 80)
     _gizmo_icon_label = "C2"
     _show_gizmo_icon: bool = False
+    _gizmo_pass = "collider"
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
@@ -41,6 +43,28 @@ class CircleCollider2D(Component):
         s = tr.local_scale if tr else Vec2.one()
         o = self.offset if isinstance(self.offset, Vec2) else Vec2(self.offset.x, self.offset.y)
         return Vec2(o.x * s.x, o.y * s.y)
+
+    def gizmo_primitives(self):
+        tr = self.transform
+        if not tr:
+            return None
+        from core.math3d import Vec3
+        from editor.gizmo.primitives import circle_lines
+        off = self.scaled_offset
+        c = (off.x, off.y, 0.0)
+        color = [0.0, 1.0, 0.0, 0.6]
+        return circle_lines(c, self.scaled_radius, color, tr.local_position, tr.local_rotation, Vec3.one())
+
+    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
+        prim = self.gizmo_primitives()
+        if prim is None:
+            return []
+        s, e, c = prim
+        n = s.shape[0]
+        color = [float(c[0, 0]), float(c[0, 1]), float(c[0, 2]), float(c[0, 3])]
+        return [(Vec3(float(s[i, 0]), float(s[i, 1]), float(s[i, 2])),
+                 Vec3(float(e[i, 0]), float(e[i, 1]), float(e[i, 2])),
+                 color) for i in range(n)]
 
     def serialize(self) -> dict:
         d = super().serialize()

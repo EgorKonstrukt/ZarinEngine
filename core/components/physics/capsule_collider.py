@@ -9,6 +9,7 @@ class CapsuleCollider(Component):
     _gizmo_icon_color = (200, 80, 80)
     _gizmo_icon_label = "C"
     _show_gizmo_icon: bool = False
+    _gizmo_pass = "collider"
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
@@ -75,55 +76,25 @@ class CapsuleCollider(Component):
         cc.mask = data.get("mask", 0xFFFF)
         return cc
 
-    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
+    def gizmo_primitives(self):
         tr = self.transform
         if not tr:
-            return []
-        radius = self.scaled_radius
-        total_height = self.scaled_height
-        half_h = max(0, total_height * 0.5 - radius)
-        c = tr.local_position + tr.local_rotation.rotate_vec3(self.scaled_center)
-        dir_idx = getattr(self, "direction", 1)
-        axis_vecs = [Vec3.right(), Vec3.up(), Vec3.forward()]
-        axis = axis_vecs[dir_idx] if dir_idx < 3 else Vec3.up()
-        segments = 20
+            return None
+        from core.math3d import Vec3
+        from editor.gizmo.primitives import capsule_lines
+        c = (self.scaled_center.x, self.scaled_center.y, self.scaled_center.z)
         color = [0.0, 1.0, 0.0, 0.6]
-        top_center = c + tr.local_rotation.rotate_vec3(axis * half_h)
-        bottom_center = c - tr.local_rotation.rotate_vec3(axis * half_h)
-        lines: list[tuple[Vec3, Vec3, list[float]]] = []
-        for ring_axis in range(3):
-            if ring_axis == dir_idx:
-                continue
-            pts_top = []
-            pts_bot = []
-            for i in range(segments + 1):
-                theta = 2.0 * math.pi * i / segments
-                u = Vec3.right()
-                v = Vec3.forward()
-                if ring_axis == 0:
-                    u = Vec3(0, 1, 0)
-                    v = Vec3(0, 0, 1)
-                elif ring_axis == 1:
-                    u = Vec3(1, 0, 0)
-                    v = Vec3(0, 0, 1)
-                ring_pt = (u * math.cos(theta) + v * math.sin(theta)) * radius
-                pts_top.append(top_center + tr.local_rotation.rotate_vec3(ring_pt))
-                pts_bot.append(bottom_center + tr.local_rotation.rotate_vec3(ring_pt))
-            for i in range(segments):
-                lines.append((pts_top[i], pts_top[i + 1], color))
-                lines.append((pts_bot[i], pts_bot[i + 1], color))
-        for i in range(8):
-            theta = 2.0 * math.pi * i / 8
-            u = Vec3.right()
-            v = Vec3.forward()
-            if dir_idx == 0:
-                u = Vec3(0, 1, 0)
-                v = Vec3(0, 0, 1)
-            elif dir_idx == 1:
-                u = Vec3(1, 0, 0)
-                v = Vec3(0, 0, 1)
-            ring_pt = (u * math.cos(theta) + v * math.sin(theta)) * radius
-            top_pt = top_center + tr.local_rotation.rotate_vec3(ring_pt)
-            bot_pt = bottom_center + tr.local_rotation.rotate_vec3(ring_pt)
-            lines.append((top_pt, bot_pt, color))
-        return lines
+        dir_idx = getattr(self, "direction", 1)
+        return capsule_lines(c, self.scaled_radius, self.scaled_height, dir_idx,
+                             color, tr.local_position, tr.local_rotation, Vec3.one())
+
+    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
+        prim = self.gizmo_primitives()
+        if prim is None:
+            return []
+        s, e, c = prim
+        n = s.shape[0]
+        color = [float(c[0, 0]), float(c[0, 1]), float(c[0, 2]), float(c[0, 3])]
+        return [(Vec3(float(s[i, 0]), float(s[i, 1]), float(s[i, 2])),
+                 Vec3(float(e[i, 0]), float(e[i, 1]), float(e[i, 2])),
+                 color) for i in range(n)]

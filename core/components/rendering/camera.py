@@ -10,6 +10,7 @@ class CameraProjection(Enum):
 @ComponentRegistry.register
 class Camera(Component):
     _icon = "Camera.png"
+    _gizmo_pass = "camera"
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:

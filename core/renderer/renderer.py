@@ -285,6 +285,7 @@ void main() {
             self._gizmo = GizmoRenderer(self._ctx, self._gizmo_prog, self._gizmo_fatline_prog, self._gizmo_solid_prog)
             self._gizmo._line_width = self._line_width
             self._gizmo.initialize_instanced_meshes()
+            self._gizmo.initialize_instanced_lines()
             self._shadows = ShadowRenderer(self._ctx, self._shadow_prog, self._shadow_resolution, self._shadow_distance)
             self._skybox_cube = make_cube_mesh()
             self._skybox_cube.build_gl(self._ctx, self._default_prog)
@@ -992,6 +993,15 @@ void main() {
     def render_gizmo_mesh_np(self, v_data: np.ndarray, idx_arr: np.ndarray, vp_mat: Mat4):
         if self._gizmo:
             self._gizmo.render_mesh_np(v_data, idx_arr, vp_mat)
+
+    def render_instanced_gizmo_lines(self, shape_type: str, instance_data: np.ndarray,
+                                      num_instances: int, vp_mat: Mat4,
+                                      fw: int = 1920, fh: int = 1080,
+                                      thickness_multiplier: float = 1.0,
+                                      cam_pos: Vec3 = Vec3(0, 0, 0)):
+        if self._gizmo:
+            self._gizmo.render_instanced_lines(shape_type, instance_data, num_instances,
+                                                vp_mat, fw, fh, thickness_multiplier, cam_pos)
 
     def render_wireframe_box(self, center: Vec3, size: Vec3, color: list[float], vp_mat: Mat4):
         if self._gizmo:

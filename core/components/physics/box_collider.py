@@ -1,5 +1,5 @@
 from __future__ import annotations
-from core.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry, InstancePrimitive
 from core.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 @ComponentRegistry.register
@@ -8,6 +8,7 @@ class BoxCollider(Component):
     _gizmo_icon_color = (200, 80, 80)
     _gizmo_icon_label = "C"
     _show_gizmo_icon: bool = False
+    _gizmo_pass = "collider"
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
@@ -62,25 +63,43 @@ class BoxCollider(Component):
         bc.mask = data.get("mask", 0xFFFF)
         return bc
 
-    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
+    def gizmo_primitives(self):
         tr = self.transform
         if not tr:
-            return []
-        pos = tr.local_position
-        rot = tr.local_rotation
-        sz = self.scaled_size
-        h = Vec3(sz.x * 0.5, sz.y * 0.5, sz.z * 0.5)
-        c = pos + rot.rotate_vec3(self.scaled_center)
-        corners = [
-            c + Vec3(-h.x, -h.y, -h.z),
-            c + Vec3( h.x, -h.y, -h.z),
-            c + Vec3( h.x,  h.y, -h.z),
-            c + Vec3(-h.x,  h.y, -h.z),
-            c + Vec3(-h.x, -h.y,  h.z),
-            c + Vec3( h.x, -h.y,  h.z),
-            c + Vec3( h.x,  h.y,  h.z),
-            c + Vec3(-h.x,  h.y,  h.z),
-        ]
+            return None
+        from core.math3d import Vec3
+        from editor.gizmo.primitives import box_lines
+        c = (self.scaled_center.x, self.scaled_center.y, self.scaled_center.z)
+        sz = (self.scaled_size.x, self.scaled_size.y, self.scaled_size.z)
         color = [0.0, 1.0, 0.0, 0.6]
-        edges = [(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)]
-        return [(corners[a], corners[b], color) for a, b in edges]
+        return box_lines(c, sz, color, tr.local_position, tr.local_rotation, Vec3.one())
+
+    def gizmo_instance_data(self):
+        tr = self.transform
+        if not tr:
+            return None
+        import numpy as np
+        from editor.gizmo.primitives import _quat_to_mat3
+        R = _quat_to_mat3(tr.local_rotation)
+        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
+        S = np.array([tr.local_scale.x, tr.local_scale.y, tr.local_scale.z], dtype=np.float32)
+        c = np.array([self.center.x, self.center.y, self.center.z], dtype=np.float32)
+        h = np.array([self.size.x * 0.5, self.size.y * 0.5, self.size.z * 0.5], dtype=np.float32)
+        RS = R * S
+        combined = np.eye(4, dtype=np.float32)
+        combined[:3, :3] = RS * h
+        combined[:3, 3] = RS @ c + T
+        return InstancePrimitive('box', combined.ravel('F'), [0.0, 1.0, 0.0, 0.6])
+
+    def gizmo_lines(self) -> list[tuple[Vec3, Vec3, list[float]]]:
+        prim = self.gizmo_primitives()
+        if prim is None:
+            return []
+        s, e, c = prim
+        n = s.shape[0]
+        color = [float(c[0, 0]), float(c[0, 1]), float(c[0, 2]), float(c[0, 3])]
+        return [(Vec3(float(s[i, 0]), float(s[i, 1]), float(s[i, 2])),
+                 Vec3(float(e[i, 0]), float(e[i, 1]), float(e[i, 2])),
+                 color) for i in range(n)]
+
+

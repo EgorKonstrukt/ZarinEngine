@@ -32,8 +32,9 @@ PY_TYPE_TO_FIELD = {
 
 @ComponentRegistry.register
 class ScriptComponent(Component):
-    _icon = "ScriptComponent.png"
+    _icon = "Script.png"
     _allow_multiple = True
+    _gizmo_pass = "script"
     _show_gizmo_icon: bool = False
 
     @classmethod
@@ -276,6 +277,21 @@ class ScriptComponent(Component):
             except Exception as e:
                 Logger.error(f"Script gizmo_meshes error: {e}")
         return []
+
+    @classmethod
+    def gizmo_collect_meshes(cls, scene):
+        meshes = []
+        for entity in scene.get_entities_with_component(cls):
+            if not entity.active:
+                continue
+            for c in entity.get_components(cls):
+                try:
+                    msh = c.gizmo_meshes()
+                    if msh:
+                        meshes.extend(msh)
+                except Exception:
+                    pass
+        return meshes
 
     def __getattr__(self, name):
         if name.startswith('_script_'):

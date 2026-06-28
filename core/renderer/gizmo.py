@@ -5,7 +5,8 @@ from typing import Optional
 from core.math3d import Vec3, Mat4
 from core.renderer.gpu_primitives import (
     GpuMesh, make_cone_mesh, make_cylinder_mesh,
-    make_cube_mesh, make_quad_mesh, make_circle_ring_mesh, make_instance_vao
+    make_cube_mesh, make_quad_mesh, make_circle_ring_mesh, make_instance_vao,
+    make_unit_box_line_verts, make_unit_sphere_line_verts, make_instance_line_vao
 )
 
 _STRIP_T = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
@@ -112,6 +113,10 @@ class GizmoRenderer:
         self._quad_mesh: Optional[GpuMesh] = None
         self._circle_mesh: Optional[GpuMesh] = None
         self._instanced_initialized: bool = False
+        self._inst_line_prog: Optional[moderngl.Program] = None
+        self._box_inst_mesh: Optional[GpuMesh] = None
+        self._sphere_inst_mesh: Optional[GpuMesh] = None
+        self._inst_line_initialized: bool = False
         self._build_fatline_buffers()
         self._build_solid_buffers()
 
@@ -347,6 +352,121 @@ class GizmoRenderer:
             self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.enable(moderngl.DEPTH_TEST)
 
+    def initialize_instanced_lines(self):
+        if self._inst_line_initialized:
+            return
+        self._ensure_inst_line_prog()
+        if self._inst_line_prog is None:
+            return
+        ctx = self._ctx
+        prog = self._inst_line_prog
+        self._box_inst_mesh = make_instance_line_vao(ctx, prog, make_unit_box_line_verts())
+        self._sphere_inst_mesh = make_instance_line_vao(ctx, prog, make_unit_sphere_line_verts())
+        self._inst_line_initialized = True
+
+    def _ensure_inst_line_prog(self):
+        if self._inst_line_prog is not None:
+            return
+        try:
+            self._inst_line_prog = self._ctx.program(
+                vertex_shader="""
+#version 460 core
+layout(location = 0) in vec3 a_unit_start;
+layout(location = 1) in vec3 a_unit_end;
+layout(location = 2) in float a_t;
+layout(location = 3) in float a_side;
+in vec4 i_row0;
+in vec4 i_row1;
+in vec4 i_row2;
+in vec4 i_row3;
+in vec4 i_color;
+uniform mat4 u_mvp;
+uniform float u_thickness_ndc_x;
+uniform float u_thickness_ndc_y;
+out vec4 v_color;
+out float v_world_z;
+void main() {
+    mat4 model = mat4(i_row0, i_row1, i_row2, i_row3);
+    vec4 ws_start = model * vec4(a_unit_start, 1.0);
+    vec4 ws_end   = model * vec4(a_unit_end, 1.0);
+    vec4 clip_start = u_mvp * ws_start;
+    vec4 clip_end   = u_mvp * ws_end;
+    vec4 clipPos = mix(clip_start, clip_end, a_t);
+    vec2 dxy = clip_end.xy - clip_start.xy;
+    float len = length(dxy);
+    vec2 perp;
+    if (len > 1e-6) {
+        vec2 dir = dxy / len;
+        perp = vec2(-dir.y, dir.x);
+    } else {
+        perp = vec2(1.0, 0.0);
+    }
+    clipPos.xy += perp * a_side * vec2(u_thickness_ndc_x, u_thickness_ndc_y) * clipPos.w;
+    gl_Position = clipPos;
+    v_color = i_color;
+    v_world_z = (ws_start.z + ws_end.z) * 0.5;
+}
+""",
+                fragment_shader="""
+#version 460 core
+in vec4 v_color;
+in float v_world_z;
+uniform vec3 u_camera_pos;
+out vec4 fragColor;
+void main() {
+    float dist = abs(v_world_z - u_camera_pos.z);
+    float fade = 1.0 - smoothstep(20.0, 80.0, dist);
+    fragColor = vec4(v_color.rgb * fade, v_color.a * fade);
+}
+""",
+            )
+        except Exception:
+            self._inst_line_prog = None
+
+    def render_instanced_lines(self, shape_type: str, instance_data: np.ndarray,
+                                num_instances: int, vp_mat: Mat4, fw: int, fh: int,
+                                thickness_multiplier: float = 1.0,
+                                cam_pos: Vec3 = Vec3(0, 0, 0)):
+        if not self._inst_line_initialized or self._inst_line_prog is None:
+            self.initialize_instanced_lines()
+            if self._inst_line_prog is None:
+                return
+        mesh_map = {
+            'box': self._box_inst_mesh,
+            'sphere': self._sphere_inst_mesh,
+        }
+        mesh = mesh_map.get(shape_type)
+        if mesh is None or mesh.instance_vbo is None or num_instances == 0:
+            return
+        prog = self._inst_line_prog
+        vp_f32 = vp_mat.to_f32()
+        if "u_mvp" in prog:
+            prog["u_mvp"].write(vp_f32.tobytes())
+        desired_pixels = max(1.0, float(self._line_width) * 1.5 * thickness_multiplier)
+        ndc_x = desired_pixels / max(1.0, float(fw))
+        ndc_y = desired_pixels / max(1.0, float(fh))
+        if "u_thickness_ndc_x" in prog:
+            prog["u_thickness_ndc_x"] = float(ndc_x)
+        if "u_thickness_ndc_y" in prog:
+            prog["u_thickness_ndc_y"] = float(ndc_y)
+        if "u_camera_pos" in prog:
+            prog["u_camera_pos"].write(np.array([cam_pos.x, cam_pos.y, cam_pos.z], dtype=np.float32).tobytes())
+        data_size = num_instances * mesh.instance_stride
+        if data_size > 0:
+            mesh.instance_vbo.write(instance_data[:data_size].tobytes())
+        try:
+            old_cull = bool(self._ctx.cull_face)
+        except:
+            old_cull = True
+        self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.disable(moderngl.DEPTH_TEST)
+        mesh.vao.render(moderngl.TRIANGLES, vertices=mesh.vertex_count, instances=num_instances)
+        if old_cull:
+            self._ctx.enable(moderngl.CULL_FACE)
+        else:
+            self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.enable(moderngl.DEPTH_TEST)
+
     def render_meshes(self, meshes: list[tuple], vp_mat: Mat4):
         if not self._solid_prog or not meshes:
             return
@@ -447,4 +567,19 @@ class GizmoRenderer:
                     except: pass
         if self._instanced_prog:
             try: self._instanced_prog.release()
+            except: pass
+        for mesh_name in ('_box_inst_mesh', '_sphere_inst_mesh'):
+            m = getattr(self, mesh_name, None)
+            if m is not None:
+                if m.vao:
+                    try: m.vao.release()
+                    except: pass
+                if m.vbo:
+                    try: m.vbo.release()
+                    except: pass
+                if m.instance_vbo:
+                    try: m.instance_vbo.release()
+                    except: pass
+        if self._inst_line_prog:
+            try: self._inst_line_prog.release()
             except: pass
