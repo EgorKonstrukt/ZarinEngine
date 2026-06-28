@@ -553,7 +553,7 @@ class SceneViewport(QOpenGLWidget):
                 if self._show_bvh_debug:
                     self._render_bvh_debug()
                 with eng._scene_lock:
-                    draw_axis_gizmo_api(self)
+                    draw_axis_gizmo_api(self, vp_mat)
                     self._render_api_gizmos()
                 if self._pb_scale_gizmo and self._pb_scale_gizmo.active:
                     self._pb_scale_gizmo.render()

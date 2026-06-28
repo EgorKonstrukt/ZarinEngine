@@ -1129,6 +1129,10 @@ class GizmosManager:
 
     def build_render_arrays(self):
         with self._lock:
+            if self._revision == self._cached_revision:
+                if self._cache_starts is not None:
+                    return (self._cache_starts, self._cache_ends, self._cache_colors)
+                return (None, None, None)
             gizmos = list(self.persistent_draws)
             if self.unique_draws:
                 gizmos.extend(self.unique_draws.values())
@@ -1138,6 +1142,7 @@ class GizmosManager:
                 np_data = self._get_render_data()
                 if np_data is not None:
                     np_data_copies = (np.copy(np_data[0]), np.copy(np_data[1]), np.copy(np_data[2]))
+            current_revision = self._revision
             self._batches.clear()
             self._flat_size = 0
         s_list = []
@@ -1167,9 +1172,19 @@ class GizmosManager:
                     c_list.append(c)
         if s_list:
             if len(s_list) == 1:
-                return (s_list[0], e_list[0], c_list[0])
-            return (np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list))
-        return (None, None, None)
+                self._cache_starts = s_list[0]
+                self._cache_ends = e_list[0]
+                self._cache_colors = c_list[0]
+            else:
+                self._cache_starts = np.concatenate(s_list)
+                self._cache_ends = np.concatenate(e_list)
+                self._cache_colors = np.concatenate(c_list)
+        else:
+            self._cache_starts = None
+            self._cache_ends = None
+            self._cache_colors = None
+        self._cached_revision = current_revision
+        return (self._cache_starts, self._cache_ends, self._cache_colors)
 
     def _clear_internal(self):
         self.persistent_draws.clear()

@@ -7,7 +7,6 @@ from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPainterPath, QFontMetrics
 
 from core.math3d import Vec3
-from core.gizmo.api import Gizmos
 
 
 def _get_gizmo_world_pos(vp):
@@ -44,7 +43,7 @@ def _world_to_screen(vp, pos):
     return (sx, sy)
 
 
-def draw_axis_gizmo_api(vp):
+def draw_axis_gizmo_api(vp, vp_mat):
     if not vp._axis_gizmo_enabled or not vp._cam:
         return
     result = _get_gizmo_world_pos(vp)
@@ -54,7 +53,7 @@ def draw_axis_gizmo_api(vp):
     if world_len < 0.01:
         return
 
-    Gizmos.clear_tag('__axis__')
+    fw, fh = vp._get_physical_dims()
 
     neg_len = world_len * 0.5
     world_axes = [Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)]
@@ -63,6 +62,7 @@ def draw_axis_gizmo_api(vp):
 
     tips = []
     neg_tips = []
+    lines = []
     for i, (direction, color) in enumerate(zip(world_axes, colors)):
         if i == vp._axis_gizmo_hover:
             col = hover_col
@@ -73,8 +73,10 @@ def draw_axis_gizmo_api(vp):
         tips.append(tip)
         neg_tips.append(nt)
 
-        Gizmos.draw_line(gizmo_pos, tip, color=col, thickness=2.5, tag='__axis__')
-        Gizmos.draw_line(gizmo_pos, nt, color=tuple(c * 0.3 for c in col), thickness=1.5, tag='__axis__')
+        lines.append((gizmo_pos, tip, col))
+        lines.append((gizmo_pos, nt, tuple(c * 0.3 for c in col)))
+
+    vp._renderer.render_gizmo_lines(lines, vp_mat, fw, fh, thickness_multiplier=1.5)
 
     vp._axis_gizmo_tips_world = tips
     vp._axis_gizmo_neg_tips_world = neg_tips
