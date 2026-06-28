@@ -19,7 +19,7 @@ from core.math3d import Vec3, Mat4, Quat
 from core.logger import Logger
 from editor.scene_camera import SceneCamera
 from core.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
-from core.gizmo.api import GizmosManager, set_gizmos, _GIZMO_LINE_BUILDERS, _apply_line_style, LineStyle
+from core.gizmo.api import GizmosManager, set_gizmos
 from editor.gizmo.pb_scale_gizmo import PbScaleGizmo
 from core.input_system import Input, KeyCode
 from core.input.input_manager import InputManager
@@ -61,7 +61,6 @@ class SceneViewport(QOpenGLWidget):
         self._gizmo: Gizmo = Gizmo()
         self._gizmos_api: GizmosManager = GizmosManager()
         set_gizmos(self._gizmos_api)
-        self._gizmo_last_render: Optional[tuple] = None
         self._selected_entities: list = []
         self._last_frame_time: float = time.perf_counter()
         self._last_paint_time: float = time.perf_counter()
@@ -1270,50 +1269,14 @@ class SceneViewport(QOpenGLWidget):
         self._debug_lines.append((start, end, color))
 
     def _render_api_gizmos(self):
-        s_list = []
-        e_list = []
-        c_list = []
         gm = self._gizmos_api
-        if gm and gm.enabled:
-            np_data = gm._get_render_data()
-            all_g = list(gm.unique_draws.values()) if gm.unique_draws else []
-            if gm.draws:
-                all_g = all_g + gm.draws
-            if gm.persistent_draws:
-                all_g = all_g + gm.persistent_draws
-            gm.clear()
-            if np_data is not None:
-                s_list.append(np_data[0])
-                e_list.append(np_data[1])
-                c_list.append(np_data[2])
-            for g in all_g:
-                builder = _GIZMO_LINE_BUILDERS.get(g.gizmo_type)
-                if builder is None:
-                    continue
-                try:
-                    result = builder(g)
-                except Exception as e:
-                    Logger.error(f"Gizmo builder error for {g.gizmo_type}: {e}", e)
-                    continue
-                if result is None:
-                    continue
-                s, e, c = result
-                if g.line_style is not LineStyle.SOLID:
-                    s, e, c = _apply_line_style(s, e, c, g.line_style, g.dash_length, g.gap_length)
-                if s.shape[0] > 0:
-                    s_list.append(s)
-                    e_list.append(e)
-                    c_list.append(c)
-            if s_list:
-                self._gizmo_last_render = (s_list, e_list, c_list)
-        if not s_list:
-            if self._gizmo_last_render is None:
-                return
-            s_list, e_list, c_list = self._gizmo_last_render
+        if not gm or not gm.enabled:
+            return
+        starts, ends, colors = gm.build_render_arrays()
+        if starts is None:
+            return
         fw, fh = self._get_physical_dims()
         view = self._cam.get_view_matrix()
         proj = self._cam.get_projection_matrix(fw / max(1, fh))
         vp_mat = view * proj
-        self._renderer.render_gizmo_arrays(
-            np.concatenate(s_list), np.concatenate(e_list), np.concatenate(c_list),
-            vp_mat, fw, fh, thickness_multiplier=1.0)
+        self._renderer.render_gizmo_arrays(starts, ends, colors, vp_mat, fw, fh, thickness_multiplier=1.0)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import math
 import random
+import threading
 import numpy as np
 from enum import Enum
 from typing import Optional, List, Tuple, Dict, Callable, Any
@@ -1070,6 +1071,7 @@ def _build_pyramid(g: GizmoData):
 
 class GizmosManager:
     def __init__(self):
+        self._lock = threading.Lock()
         self.draws: List[GizmoData] = []
         self.persistent_draws: List[GizmoData] = []
         self.unique_draws: Dict[str, GizmoData] = {}
@@ -1085,6 +1087,11 @@ class GizmosManager:
         self._current_transform: Optional[List[float]] = None
         self._style_stack: List[dict] = []
         self._current_style: Optional[dict] = None
+        self._revision: int = 0
+        self._cached_revision: int = -1
+        self._cache_starts: Optional[np.ndarray] = None
+        self._cache_ends: Optional[np.ndarray] = None
+        self._cache_colors: Optional[np.ndarray] = None
 
     def _resolve_style(self) -> dict:
         return dict(self._current_style) if self._current_style else {}
@@ -1103,44 +1110,120 @@ class GizmosManager:
         return _GizmoStyleCtx(self, kwargs)
 
     def update(self, dt: float):
-        self._time += dt
-        self.draws = [g for g in self.draws if g.duration <= 0 or self._time - g.duration < 1.0]
-        for key in set(self.unique_draws.keys()) - self.used_unique_keys:
-            del self.unique_draws[key]
-        self.used_unique_keys.clear()
+        with self._lock:
+            self._time += dt
+            old_len = len(self.draws)
+            self.draws = [g for g in self.draws if g.duration <= 0 or self._time - g.duration < 1.0]
+            if len(self.draws) != old_len:
+                self._revision += 1
+            old_unique = len(self.unique_draws)
+            for key in set(self.unique_draws.keys()) - self.used_unique_keys:
+                del self.unique_draws[key]
+            if len(self.unique_draws) != old_unique:
+                self._revision += 1
+            self.used_unique_keys.clear()
 
-    def clear(self):
+    def build_render_arrays(self):
+        with self._lock:
+            if self._revision == self._cached_revision and self._cache_starts is not None:
+                return (self._cache_starts, self._cache_ends, self._cache_colors)
+            all_g = []
+            np_data_copies = None
+            enabled = self.enabled
+            if enabled:
+                if self.unique_draws:
+                    all_g.extend(self.unique_draws.values())
+                if self.draws:
+                    all_g.extend(self.draws)
+                if self.persistent_draws:
+                    all_g.extend(self.persistent_draws)
+                np_data = self._get_render_data()
+                if np_data is not None:
+                    np_data_copies = (np.copy(np_data[0]), np.copy(np_data[1]), np.copy(np_data[2]))
+            current_revision = self._revision
+            self.draws.clear()
+            self._batches.clear()
+            self._flat_size = 0
+        s_list = []
+        e_list = []
+        c_list = []
+        if enabled:
+            if np_data_copies is not None:
+                s_list.append(np_data_copies[0])
+                e_list.append(np_data_copies[1])
+                c_list.append(np_data_copies[2])
+            for g in all_g:
+                builder = _GIZMO_LINE_BUILDERS.get(g.gizmo_type)
+                if builder is None:
+                    continue
+                try:
+                    result = builder(g)
+                except Exception:
+                    continue
+                if result is None:
+                    continue
+                s, e, c = result
+                if g.line_style is not LineStyle.SOLID:
+                    s, e, c = _apply_line_style(s, e, c, g.line_style, g.dash_length, g.gap_length)
+                if s.shape[0] > 0:
+                    s_list.append(s)
+                    e_list.append(e)
+                    c_list.append(c)
+        if s_list:
+            self._cache_starts = np.concatenate(s_list)
+            self._cache_ends = np.concatenate(e_list)
+            self._cache_colors = np.concatenate(c_list)
+        else:
+            self._cache_starts = None
+            self._cache_ends = None
+            self._cache_colors = None
+        with self._lock:
+            self._cached_revision = current_revision
+        return (self._cache_starts, self._cache_ends, self._cache_colors)
+
+    def _clear_internal(self):
         self.draws.clear()
         self._batches.clear()
         self._flat_size = 0
 
+    def clear(self):
+        with self._lock:
+            self._clear_internal()
+            self._revision += 1
+
     def toggle(self, visible: bool = None):
-        if visible is not None:
-            self.enabled = visible
-        else:
-            self.enabled = not self.enabled
+        with self._lock:
+            if visible is not None:
+                self.enabled = visible
+            else:
+                self.enabled = not self.enabled
 
     def clear_persistent(self):
-        self.persistent_draws.clear()
+        with self._lock:
+            self.persistent_draws.clear()
+            self._revision += 1
 
     def clear_unique(self):
-        self.unique_draws.clear()
+        with self._lock:
+            self.unique_draws.clear()
+            self._revision += 1
 
     def draw_lines(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray):
-        n = starts.shape[0]
-        if n == 0:
+        if starts.shape[0] == 0:
             return
-        old_sz = self._flat_size
-        new_sz = old_sz + n
-        if new_sz > self._flat_starts.shape[0]:
-            new_cap = int(new_sz * 1.5 + 4096)
-            self._flat_starts = np.resize(self._flat_starts, (new_cap, 3))
-            self._flat_ends = np.resize(self._flat_ends, (new_cap, 3))
-            self._flat_colors = np.resize(self._flat_colors, (new_cap, 4))
-        self._flat_starts[old_sz:new_sz] = starts
-        self._flat_ends[old_sz:new_sz] = ends
-        self._flat_colors[old_sz:new_sz] = colors
-        self._flat_size = new_sz
+        with self._lock:
+            old_sz = self._flat_size
+            new_sz = old_sz + starts.shape[0]
+            if new_sz > self._flat_starts.shape[0]:
+                new_cap = int(new_sz * 1.5 + 4096)
+                self._flat_starts = np.resize(self._flat_starts, (new_cap, 3))
+                self._flat_ends = np.resize(self._flat_ends, (new_cap, 3))
+                self._flat_colors = np.resize(self._flat_colors, (new_cap, 4))
+            self._flat_starts[old_sz:new_sz] = starts
+            self._flat_ends[old_sz:new_sz] = ends
+            self._flat_colors[old_sz:new_sz] = colors
+            self._flat_size = new_sz
+            self._revision += 1
 
     def _get_render_data(self):
         if self._flat_size > 0:
@@ -1165,10 +1248,12 @@ class GizmosManager:
                 g.color = self._resolve_color(v)
             elif hasattr(g, k):
                 setattr(g, k, v)
-        if g.duration < 0:
-            self.persistent_draws.append(g)
-        else:
-            self.draws.append(g)
+        with self._lock:
+            if g.duration < 0:
+                self.persistent_draws.append(g)
+            else:
+                self.draws.append(g)
+            self._revision += 1
 
     def _resolve_color(self, color) -> Tuple[float, float, float, float]:
         if isinstance(color, str):
