@@ -121,6 +121,10 @@ class GizmoRenderer:
         self._inst_line_initialized: bool = False
         self._build_fatline_buffers()
         self._build_solid_buffers()
+        self._stat_lines: int = 0
+        self._stat_instances: int = 0
+        self._stat_mesh_verts: int = 0
+        self._stat_draws: int = 0
 
     def _ensure_instanced_prog(self):
         if self._instanced_prog is not None:
@@ -283,6 +287,8 @@ class GizmoRenderer:
         n_segs = starts.shape[0]
         if n_segs == 0:
             return
+        self._stat_lines += n_segs
+        self._stat_draws += 1
         n_verts = n_segs * 6
         try:
             old_cull = bool(self._ctx.cull_face)
@@ -334,6 +340,8 @@ class GizmoRenderer:
     def render_instanced(self, mesh: GpuMesh, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int):
         if not self._instanced_initialized or mesh.instance_vbo is None:
             return
+        self._stat_instances += num_instances
+        self._stat_draws += 1
         prog = self._instanced_prog
         vp_f32 = vp_mat.to_f32()
         if "u_mvp" in prog:
@@ -446,6 +454,8 @@ void main() {
         mesh = mesh_map.get(shape_type)
         if mesh is None or mesh.instance_vbo is None or num_instances == 0:
             return
+        self._stat_instances += num_instances
+        self._stat_draws += 1
         prog = self._inst_line_prog
         vp_f32 = vp_mat.to_f32()
         if "u_mvp" in prog:
@@ -478,15 +488,11 @@ void main() {
     def render_meshes(self, meshes: list[tuple], vp_mat: Mat4):
         if not self._solid_prog or not meshes:
             return
-        prog = self._solid_prog
-        vp_f32 = vp_mat.to_f32()
-        if "u_mvp" in prog:
-            prog["u_mvp"].write(vp_f32.tobytes())
-        self._ctx.disable(moderngl.CULL_FACE)
-        self._ctx.enable(moderngl.BLEND)
         for verts, indices, colors in meshes:
             if not verts or not indices or len(indices) < 3:
                 continue
+            self._stat_mesh_verts += len(verts)
+            self._stat_draws += 1
             n = len(verts)
             v_data = np.empty((n, 7), dtype=np.float32)
             for i in range(n):
@@ -512,6 +518,8 @@ void main() {
         prog = self._solid_prog
         if not prog:
             return
+        self._stat_mesh_verts += v_data.shape[0]
+        self._stat_draws += 1
         vp_f32 = vp_mat.to_f32()
         if "u_mvp" in prog:
             prog["u_mvp"].write(vp_f32.tobytes())

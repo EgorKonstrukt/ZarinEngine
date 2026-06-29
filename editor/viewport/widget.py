@@ -66,6 +66,8 @@ class SceneViewport(QOpenGLWidget):
         self._last_paint_time: float = time.perf_counter()
         self._last_update_gap: float = time.perf_counter()
         self._last_dt: float = 0.016
+        self._paint_dt: float = 0.016
+        self._last_render_ms: float = 0.0
         self._fps: float = 0.0
         self._fps_accum: float = 0.0
         self._fps_frames: int = 0
@@ -95,7 +97,7 @@ class SceneViewport(QOpenGLWidget):
         self._vsync_enabled: bool = True
         self._target_fps: int = 60
         self._init_format()
-        self._stats_enabled: bool = False
+        self._stats_enabled: bool = True
         self._fps_history: list[float] = []
         self._debug_lines: list[tuple[Vec3, Vec3, list[float]]] = []
         self._show_bvh_debug: bool = False
@@ -443,6 +445,7 @@ class SceneViewport(QOpenGLWidget):
         _p0 = time.perf_counter()
         _paint_gap = _p0 - getattr(self, '_last_paint_enter', _p0)
         self._last_paint_enter = _p0
+        self._paint_dt = _paint_gap
         bu = getattr(self, '_before_update', 0)
         if bu:
             self._engine.set_profiler_data("update_to_paint_ms", (_p0 - bu) * 1000.0)
@@ -525,6 +528,7 @@ class SceneViewport(QOpenGLWidget):
                 self._renderer.render_scene(scene, view, proj, cam_pos, fw, fh, self._screen_fbo,
                                             set(self._selected_entities), self._cam.near, self._cam.far, self._cam.fov)
                 render_ms = (time.perf_counter() - t0) * 1000.0
+                self._last_render_ms = render_ms
                 eng.set_profiler_data("render_ms", render_ms)
                 vp_mat = view * proj
                 dpr = self.devicePixelRatio()

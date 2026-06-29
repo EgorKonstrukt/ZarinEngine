@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import gc as _gc
 import math
+import os
+import time
 
 import numpy as np
 from PyQt6.QtCore import QRect, Qt
@@ -8,39 +11,241 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen
 
 from core.math3d import Vec3
 
+try:
+    import psutil as _psutil
+    _psutil_available = True
+except Exception:
+    _psutil_available = False
+
+
+def _get_ram_mb() -> float:
+    if _psutil_available:
+        try:
+            return _psutil.Process().memory_info().rss / (1024 * 1024)
+        except Exception:
+            pass
+    try:
+        import resource as _resource
+        return _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss / 1024
+    except Exception:
+        pass
+    try:
+        import ctypes
+        psapi = ctypes.windll.psapi
+        psapi.GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32]
+        psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+        class _PMC(ctypes.Structure):
+            _fields_ = [
+                ('cb', ctypes.c_uint32),
+                ('PageFaultCount', ctypes.c_uint32),
+                ('PeakWorkingSetSize', ctypes.c_size_t),
+                ('WorkingSetSize', ctypes.c_size_t),
+                ('QuotaPeakPagedPoolUsage', ctypes.c_size_t),
+                ('QuotaPagedPoolUsage', ctypes.c_size_t),
+                ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t),
+                ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
+                ('PagefileUsage', ctypes.c_size_t),
+                ('PeakPagefileUsage', ctypes.c_size_t),
+            ]
+        pmc = _PMC()
+        pmc.cb = ctypes.sizeof(_PMC)
+        h = ctypes.c_void_p(-1)
+        if psapi.GetProcessMemoryInfo(h, ctypes.byref(pmc), ctypes.sizeof(pmc)):
+            return pmc.WorkingSetSize / (1024 * 1024)
+    except Exception:
+        pass
+    return 0.0
+
+
+def _fmt_count(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n/1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n/1_000:.1f}k"
+    return str(n)
+
+
+_vram_cache = {'used_mb': 0.0, 'total_mb': 0.0, 'last_query': 0.0}
+
+
+def _get_vram_mb() -> tuple[float, float]:
+    global _vram_cache
+    now = time.time()
+    if now - _vram_cache['last_query'] < 2.0:
+        return _vram_cache['used_mb'], _vram_cache['total_mb']
+
+    used_mb = total_mb = 0.0
+    try:
+        import ctypes
+        nvml = ctypes.WinDLL('nvml.dll')
+        nvml.nvmlInit()
+        handle = ctypes.c_void_p()
+        nvml.nvmlDeviceGetHandleByIndex(0, ctypes.byref(handle))
+
+        class _NVMLMem(ctypes.Structure):
+            _fields_ = [
+                ('total', ctypes.c_ulonglong),
+                ('free', ctypes.c_ulonglong),
+                ('used', ctypes.c_ulonglong),
+            ]
+        mem = _NVMLMem()
+        nvml.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
+        total_mb = mem.total / (1024 * 1024)
+        used_mb = mem.used / (1024 * 1024)
+    except Exception:
+        pass
+
+    _vram_cache = {'used_mb': used_mb, 'total_mb': total_mb, 'last_query': now}
+    return used_mb, total_mb
+
+
+def _draw_val(painter, label, val, fm, cx, cy, line_height):
+    color_map = {
+        "FPS": QColor(100, 220, 100),
+        "1%": QColor(255, 200, 100),
+        "0.1%": QColor(255, 150, 100),
+        "CPU": QColor(100, 200, 255),
+        "GPU": QColor(100, 200, 255),
+        "RAM": QColor(180, 255, 180),
+        "VRAM": QColor(255, 180, 255),
+        "GC": QColor(180, 180, 255),
+        "TPS": QColor(180, 255, 180),
+        "DSP": QColor(255, 255, 180),
+        "Sounds": QColor(180, 255, 255),
+        "Entities": QColor(255, 180, 180),
+        "Draw Calls": QColor(200, 200, 200),
+        "Tris": QColor(200, 220, 255),
+        "Verts": QColor(200, 220, 255),
+        "Batches": QColor(200, 200, 200),
+        "Instanced": QColor(200, 200, 200),
+        "Gizmo Draws": QColor(200, 220, 255),
+        "GLines": QColor(200, 220, 255),
+    }
+    c = color_map.get(label, QColor(255, 255, 255))
+    painter.setPen(c)
+    painter.drawText(QRect(cx, cy, fm.horizontalAdvance(val), line_height),
+                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, val)
+
 
 def draw_stats_overlay(vp, painter):
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-    font = QFont("Segoe UI", 10, QFont.Weight.Bold)
+    font = QFont("Consolas", 9)
     font.setStyleStrategy(QFont.StyleStrategy.ForceOutline)
     painter.setFont(font)
-    vp._fps_history.append(vp._fps)
-    if len(vp._fps_history) > 60:
-        vp._fps_history.pop(0)
-    avg_fps = sum(vp._fps_history) / max(len(vp._fps_history), 1)
-    prof_data = vp._engine.profiler_data if hasattr(vp._engine, 'profiler_data') else {}
+
+    fps = vp._fps if vp._fps > 0 else 0.0
+    paint_dt = getattr(vp, '_paint_dt', 0.016)
+
+    if not hasattr(vp, '_frame_times_ms'):
+        vp._frame_times_ms = []
+
+    if paint_dt > 0:
+        vp._frame_times_ms.append(paint_dt * 1000.0)
+        if len(vp._frame_times_ms) > 300:
+            vp._frame_times_ms.pop(0)
+
+    sorted_ft = sorted(vp._frame_times_ms)
+    n = len(sorted_ft)
+
+    p1_count = max(1, int(n * 0.01))
+    p01_count = max(1, int(n * 0.001))
+    p1_low = sum(sorted_ft[-p1_count:]) / p1_count if sorted_ft else 0.0
+    p01_low = sum(sorted_ft[-p01_count:]) / p01_count if sorted_ft else 0.0
+
+    cpu_ms = paint_dt * 1000.0
+
     tps = vp._engine.tps if hasattr(vp._engine, 'tps') else 0.0
+
+    ram_mb = _get_ram_mb()
+    vram_used, vram_total = _get_vram_mb()
+
+    gc_gen0, gc_gen1, gc_gen2 = _gc.get_count()
+
+    dsp_load = 0.0
+    active_sounds = 0
+    try:
+        from core.audio_system import AudioSourceManager
+        mgr = AudioSourceManager.instance()
+        if mgr:
+            dsp_load = mgr.get_dsp_load()
+            active_sounds = mgr.get_active_sound_count()
+    except Exception:
+        pass
+
+    entities = len(vp._engine.scene.get_all_entities()) if vp._engine.scene else 0
+    triangles = vp._renderer._triangles_drawn if hasattr(vp._renderer, '_triangles_drawn') else 0
+    vertices = vp._renderer._vertices_drawn if hasattr(vp._renderer, '_vertices_drawn') else 0
+    draw_calls = vp._renderer._draw_calls if hasattr(vp._renderer, '_draw_calls') else 0
+
+    gpu_ms = vp._last_render_ms if hasattr(vp, '_last_render_ms') else 0.0
+
+    batches = 0
+    instanced = 0
+    if hasattr(vp._renderer, '_batcher') and vp._renderer._batcher:
+        batches = vp._renderer._batcher.batches
+        instanced = vp._renderer._batcher.instanced
+
+    gizmo_lines = vp._renderer._gizmo._stat_lines if vp._renderer._gizmo else 0
+    gizmo_draws = vp._renderer._gizmo._stat_draws if vp._renderer._gizmo else 0
+
     stats_lines = [
-        f"FPS: {avg_fps:.1f} | TPS: {tps:.0f}",
-        f"Entities: {len(vp._engine.scene.get_all_entities()) if vp._engine.scene else 0}",
-        f"Draw Calls: {vp._renderer._draw_calls if hasattr(vp._renderer, '_draw_calls') else 'N/A'}",
-        f"Triangles: {vp._renderer._triangles_drawn if hasattr(vp._renderer, '_triangles_drawn') else 'N/A'}",
+        f"FPS: {fps:.1f}  |  1%: {1000.0/max(p1_low,0.1):.1f}  |  0.1%: {1000.0/max(p01_low,0.1):.1f}  |  CPU: {cpu_ms:.1f}ms  |  GPU: {gpu_ms:.1f}ms",
+        f"RAM: {ram_mb:.0f} MB  |  VRAM: {vram_used:.0f}/{vram_total:.0f} MB  |  GC: {gc_gen0}/{gc_gen1}/{gc_gen2}  |  TPS: {tps:.0f}",
+        f"DSP: {dsp_load:.0f}%  |  Sounds: {active_sounds}",
+        f"Entities: {entities}  |  Draw Calls: {draw_calls}  |  Tris: {_fmt_count(triangles)}  |  Verts: {_fmt_count(vertices)}",
+        f"Batches: {batches}  |  Instanced: {instanced}  |  Gizmo Draws: {gizmo_draws}  |  GLines: {_fmt_count(gizmo_lines)}",
     ]
-    for key in sorted(prof_data.keys()):
-        val = prof_data[key]
-        stats_lines.append(f"{key}: {val:.2f}ms")
-    text_color = QColor(0, 255, 0)
-    bg_color = QColor(0, 0, 0, 150)
-    padding = 8
-    line_height = 16
+
+    text_color = QColor(255, 255, 255)
+    label_color = QColor(160, 160, 160)
+    bg_color = QColor(0, 0, 0, 160)
+    border_color = QColor(80, 80, 80, 200)
+    padding = 6
+    line_height = 15
     total_h = len(stats_lines) * line_height + padding * 2
-    rect = QRect(vp.width() - 220, 70, 200, total_h)
+
+    fm = QFontMetrics(font)
+    max_w = max(fm.horizontalAdvance(line) for line in stats_lines) + padding * 2
+    max_w = max(max_w, 460)
+
+    x = 8
+    y = 35
+    rect = QRect(x, y, int(max_w), total_h)
     painter.fillRect(rect, bg_color)
-    painter.setPen(text_color)
+    painter.setPen(QPen(border_color, 1))
+    painter.drawRect(rect)
+
+    painter.setFont(font)
     for i, line in enumerate(stats_lines):
-        painter.drawText(QRect(vp.width() - 215, 70 + i * line_height, 190, line_height),
-                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line)
+        cx = x + padding
+        cy = y + padding + i * line_height
+        segments = line.split("  |  ")
+        for idx, seg in enumerate(segments):
+            seg = seg.strip()
+            if not seg:
+                continue
+            if ":" in seg:
+                lab, val = seg.split(":", 1)
+                lab = lab.strip() + ": "
+                val = val.strip()
+                painter.setPen(label_color)
+                painter.drawText(QRect(cx, cy, fm.horizontalAdvance(lab), line_height),
+                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, lab)
+                cx += fm.horizontalAdvance(lab)
+                _draw_val(painter, lab.rstrip(": "), val, fm, cx, cy, line_height)
+                cx += fm.horizontalAdvance(val)
+            else:
+                painter.setPen(text_color)
+                painter.drawText(QRect(cx, cy, fm.horizontalAdvance(seg), line_height),
+                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, seg)
+                cx += fm.horizontalAdvance(seg)
+            if idx < len(segments) - 1:
+                painter.setPen(QColor(100, 100, 100))
+                sep = " | "
+                painter.drawText(QRect(cx, cy, fm.horizontalAdvance(sep), line_height),
+                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, sep)
+                cx += fm.horizontalAdvance(sep)
 
 
 def draw_delta_label(vp, painter):

@@ -390,6 +390,23 @@ class AudioSourceManager:
     def get_active_source_ids(self) -> list[int]:
         return list(self._active_sources.keys())
 
+    def get_active_sound_count(self) -> int:
+        if not _openal_available or not al.oalGetInit():
+            return 0
+        count = 0
+        for src in list(self._active_sources.keys()):
+            try:
+                state = al.ctypes.c_int()
+                al.alGetSourcei(src, al.AL_SOURCE_STATE, state)
+                if state.value == al.AL_PLAYING:
+                    count += 1
+            except Exception:
+                pass
+        return count
+
+    def get_dsp_load(self) -> float:
+        return 0.0
+
     def get_source_position(self, source_id: int) -> Optional[tuple[float, float, float]]:
         return self._source_positions.get(source_id)
 

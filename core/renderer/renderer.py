@@ -138,6 +138,7 @@ class Renderer:
         self._selection_outline_thickness: float = 0.03
         self._draw_calls: int = 0
         self._triangles_drawn: int = 0
+        self._vertices_drawn: int = 0
         self._render_callback: Optional[Callable] = None
         self._shadow_resolution: int = 4096
         self._shadow_distance: float = 50.0
@@ -538,6 +539,11 @@ void main() {
         _render_t0 = time.perf_counter()
         eng = Engine.instance()
         prof = eng._profiler if eng and hasattr(eng, '_profiler') else None
+        if self._gizmo:
+            self._gizmo._stat_lines = 0
+            self._gizmo._stat_instances = 0
+            self._gizmo._stat_mesh_verts = 0
+            self._gizmo._stat_draws = 0
         if prof:
             prof.start("render_scene")
         snap = _RenderSnapshot()
@@ -757,11 +763,15 @@ void main() {
         else:
             self._draw_calls = len(renderable) + skybox_call
         total_tris = 0
+        total_verts = 0
         for entry in renderable:
             mesh = entry[2]
             if hasattr(mesh, 'indices') and mesh.indices is not None and len(mesh.indices) > 0:
                 total_tris += len(mesh.indices) // 3
+            if hasattr(mesh, 'vertices') and mesh.vertices is not None and len(mesh.vertices) > 0:
+                total_verts += len(mesh.vertices) // 3
         self._triangles_drawn = total_tris
+        self._vertices_drawn = total_verts
         if prof:
             prof.stop("render_stats")
         if GraphicsEffect._registry and not self._effects_disabled:
