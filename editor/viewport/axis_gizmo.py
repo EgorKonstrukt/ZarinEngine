@@ -57,13 +57,16 @@ def draw_axis_gizmo_api(vp, vp_mat):
 
     neg_len = world_len * 0.5
     world_axes = [Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)]
-    colors = [(1.0, 0.2, 0.2, 1.0), (0.2, 1.0, 0.2, 1.0), (0.2, 0.4, 1.0, 1.0)]
+    base_colors = [(1.0, 0.2, 0.2, 1.0), (0.2, 1.0, 0.2, 1.0), (0.2, 0.4, 1.0, 1.0)]
     hover_col = (1.0, 1.0, 0.0, 1.0)
 
     tips = []
     neg_tips = []
-    lines = []
-    for i, (direction, color) in enumerate(zip(world_axes, colors)):
+    num_lines = 6
+    starts = np.empty((num_lines, 3), dtype=np.float32)
+    ends = np.empty((num_lines, 3), dtype=np.float32)
+    cols = np.empty((num_lines, 4), dtype=np.float32)
+    for i, (direction, color) in enumerate(zip(world_axes, base_colors)):
         if i == vp._axis_gizmo_hover:
             col = hover_col
         else:
@@ -73,10 +76,15 @@ def draw_axis_gizmo_api(vp, vp_mat):
         tips.append(tip)
         neg_tips.append(nt)
 
-        lines.append((gizmo_pos, tip, col))
-        lines.append((gizmo_pos, nt, tuple(c * 0.3 for c in col)))
+        idx = i * 2
+        starts[idx] = (gizmo_pos.x, gizmo_pos.y, gizmo_pos.z)
+        ends[idx] = (tip.x, tip.y, tip.z)
+        cols[idx] = col
+        starts[idx + 1] = (gizmo_pos.x, gizmo_pos.y, gizmo_pos.z)
+        ends[idx + 1] = (nt.x, nt.y, nt.z)
+        cols[idx + 1] = (col[0] * 0.3, col[1] * 0.3, col[2] * 0.3, col[3])
 
-    vp._renderer.render_gizmo_lines(lines, vp_mat, fw, fh, thickness_multiplier=1.5)
+    vp._renderer.render_gizmo_arrays(starts, ends, cols, vp_mat, fw, fh, thickness_multiplier=1.5)
 
     vp._axis_gizmo_tips_world = tips
     vp._axis_gizmo_neg_tips_world = neg_tips

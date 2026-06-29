@@ -140,14 +140,13 @@ class SceneViewport(QOpenGLWidget):
         fmt.setSwapInterval(1 if self._vsync_enabled else 0)
         self.setFormat(fmt)
         self._update_timer.setInterval(16)
-        if not self._vsync_enabled:
-            try:
-                import ctypes
-                result = ctypes.windll.winmm.timeBeginPeriod(1)
-                if result != 0:
-                    ctypes.windll.winmm.timeBeginPeriod(2)
-            except Exception:
-                pass
+        try:
+            import ctypes
+            result = ctypes.windll.winmm.timeBeginPeriod(1)
+            if result != 0:
+                ctypes.windll.winmm.timeBeginPeriod(2)
+        except Exception:
+            pass
         self._apply_config()
 
     def _apply_config(self):
@@ -571,8 +570,8 @@ class SceneViewport(QOpenGLWidget):
                 if self._gizmo_visible:
                     gizmo_result = self._gizmo.get_gizmo_arrays(self._cam, fw, fh)
                     if gizmo_result is not None:
-                        gs, ge, gc = gizmo_result
-                        self._renderer.render_gizmo_arrays(gs, ge, gc, vp_mat, fw, fh, thickness_multiplier=1.0)
+                        gs, ge, gcol = gizmo_result
+                        self._renderer.render_gizmo_arrays(gs, ge, gcol, vp_mat, fw, fh, thickness_multiplier=1.0)
                     else:
                         gizmo_lines = self._gizmo.get_gizmo_lines(self._cam, fw, fh)
                         if gizmo_lines:
