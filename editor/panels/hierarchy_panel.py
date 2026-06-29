@@ -4,8 +4,9 @@ from typing import Optional, TYPE_CHECKING
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QTreeWidget, QTreeWidgetItem, QPushButton,
                               QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView,
-                              QStyledItemDelegate, QStyle, QApplication)
+                              QStyledItemDelegate, QStyle, QApplication, QHeaderView)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
+from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtGui import QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
 if TYPE_CHECKING:
     from core.ecs import Entity, Scene
@@ -51,8 +52,9 @@ class HierarchyTree(QTreeWidget):
     copy_requested = pyqtSignal()
     paste_requested = pyqtSignal()
     component_drop_requested = pyqtSignal(object, object, object)
-    def __init__(self, parent=None):
+    def __init__(self, panel: HierarchyPanel, parent=None):
         super().__init__(parent)
+        self._panel = panel
         self.setDragDropMode(QTreeWidget.DragDropMode.DragDrop)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
@@ -61,38 +63,6 @@ class HierarchyTree(QTreeWidget):
         self._press_item = None
         self._press_pos = None
         self._drag_started = False
-        self._last_clicked_item = None
-    def _select_range(self, item):
-        if not self._last_clicked_item:
-            self.setCurrentItem(item)
-            return
-        items = []
-        collecting = False
-        stop = False
-
-        def walk(parent):
-            nonlocal collecting, stop
-            if stop:
-                return
-            for i in range(parent.childCount()):
-                if stop:
-                    return
-                child = parent.child(i)
-                if child == self._last_clicked_item or child == item:
-                    items.append(child)
-                    if collecting:
-                        stop = True
-                        return
-                    collecting = True
-                elif collecting:
-                    items.append(child)
-                walk(child)
-
-        walk(self.invisibleRootItem())
-        self.clearSelection()
-        for it in items:
-            it.setSelected(True)
-        self.setCurrentItem(item)
     def supportedDropActions(self):
         return Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
     def mimeTypes(self):
@@ -133,28 +103,11 @@ class HierarchyTree(QTreeWidget):
                 return
         super().mouseMoveEvent(event)
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            if self._drag_started:
-                self._drag_started = False
-                self._press_item = None
-                self._press_pos = None
-                return
-            if self._press_item:
-                item = self._press_item
-                self._press_item = None
-                self._press_pos = None
-                modifiers = event.modifiers()
-                if modifiers & Qt.KeyboardModifier.ControlModifier:
-                    item.setSelected(not item.isSelected())
-                    self._last_clicked_item = item
-                elif modifiers & Qt.KeyboardModifier.ShiftModifier:
-                    self._select_range(item)
-                else:
-                    self.clearSelection()
-                    item.setSelected(True)
-                    self.setCurrentItem(item)
-                    self._last_clicked_item = item
-                return
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_started:
+            self._drag_started = False
+            self._press_item = None
+            self._press_pos = None
+            return
         super().mouseReleaseEvent(event)
     def dragMoveEvent(self, event):
         if event.mimeData().hasFormat(_COMPONENT_MIME):
@@ -302,25 +255,44 @@ class HierarchyPanel(QDockWidget):
         layout.setSpacing(0)
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(4, 4, 4, 2)
-        self._search = QLineEdit()
-        self._search.setPlaceholderText("Search...")
-        self._search.setClearButtonEnabled(True)
-        self._search.textChanged.connect(self._on_search)
-        toolbar.addWidget(self._search, 1)
+        toolbar.setSpacing(2)
         add_btn = QPushButton("+")
         add_btn.setFixedSize(*scale_xy(24, 24))
         add_btn.setToolTip("Create Entity")
         add_btn.clicked.connect(self._show_create_menu)
         toolbar.addWidget(add_btn)
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("  All")
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(self._on_search)
+        search_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView)
+        self._search.addAction(search_icon, QLineEdit.ActionPosition.LeadingPosition)
+        toolbar.addWidget(self._search, 1)
+        collapse_btn = QPushButton("\u25BC")
+        collapse_btn.setFixedSize(*scale_xy(24, 24))
+        collapse_btn.setToolTip("Collapse All")
+        collapse_btn.clicked.connect(self._collapse_all)
+        toolbar.addWidget(collapse_btn)
         layout.addLayout(toolbar)
-        self._tree = HierarchyTree()
+
+        self._scene_header = QWidget()
+        header_layout = QHBoxLayout(self._scene_header)
+        header_layout.setContentsMargins(8, 0, 8, 2)
+        header_layout.setSpacing(4)
+        self._scene_icon = QLabel()
+        icon_path = os.path.join(os.path.dirname(__file__), '..', '..', 'zarin_icon.svg')
+        icon_pix = QPixmap(icon_path).scaled(16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self._scene_icon.setPixmap(icon_pix)
+        header_layout.addWidget(self._scene_icon)
+        self._scene_label = QLabel()
+        header_layout.addWidget(self._scene_label)
+        header_layout.addStretch()
+        self._update_scene_header()
+        layout.addWidget(self._scene_header)
+
+        self._tree = HierarchyTree(self)
         self._tree.setHeaderHidden(True)
         self._tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
-        self._tree.setStyleSheet(
-            "QTreeWidget::item:selected { background: #264f78; color: #fff; }"
-            "QTreeWidget::item:selected:active { background: #264f78; }"
-            "QTreeWidget::item:hover { background: #2a2d2e; }"
-        )
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._show_context_menu)
         self._tree.itemSelectionChanged.connect(self._on_selection_changed)
@@ -331,6 +303,9 @@ class HierarchyPanel(QDockWidget):
         self._tree.delete_requested.connect(self._delete_entities_by_ids)
         self._tree.copy_requested.connect(self._on_copy)
         self._tree.paste_requested.connect(self._on_paste)
+        toggle_shortcut = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
+        toggle_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        toggle_shortcut.activated.connect(self._toggle_active_selected)
         layout.addWidget(self._tree)
         self.setWidget(w)
         self._refresh_timer = QTimer(self)
@@ -339,10 +314,16 @@ class HierarchyPanel(QDockWidget):
     def load_config(self, config) -> None:
         refresh_interval = config.get("hierarchy.refresh_interval", 500)
         self._refresh_timer.setInterval(refresh_interval)
+    def _update_scene_header(self):
+        if self._scene:
+            self._scene_label.setText(getattr(self._scene, 'name', 'Scene'))
+        else:
+            self._scene_label.setText("No Scene")
     def _on_scene_loaded(self, scene: Scene):
         self._scene = scene
         self._selected_entity = None
         self._last_render_version = -1
+        self._update_scene_header()
         self._refresh()
     def _refresh(self):
         if not self._scene:
@@ -475,6 +456,14 @@ class HierarchyPanel(QDockWidget):
             self._scene.mark_dirty()
     def _on_search(self, text: str):
         self._refresh()
+
+    def _collapse_all(self):
+        def collapse_items(parent_item):
+            for i in range(parent_item.childCount()):
+                child = parent_item.child(i)
+                child.setExpanded(False)
+                collapse_items(child)
+        collapse_items(self._tree.invisibleRootItem())
     def _on_reparent(self, dragged_eid: str, target_eid: Optional[str]):
         if not self._scene:
             return
@@ -990,6 +979,30 @@ class HierarchyPanel(QDockWidget):
         self._refresh()
         if self._selected_entity:
             self._restore_selection(self._selected_entity.id)
+
+    def _toggle_active_by_ids(self, eids: list):
+        if not self._scene:
+            return
+        changed = False
+        for eid in eids:
+            entity = self._scene.get_entity(eid)
+            if entity:
+                entity.active = not entity.active
+                changed = True
+        if changed:
+            self._scene.mark_dirty()
+            self._refresh()
+
+    def _toggle_active_selected(self):
+        items = self._tree.selectedItems()
+        if not items or not self._scene:
+            return
+        eids = []
+        for item in items:
+            eid = item.data(0, Qt.ItemDataRole.UserRole)
+            if eid:
+                eids.append(eid)
+        self._toggle_active_by_ids(eids)
     def _save_prefab(self, entity: Entity):
         from PyQt6.QtWidgets import QFileDialog
         from core.prefab import Prefab
