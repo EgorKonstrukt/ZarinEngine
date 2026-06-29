@@ -6,8 +6,7 @@ from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView,
                               QStyledItemDelegate, QStyle, QApplication, QHeaderView)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
-from PyQt6.QtGui import QShortcut, QKeySequence
-from PyQt6.QtGui import QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
+from PyQt6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
 if TYPE_CHECKING:
     from core.ecs import Entity, Scene
     from core.engine import Engine
@@ -208,15 +207,26 @@ class HierarchyTree(QTreeWidget):
         key = event.key()
         mods = event.modifiers()
         nvk = event.nativeVirtualKey()
-        if mods & Qt.KeyboardModifier.ControlModifier:
-            if nvk == 67 or key == Qt.Key.Key_C:
-                self.copy_requested.emit()
-                event.accept()
-                return
-            if nvk == 86 or key == Qt.Key.Key_V:
-                self.paste_requested.emit()
-                event.accept()
-                return
+        if event.matches(QKeySequence.StandardKey.Copy):
+            self.copy_requested.emit()
+            event.accept()
+            return
+        if event.matches(QKeySequence.StandardKey.Paste):
+            self.paste_requested.emit()
+            event.accept()
+            return
+        if mods & Qt.KeyboardModifier.ControlModifier and mods & Qt.KeyboardModifier.ShiftModifier and key == Qt.Key.Key_A:
+            items = self.selectedItems()
+            if items:
+                eids = []
+                for item in items:
+                    eid = item.data(0, Qt.ItemDataRole.UserRole)
+                    if eid:
+                        eids.append(eid)
+                if eids:
+                    self._panel._toggle_active_by_ids(eids)
+            event.accept()
+            return
         if key == Qt.Key.Key_F2:
             items = self.selectedItems()
             if items:
@@ -303,9 +313,6 @@ class HierarchyPanel(QDockWidget):
         self._tree.delete_requested.connect(self._delete_entities_by_ids)
         self._tree.copy_requested.connect(self._on_copy)
         self._tree.paste_requested.connect(self._on_paste)
-        toggle_shortcut = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
-        toggle_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        toggle_shortcut.activated.connect(self._toggle_active_selected)
         layout.addWidget(self._tree)
         self.setWidget(w)
         self._refresh_timer = QTimer(self)
