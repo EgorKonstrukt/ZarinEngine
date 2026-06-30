@@ -24,6 +24,8 @@ in float a_side;
 in vec4 a_color;
 out vec3 v_color;
 out float v_alpha;
+out float v_t;
+out float v_line_len;
 uniform float u_thickness_ndc_x;
 uniform float u_thickness_ndc_y;
 void main() {
@@ -46,6 +48,8 @@ void main() {
     gl_Position = clipPos;
     v_color = a_color.rgb;
     v_alpha = a_color.a;
+    v_t = a_t;
+    v_line_len = length(a_end - a_start);
 }
 """
 
@@ -53,8 +57,23 @@ FATLINE_FRAG = """
 #version 460 core
 in vec3 v_color;
 in float v_alpha;
+in float v_t;
+in float v_line_len;
+uniform bool u_dash_enabled;
+uniform float u_dash_length;
+uniform float u_gap_length;
+uniform float u_dash_time;
 out vec4 fragColor;
 void main() {
+    if (u_dash_enabled) {
+        float total = u_dash_length + u_gap_length;
+        float offset = u_dash_time * 1.2;
+        float pos = v_t * v_line_len + offset;
+        float mod_pos = mod(pos, total);
+        if (mod_pos > u_dash_length) {
+            discard;
+        }
+    }
     fragColor = vec4(v_color, v_alpha);
 }
 """
@@ -286,7 +305,8 @@ class GizmoRenderer:
             self._ctx.enable(moderngl.DEPTH_TEST)
 
     def _render_lines_np(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
-                          vp_mat: Mat4, fw: int, fh: int, desired_pixels: float):
+                          vp_mat: Mat4, fw: int, fh: int, desired_pixels: float,
+                          dash_opts: Optional[dict] = None):
         n_segs = starts.shape[0]
         if n_segs == 0:
             return
@@ -309,6 +329,13 @@ class GizmoRenderer:
             prog["u_thickness_ndc_x"] = float(ndc_x)
         if "u_thickness_ndc_y" in prog:
             prog["u_thickness_ndc_y"] = float(ndc_y)
+        if dash_opts and "u_dash_enabled" in prog:
+            prog["u_dash_enabled"] = True
+            prog["u_dash_length"] = float(dash_opts.get('dash_length', 0.3))
+            prog["u_gap_length"] = float(dash_opts.get('gap_length', 0.15))
+            prog["u_dash_time"] = float(dash_opts.get('time', 0.0))
+        elif "u_dash_enabled" in prog:
+            prog["u_dash_enabled"] = False
         self._ensure_fatline_capacity(n_verts)
         sv = self._fs_starts[:n_verts].reshape(-1, 6, 3)
         sv[:] = starts[:, None, :]

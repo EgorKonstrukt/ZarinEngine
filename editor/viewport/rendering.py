@@ -47,39 +47,6 @@ def _box_edges_np(bmin, bmax):
     return corners[_BOX_EDGE_IDXS[:, 0]], corners[_BOX_EDGE_IDXS[:, 1]]
 
 
-DASH_LEN = 0.3
-GAP_LEN = 0.15
-
-
-def _dashed_lines_np(starts, ends, color, time_s):
-    total = DASH_LEN + GAP_LEN
-    offset = (time_s * 1.2) % total
-    n = starts.shape[0]
-    dirs = ends - starts
-    lengths = np.sqrt(np.sum(dirs * dirs, axis=1))
-    lengths = np.maximum(lengths, 1e-8)
-    dirs_norm = dirs / lengths[:, None]
-    s_parts = []
-    e_parts = []
-    for i in range(n):
-        nd = max(int(lengths[i] / total), 1)
-        t0 = offset + np.arange(nd, dtype=np.float32) * total
-        t1 = np.minimum(t0 + DASH_LEN, lengths[i])
-        s_parts.append(starts[i] + dirs_norm[i] * t0[:, None])
-        e_parts.append(starts[i] + dirs_norm[i] * t1[:, None])
-    if s_parts:
-        s_arr = np.concatenate(s_parts, axis=0)
-        e_arr = np.concatenate(e_parts, axis=0)
-    else:
-        s_arr = np.empty((0, 3), dtype=np.float32)
-        e_arr = np.empty((0, 3), dtype=np.float32)
-    n_d = s_arr.shape[0]
-    c_arr = np.empty((n_d, 4), dtype=np.float32)
-    c_arr[:, 0] = color[0]; c_arr[:, 1] = color[1]
-    c_arr[:, 2] = color[2]; c_arr[:, 3] = color[3]
-    return s_arr, e_arr, c_arr
-
-
 def _build_unit_sphere_cache_np(segments=8):
     verts = []
     idx = []
@@ -212,8 +179,12 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state):
     cam_pos = vp._cam.position if vp._cam else Vec3(0, 0, 0)
     fw, fh = vp._get_physical_dims()
     starts, ends = _box_edges_np(cur_min, cur_max)
-    d_starts, d_ends, d_colors = _dashed_lines_np(starts, ends, color, time_s * 1.5)
-    vp._renderer.render_gizmo_arrays(d_starts, d_ends, d_colors, vp_mat, fw, fh, thickness_multiplier=1.5)
+    n_edges = starts.shape[0]
+    colors_arr = np.empty((n_edges, 4), dtype=np.float32)
+    colors_arr[:, 0] = color[0]; colors_arr[:, 1] = color[1]
+    colors_arr[:, 2] = color[2]; colors_arr[:, 3] = color[3]
+    dash_opts = {'dash_length': 0.3, 'gap_length': 0.15, 'time': time_s * 1.5}
+    vp._renderer.render_gizmo_arrays(starts, ends, colors_arr, vp_mat, fw, fh, thickness_multiplier=1.5, dash_opts=dash_opts)
     cx = float(cur_min[0]); cy = float(cur_min[1]); cz = float(cur_min[2])
     dx = float(cur_max[0]); dy = float(cur_max[1]); dz = float(cur_max[2])
     verts_3d = [

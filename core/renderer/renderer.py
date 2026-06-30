@@ -1016,10 +1016,11 @@ void main() {
             self._gizmo.render_lines(lines, vp_mat, fw, fh, thickness_multiplier)
 
     def render_gizmo_arrays(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
-                             vp_mat: Mat4, fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0):
+                             vp_mat: Mat4, fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0,
+                             dash_opts: Optional[dict] = None):
         if self._gizmo:
             desired_pixels = max(1.0, float(self._line_width) * 1.5 * thickness_multiplier)
-            self._gizmo._render_lines_np(starts, ends, colors, vp_mat, fw, fh, desired_pixels)
+            self._gizmo._render_lines_np(starts, ends, colors, vp_mat, fw, fh, desired_pixels, dash_opts)
 
     def render_instanced_gizmo(self, mesh_type: str, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int):
         if not self._gizmo:
