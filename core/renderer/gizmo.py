@@ -39,7 +39,10 @@ void main() {
     } else {
         perp = vec2(1.0, 0.0);
     }
-    clipPos.xy += perp * a_side * vec2(u_thickness_ndc_x, u_thickness_ndc_y) * clipPos.w;
+    float thickness = max(u_thickness_ndc_x, u_thickness_ndc_y);
+    float aspect = u_thickness_ndc_y / max(u_thickness_ndc_x, 1e-6);
+    vec2 adj_perp = normalize(vec2(perp.x * aspect, perp.y));
+    clipPos.xy += adj_perp * a_side * thickness * clipPos.w;
     gl_Position = clipPos;
     v_color = a_color.rgb;
     v_alpha = a_color.a;
@@ -90,7 +93,7 @@ class GizmoRenderer:
         self._gizmo_prog = gizmo_prog
         self._fatline_prog = fatline_prog
         self._solid_prog = solid_prog
-        self._line_width: float = 1.0
+        self._line_width: float = 2.0
         self._fatline_vbo_start: Optional[moderngl.Buffer] = None
         self._fatline_vbo_end: Optional[moderngl.Buffer] = None
         self._fatline_vbo_t: Optional[moderngl.Buffer] = None

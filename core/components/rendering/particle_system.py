@@ -2,21 +2,11 @@ from __future__ import annotations
 import math
 import numpy as np
 from enum import Enum
-from typing import Optional, Any, Tuple
+from typing import Optional, Any
 from core.ecs import Component, ComponentRegistry
 from core.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 
-_numba_available = False
-
-def njit(*args, **kwargs):
-    if args and callable(args[0]):
-        return args[0]
-    def wrapper(f):
-        return f
-    return wrapper
-
-prange = range
 
 class ShapeType(Enum):
     CONE = "cone"
@@ -39,115 +29,14 @@ class ParticleSortMode(Enum):
     BY_AGE = "by_age"
 
 PARTICLE_DTYPE = np.dtype([
-    ('position', np.float32, 3),
-    ('velocity', np.float32, 3),
+    ('position', np.float32, 4),
+    ('velocity', np.float32, 4),
     ('color', np.float32, 4),
-    ('size', np.float32, 2),
-    ('rotation', np.float32),
-    ('lifetime', np.float32),
-    ('max_lifetime', np.float32),
-    ('alive', np.int32),
+    ('meta', np.float32, 4),
+    ('lifetime', np.float32, 4),
     ('start_color', np.float32, 4),
-    ('start_size', np.float32, 2),
-    ('start_rotation', np.float32),
-], align=True)
-
-@njit(cache=True, fastmath=True)
-def _sample_curve_numba(keys_t: np.ndarray, keys_v: np.ndarray, t_array: np.ndarray) -> np.ndarray:
-    n = len(t_array)
-    out = np.empty(n, dtype=np.float32)
-    nk = len(keys_t)
-    t_min, t_max = keys_t[0], keys_t[-1]
-    for i in range(n):
-        t = t_array[i]
-        if t < t_min: t = t_min
-        if t > t_max: t = t_max
-        lo, hi = 0, nk - 2
-        while lo < hi:
-            mid = (lo + hi + 1) >> 1
-            if keys_t[mid] <= t:
-                lo = mid
-            else:
-                hi = mid - 1
-        idx = lo if lo < nk - 1 else nk - 2
-        dt = keys_t[idx + 1] - keys_t[idx]
-        seg = (t - keys_t[idx]) / (dt if dt > 1e-10 else 1e-10)
-        out[i] = keys_v[idx] + (keys_v[idx + 1] - keys_v[idx]) * seg
-    return out
-
-@njit(cache=True, fastmath=True)
-def _sample_gradient_numba(
-    c_keys_t: np.ndarray, c_keys_v: np.ndarray,
-    a_keys_t: np.ndarray, a_keys_v: np.ndarray,
-    t_array: np.ndarray
-) -> np.ndarray:
-    n = len(t_array)
-    out = np.empty((n, 4), dtype=np.float32)
-    nck = len(c_keys_t)
-    nak = len(a_keys_t)
-    ct_min, ct_max = c_keys_t[0], c_keys_t[-1]
-    at_min, at_max = a_keys_t[0], a_keys_t[-1]
-    for i in range(n):
-        tc = t_array[i]
-        if tc < ct_min: tc = ct_min
-        if tc > ct_max: tc = ct_max
-        lo, hi = 0, nck - 2
-        while lo < hi:
-            mid = (lo + hi + 1) >> 1
-            if c_keys_t[mid] <= tc:
-                lo = mid
-            else:
-                hi = mid - 1
-        idx = lo if lo < nck - 1 else nck - 2
-        dt = c_keys_t[idx + 1] - c_keys_t[idx]
-        seg = (tc - c_keys_t[idx]) / (dt if dt > 1e-10 else 1e-10)
-        for ch in range(3):
-            out[i, ch] = c_keys_v[idx, ch] + (c_keys_v[idx + 1, ch] - c_keys_v[idx, ch]) * seg
-        ta = t_array[i]
-        if ta < at_min: ta = at_min
-        if ta > at_max: ta = at_max
-        lo2, hi2 = 0, nak - 2
-        while lo2 < hi2:
-            mid2 = (lo2 + hi2 + 1) >> 1
-            if a_keys_t[mid2] <= ta:
-                lo2 = mid2
-            else:
-                hi2 = mid2 - 1
-        idx2 = lo2 if lo2 < nak - 1 else nak - 2
-        dt2 = a_keys_t[idx2 + 1] - a_keys_t[idx2]
-        seg2 = (ta - a_keys_t[idx2]) / (dt2 if dt2 > 1e-10 else 1e-10)
-        out[i, 3] = a_keys_v[idx2] + (a_keys_v[idx2 + 1] - a_keys_v[idx2]) * seg2
-    return out
-
-@njit(cache=True, fastmath=True)
-def _update_core(
-    pos: np.ndarray, vel: np.ndarray, lt: np.ndarray, max_lt: np.ndarray,
-    alive: np.ndarray, dt: float, gx: float, gy: float, gz: float,
-    dx: float, dy: float, dz: float,
-    do_local: bool
-) -> np.ndarray:
-    n = len(alive)
-    died = np.zeros(n, dtype=np.int32)
-    for i in range(n):
-        if alive[i] != 1:
-            continue
-        lt[i] -= dt
-        if lt[i] <= 0.0:
-            alive[i] = 0
-            died[i] = 1
-            continue
-        vel[i, 0] += gx * dt
-        vel[i, 1] += gy * dt
-        vel[i, 2] += gz * dt
-        if do_local:
-            pos[i, 0] += vel[i, 0] * dt + dx
-            pos[i, 1] += vel[i, 1] * dt + dy
-            pos[i, 2] += vel[i, 2] * dt + dz
-        else:
-            pos[i, 0] += vel[i, 0] * dt
-            pos[i, 1] += vel[i, 1] * dt
-            pos[i, 2] += vel[i, 2] * dt
-    return died
+    ('start_meta', np.float32, 4),
+])
 
 def _build_curve_cache(curve_list) -> Optional[tuple]:
     if not curve_list or len(curve_list) < 2:
@@ -165,6 +54,73 @@ def _build_gradient_cache(grad: dict) -> Optional[tuple]:
     a_t = np.array([k[0] for k in ak], dtype=np.float32)
     a_v = np.array([k[1] for k in ak], dtype=np.float32)
     return c_t, c_v, a_t, a_v
+
+def _sample_curve(keys_t: np.ndarray, keys_v: np.ndarray, t: float) -> float:
+    nk = len(keys_t)
+    t_clamped = max(keys_t[0], min(keys_t[-1], t))
+    lo, hi = 0, nk - 2
+    while lo < hi:
+        mid = (lo + hi + 1) >> 1
+        if keys_t[mid] <= t_clamped:
+            lo = mid
+        else:
+            hi = mid - 1
+    idx = lo if lo < nk - 1 else nk - 2
+    dt = keys_t[idx + 1] - keys_t[idx]
+    seg = (t_clamped - keys_t[idx]) / (dt if dt > 1e-10 else 1e-10)
+    return keys_v[idx] + (keys_v[idx + 1] - keys_v[idx]) * seg
+
+def _presample_curve(curve_cache: Optional[tuple], num_samples: int = 16) -> np.ndarray:
+    out = np.ones(num_samples, dtype=np.float32)
+    if curve_cache is None:
+        return out
+    keys_t, keys_v = curve_cache
+    for i in range(num_samples):
+        t = i / (num_samples - 1)
+        out[i] = _sample_curve(keys_t, keys_v, t)
+    return out
+
+def _presample_gradient(grad_cache: Optional[tuple], num_samples: int = 16) -> tuple:
+    cr = np.ones(num_samples, dtype=np.float32)
+    cg = np.ones(num_samples, dtype=np.float32)
+    cb = np.ones(num_samples, dtype=np.float32)
+    alpha = np.ones(num_samples, dtype=np.float32)
+    if grad_cache is None:
+        return cr, cg, cb, alpha
+    c_t, c_v, a_t, a_v = grad_cache
+    nk = len(c_t)
+    for i in range(num_samples):
+        t = i / (num_samples - 1)
+        t_clamped = max(c_t[0], min(c_t[-1], t))
+        lo, hi = 0, nk - 2
+        while lo < hi:
+            mid = (lo + hi + 1) >> 1
+            if c_t[mid] <= t_clamped:
+                lo = mid
+            else:
+                hi = mid - 1
+        idx = lo if lo < nk - 1 else nk - 2
+        dt = c_t[idx + 1] - c_t[idx]
+        seg = (t_clamped - c_t[idx]) / (dt if dt > 1e-10 else 1e-10)
+        cr[i] = c_v[idx, 0] + (c_v[idx + 1, 0] - c_v[idx, 0]) * seg
+        cg[i] = c_v[idx, 1] + (c_v[idx + 1, 1] - c_v[idx, 1]) * seg
+        cb[i] = c_v[idx, 2] + (c_v[idx + 1, 2] - c_v[idx, 2]) * seg
+    for i in range(num_samples):
+        t = i / (num_samples - 1)
+        t_clamped = max(a_t[0], min(a_t[-1], t))
+        lo, hi = 0, len(a_t) - 2
+        while lo < hi:
+            mid = (lo + hi + 1) >> 1
+            if a_t[mid] <= t_clamped:
+                lo = mid
+            else:
+                hi = mid - 1
+        idx = lo if lo < len(a_t) - 1 else len(a_t) - 2
+        dt = a_t[idx + 1] - a_t[idx]
+        seg = (t_clamped - a_t[idx]) / (dt if dt > 1e-10 else 1e-10)
+        alpha[i] = a_v[idx] + (a_v[idx + 1] - a_v[idx]) * seg
+    return cr, cg, cb, alpha
+
 
 @ComponentRegistry.register
 class ParticleSystem(Component):
@@ -273,87 +229,39 @@ class ParticleSystem(Component):
         self._stopped: bool = False
         self._burst_index: int = 0
         self._prev_position: Vec3 = None
+        self._last_delta_pos: Vec3 = Vec3.zero()
         self._emitter_velocity: np.ndarray = None
         self._local_to_world: np.ndarray = None
         self._local_position: np.ndarray = None
         self._particles: Optional[np.ndarray] = None
         self._free_stack: Optional[np.ndarray] = None
         self._free_top: int = 0
+        self._last_dt: float = 0.016
         self._alive_mask: Optional[np.ndarray] = None
-        self._vao: Optional[Any] = None
-        self._vbo: Optional[Any] = None
-        self._ibo: Optional[Any] = None
+        self._start_color_arr: Optional[np.ndarray] = None
         self._curve_cache_x: Optional[tuple] = None
         self._curve_cache_y: Optional[tuple] = None
         self._gradient_cache: Optional[tuple] = None
-        self._vel_linear: Optional[np.ndarray] = None
-        self._vel_orbital: Optional[np.ndarray] = None
-        self._start_color_arr: Optional[np.ndarray] = None
 
     def _invalidate_caches(self):
         self._curve_cache_x = None
         self._curve_cache_y = None
         self._gradient_cache = None
-        self._vel_linear = None
-        self._vel_orbital = None
         self._start_color_arr = None
-
-    _RENDER_VERT_DTYPE = [
-        ('position', np.float32, 3),
-        ('color', np.float32, 4),
-        ('texcoord', np.float32, 2),
-        ('size', np.float32, 2),
-        ('rotation', np.float32),
-    ]
 
     def _ensure_arrays(self):
         n = self.max_particles
         if self._particles is None or len(self._particles) != n:
             self._particles = np.zeros(n, dtype=PARTICLE_DTYPE)
-            self._particles['alive'] = 0
+            self._particles['meta'][:, 3] = 0.0
             self._free_stack = np.arange(n, dtype=np.int32)
             self._free_top = n
             self._alive_mask = np.zeros(n, dtype=np.bool_)
             self._particle_count = 0
             self._alive_count = 0
-            self._render_verts = np.zeros(n * 4, dtype=self._RENDER_VERT_DTYPE)
-            self._render_indices = np.zeros(n * 6, dtype=np.uint32)
-            idx4 = np.arange(n, dtype=np.uint32) * 4
-            self._render_indices[:] = (idx4[:, None] + np.array([0, 1, 2, 0, 2, 3], dtype=np.uint32)).ravel()
-
-    def _get_curve_caches(self):
-        if self._curve_cache_x is None:
-            cx = self.size_over_lifetime_curve_x or self.size_over_lifetime_curve or [(0,1),(1,1)]
-            cy = self.size_over_lifetime_curve_y or cx
-            self._curve_cache_x = _build_curve_cache(cx)
-            self._curve_cache_y = _build_curve_cache(cy)
-        return self._curve_cache_x, self._curve_cache_y
-
-    def _get_gradient_cache(self):
-        if self._gradient_cache is None:
-            grad = self.color_over_lifetime_gradient or {
-                "alpha_keys": [(0,1),(1,0)],
-                "color_keys": [(0,[1,1,1]),(1,[1,1,1])]
-            }
-            self._gradient_cache = _build_gradient_cache(grad)
-        return self._gradient_cache
 
     def on_start(self):
         self._ensure_arrays()
-        if self.prewarm:
-            self._simulate_forward(self.start_lifetime)
-
-    def _simulate_forward(self, time: float):
-        steps = int(time / 0.02)
-        t = self.transform
-        if t and self.simulation_space == SimulationSpace.LOCAL:
-            wm = t.world_matrix._d
-            self._local_to_world = wm[:3, :3].astype(np.float32)
-            pos = t.position
-            self._local_position = np.array([pos.x, pos.y, pos.z], dtype=np.float32)
-        for _ in range(steps):
-            self._update_particles(0.02, Vec3.zero())
-            self._emit_particles(0.02, Vec3.zero())
 
     def on_enable(self):
         if not self._started:
@@ -392,7 +300,7 @@ class ParticleSystem(Component):
         half_len = self.shape_length * 0.5
         arc_rad = math.radians(self.shape_arc)
         if self._start_color_arr is None:
-            self._start_color_arr = np.array(self.start_color or [1.0,1.0,1.0,1.0], dtype=np.float32)
+            self._start_color_arr = np.array(self.start_color or [1.0, 1.0, 1.0, 1.0], dtype=np.float32)
         rng = np.random.random(n).astype(np.float32)
         rng2 = np.random.random(n).astype(np.float32)
         rng3 = np.random.random(n).astype(np.float32)
@@ -469,19 +377,19 @@ class ParticleSystem(Component):
         rot = math.radians(self.start_rotation) + (np.random.random(n).astype(np.float32) - 0.5) * math.radians(self.flip_rotation)
         sc = self._start_color_arr
         p = self._particles
-        p['position'][idx_arr] = pos
-        p['velocity'][idx_arr] = velocity
+        p['position'][idx_arr, :3] = pos
+        p['velocity'][idx_arr, :3] = velocity
         p['color'][idx_arr] = sc
-        p['size'][idx_arr, 0] = size_val
-        p['size'][idx_arr, 1] = size_val
-        p['rotation'][idx_arr] = rot
-        p['lifetime'][idx_arr] = lifetimes
-        p['max_lifetime'][idx_arr] = lifetimes
-        p['alive'][idx_arr] = 1
+        p['meta'][idx_arr, 0] = size_val
+        p['meta'][idx_arr, 1] = size_val
+        p['meta'][idx_arr, 2] = rot
+        p['meta'][idx_arr, 3] = 1.0
+        p['lifetime'][idx_arr, 0] = lifetimes
+        p['lifetime'][idx_arr, 1] = lifetimes
         p['start_color'][idx_arr] = sc
-        p['start_size'][idx_arr, 0] = size_val
-        p['start_size'][idx_arr, 1] = size_val
-        p['start_rotation'][idx_arr] = rot
+        p['start_meta'][idx_arr, 0] = size_val
+        p['start_meta'][idx_arr, 1] = size_val
+        p['start_meta'][idx_arr, 2] = rot
         self._alive_mask[idx_arr] = True
         self._particle_count += n
         self._alive_count += n
@@ -507,72 +415,6 @@ class ParticleSystem(Component):
                 if abs(self._time - burst.get("time", 0.0)) < dt * 1.5:
                     self._emit(burst.get("count", 1))
 
-    def _update_particles(self, dt: float, delta_pos: Vec3):
-        if self._alive_count == 0:
-            return
-        p = self._particles
-        alive_mask = self._alive_mask
-        gx, gy, gz = 0.0, -9.81 * self.gravity_modifier, 0.0
-        do_local = self.simulation_space == SimulationSpace.LOCAL
-        dx = delta_pos.x if do_local else 0.0
-        dy = delta_pos.y if do_local else 0.0
-        dz = delta_pos.z if do_local else 0.0
-        died = _update_core(
-            p['position'], p['velocity'], p['lifetime'], p['max_lifetime'],
-            p['alive'], dt, gx, gy, gz, dx, dy, dz, do_local
-        )
-        died_mask = died == 1
-        if died_mask.any():
-            died_idx = np.where(died_mask)[0].astype(np.int32)
-            nd = len(died_idx)
-            alive_mask[died_idx] = False
-            self._free_stack[self._free_top:self._free_top + nd] = died_idx
-            self._free_top += nd
-            self._particle_count -= nd
-            self._alive_count -= nd
-        if self._alive_count == 0:
-            return
-        alive_idx = np.where(alive_mask)[0]
-        if self.velocity_over_lifetime_enabled:
-            if self._vel_linear is None:
-                self._vel_linear = np.array(self.velocity_over_lifetime_linear or [0,0,0], dtype=np.float32)
-            lx, ly, lz = self._vel_linear[0], self._vel_linear[1], self._vel_linear[2]
-            if lx != 0 or ly != 0 or lz != 0:
-                p['velocity'][alive_idx, 0] += lx * dt
-                p['velocity'][alive_idx, 1] += ly * dt
-                p['velocity'][alive_idx, 2] += lz * dt
-            if self._vel_orbital is None:
-                self._vel_orbital = np.array(self.velocity_over_lifetime_orbital or [0,0,0], dtype=np.float32)
-            ox, oy, oz = self._vel_orbital[0], self._vel_orbital[1], self._vel_orbital[2]
-            if ox != 0 or oy != 0 or oz != 0:
-                orbital_v = np.cross(p['position'][alive_idx], self._vel_orbital)
-                p['velocity'][alive_idx] += orbital_v * dt
-        if self.size_over_lifetime_enabled:
-            lt = p['lifetime'][alive_idx]
-            max_lt = p['max_lifetime'][alive_idx]
-            ratios = (1.0 - lt / np.maximum(max_lt, 1e-10)).astype(np.float32)
-            cx_cache, cy_cache = self._get_curve_caches()
-            if cx_cache:
-                sx = _sample_curve_numba(cx_cache[0], cx_cache[1], ratios)
-                p['size'][alive_idx, 0] = p['start_size'][alive_idx, 0] * sx
-            if cy_cache:
-                sy = _sample_curve_numba(cy_cache[0], cy_cache[1], ratios)
-                p['size'][alive_idx, 1] = p['start_size'][alive_idx, 1] * sy
-        if self.color_over_lifetime_enabled:
-            lt = p['lifetime'][alive_idx]
-            max_lt = p['max_lifetime'][alive_idx]
-            ratios = (1.0 - lt / np.maximum(max_lt, 1e-10)).astype(np.float32)
-            gc = self._get_gradient_cache()
-            if gc:
-                rgba = _sample_gradient_numba(gc[0], gc[1], gc[2], gc[3], ratios)
-                sc = p['start_color'][alive_idx]
-                p['color'][alive_idx, 0] = rgba[:, 0] * sc[:, 0]
-                p['color'][alive_idx, 1] = rgba[:, 1] * sc[:, 1]
-                p['color'][alive_idx, 2] = rgba[:, 2] * sc[:, 2]
-                p['color'][alive_idx, 3] = rgba[:, 3] * sc[:, 3]
-        if self.rotation_over_lifetime_enabled and self.rotation_over_lifetime_angular_velocity != 0:
-            p['rotation'][alive_idx] += math.radians(self.rotation_over_lifetime_angular_velocity) * dt
-
     def on_update(self, dt: float):
         if not self.enabled or self._stopped:
             return
@@ -597,6 +439,8 @@ class ParticleSystem(Component):
             inv_dt = 1.0 / max(dt, 1e-6)
             self._emitter_velocity = np.array([delta_pos.x * inv_dt, delta_pos.y * inv_dt, delta_pos.z * inv_dt], dtype=np.float32)
         self._prev_position = current_pos
+        self._last_dt = dt
+        self._last_delta_pos = delta_pos
         if self.simulation_space == SimulationSpace.LOCAL:
             wm = t.world_matrix._d
             self._local_to_world = wm[:3, :3].astype(np.float32)
@@ -605,13 +449,62 @@ class ParticleSystem(Component):
             self._local_to_world = None
             self._local_position = None
         self._emit_particles(dt, delta_pos)
-        self._update_particles(dt, delta_pos if self.simulation_space == SimulationSpace.LOCAL else Vec3.zero())
         if self._time >= self.duration:
             if self.looping:
                 self._time = 0.0
                 self._burst_index = 0
             else:
                 self._stopped = True
+
+    def replenish_free_list(self, dead_indices: np.ndarray):
+        n = len(dead_indices)
+        if n == 0:
+            return
+        self._free_stack[self._free_top:self._free_top + n] = dead_indices.astype(np.int32)
+        self._free_top += n
+        for idx in dead_indices:
+            self._alive_mask[idx] = False
+        self._particle_count -= n
+        self._alive_count -= n
+
+    def get_compute_params(self, dt: float, delta_pos: Vec3) -> dict:
+        dx = delta_pos.x if self.simulation_space == SimulationSpace.LOCAL else 0.0
+        dy = delta_pos.y if self.simulation_space == SimulationSpace.LOCAL else 0.0
+        dz = delta_pos.z if self.simulation_space == SimulationSpace.LOCAL else 0.0
+        params = {
+            'dt': self._last_dt,
+            'gravity': -9.81 * self.gravity_modifier,
+            'simulation_space': self.simulation_space.value,
+            'emitter_delta': (dx, dy, dz),
+            'num_particles': self.max_particles,
+            'size_enabled': self.size_over_lifetime_enabled,
+            'color_enabled': self.color_over_lifetime_enabled,
+            'rotation_enabled': self.rotation_over_lifetime_enabled,
+            'velocity_enabled': self.velocity_over_lifetime_enabled,
+        }
+        if self.size_over_lifetime_enabled:
+            if self._curve_cache_x is None:
+                cx = self.size_over_lifetime_curve_x or self.size_over_lifetime_curve or [(0,1),(1,1)]
+                self._curve_cache_x = _build_curve_cache(cx)
+            params['size_curve'] = _presample_curve(self._curve_cache_x)
+        if self.color_over_lifetime_enabled:
+            if self._gradient_cache is None:
+                grad = self.color_over_lifetime_gradient or {
+                    "alpha_keys": [(0,1),(1,0)],
+                    "color_keys": [(0,[1,1,1]),(1,[1,1,1])]
+                }
+                self._gradient_cache = _build_gradient_cache(grad)
+            cr, cg, cb, ca = _presample_gradient(self._gradient_cache)
+            params['color_curve_r'] = cr
+            params['color_curve_g'] = cg
+            params['color_curve_b'] = cb
+            params['alpha_curve'] = ca
+        if self.rotation_over_lifetime_enabled:
+            params['angular_velocity'] = math.radians(self.rotation_over_lifetime_angular_velocity)
+        if self.velocity_over_lifetime_enabled:
+            params['vel_linear'] = tuple(self.velocity_over_lifetime_linear or [0,0,0])
+            params['vel_orbital'] = tuple(self.velocity_over_lifetime_orbital or [0,0,0])
+        return params
 
     def get_particle_count(self) -> int:
         return self._particle_count
@@ -648,7 +541,7 @@ class ParticleSystem(Component):
         self._burst_index = 0
         if self._particles is not None:
             n = self.max_particles
-            self._particles['alive'] = 0
+            self._particles['meta'][:, 3] = 0.0
             self._alive_count = 0
             self._particle_count = 0
             self._free_stack = np.arange(n, dtype=np.int32)
@@ -658,64 +551,12 @@ class ParticleSystem(Component):
     def clear(self):
         if self._particles is not None:
             n = self.max_particles
-            self._particles['alive'] = 0
+            self._particles['meta'][:, 3] = 0.0
             self._alive_count = 0
             self._particle_count = 0
             self._free_stack = np.arange(n, dtype=np.int32)
             self._free_top = n
             self._alive_mask[:] = False
-
-    def get_particles_data(self) -> Optional[np.ndarray]:
-        if self._alive_count == 0:
-            return None
-        return self._particles[self._particles['alive'] == 1]
-
-    def build_render_data(self, camera_right: Vec3, camera_up: Vec3, camera_pos: Vec3 = None) -> Optional[tuple[np.ndarray, np.ndarray]]:
-        n = self._alive_count
-        if n == 0:
-            return None
-        p = self._particles
-        alive_idx = np.where(self._alive_mask)[0]
-        if self.sort_mode == ParticleSortMode.BY_DISTANCE and camera_pos is not None:
-            cp = np.array([camera_pos.x, camera_pos.y, camera_pos.z], dtype=np.float32)
-            diff = p['position'][alive_idx] - cp
-            dist_sq = np.einsum('ij,ij->i', diff, diff)
-            alive_idx = alive_idx[np.argsort(-dist_sq)]
-        elif self.sort_mode == ParticleSortMode.BY_AGE:
-            alive_idx = alive_idx[np.argsort(-p['lifetime'][alive_idx])]
-        vn = n * 4
-        verts = self._render_verts[:vn]
-        idx_rpt = alive_idx.repeat(4)
-        verts['position'] = p['position'][idx_rpt]
-        verts['color'] = p['color'][idx_rpt]
-        use_flipbook = (self.flipbook_fps > 0 and self.flipbook_fps <= 120
-                        and self.flipbook_rows > 0 and self.flipbook_columns > 0)
-        if use_flipbook:
-            ages = p['max_lifetime'][alive_idx] - p['lifetime'][alive_idx]
-            total_frames = self.flipbook_columns * self.flipbook_rows
-            frame_idx = (ages * self.flipbook_fps).astype(np.int32) % total_frames
-            col_idx = frame_idx % self.flipbook_columns
-            row_idx = frame_idx // self.flipbook_columns
-            inv_c = np.float32(1.0 / self.flipbook_columns)
-            inv_r = np.float32(1.0 / self.flipbook_rows)
-            u0 = col_idx * inv_c
-            v0 = row_idx * inv_r
-            u1 = u0 + inv_c
-            v1 = v0 + inv_r
-            uvs = np.empty((n, 4, 2), dtype=np.float32)
-            uvs[:, 0, 0] = u0; uvs[:, 0, 1] = v0
-            uvs[:, 1, 0] = u1; uvs[:, 1, 1] = v0
-            uvs[:, 2, 0] = u1; uvs[:, 2, 1] = v1
-            uvs[:, 3, 0] = u0; uvs[:, 3, 1] = v1
-            verts['texcoord'] = uvs.reshape(vn, 2)
-        else:
-            verts['texcoord'][0:vn:4] = (0, 0)
-            verts['texcoord'][1:vn:4] = (1, 0)
-            verts['texcoord'][2:vn:4] = (1, 1)
-            verts['texcoord'][3:vn:4] = (0, 1)
-        verts['size'] = p['size'][idx_rpt]
-        verts['rotation'] = p['rotation'][idx_rpt]
-        return verts, self._render_indices[:n * 6]
 
     def gizmo_lines(self, color: list[float] | None = None) -> list[tuple[Vec3, Vec3, list[float]]]:
         if color is None:
@@ -954,15 +795,3 @@ class ParticleSystem(Component):
 
     def on_destroy(self):
         self.stop()
-        for attr in ('_vao', '_vbo', '_ibo'):
-            obj = getattr(self, attr, None)
-            if obj:
-                try:
-                    obj.release()
-                except Exception:
-                    pass
-
-
-def import_gif_to_flipbook(gif_path: str, output_path: str = None, cols: int = None, rows: int = None) -> Tuple[int, int, int]:
-    from core.asset_importer import import_gif_to_flipbook as _import
-    return _import(gif_path, output_path, cols, rows)

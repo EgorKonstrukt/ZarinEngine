@@ -19,6 +19,7 @@ from core.components.rendering.mesh_renderer import MeshRenderer
 from core.components.rendering.sprite_renderer import SpriteRenderer
 from core.components.rendering.svg_renderer import SvgRenderer
 from core.components.rendering.particle_system import ParticleSystem
+from core.components.rendering.particle_force_field import ParticleForceField, FORCE_FIELD_DTYPE, MAX_FORCE_FIELDS
 from core.components.mesh_editor import ProBuilderMesh
 from core.components.rendering.graphics_effect import GraphicsEffect
 from core.math3d import Mat4, Vec3
@@ -62,18 +63,11 @@ class _SvgItem:
         self.abs_path = abs_path
         self.pixels_per_unit = pixels_per_unit
 
-class _ParticleItem:
-    __slots__ = ('vertices', 'indices', 'texture_path')
-    def __init__(self, vertices, indices, texture_path):
-        self.vertices = vertices
-        self.indices = indices
-        self.texture_path = texture_path
-
 class _RenderSnapshot:
     __slots__ = (
         'lights', 'dir_light', 'sky_component', 'sky_entity', 'cloud_component',
         'renderable', 'shadow_renderables', 'sprite_items', 'svg_items',
-        'text_items', 'particle_items', 'culling_cache',
+        'text_items', 'particle_systems', 'culling_cache',
     )
     def __init__(self):
         self.lights: list = []
@@ -86,7 +80,7 @@ class _RenderSnapshot:
         self.sprite_items: list = []
         self.svg_items: list = []
         self.text_items: list = []
-        self.particle_items: list = []
+        self.particle_systems: list = []
         self.culling_cache: dict = {}
 
 
@@ -226,7 +220,7 @@ class Renderer:
                 fragment_shader=read_shader("shadow.frag")
             )
             self._particle_prog = self._ctx.program(
-                vertex_shader=read_shader("particle.vert"),
+                vertex_shader=read_shader("particle_gpu.vert"),
                 fragment_shader=read_shader("particle.frag")
             )
             self._icon_prog = self._ctx.program(
@@ -295,6 +289,9 @@ void main() {
             self._cloud_quad = make_quad_mesh(2.0)
             self._cloud_quad.build_gl(self._ctx, self._default_prog)
             self._particles = ParticleRenderer(self._ctx, self._particle_prog)
+            self._particles.load_compute_shader(
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), "shaders", "particle.compute")
+            )
             self._sprites = SpriteRendererGL(self._ctx, self._sprite_prog)
             self._sprites.set_texture_loader(self._materials.load_texture)
             self._text = TextRendererGL(self._ctx, self._text_prog)
@@ -523,13 +520,11 @@ void main() {
             if not ent.active:
                 continue
             ps = ent.get_component(ParticleSystem)
-            if not ps or not ps.enabled or ps._alive_count == 0:
+            if not ps or not ps.enabled:
                 continue
-            particle_data = ps.build_render_data(cam_right, cam_up, cam_pos)
-            if particle_data is None:
+            if ps._alive_count == 0:
                 continue
-            snap.particle_items.append(_ParticleItem(
-                particle_data[0], particle_data[1], ps.texture_path))
+            snap.particle_systems.append(ps)
         return snap
 
     def render_scene(self, scene, view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3,
@@ -865,7 +860,37 @@ void main() {
             prof.stop("render_svgs")
         if prof:
             prof.start("render_particles")
-        self._particles.render_snapshot(snap.particle_items, view_mat, proj_mat, cam_pos)
+        if self._particles and snap.particle_systems:
+            fixed_dt = eng.fixed_dt if eng else 0.02
+            num_ff = 0
+            try:
+                ff_entities = scene.get_entities_with_component(ParticleForceField) if scene else []
+                ff_list = []
+                for ent in ff_entities:
+                    if not ent.active:
+                        continue
+                    ff = ent.get_component(ParticleForceField)
+                    if ff and ff.enabled:
+                        ff_list.append(ff)
+                num_ff = min(len(ff_list), MAX_FORCE_FIELDS)
+                if num_ff > 0:
+                    ff_data_arr = np.zeros(num_ff, dtype=FORCE_FIELD_DTYPE)
+                    for i in range(num_ff):
+                        ff_data_arr[i] = ff_list[i].to_gpu_data()
+                    self._particles.upload_force_fields(ff_data_arr)
+            except Exception as e:
+                Logger.error(f"Force field error: {e}", e)
+                num_ff = 0
+            for ps in snap.particle_systems:
+                params = ps.get_compute_params(fixed_dt, ps._last_delta_pos)
+                params['num_force_fields'] = num_ff
+                self._particles._ensure_buffers(ps.max_particles)
+                self._particles.upload_all(ps._particles)
+                self._particles.dispatch(params)
+                self._particles.readback_all(ps._particles)
+                dead = self._particles.read_dead_list()
+                ps.replenish_free_list(dead)
+            self._particles.render(scene, view_mat, proj_mat, cam_pos, snap.particle_systems)
         if prof:
             prof.stop("render_particles")
         if outline_queue and self._outline_prog:

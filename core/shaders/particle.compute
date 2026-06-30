@@ -1,0 +1,186 @@
+ComputeShader "Zarin/ParticleSim"
+{
+    Properties
+    {
+        _Gravity("Gravity Modifier", Float) = 1.0
+    }
+
+    GLSLPROGRAM
+    #version 460 core
+    layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+    struct Particle {
+        vec4 position;
+        vec4 velocity;
+        vec4 color;
+        vec4 meta;
+        vec4 lifetime;
+        vec4 start_color;
+        vec4 start_meta;
+    };
+
+    layout(std430, binding = 0) buffer ParticleBuffer {
+        Particle particles[];
+    };
+
+    layout(std430, binding = 1) buffer DeadList {
+        uint dead_count;
+        uint dead_indices[];
+    };
+
+    struct ForceField {
+        vec4 position;
+        vec4 force;
+        vec4 box_half;
+        vec4 gravity_focus;
+        vec4 extras;
+    };
+
+    layout(std430, binding = 2) buffer ForceFieldBuffer {
+        ForceField force_fields[];
+    };
+
+    uniform float u_dt;
+    uniform float u_gravity;
+    uniform int u_simulation_space;
+    uniform vec3 u_emitter_delta;
+    uniform int u_num_force_fields;
+    uniform int u_num_particles;
+    uniform int u_size_enabled;
+    uniform float u_size_curve[16];
+    uniform int u_color_enabled;
+    uniform float u_color_curve_r[16];
+    uniform float u_color_curve_g[16];
+    uniform float u_color_curve_b[16];
+    uniform float u_alpha_curve[16];
+    uniform int u_rotation_enabled;
+    uniform float u_angular_velocity;
+    uniform int u_velocity_enabled;
+    uniform vec3 u_vel_linear;
+    uniform vec3 u_vel_orbital;
+
+    bool is_inside_force_field(vec3 ppos, ForceField ff) {
+        float shape = ff.box_half.w;
+        if (shape < 0.5) {
+            vec3 delta = ppos - ff.position.xyz;
+            float dist = length(delta);
+            return dist < ff.position.w;
+        } else {
+            vec3 delta = ppos - ff.position.xyz;
+            vec3 hf = ff.box_half.xyz;
+            return all(lessThan(abs(delta), hf));
+        }
+    }
+
+    float distance_to_force_field(vec3 ppos, ForceField ff) {
+        float shape = ff.box_half.w;
+        if (shape < 0.5) {
+            return length(ppos - ff.position.xyz);
+        } else {
+            vec3 delta = ppos - ff.position.xyz;
+            vec3 hf = ff.box_half.xyz;
+            vec3 d = max(abs(delta) - hf, 0.0);
+            return length(d);
+        }
+    }
+
+    void apply_force_fields(inout vec4 vel, vec3 pos, float dt) {
+        for (int i = 0; i < u_num_force_fields; i++) {
+            ForceField ff = force_fields[i];
+            if (!is_inside_force_field(pos, ff)) continue;
+            float intensity = ff.force.w;
+            float range = ff.position.w;
+            if (range > 0.001 && ff.extras.y > 0.5) {
+                float dist = distance_to_force_field(pos, ff);
+                float t = min(dist / range, 1.0);
+                intensity *= t;
+            }
+            vel.xyz += ff.force.xyz * intensity * dt;
+            float drag = ff.gravity_focus.w;
+            if (drag > 0.0) {
+                vel.xyz *= max(1.0 - drag * dt, 0.0);
+            }
+            if (ff.extras.x != 0.0) {
+                vec3 focus_dir = vec3(0.0, -1.0, 0.0);
+                float focus_len = length(ff.gravity_focus.xyz);
+                if (focus_len > 0.001) {
+                    focus_dir = normalize(ff.gravity_focus.xyz - pos);
+                }
+                vel.xyz += focus_dir * ff.extras.x * dt;
+            }
+        }
+    }
+
+    float sample_curve(float t, float curve[16]) {
+        float ct = clamp(t, 0.0, 0.9999);
+        float fi = ct * 15.0;
+        int i = int(fi);
+        float f = fi - float(i);
+        return mix(curve[i], curve[min(i + 1, 15)], f);
+    }
+
+    void main() {
+        uint id = gl_GlobalInvocationID.x;
+        if (id >= uint(u_num_particles)) return;
+
+        Particle p = particles[id];
+        if (p.meta.w <= 0.0) return;
+
+        float new_lifetime = p.lifetime.x - u_dt;
+        if (new_lifetime <= 0.0) {
+            p.meta.x = 0.0;
+            p.meta.y = 0.0;
+            p.meta.w = 0.0;
+            p.lifetime.x = 0.0;
+            particles[id] = p;
+            uint dead_idx = atomicAdd(dead_count, 1u);
+            dead_indices[dead_idx] = id;
+            return;
+        }
+
+        float max_lifetime = p.lifetime.y;
+        p.lifetime.x = new_lifetime;
+        p.velocity.y += u_gravity * u_dt;
+
+        if (u_velocity_enabled != 0) {
+            p.velocity.xyz += u_vel_linear * u_dt;
+            if (dot(u_vel_orbital, u_vel_orbital) > 0.0) {
+                p.velocity.xyz += cross(p.position.xyz, u_vel_orbital) * u_dt;
+            }
+        }
+
+        if (u_num_force_fields > 0) {
+            apply_force_fields(p.velocity, p.position.xyz, u_dt);
+        }
+
+        if (u_simulation_space == 1) {
+            p.position.xyz += p.velocity.xyz * u_dt + u_emitter_delta;
+        } else {
+            p.position.xyz += p.velocity.xyz * u_dt;
+        }
+
+        float t = 1.0 - new_lifetime / max_lifetime;
+
+        if (u_size_enabled != 0) {
+            float s = sample_curve(t, u_size_curve);
+            p.meta.x = p.start_meta.x * s;
+            p.meta.y = p.start_meta.y * s;
+        }
+
+        if (u_color_enabled != 0) {
+            vec3 c;
+            c.r = sample_curve(t, u_color_curve_r);
+            c.g = sample_curve(t, u_color_curve_g);
+            c.b = sample_curve(t, u_color_curve_b);
+            float a = sample_curve(t, u_alpha_curve);
+            p.color = vec4(c * p.start_color.rgb, a * p.start_color.a);
+        }
+
+        if (u_rotation_enabled != 0) {
+            p.meta.z += u_angular_velocity * u_dt;
+        }
+
+        particles[id] = p;
+    }
+    ENDGLSL
+}
