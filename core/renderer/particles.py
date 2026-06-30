@@ -21,6 +21,8 @@ class ParticleRenderer:
         self._ff_ssbo: Optional[moderngl.Buffer] = None
         self._vao = self._ctx.vertex_array(self._particle_prog, [])
         self._last_particle_time: float = time.perf_counter()
+        self._render_dt: float = 0.016
+        self._last_frame: int = -1
 
     def load_compute_shader(self, path: str) -> bool:
         abs_path = os.path.abspath(path)
@@ -89,9 +91,6 @@ class ParticleRenderer:
         n = params.get('num_particles', 0)
         if n == 0:
             return
-        now = time.perf_counter()
-        render_dt = min(now - self._last_particle_time, 0.05)
-        self._last_particle_time = now
         self._ensure_buffers(n)
         self._dead_ssbo.write(np.zeros(1, dtype=np.uint32).tobytes())
         self._particle_ssbo.bind_to_storage_buffer(0)
@@ -99,7 +98,7 @@ class ParticleRenderer:
         self._ensure_ff_ssbo()
         self._ff_ssbo.bind_to_storage_buffer(2)
         prog = self._compute_prog
-        prog['u_dt'] = render_dt
+        prog['u_dt'] = self._render_dt
         prog['u_gravity'] = params.get('gravity', 0.0)
         prog['u_simulation_space'] = 1 if params.get('simulation_space') == 'local' else 0
         if 'u_num_force_fields' in prog:
@@ -165,10 +164,8 @@ class ParticleRenderer:
         except Exception:
             return None
 
-    def render(self, scene, view_mat, proj_mat, cam_pos, ps_list: list):
+    def begin_frame(self, view_mat, proj_mat):
         if not self._particle_prog or not self._vao:
-            return
-        if not ps_list:
             return
         prog = self._particle_prog
         vp_mat = view_mat * proj_mat
@@ -187,27 +184,33 @@ class ParticleRenderer:
         self._ctx.enable(moderngl.BLEND)
         self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self._ctx.depth_mask = False
-        for ps in ps_list:
-            n = ps.max_particles
-            if n == 0:
-                continue
-            self._particle_ssbo.bind_to_storage_buffer(0)
-            tex_path = ps.texture_path
-            particle_tex = self.load_texture(tex_path) if tex_path else None
-            if "u_use_texture" in prog:
-                prog["u_use_texture"].value = 1 if particle_tex else 0
-            if "u_albedo" in prog:
-                prog["u_albedo"].write(np.array([1, 1, 1, 1], dtype=np.float32).tobytes())
-            if particle_tex and "u_texture" in prog:
-                particle_tex.use(0)
-                prog["u_texture"].value = 0
-            try:
-                self._vao.render(moderngl.TRIANGLES, vertices=n * 6)
-            except Exception as e:
-                from core.logger import Logger
-                Logger.error(f"Particle render error: {e}")
+
+    def end_frame(self):
         self._ctx.enable(moderngl.CULL_FACE)
         self._ctx.depth_mask = True
+
+    def render_single(self, ps):
+        if not self._particle_prog or not self._vao:
+            return
+        n = len(ps._particles) if ps._particles is not None else 0
+        if n == 0:
+            return
+        prog = self._particle_prog
+        self._particle_ssbo.bind_to_storage_buffer(0)
+        tex_path = ps.texture_path
+        particle_tex = self.load_texture(tex_path) if tex_path else None
+        if "u_use_texture" in prog:
+            prog["u_use_texture"].value = 1 if particle_tex else 0
+        if "u_albedo" in prog:
+            prog["u_albedo"].write(np.array([1, 1, 1, 1], dtype=np.float32).tobytes())
+        if particle_tex and "u_texture" in prog:
+            particle_tex.use(0)
+            prog["u_texture"].value = 0
+        try:
+            self._vao.render(moderngl.TRIANGLES, vertices=n * 6)
+        except Exception as e:
+            from core.logger import Logger
+            Logger.error(f"Particle render error: {e}")
 
     def release(self):
         if self._vao:

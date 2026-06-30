@@ -869,7 +869,6 @@ void main() {
         if prof:
             prof.start("render_particles")
         if self._particles and snap.particle_systems:
-            fixed_dt = eng.fixed_dt if eng else 0.02
             ff_list = snap.force_fields
             num_ff = min(len(ff_list), MAX_FORCE_FIELDS)
             if num_ff > 0:
@@ -877,16 +876,25 @@ void main() {
                 for i in range(num_ff):
                     ff_data_arr[i] = ff_list[i].to_gpu_data()
                 self._particles.upload_force_fields(ff_data_arr)
+            frame = eng.frame_count if eng else 0
+            if frame != self._particles._last_frame:
+                now = time.perf_counter()
+                self._particles._render_dt = min(now - self._particles._last_particle_time, 0.05)
+                self._particles._last_particle_time = now
+                self._particles._last_frame = frame
+            self._particles.begin_frame(view_mat, proj_mat)
             for ps in snap.particle_systems:
-                params = ps.get_compute_params(fixed_dt, ps._last_delta_pos)
+                params = ps.get_compute_params(eng.fixed_dt if eng else 0.02, ps._last_delta_pos)
                 params['num_force_fields'] = num_ff
-                self._particles._ensure_buffers(ps.max_particles)
+                n = len(ps._particles) if ps._particles is not None else 0
+                self._particles._ensure_buffers(n)
                 self._particles.upload_all(ps._particles)
                 self._particles.dispatch(params)
                 self._particles.readback_all(ps._particles)
                 dead = self._particles.read_dead_list()
                 ps.replenish_free_list(dead)
-            self._particles.render(scene, view_mat, proj_mat, cam_pos, snap.particle_systems)
+                self._particles.render_single(ps)
+            self._particles.end_frame()
             self._particle_count = sum(ps._alive_count for ps in snap.particle_systems)
         else:
             self._particle_count = 0

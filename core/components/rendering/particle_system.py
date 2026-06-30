@@ -225,6 +225,7 @@ class ParticleSystem(Component):
         self._alive_count: int = 0
         self._emit_accum: float = 0.0
         self._distance_accum: float = 0.0
+        self._prewarmed: bool = False
         self._started: bool = False
         self._stopped: bool = False
         self._burst_index: int = 0
@@ -249,16 +250,35 @@ class ParticleSystem(Component):
         self._gradient_cache = None
         self._start_color_arr = None
 
+    _INITIAL_CAPACITY = 1024
+
     def _ensure_arrays(self):
-        n = self.max_particles
-        if self._particles is None or len(self._particles) != n:
-            self._particles = np.zeros(n, dtype=PARTICLE_DTYPE)
-            self._particles['meta'][:, 3] = 0.0
-            self._free_stack = np.arange(n, dtype=np.int32)
-            self._free_top = n
-            self._alive_mask = np.zeros(n, dtype=np.bool_)
-            self._particle_count = 0
-            self._alive_count = 0
+        if self._particles is not None and len(self._particles) >= 1:
+            return
+        n = min(self.max_particles, self._INITIAL_CAPACITY)
+        self._particles = np.zeros(n, dtype=PARTICLE_DTYPE)
+        self._particles['meta'][:, 3] = 0.0
+        self._free_stack = np.arange(n, dtype=np.int32)
+        self._free_top = n
+        self._alive_mask = np.zeros(n, dtype=np.bool_)
+        self._particle_count = 0
+        self._alive_count = 0
+
+    def _grow_capacity(self):
+        old_cap = len(self._particles) if self._particles is not None else 0
+        new_cap = min(self.max_particles, max(old_cap * 2, self._INITIAL_CAPACITY))
+        if new_cap <= old_cap:
+            return
+        new_particles = np.zeros(new_cap, dtype=PARTICLE_DTYPE)
+        new_particles[:old_cap] = self._particles
+        new_particles['meta'][old_cap:, 3] = 0.0
+        self._particles = new_particles
+        new_free = np.arange(old_cap, new_cap, dtype=np.int32)
+        self._free_stack = np.concatenate([self._free_stack, new_free])
+        self._free_top += new_cap - old_cap
+        new_mask = np.zeros(new_cap, dtype=np.bool_)
+        new_mask[:old_cap] = self._alive_mask
+        self._alive_mask = new_mask
 
     def on_start(self):
         self._ensure_arrays()
@@ -270,6 +290,7 @@ class ParticleSystem(Component):
             self._stopped = False
             self._emit_accum = 0.0
             self._burst_index = 0
+            self._prewarmed = False
             self._ensure_arrays()
 
     def on_disable(self):
@@ -289,6 +310,8 @@ class ParticleSystem(Component):
 
     def _emit(self, count: int):
         self._ensure_arrays()
+        if count > self._free_top:
+            self._grow_capacity()
         n = min(count, self._free_top)
         if n == 0:
             return
@@ -364,6 +387,10 @@ class ParticleSystem(Component):
         if self.inherit_velocity > 0 and self._emitter_velocity is not None:
             velocity += (self.inherit_velocity * self._emitter_velocity)
         lifetimes = self._ranged('start_lifetime_min', 'start_lifetime_max', 'start_lifetime', n)
+        if n > 1:
+            phi = 0.6180339887498949
+            offsets = np.mod(np.arange(n, dtype=np.float32) * phi, 1.0)
+            lifetimes *= (0.925 + 0.15 * offsets)
         size_val = self._ranged('start_size_min', 'start_size_max', 'start_size', n)
         sp_min, sp_max = self.start_speed_min, self.start_speed_max
         if sp_min > 0 or sp_max > 0:
@@ -397,6 +424,13 @@ class ParticleSystem(Component):
     def _emit_particles(self, dt: float, delta_pos: Vec3):
         if self._stopped:
             return
+        if not self._prewarmed:
+            self._prewarmed = True
+            if self.rate_over_time > 0 and self.start_lifetime > 0:
+                prewarm_n = int(self.rate_over_time * self.start_lifetime * 1.075)
+                if prewarm_n > 0:
+                    self._grow_capacity()
+                    self._emit_accum = max(self._emit_accum, prewarm_n)
         if self.rate_over_time > 0:
             self._emit_accum += dt * self.rate_over_time
             count = int(self._emit_accum)
@@ -476,7 +510,7 @@ class ParticleSystem(Component):
             'gravity': -9.81 * self.gravity_modifier,
             'simulation_space': self.simulation_space.value,
             'emitter_delta': (dx, dy, dz),
-            'num_particles': self.max_particles,
+            'num_particles': len(self._particles) if self._particles is not None else 0,
             'size_enabled': self.size_over_lifetime_enabled,
             'color_enabled': self.color_over_lifetime_enabled,
             'rotation_enabled': self.rotation_over_lifetime_enabled,
@@ -529,6 +563,7 @@ class ParticleSystem(Component):
         self._time = -self.start_delay
         self._emit_accum = 0.0
         self._burst_index = 0
+        self._prewarmed = False
 
     def pause(self):
         self._stopped = True
@@ -539,8 +574,9 @@ class ParticleSystem(Component):
         self._time = 0.0
         self._emit_accum = 0.0
         self._burst_index = 0
+        self._prewarmed = False
         if self._particles is not None:
-            n = self.max_particles
+            n = len(self._particles)
             self._particles['meta'][:, 3] = 0.0
             self._alive_count = 0
             self._particle_count = 0
@@ -550,13 +586,14 @@ class ParticleSystem(Component):
 
     def clear(self):
         if self._particles is not None:
-            n = self.max_particles
+            n = len(self._particles)
             self._particles['meta'][:, 3] = 0.0
             self._alive_count = 0
             self._particle_count = 0
             self._free_stack = np.arange(n, dtype=np.int32)
             self._free_top = n
             self._alive_mask[:] = False
+        self._prewarmed = False
 
     def gizmo_lines(self, color: list[float] | None = None) -> list[tuple[Vec3, Vec3, list[float]]]:
         if color is None:
