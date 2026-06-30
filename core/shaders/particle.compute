@@ -29,11 +29,10 @@ ComputeShader "Zarin/ParticleSim"
     };
 
     struct ForceField {
-        vec4 position;
-        vec4 force;
-        vec4 box_half;
-        vec4 gravity_focus;
-        vec4 extras;
+        vec4 position;    // .xyz = center, .w = radius
+        vec4 force;       // .xyz = directional force, .w = intensity
+        vec4 box_half;    // .xyz = box half-size, .w = shape (0=sphere,1=box)
+        vec4 extras;      // .x = start_range, .y = drag, .z = gravity, .w = multiply_by_distance
     };
 
     layout(std430, binding = 2) buffer ForceFieldBuffer {
@@ -88,25 +87,33 @@ ComputeShader "Zarin/ParticleSim"
         for (int i = 0; i < u_num_force_fields; i++) {
             ForceField ff = force_fields[i];
             if (!is_inside_force_field(pos, ff)) continue;
+
             float intensity = ff.force.w;
-            float range = ff.position.w;
-            if (range > 0.001 && ff.extras.y > 0.5) {
+            float radius = ff.position.w;
+            float start_range = ff.extras.x;
+            float use_dist = ff.extras.w;
+
+            if (radius > 0.001 && use_dist > 0.5) {
                 float dist = distance_to_force_field(pos, ff);
-                float t = min(dist / range, 1.0);
+                float range_width = max(radius - start_range, 0.001);
+                float t = clamp((dist - start_range) / range_width, 0.0, 1.0);
                 intensity *= t;
             }
+
             vel.xyz += ff.force.xyz * intensity * dt;
-            float drag = ff.gravity_focus.w;
+
+            float drag = ff.extras.y;
             if (drag > 0.0) {
                 vel.xyz *= max(1.0 - drag * dt, 0.0);
             }
-            if (ff.extras.x != 0.0) {
-                vec3 focus_dir = vec3(0.0, -1.0, 0.0);
-                float focus_len = length(ff.gravity_focus.xyz);
-                if (focus_len > 0.001) {
-                    focus_dir = normalize(ff.gravity_focus.xyz - pos);
+
+            float gravity = ff.extras.z;
+            if (gravity != 0.0) {
+                vec3 to_center = ff.position.xyz - pos;
+                float len = length(to_center);
+                if (len > 0.001) {
+                    vel.xyz += normalize(to_center) * gravity * dt;
                 }
-                vel.xyz += focus_dir * ff.extras.x * dt;
             }
         }
     }

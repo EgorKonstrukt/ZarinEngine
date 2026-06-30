@@ -67,7 +67,7 @@ class _RenderSnapshot:
     __slots__ = (
         'lights', 'dir_light', 'sky_component', 'sky_entity', 'cloud_component',
         'renderable', 'shadow_renderables', 'sprite_items', 'svg_items',
-        'text_items', 'particle_systems', 'culling_cache',
+        'text_items', 'particle_systems', 'force_fields', 'culling_cache',
     )
     def __init__(self):
         self.lights: list = []
@@ -81,6 +81,7 @@ class _RenderSnapshot:
         self.svg_items: list = []
         self.text_items: list = []
         self.particle_systems: list = []
+        self.force_fields: list = []
         self.culling_cache: dict = {}
 
 
@@ -525,6 +526,12 @@ void main() {
             if ps._alive_count == 0:
                 continue
             snap.particle_systems.append(ps)
+        for ent in scene.get_entities_with_component(ParticleForceField):
+            if not ent.active:
+                continue
+            ff = ent.get_component(ParticleForceField)
+            if ff and ff.enabled:
+                snap.force_fields.append(ff)
         return snap
 
     def render_scene(self, scene, view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3,
@@ -862,25 +869,13 @@ void main() {
             prof.start("render_particles")
         if self._particles and snap.particle_systems:
             fixed_dt = eng.fixed_dt if eng else 0.02
-            num_ff = 0
-            try:
-                ff_entities = scene.get_entities_with_component(ParticleForceField) if scene else []
-                ff_list = []
-                for ent in ff_entities:
-                    if not ent.active:
-                        continue
-                    ff = ent.get_component(ParticleForceField)
-                    if ff and ff.enabled:
-                        ff_list.append(ff)
-                num_ff = min(len(ff_list), MAX_FORCE_FIELDS)
-                if num_ff > 0:
-                    ff_data_arr = np.zeros(num_ff, dtype=FORCE_FIELD_DTYPE)
-                    for i in range(num_ff):
-                        ff_data_arr[i] = ff_list[i].to_gpu_data()
-                    self._particles.upload_force_fields(ff_data_arr)
-            except Exception as e:
-                Logger.error(f"Force field error: {e}", e)
-                num_ff = 0
+            ff_list = snap.force_fields
+            num_ff = min(len(ff_list), MAX_FORCE_FIELDS)
+            if num_ff > 0:
+                ff_data_arr = np.zeros(num_ff, dtype=FORCE_FIELD_DTYPE)
+                for i in range(num_ff):
+                    ff_data_arr[i] = ff_list[i].to_gpu_data()
+                self._particles.upload_force_fields(ff_data_arr)
             for ps in snap.particle_systems:
                 params = ps.get_compute_params(fixed_dt, ps._last_delta_pos)
                 params['num_force_fields'] = num_ff

@@ -14,7 +14,6 @@ FORCE_FIELD_DTYPE = np.dtype([
     ('position', np.float32, 4),
     ('force', np.float32, 4),
     ('box_half', np.float32, 4),
-    ('gravity_focus', np.float32, 4),
     ('extras', np.float32, 4),
 ])
 
@@ -47,7 +46,6 @@ class ParticleForceField(Component):
             InspectorField("multiply_by_distance", "Multiply by Distance", FieldType.BOOL),
             InspectorField("drag", "Drag", FieldType.FLOAT, min_val=0.0, max_val=100.0, step=0.01, decimals=3),
             InspectorField("gravity", "Gravity", FieldType.FLOAT, min_val=-100.0, max_val=100.0, step=0.1, decimals=2),
-            InspectorField("gravity_focus", "Gravity Focus", FieldType.GAMEOBJECT),
         ]
 
     def __init__(self):
@@ -63,38 +61,36 @@ class ParticleForceField(Component):
         self.multiply_by_distance: bool = True
         self.drag: float = 0.0
         self.gravity: float = 0.0
-        self.gravity_focus: str = ""
+        self._gpu_cache: Optional[np.ndarray] = None
 
     def to_gpu_data(self) -> np.ndarray:
-        arr = np.zeros(1, dtype=FORCE_FIELD_DTYPE)
+        if self._gpu_cache is None:
+            self._gpu_cache = np.zeros(1, dtype=FORCE_FIELD_DTYPE)
+        arr = self._gpu_cache
         t = self.transform
-        if t is None:
-            return arr
-        pos = t.position
-        arr['position'][0, :3] = [pos.x, pos.y, pos.z]
+        if t is not None:
+            pos = t.position
+            arr['position'][0, 0] = pos.x
+            arr['position'][0, 1] = pos.y
+            arr['position'][0, 2] = pos.z
+        else:
+            arr['position'][0, 0] = 0.0
+            arr['position'][0, 1] = 0.0
+            arr['position'][0, 2] = 0.0
         arr['position'][0, 3] = self.radius
-        arr['force'][0, :3] = [self.force_x, self.force_y, self.force_z]
+        arr['force'][0, 0] = self.force_x
+        arr['force'][0, 1] = self.force_y
+        arr['force'][0, 2] = self.force_z
         arr['force'][0, 3] = self.intensity
         bx, by, bz = self.box_size
-        arr['box_half'][0, :3] = [bx * 0.5, by * 0.5, bz * 0.5]
+        arr['box_half'][0, 0] = bx * 0.5
+        arr['box_half'][0, 1] = by * 0.5
+        arr['box_half'][0, 2] = bz * 0.5
         arr['box_half'][0, 3] = 0.0 if self.shape == ForceFieldShape.SPHERE else 1.0
-        if self.gravity_focus:
-            eng = None
-            try:
-                from core.engine import Engine
-                eng = Engine.instance()
-            except Exception:
-                pass
-            if eng:
-                focus_ent = eng.scene().find_entity(self.gravity_focus)
-                if focus_ent:
-                    ft = focus_ent.transform
-                    if ft:
-                        fp = ft.position
-                        arr['gravity_focus'][0, :3] = [fp.x, fp.y, fp.z]
-        arr['gravity_focus'][0, 3] = self.drag
-        arr['extras'][0, 0] = self.gravity
-        arr['extras'][0, 1] = 1.0 if self.multiply_by_distance else 0.0
+        arr['extras'][0, 0] = self.start_range
+        arr['extras'][0, 1] = self.drag
+        arr['extras'][0, 2] = self.gravity
+        arr['extras'][0, 3] = 1.0 if self.multiply_by_distance else 0.0
         return arr
 
     def gizmo_lines(self, color: list[float] | None = None) -> list[tuple[Vec3, Vec3, list[float]]]:
@@ -176,7 +172,6 @@ class ParticleForceField(Component):
             "multiply_by_distance": self.multiply_by_distance,
             "drag": self.drag,
             "gravity": self.gravity,
-            "gravity_focus": self.gravity_focus,
         })
         return d
 
@@ -195,7 +190,6 @@ class ParticleForceField(Component):
         ff.multiply_by_distance = data.get("multiply_by_distance", True)
         ff.drag = data.get("drag", 0.0)
         ff.gravity = data.get("gravity", 0.0)
-        ff.gravity_focus = data.get("gravity_focus", "")
         return ff
 
     def on_destroy(self):
