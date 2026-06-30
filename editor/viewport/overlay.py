@@ -17,6 +17,32 @@ try:
 except Exception:
     _psutil_available = False
 
+try:
+    import ctypes as _ctypes
+
+    class _PMC(_ctypes.Structure):
+        _fields_ = [
+            ('cb', _ctypes.c_uint32),
+            ('PageFaultCount', _ctypes.c_uint32),
+            ('PeakWorkingSetSize', _ctypes.c_size_t),
+            ('WorkingSetSize', _ctypes.c_size_t),
+            ('QuotaPeakPagedPoolUsage', _ctypes.c_size_t),
+            ('QuotaPagedPoolUsage', _ctypes.c_size_t),
+            ('QuotaPeakNonPagedPoolUsage', _ctypes.c_size_t),
+            ('QuotaNonPagedPoolUsage', _ctypes.c_size_t),
+            ('PagefileUsage', _ctypes.c_size_t),
+            ('PeakPagefileUsage', _ctypes.c_size_t),
+        ]
+
+    _psapi = _ctypes.windll.psapi
+    _psapi.GetProcessMemoryInfo.argtypes = [_ctypes.c_void_p, _ctypes.c_void_p, _ctypes.c_uint32]
+    _psapi.GetProcessMemoryInfo.restype = _ctypes.c_int
+    _ctypes_available = True
+except Exception:
+    _ctypes_available = False
+    _PMC = None
+    _psapi = None
+
 
 def _get_ram_mb() -> float:
     if _psutil_available:
@@ -29,31 +55,15 @@ def _get_ram_mb() -> float:
         return _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss / 1024
     except Exception:
         pass
-    try:
-        import ctypes
-        psapi = ctypes.windll.psapi
-        psapi.GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32]
-        psapi.GetProcessMemoryInfo.restype = ctypes.c_int
-        class _PMC(ctypes.Structure):
-            _fields_ = [
-                ('cb', ctypes.c_uint32),
-                ('PageFaultCount', ctypes.c_uint32),
-                ('PeakWorkingSetSize', ctypes.c_size_t),
-                ('WorkingSetSize', ctypes.c_size_t),
-                ('QuotaPeakPagedPoolUsage', ctypes.c_size_t),
-                ('QuotaPagedPoolUsage', ctypes.c_size_t),
-                ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t),
-                ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
-                ('PagefileUsage', ctypes.c_size_t),
-                ('PeakPagefileUsage', ctypes.c_size_t),
-            ]
-        pmc = _PMC()
-        pmc.cb = ctypes.sizeof(_PMC)
-        h = ctypes.c_void_p(-1)
-        if psapi.GetProcessMemoryInfo(h, ctypes.byref(pmc), ctypes.sizeof(pmc)):
-            return pmc.WorkingSetSize / (1024 * 1024)
-    except Exception:
-        pass
+    if _ctypes_available:
+        try:
+            pmc = _PMC()
+            pmc.cb = _ctypes.sizeof(_PMC)
+            h = _ctypes.c_void_p(-1)
+            if _psapi.GetProcessMemoryInfo(h, _ctypes.byref(pmc), _ctypes.sizeof(pmc)):
+                return pmc.WorkingSetSize / (1024 * 1024)
+        except Exception:
+            pass
     return 0.0
 
 
