@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import time
 import numpy as np
 import moderngl
 from typing import Optional, Any
@@ -19,6 +20,7 @@ class ParticleRenderer:
         self._textures: dict = {}
         self._ff_ssbo: Optional[moderngl.Buffer] = None
         self._vao = self._ctx.vertex_array(self._particle_prog, [])
+        self._last_particle_time: float = time.perf_counter()
 
     def load_compute_shader(self, path: str) -> bool:
         abs_path = os.path.abspath(path)
@@ -87,6 +89,9 @@ class ParticleRenderer:
         n = params.get('num_particles', 0)
         if n == 0:
             return
+        now = time.perf_counter()
+        render_dt = min(now - self._last_particle_time, 0.05)
+        self._last_particle_time = now
         self._ensure_buffers(n)
         self._dead_ssbo.write(np.zeros(1, dtype=np.uint32).tobytes())
         self._particle_ssbo.bind_to_storage_buffer(0)
@@ -94,7 +99,7 @@ class ParticleRenderer:
         self._ensure_ff_ssbo()
         self._ff_ssbo.bind_to_storage_buffer(2)
         prog = self._compute_prog
-        prog['u_dt'] = params.get('dt', 0.016)
+        prog['u_dt'] = render_dt
         prog['u_gravity'] = params.get('gravity', 0.0)
         prog['u_simulation_space'] = 1 if params.get('simulation_space') == 'local' else 0
         if 'u_num_force_fields' in prog:

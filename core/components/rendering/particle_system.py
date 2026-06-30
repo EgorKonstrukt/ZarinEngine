@@ -472,7 +472,7 @@ class ParticleSystem(Component):
         dy = delta_pos.y if self.simulation_space == SimulationSpace.LOCAL else 0.0
         dz = delta_pos.z if self.simulation_space == SimulationSpace.LOCAL else 0.0
         params = {
-            'dt': self._last_dt,
+            'dt': dt,
             'gravity': -9.81 * self.gravity_modifier,
             'simulation_space': self.simulation_space.value,
             'emitter_delta': (dx, dy, dz),
