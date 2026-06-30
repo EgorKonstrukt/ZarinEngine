@@ -992,6 +992,18 @@ class SceneViewport(QOpenGLWidget):
                 self._paste_entities()
                 event.accept()
                 return
+            if event.key() == Qt.Key.Key_Z and not (mods & Qt.KeyboardModifier.ShiftModifier):
+                from core.commands import get_history
+                get_history().undo()
+                self.update()
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_Y:
+                from core.commands import get_history
+                get_history().redo()
+                self.update()
+                event.accept()
+                return
         if self._im:
             vk = self._qt_key_to_vk(event.key())
             if vk is None:

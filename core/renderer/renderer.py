@@ -139,6 +139,8 @@ class Renderer:
         self._draw_calls: int = 0
         self._triangles_drawn: int = 0
         self._vertices_drawn: int = 0
+        self._culled_total: int = 0
+        self._culled_visible: int = 0
         self._render_callback: Optional[Callable] = None
         self._shadow_resolution: int = 4096
         self._shadow_distance: float = 50.0
@@ -642,12 +644,17 @@ void main() {
                     radii[i] = mesh.bounding_radius * max(sx, sy, sz)
                 vp = proj_mat._d.T @ view_mat._d.T
                 visible = self._culler.cull(centers, radii, vp)
+                self._culled_total = n
+                self._culled_visible = len(visible)
                 if len(visible) < n:
                     renderable = [renderable[idx] for idx in visible]
             except Exception:
                 pass
             if prof:
                 prof.stop("gpu_cull")
+        else:
+            self._culled_total = len(renderable) if renderable else 0
+            self._culled_visible = self._culled_total
 
         if prof:
             prof.start("render_meshes")

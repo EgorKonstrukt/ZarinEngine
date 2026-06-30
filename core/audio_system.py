@@ -404,6 +404,9 @@ class AudioSourceManager:
                 pass
         return count
 
+    def get_total_sound_count(self) -> int:
+        return len(self._active_sources)
+
     def get_dsp_load(self) -> float:
         return 0.0
 

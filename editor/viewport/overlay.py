@@ -120,6 +120,9 @@ def _draw_val(painter, label, val, fm, cx, cy, line_height):
         "Instanced": QColor(200, 200, 200),
         "Gizmo Draws": QColor(200, 220, 255),
         "GLines": QColor(200, 220, 255),
+        "Res": QColor(180, 200, 255),
+        "Culled": QColor(255, 200, 150),
+        "TS": QColor(180, 255, 180),
     }
     c = color_map.get(label, QColor(255, 255, 255))
     painter.setPen(c)
@@ -164,12 +167,14 @@ def draw_stats_overlay(vp, painter):
 
     dsp_load = 0.0
     active_sounds = 0
+    total_sounds = 0
     try:
         from core.audio_system import AudioSourceManager
         mgr = AudioSourceManager.instance()
         if mgr:
             dsp_load = mgr.get_dsp_load()
             active_sounds = mgr.get_active_sound_count()
+            total_sounds = mgr.get_total_sound_count()
     except Exception:
         pass
 
@@ -179,6 +184,14 @@ def draw_stats_overlay(vp, painter):
     draw_calls = vp._renderer._draw_calls if hasattr(vp._renderer, '_draw_calls') else 0
 
     gpu_ms = vp._last_render_ms if hasattr(vp, '_last_render_ms') else 0.0
+
+    fw, fh = vp._get_physical_dims()
+
+    culled_visible = vp._renderer._culled_visible if hasattr(vp._renderer, '_culled_visible') else 0
+    culled_total = vp._renderer._culled_total if hasattr(vp._renderer, '_culled_total') else 0
+    culled_str = f"{culled_visible}/{culled_total}"
+
+    time_scale = vp._engine.time_scale if hasattr(vp._engine, 'time_scale') else 1.0
 
     batches = 0
     instanced = 0
@@ -190,10 +203,10 @@ def draw_stats_overlay(vp, painter):
     gizmo_draws = vp._renderer._gizmo._stat_draws if vp._renderer._gizmo else 0
 
     stats_lines = [
-        f"FPS: {fps:.1f}  |  1%: {1000.0/max(p1_low,0.1):.1f}  |  0.1%: {1000.0/max(p01_low,0.1):.1f}  |  CPU: {cpu_ms:.1f}ms  |  GPU: {gpu_ms:.1f}ms",
-        f"RAM: {ram_mb:.0f} MB  |  VRAM: {vram_used:.0f}/{vram_total:.0f} MB  |  GC: {gc_gen0}/{gc_gen1}/{gc_gen2}  |  TPS: {tps:.0f}",
-        f"DSP: {dsp_load:.0f}%  |  Sounds: {active_sounds}",
-        f"Entities: {entities}  |  Draw Calls: {draw_calls}  |  Tris: {_fmt_count(triangles)}  |  Verts: {_fmt_count(vertices)}",
+        f"FPS: {fps:.1f}  |  1%: {1000.0/max(p1_low,0.1):.1f}  |  0.1%: {1000.0/max(p01_low,0.1):.1f}  |  CPU: {cpu_ms:.1f}ms  |  GPU: {gpu_ms:.1f}ms  |  Res: {fw}x{fh}",
+        f"RAM: {ram_mb:.0f} MB  |  VRAM: {vram_used:.0f}/{vram_total:.0f} MB  |  GC: {gc_gen0}/{gc_gen1}/{gc_gen2}  |  TPS: {tps:.0f}  |  TS: {time_scale:.2f}",
+        f"DSP: {dsp_load:.0f}%  |  Sounds: {active_sounds}/{total_sounds}",
+        f"Entities: {entities}  |  Culled: {culled_str}  |  Draw Calls: {draw_calls}  |  Tris: {_fmt_count(triangles)}  |  Verts: {_fmt_count(vertices)}",
         f"Batches: {batches}  |  Instanced: {instanced}  |  Gizmo Draws: {gizmo_draws}  |  GLines: {_fmt_count(gizmo_lines)}",
     ]
 
