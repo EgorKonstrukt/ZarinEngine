@@ -39,6 +39,7 @@ class GizmoType(Enum):
     SPLINE = "spline"
     ICOSPHERE = "icosphere"
     LABEL = "label"
+    ICON = "icon"
     TORUS = "torus"
     PIPE = "pipe"
     STAR = "star"
@@ -109,6 +110,8 @@ class GizmoData:
     subdivisions: int = 1
     rotation: Optional[Tuple[float, float, float, float]] = None
     transform: Optional[List[float]] = None
+    billboard: bool = True
+    texture_path: str = ''
     line_style: 'LineStyle' = LineStyle.SOLID
 
 
@@ -806,8 +809,44 @@ def _build_icosphere(g: GizmoData):
     return starts, ends, _np_color(g.color, n)
 
 
+def _get_label_render_data(g: GizmoData) -> Optional[dict]:
+    if not g.text:
+        return None
+    return {
+        'position': g.position,
+        'text': g.text,
+        'color': g.color,
+        'font_size': g.font_size,
+        'billboard': g.billboard,
+        'world_space': g.world_space,
+        'layer': g.layer,
+        'duration': g.duration,
+    }
+
+
 @_register(GizmoType.LABEL)
 def _build_label(g: GizmoData):
+    return None
+
+
+def _get_icon_render_data(g: GizmoData) -> Optional[dict]:
+    if not g.text and not g.texture_path:
+        return None
+    return {
+        'position': g.position,
+        'text': g.text,
+        'texture_path': g.texture_path,
+        'color': g.color,
+        'font_size': g.font_size,
+        'billboard': g.billboard,
+        'world_space': g.world_space,
+        'layer': g.layer,
+        'duration': g.duration,
+    }
+
+
+@_register(GizmoType.ICON)
+def _build_icon(g: GizmoData):
     return None
 
 
@@ -1120,6 +1159,32 @@ class GizmosManager:
             if len(self.unique_draws) != old_unique:
                 self._revision += 1
             self.used_unique_keys.clear()
+
+    def get_label_data(self) -> list[dict]:
+        with self._lock:
+            labels = []
+            gizmos = list(self.persistent_draws)
+            if self.unique_draws:
+                gizmos.extend(self.unique_draws.values())
+            for g in gizmos:
+                if g.gizmo_type == GizmoType.LABEL and g.text:
+                    data = _get_label_render_data(g)
+                    if data:
+                        labels.append(data)
+            return labels
+
+    def get_icon_data(self) -> list[dict]:
+        with self._lock:
+            icons = []
+            gizmos = list(self.persistent_draws)
+            if self.unique_draws:
+                gizmos.extend(self.unique_draws.values())
+            for g in gizmos:
+                if g.gizmo_type == GizmoType.ICON:
+                    data = _get_icon_render_data(g)
+                    if data:
+                        icons.append(data)
+            return icons
 
     def _clear_cache(self):
         self._cache_starts = None
@@ -1446,6 +1511,9 @@ class GizmosManager:
 
     def draw_label(self, position, text, color='white', font_size=14, duration=0.0, layer=0, world_space=True, **kw):
         self._draw_gizmo(GizmoType.LABEL, position, text=text, color=color, font_size=font_size, duration=duration, layer=layer, world_space=world_space, **kw)
+
+    def draw_icon(self, position, text='', texture_path='', color='white', font_size=14, duration=0.0, layer=0, world_space=True, **kw):
+        self._draw_gizmo(GizmoType.ICON, position, text=text, texture_path=texture_path, color=color, font_size=font_size, duration=duration, layer=layer, world_space=world_space, **kw)
 
     def draw_torus(self, center, normal=(0,1,0), major_radius=1.0, minor_radius=0.3, color='white', thickness=1.0, segments=32, duration=0.0, layer=0, world_space=True, **kw):
         self._draw_gizmo(GizmoType.TORUS, center, normal=self._resolve_pos(normal), size=major_radius, inner_radius=minor_radius, color=color, thickness=thickness, segments=segments, duration=duration, layer=layer, world_space=world_space, **kw)

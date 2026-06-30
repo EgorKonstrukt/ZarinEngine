@@ -1292,11 +1292,119 @@ class SceneViewport(QOpenGLWidget):
             return
         if self._engine and self._engine.play_mode and not gm.show_in_runtime:
             return
-        starts, ends, colors = gm.build_render_arrays()
-        if starts is None:
-            return
         fw, fh = self._get_physical_dims()
         view = self._cam.get_view_matrix()
         proj = self._cam.get_projection_matrix(fw / max(1, fh))
         vp_mat = view * proj
-        self._renderer.render_gizmo_arrays(starts, ends, colors, vp_mat, fw, fh, thickness_multiplier=1.0)
+        starts, ends, colors = gm.build_render_arrays()
+        if starts is not None:
+            self._renderer.render_gizmo_arrays(starts, ends, colors, vp_mat, fw, fh, thickness_multiplier=1.0)
+        labels = gm.get_label_data()
+        if labels:
+            self._render_api_labels(labels, vp_mat, fw, fh)
+        icons = gm.get_icon_data()
+        if icons:
+            self._render_api_icons(icons, vp_mat, fw, fh)
+
+    def _render_api_labels(self, labels: list[dict], vp_mat, fw: int, fh: int):
+        from editor.viewport.projection import project_world_pos
+        dpr = self.devicePixelRatio()
+        for label in labels:
+            pos = label['position']
+            text = label['text']
+            color = label['color']
+            font_size = label['font_size']
+            world_pos = Vec3(pos[0], pos[1], pos[2])
+            sp = project_world_pos(self, world_pos, vp_mat, fw, fh)
+            if not sp:
+                continue
+            cache_key = f"__gizmo_label_{text}_{font_size}_{int(color[0]*255)}_{int(color[1]*255)}_{int(color[2]*255)}"
+            tex = self._renderer._icon_textures.get(cache_key)
+            if tex is None:
+                from PyQt6.QtCore import QRect, Qt
+                from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QColor, QImage
+                f = QFont("Segoe UI", font_size, QFont.Weight.Bold)
+                f.setStyleStrategy(QFont.StyleStrategy.ForceOutline)
+                fm = QFontMetrics(f)
+                pad = font_size
+                tw = fm.horizontalAdvance(text) + pad * 2
+                th = fm.height() + pad
+                tex_size = max(tw, th)
+                qimg = QImage(tex_size, tex_size, QImage.Format.Format_RGBA8888)
+                qimg.fill(Qt.GlobalColor.transparent)
+                p = QPainter(qimg)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                p.setFont(f)
+                p.setPen(QColor(int(color[0]*255), int(color[1]*255), int(color[2]*255)))
+                p.drawText(QRect(0, 0, tex_size, tex_size), Qt.AlignmentFlag.AlignCenter, text)
+                p.end()
+                rgba = qimg.bits().asstring(tex_size * tex_size * 4)
+                tex = self._renderer.create_icon_texture_from_data(rgba, tex_size, tex_size, cache_key)
+                self._renderer._icon_textures[cache_key] = tex
+            if tex:
+                sx, sy = sp[0], sp[1]
+                sz = max(font_size * 2.5, 32) * dpr
+                self._renderer.render_icon(tex, sx, sy, sz, 1.0, fw, fh)
+            if tex:
+                sx, sy = sp[0], sp[1]
+                sz = max(font_size * 2.5, 32) * dpr
+                self._renderer.render_icon(tex, sx, sy, sz, 1.0, fw, fh)
+
+    def _render_api_icons(self, icons: list[dict], vp_mat, fw: int, fh: int):
+        from editor.viewport.projection import project_world_pos
+        dpr = self.devicePixelRatio()
+        for icon in icons:
+            pos = icon['position']
+            text = icon.get('text', '')
+            color = icon['color']
+            font_size = icon['font_size']
+            world_pos = Vec3(pos[0], pos[1], pos[2])
+            sp = project_world_pos(self, world_pos, vp_mat, fw, fh)
+            if not sp:
+                continue
+            if icon.get('texture_path'):
+                cache_key = f"__gizmo_icon_tex_{icon['texture_path']}"
+                tex = self._renderer._icon_textures.get(cache_key)
+                if tex is None:
+                    from PyQt6.QtCore import Qt
+                    from PyQt6.QtGui import QImage
+                    qimg = QImage(icon['texture_path'])
+                    if not qimg.isNull():
+                        size = max(qimg.width(), qimg.height())
+                        qimg = qimg.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        rgba = qimg.bits().asstring(size * size * 4)
+                        tex = self._renderer.create_icon_texture_from_data(rgba, size, size, cache_key)
+                        if tex:
+                            self._renderer._icon_textures[cache_key] = tex
+            elif text:
+                cache_key = f"__gizmo_icon_text_{text}_{font_size}_{int(color[0]*255)}_{int(color[1]*255)}_{int(color[2]*255)}"
+                tex = self._renderer._icon_textures.get(cache_key)
+                if tex is None:
+                    from PyQt6.QtCore import QRect, Qt
+                    from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QBrush, QColor, QImage
+                    f = QFont("Segoe UI", font_size, QFont.Weight.Bold)
+                    f.setStyleStrategy(QFont.StyleStrategy.ForceOutline)
+                    fm = QFontMetrics(f)
+                    pad = font_size
+                    tw = fm.horizontalAdvance(text) + pad * 2
+                    th = fm.height() + pad
+                    tex_size = max(tw, th)
+                    qimg = QImage(tex_size, tex_size, QImage.Format.Format_RGBA8888)
+                    qimg.fill(Qt.GlobalColor.transparent)
+                    p = QPainter(qimg)
+                    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                    bg = QColor(int(color[0] * 255), int(color[1] * 255), int(color[2] * 255), 180)
+                    p.setBrush(QBrush(bg))
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.drawRoundedRect(0, 0, tex_size, tex_size, 6, 6)
+                    p.setFont(f)
+                    p.setPen(QColor(255, 255, 255))
+                    p.drawText(QRect(0, 0, tex_size, tex_size), Qt.AlignmentFlag.AlignCenter, text)
+                    p.end()
+                    rgba = qimg.bits().asstring(tex_size * tex_size * 4)
+                    tex = self._renderer.create_icon_texture_from_data(rgba, tex_size, tex_size, cache_key)
+                    self._renderer._icon_textures[cache_key] = tex
+            if tex:
+                sx, sy = sp[0], sp[1]
+                sz = max(font_size * 2.5, 32) * dpr
+                self._renderer.render_icon(tex, sx, sy, sz, 1.0, fw, fh)
