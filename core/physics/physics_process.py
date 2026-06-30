@@ -7,11 +7,6 @@ from typing import Optional
 from core.physics.shared_buffer import SharedPhysicsBuffer, MAX_ENTITIES
 
 
-# PhysicsProcess — физика в отдельном процессе через multiprocessing.
-# Идея пиздатая. Реализация — так себе.
-# SharedPhysicsBuffer: shared memory + numpy array — ок.
-# Но _entity_to_slot может только расти, никогда не уменьшается.
-# _slot_free не переиспользуется нормально — баг при рестарте сцены.
 class PhysicsProcess:
     def __init__(self, project_root: str = ""):
         self._project_root = project_root or os.getcwd()
