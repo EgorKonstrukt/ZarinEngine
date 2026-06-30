@@ -1,194 +1,34 @@
 from __future__ import annotations
 
 import numpy as np
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-_MAX_TRI_PER_LEAF = 8
-_MAX_DEPTH = 32
-
-
-class BVHNode:
-    __slots__ = ("bmin", "bmax", "left", "right", "tri_start", "tri_count")
-
-    def __init__(self, bmin, bmax):
-        self.bmin = np.asarray(bmin, dtype=np.float32)
-        self.bmax = np.asarray(bmax, dtype=np.float32)
-        self.left = -1
-        self.right = -1
-        self.tri_start = 0
-        self.tri_count = 0
-
-    @property
-    def is_leaf(self) -> bool:
-        return self.left < 0
+_LEAF_SIZE = 8
+_MAX_DEPTH = 48
+_SAH_BINS = 12
+_SAH_TRAV = 1.0
+_SAH_HIT = 1.0
+_PAR_THRESH = 50000
 
 
-def _surface_area(bmin, bmax) -> float:
+class _BuildCtx:
+    __slots__ = ('nodes', 'tri_indices', 'node_count', 'tri_offset', 'lock')
+
+    def __init__(self, max_nodes, max_tris):
+        self.nodes = np.empty((max_nodes, 8), dtype=np.float32)
+        self.tri_indices = np.empty(max_tris, dtype=np.uint32)
+        self.node_count = 0
+        self.tri_offset = 0
+        self.lock = threading.Lock()
+
+
+def _surface_area(bmin, bmax):
     d = bmax - bmin
     return 2.0 * (d[0] * d[1] + d[0] * d[2] + d[1] * d[2])
 
 
-class BVH:
-    def __init__(self, vertices: np.ndarray, indices: np.ndarray):
-        self.vertices = vertices
-        self.indices = indices
-        self.nodes: list[BVHNode] = []
-        self.tri_indices: np.ndarray = np.array([], dtype=np.uint32)
-        self._cached_depths: list[int] | None = None
-        self._build(vertices, indices)
-
-    def _build(self, vertices: np.ndarray, indices: np.ndarray):
-        n_tris = len(indices) // 3
-        if n_tris == 0:
-            return
-        verts3 = vertices.reshape(-1, 3)
-        tri_i = indices.reshape(n_tris, 3).astype(np.intp)
-        v0 = verts3[tri_i[:, 0]]
-        v1 = verts3[tri_i[:, 1]]
-        v2 = verts3[tri_i[:, 2]]
-        tri_bmin = np.minimum(np.minimum(v0, v1), v2)
-        tri_bmax = np.maximum(np.maximum(v0, v1), v2)
-        centroids = (v0 + v1 + v2) / 3.0
-
-        tri_order = np.arange(n_tris, dtype=np.intp)
-
-        import sys
-        sys.setrecursionlimit(1000000)
-        tri_chunks: list[np.ndarray] = []
-
-        def _build(indices_slice, depth=0):
-            n = len(indices_slice)
-            bmin = tri_bmin[indices_slice].min(axis=0)
-            bmax = tri_bmax[indices_slice].max(axis=0)
-            if n <= _MAX_TRI_PER_LEAF or depth >= _MAX_DEPTH:
-                ni = len(self.nodes)
-                node = BVHNode(bmin, bmax)
-                node.tri_start = -1
-                node.tri_count = n
-                self.nodes.append(node)
-                tri_chunks.append(indices_slice.astype(np.uint32))
-                return ni
-            axis = int(np.argmax(bmax - bmin))
-            cent = centroids[indices_slice, axis]
-            order = np.argsort(cent)
-            s = indices_slice[order]
-            mid = n // 2
-            left = _build(s[:mid], depth + 1)
-            right = _build(s[mid:], depth + 1)
-            ni = len(self.nodes)
-            node = BVHNode(bmin, bmax)
-            node.left = left
-            node.right = right
-            self.nodes.append(node)
-            return ni
-
-        _build(tri_order)
-        if tri_chunks:
-            self.tri_indices = np.concatenate(tri_chunks)
-            offset = 0
-            for node in self.nodes:
-                if node.is_leaf:
-                    node.tri_start = offset
-                    offset += node.tri_count
-
-    def intersect(self, ox: float, oy: float, oz: float,
-                  dx: float, dy: float, dz: float,
-                  vertices: np.ndarray | None = None,
-                  indices: np.ndarray | None = None) -> float:
-        if not self.nodes:
-            return -1.0
-        v_arr = self.vertices if vertices is None else vertices
-        i_arr = self.indices if indices is None else indices
-        verts3 = v_arr.reshape(-1, 3)
-
-        best_t = float("inf")
-        stack = [len(self.nodes) - 1]
-
-        while stack:
-            ni = stack.pop()
-            node = self.nodes[ni]
-            d = _ray_aabb_min(ox, oy, oz, dx, dy, dz,
-                              node.bmin[0], node.bmin[1], node.bmin[2],
-                              node.bmax[0], node.bmax[1], node.bmax[2])
-            if d < 0 or d >= best_t:
-                continue
-            if node.is_leaf:
-                s = node.tri_start
-                e = s + node.tri_count
-                for ti_idx in range(s, e):
-                    t = int(self.tri_indices[ti_idx])
-                    vi0 = int(i_arr[t * 3])
-                    vi1 = int(i_arr[t * 3 + 1])
-                    vi2 = int(i_arr[t * 3 + 2])
-                    v0 = verts3[vi0]
-                    v1 = verts3[vi1]
-                    v2 = verts3[vi2]
-                    t_hit = _moller_trumbore(ox, oy, oz, dx, dy, dz,
-                                             v0[0], v0[1], v0[2],
-                                             v1[0], v1[1], v1[2],
-                                             v2[0], v2[1], v2[2])
-                    if t_hit > 0 and t_hit < best_t:
-                        best_t = t_hit
-            else:
-                stack.append(node.right)
-                stack.append(node.left)
-        return -1.0 if best_t == float("inf") else best_t
-
-    def flatten_for_gpu(self):
-        if hasattr(self, '_gpu_flat') and self._gpu_flat is not None:
-            return self._gpu_flat
-        if not self.nodes:
-            self._gpu_flat = None
-            return None
-        n = len(self.nodes)
-        buf = np.zeros((n, 8), dtype=np.float32)
-        for i, node in enumerate(self.nodes):
-            buf[i, 0] = node.bmin[0]
-            buf[i, 1] = node.bmin[1]
-            buf[i, 2] = node.bmin[2]
-            buf[i, 3] = node.bmax[0]
-            buf[i, 4] = node.bmax[1]
-            buf[i, 5] = node.bmax[2]
-            if node.is_leaf:
-                buf[i, 6] = float(node.tri_start)
-                buf[i, 7] = -float(node.tri_count) - 1.0
-            else:
-                buf[i, 6] = float(node.left)
-                buf[i, 7] = float(node.right)
-        self._gpu_flat = buf
-        return buf
-
-    def node_count(self) -> int:
-        return len(self.nodes)
-
-    def depth(self) -> int:
-        if not self.nodes:
-            return 0
-
-        def _max_depth(ni, d):
-            if ni < 0 or ni >= len(self.nodes):
-                return d
-            node = self.nodes[ni]
-            if node.is_leaf:
-                return d
-            return max(_max_depth(node.left, d + 1), _max_depth(node.right, d + 1))
-
-        return _max_depth(len(self.nodes) - 1, 0)
-
-    @property
-    def node_depths(self) -> list[int]:
-        if self._cached_depths is None:
-            self._cached_depths = _compute_node_depths(self)
-        return self._cached_depths
-
-    def enumerate_nodes(self):
-        for i, node in enumerate(self.nodes):
-            yield i, node
-
-
-def _ray_aabb_min(ox: float, oy: float, oz: float,
-                  dx: float, dy: float, dz: float,
-                  bmin_x: float, bmin_y: float, bmin_z: float,
-                  bmax_x: float, bmax_y: float, bmax_z: float) -> float:
+def _ray_aabb_min(ox, oy, oz, dx, dy, dz, bmin_x, bmin_y, bmin_z, bmax_x, bmax_y, bmax_z):
     tmin = -1e30
     tmax = 1e30
     if abs(dx) > 1e-30:
@@ -229,8 +69,7 @@ def _ray_aabb_min(ox: float, oy: float, oz: float,
     return tmin if tmin > 0.0 else (tmax if tmax > 0.0 else -1.0)
 
 
-def _moller_trumbore(ox, oy, oz, dx, dy, dz,
-                     ax, ay, az, bx, by, bz, cx, cy, cz):
+def _moller_trumbore(ox, oy, oz, dx, dy, dz, ax, ay, az, bx, by, bz, cx, cy, cz):
     e1x = bx - ax
     e1y = by - ay
     e1z = bz - az
@@ -260,6 +99,410 @@ def _moller_trumbore(ox, oy, oz, dx, dy, dz,
     return t if t > 0 else -1.0
 
 
+class BVH:
+    __slots__ = ('_nodes', '_tri_indices', '_tri_bmin', '_tri_bmax', '_centroids',
+                 '_vertices', '_indices', '_vert_key', '_idx_key', '_cached_depths',
+                 '_node_views')
+
+    def __init__(self, vertices: np.ndarray, indices: np.ndarray):
+        self._vertices = vertices
+        self._indices = indices
+        self._cached_depths: list[int] | None = None
+        self._node_views: list | None = None
+        self._vert_key = id(vertices)
+        self._idx_key = id(indices)
+
+        n_tris = len(indices) // 3
+        if n_tris == 0:
+            self._nodes = np.empty((0, 8), dtype=np.float32)
+            self._tri_indices = np.array([], dtype=np.uint32)
+            self._tri_bmin = np.empty((0, 3), dtype=np.float32)
+            self._tri_bmax = np.empty((0, 3), dtype=np.float32)
+            self._centroids = np.empty((0, 3), dtype=np.float32)
+            return
+
+        verts3 = vertices.reshape(-1, 3)
+        tri_i = indices.reshape(n_tris, 3).astype(np.intp)
+        v0 = verts3[tri_i[:, 0]]
+        v1 = verts3[tri_i[:, 1]]
+        v2 = verts3[tri_i[:, 2]]
+        self._tri_bmin = np.minimum(np.minimum(v0, v1), v2)
+        self._tri_bmax = np.maximum(np.maximum(v0, v1), v2)
+        self._centroids = (v0 + v1 + v2) / 3.0
+
+        tri_order = np.arange(n_tris, dtype=np.intp)
+        self._build(tri_order, n_tris)
+
+    def _build(self, tri_order, n_tris):
+        import sys
+        sys.setrecursionlimit(1000000)
+
+        ctx = _BuildCtx(n_tris * 2 + 1, n_tris)
+
+        def _make_leaf(ctx, tris):
+            ni = ctx.node_count
+            ctx.node_count += 1
+            bmin = self._tri_bmin[tris].min(axis=0)
+            bmax = self._tri_bmax[tris].max(axis=0)
+            ctx.nodes[ni, 0:3] = bmin
+            ctx.nodes[ni, 3:6] = bmax
+            ctx.nodes[ni, 6] = float(ctx.tri_offset)
+            ctx.nodes[ni, 7] = -float(len(tris)) - 1.0
+            ctx.tri_indices[ctx.tri_offset:ctx.tri_offset + len(tris)] = tris.astype(np.uint32)
+            ctx.tri_offset += len(tris)
+            return ni
+
+        def _sah_build(tris, depth=0):
+            n = len(tris)
+            bmin = self._tri_bmin[tris].min(axis=0)
+            bmax = self._tri_bmax[tris].max(axis=0)
+
+            if n <= _LEAF_SIZE or depth >= _MAX_DEPTH:
+                return _make_leaf(ctx, tris)
+
+            parent_sa = _surface_area(bmin, bmax)
+            if parent_sa < 1e-12:
+                return _make_leaf(ctx, tris)
+
+            c_cent = self._centroids[tris]
+            c_bmin = c_cent.min(axis=0)
+            c_bmax = c_cent.max(axis=0)
+            c_range = c_bmax - c_bmin
+
+            best_axis = -1
+            best_split = 0.0
+            best_cost = float('inf')
+
+            for axis in range(3):
+                if c_range[axis] < 1e-12:
+                    continue
+                bins = _SAH_BINS
+                scale = bins / c_range[axis]
+                cent_vals = c_cent[:, axis]
+                bin_idx = np.floor((cent_vals - c_bmin[axis]) * scale).astype(np.intp)
+                bin_idx = np.clip(bin_idx, 0, bins - 1)
+
+                bin_bmin = np.full((bins, 3), 1e30, dtype=np.float32)
+                bin_bmax = np.full((bins, 3), -1e30, dtype=np.float32)
+                bin_cnt = np.zeros(bins, dtype=np.intp)
+
+                for bi in range(bins):
+                    mask = bin_idx == bi
+                    cnt = mask.sum()
+                    if cnt:
+                        bin_cnt[bi] = cnt
+                        tris_bi = tris[mask]
+                        bin_bmin[bi] = self._tri_bmin[tris_bi].min(axis=0)
+                        bin_bmax[bi] = self._tri_bmax[tris_bi].max(axis=0)
+
+                left_sa = np.empty(bins - 1, dtype=np.float32)
+                left_cnt = np.empty(bins - 1, dtype=np.intp)
+                pmin = np.full(3, 1e30, dtype=np.float32)
+                pmax = np.full(3, -1e30, dtype=np.float32)
+                pc = 0
+                for i in range(bins - 1):
+                    if bin_cnt[i]:
+                        pmin = np.minimum(pmin, bin_bmin[i])
+                        pmax = np.maximum(pmax, bin_bmax[i])
+                        pc += bin_cnt[i]
+                    left_sa[i] = _surface_area(pmin, pmax)
+                    left_cnt[i] = pc
+
+                right_sa = np.empty(bins - 1, dtype=np.float32)
+                right_cnt = np.empty(bins - 1, dtype=np.intp)
+                smin = np.full(3, 1e30, dtype=np.float32)
+                smax = np.full(3, -1e30, dtype=np.float32)
+                sc = 0
+                for i in range(bins - 2, -1, -1):
+                    bi = i + 1
+                    if bin_cnt[bi]:
+                        smin = np.minimum(smin, bin_bmin[bi])
+                        smax = np.maximum(smax, bin_bmax[bi])
+                        sc += bin_cnt[bi]
+                    right_sa[i] = _surface_area(smin, smax)
+                    right_cnt[i] = sc
+
+                for i in range(bins - 1):
+                    if left_cnt[i] == 0 or right_cnt[i] == 0:
+                        continue
+                    cost = _SAH_TRAV + (left_sa[i] * left_cnt[i] + right_sa[i] * right_cnt[i]) / parent_sa
+                    if cost < best_cost:
+                        best_cost = cost
+                        best_axis = axis
+                        best_split = c_bmin[axis] + (i + 1) * c_range[axis] / bins
+
+            leaf_cost = n * _SAH_HIT
+            if best_axis < 0 or best_cost >= leaf_cost:
+                return _make_leaf(ctx, tris)
+
+            axis = best_axis
+            left_mask = c_cent[:, axis] < best_split
+            left_n = left_mask.sum()
+            if left_n == 0 or left_n == n:
+                mid = n // 2
+                order = np.argsort(c_cent[:, axis])
+                left_tris = tris[order[:mid]]
+                right_tris = tris[order[mid:]]
+            else:
+                left_tris = tris[left_mask]
+                right_tris = tris[~left_mask]
+
+            use_parallel = depth < 2 and n >= _PAR_THRESH
+            if use_parallel:
+                with ctx.lock:
+                    ni = ctx.node_count
+                    ctx.node_count += 1
+                ctx.nodes[ni, 0:3] = bmin
+                ctx.nodes[ni, 3:6] = bmax
+                with ThreadPoolExecutor(max_workers=2) as ex:
+                    lf = ex.submit(_sah_build, left_tris, depth + 1)
+                    rf = ex.submit(_sah_build, right_tris, depth + 1)
+                    ctx.nodes[ni, 6] = float(lf.result())
+                    ctx.nodes[ni, 7] = float(rf.result())
+            else:
+                lc = _sah_build(left_tris, depth + 1)
+                rc = _sah_build(right_tris, depth + 1)
+                ni = ctx.node_count
+                ctx.node_count += 1
+                ctx.nodes[ni, 0:3] = bmin
+                ctx.nodes[ni, 3:6] = bmax
+                ctx.nodes[ni, 6] = float(lc)
+                ctx.nodes[ni, 7] = float(rc)
+
+            return ni
+
+        _sah_build(tri_order)
+        self._nodes = ctx.nodes[:ctx.node_count]
+        self._tri_indices = ctx.tri_indices[:ctx.tri_offset]
+
+    def intersect(self, ox: float, oy: float, oz: float,
+                  dx: float, dy: float, dz: float,
+                  vertices: np.ndarray | None = None,
+                  indices: np.ndarray | None = None) -> float:
+        nodes = self._nodes
+        if len(nodes) == 0:
+            return -1.0
+        v_arr = self._vertices if vertices is None else vertices
+        i_arr = self._indices if indices is None else indices
+        verts3 = v_arr.reshape(-1, 3)
+
+        best_t = float('inf')
+        stack = np.empty(64, dtype=np.intp)
+        sp = 0
+        stack[sp] = len(nodes) - 1
+        sp += 1
+
+        while sp > 0:
+            sp -= 1
+            ni = stack[sp]
+            nd = nodes[ni]
+            t = _ray_aabb_min(ox, oy, oz, dx, dy, dz,
+                              nd[0], nd[1], nd[2],
+                              nd[3], nd[4], nd[5])
+            if t < 0 or t >= best_t:
+                continue
+
+            left_or_start = int(nd[6])
+            right_or_count = int(nd[7])
+            is_leaf = right_or_count < 0
+
+            if is_leaf:
+                tri_start = left_or_start
+                tri_end = tri_start + (-right_or_count - 1)
+                for ti in range(tri_start, tri_end):
+                    t_idx = int(self._tri_indices[ti])
+                    vi0 = int(i_arr[t_idx * 3])
+                    vi1 = int(i_arr[t_idx * 3 + 1])
+                    vi2 = int(i_arr[t_idx * 3 + 2])
+                    v0 = verts3[vi0]
+                    v1 = verts3[vi1]
+                    v2 = verts3[vi2]
+                    tt = _moller_trumbore(ox, oy, oz, dx, dy, dz,
+                                          v0[0], v0[1], v0[2],
+                                          v1[0], v1[1], v1[2],
+                                          v2[0], v2[1], v2[2])
+                    if tt > 0 and tt < best_t:
+                        best_t = tt
+            else:
+                n_left = left_or_start
+                n_right = right_or_count
+                ln = nodes[n_left]
+                rn = nodes[n_right]
+                tl = _ray_aabb_min(ox, oy, oz, dx, dy, dz,
+                                   ln[0], ln[1], ln[2],
+                                   ln[3], ln[4], ln[5])
+                tr = _ray_aabb_min(ox, oy, oz, dx, dy, dz,
+                                   rn[0], rn[1], rn[2],
+                                   rn[3], rn[4], rn[5])
+                if tl < 0 and tr < 0:
+                    continue
+                if tl < 0:
+                    stack[sp] = n_right
+                    sp += 1
+                elif tr < 0:
+                    stack[sp] = n_left
+                    sp += 1
+                else:
+                    if tl < tr:
+                        stack[sp] = n_right
+                        sp += 1
+                        stack[sp] = n_left
+                        sp += 1
+                    else:
+                        stack[sp] = n_left
+                        sp += 1
+                        stack[sp] = n_right
+                        sp += 1
+
+        return -1.0 if best_t == float('inf') else best_t
+
+    def intersect_any(self, ox: float, oy: float, oz: float,
+                      dx: float, dy: float, dz: float,
+                      vertices: np.ndarray | None = None,
+                      indices: np.ndarray | None = None) -> bool:
+        nodes = self._nodes
+        if len(nodes) == 0:
+            return False
+        v_arr = self._vertices if vertices is None else vertices
+        i_arr = self._indices if indices is None else indices
+        verts3 = v_arr.reshape(-1, 3)
+
+        stack = np.empty(64, dtype=np.intp)
+        sp = 0
+        stack[sp] = len(nodes) - 1
+        sp += 1
+
+        while sp > 0:
+            sp -= 1
+            ni = stack[sp]
+            nd = nodes[ni]
+            t = _ray_aabb_min(ox, oy, oz, dx, dy, dz,
+                              nd[0], nd[1], nd[2],
+                              nd[3], nd[4], nd[5])
+            if t < 0:
+                continue
+
+            left_or_start = int(nd[6])
+            right_or_count = int(nd[7])
+            is_leaf = right_or_count < 0
+
+            if is_leaf:
+                tri_start = left_or_start
+                tri_end = tri_start + (-right_or_count - 1)
+                for ti in range(tri_start, tri_end):
+                    t_idx = int(self._tri_indices[ti])
+                    vi0 = int(i_arr[t_idx * 3])
+                    vi1 = int(i_arr[t_idx * 3 + 1])
+                    vi2 = int(i_arr[t_idx * 3 + 2])
+                    v0 = verts3[vi0]
+                    v1 = verts3[vi1]
+                    v2 = verts3[vi2]
+                    tt = _moller_trumbore(ox, oy, oz, dx, dy, dz,
+                                          v0[0], v0[1], v0[2],
+                                          v1[0], v1[1], v1[2],
+                                          v2[0], v2[1], v2[2])
+                    if tt > 0:
+                        return True
+            else:
+                n_left = left_or_start
+                n_right = right_or_count
+                ln = nodes[n_left]
+                rn = nodes[n_right]
+                tl = _ray_aabb_min(ox, oy, oz, dx, dy, dz,
+                                   ln[0], ln[1], ln[2],
+                                   ln[3], ln[4], ln[5])
+                tr = _ray_aabb_min(ox, oy, oz, dx, dy, dz,
+                                   rn[0], rn[1], rn[2],
+                                   rn[3], rn[4], rn[5])
+                if tl < 0 and tr < 0:
+                    continue
+                if tl < 0:
+                    stack[sp] = n_right
+                    sp += 1
+                elif tr < 0:
+                    stack[sp] = n_left
+                    sp += 1
+                else:
+                    if tl < tr:
+                        stack[sp] = n_right
+                        sp += 1
+                        stack[sp] = n_left
+                        sp += 1
+                    else:
+                        stack[sp] = n_left
+                        sp += 1
+                        stack[sp] = n_right
+                        sp += 1
+
+        return False
+
+    def flatten_for_gpu(self):
+        return self._nodes
+
+    @property
+    def tri_indices(self) -> np.ndarray:
+        return self._tri_indices
+
+    def node_count(self) -> int:
+        return len(self._nodes)
+
+    def depth(self) -> int:
+        nodes = self._nodes
+        if len(nodes) == 0:
+            return 0
+
+        def _max_depth(ni, d):
+            if ni < 0 or ni >= len(nodes):
+                return d
+            nd = nodes[ni]
+            if nd[7] < 0:
+                return d
+            return max(_max_depth(int(nd[6]), d + 1), _max_depth(int(nd[7]), d + 1))
+
+        return _max_depth(len(nodes) - 1, 0)
+
+    @property
+    def node_depths(self) -> list[int]:
+        if self._cached_depths is None:
+            self._cached_depths = _compute_node_depths(self)
+        return self._cached_depths
+
+    @property
+    def nodes(self):
+        if self._node_views is None:
+            class _NodeView:
+                __slots__ = ('_data',)
+                def __init__(self, data):
+                    self._data = data
+                @property
+                def bmin(self):
+                    return self._data[0:3]
+                @property
+                def bmax(self):
+                    return self._data[3:6]
+                @property
+                def left(self):
+                    return int(self._data[6])
+                @property
+                def right(self):
+                    return int(self._data[7])
+                @property
+                def tri_start(self):
+                    return int(self._data[6])
+                @property
+                def tri_count(self):
+                    return 0 if self._data[7] >= 0 else int(-self._data[7] - 1)
+                @property
+                def is_leaf(self):
+                    return self._data[7] < 0
+            self._node_views = [_NodeView(self._nodes[i]) for i in range(len(self._nodes))]
+        return self._node_views
+
+    def enumerate_nodes(self):
+        for i in range(len(self._nodes)):
+            yield i, self.nodes[i]
+
+
 _BVH_CACHE: dict[int, BVH] = {}
 
 
@@ -276,12 +519,14 @@ def get_mesh_bvh(vertices: np.ndarray, indices: np.ndarray) -> BVH | None:
 def _build_bvh_lines(bvh: BVH, depth_filter: int = -1) -> list[tuple]:
     depths = _compute_node_depths(bvh) if depth_filter >= 0 else None
     lines = []
-    for ni, node in enumerate(bvh.nodes):
-        if depth_filter >= 0:
-            if depths[ni] != depth_filter:
-                continue
-        mn = node.bmin
-        mx = node.bmax
+    from core.math3d import Vec3
+    n_nodes = len(bvh._nodes)
+    for ni in range(n_nodes):
+        if depth_filter >= 0 and depths[ni] != depth_filter:
+            continue
+        nd = bvh._nodes[ni]
+        mn = nd[0:3]
+        mx = nd[3:6]
         corners = [
             (mn[0], mn[1], mn[2]), (mx[0], mn[1], mn[2]),
             (mx[0], mx[1], mn[2]), (mn[0], mx[1], mn[2]),
@@ -293,8 +538,7 @@ def _build_bvh_lines(bvh: BVH, depth_filter: int = -1) -> list[tuple]:
             (4, 5), (5, 6), (6, 7), (7, 4),
             (0, 4), (1, 5), (2, 6), (3, 7),
         ]
-        from core.math3d import Vec3
-        frac = ni / max(1, len(bvh.nodes))
+        frac = ni / max(1, n_nodes)
         hue = frac * 0.66
         r, g, b = _hsv_to_rgb(hue, 0.8, 0.6 + 0.4 * (1.0 - frac))
         color = [r, g, b]
@@ -306,28 +550,30 @@ def _build_bvh_lines(bvh: BVH, depth_filter: int = -1) -> list[tuple]:
 
 
 def _node_depth(bvh, ni):
-    if ni < 0 or ni >= len(bvh.nodes):
+    nodes = bvh._nodes
+    if ni < 0 or ni >= len(nodes):
         return 0
-    node = bvh.nodes[ni]
-    if node.is_leaf:
+    nd = nodes[ni]
+    if nd[7] < 0:
         return 0
-    return 1 + max(_node_depth(bvh, node.left), _node_depth(bvh, node.right))
+    return 1 + max(_node_depth(bvh, int(nd[6])), _node_depth(bvh, int(nd[7])))
 
 
 def _compute_node_depths(bvh):
-    depths = [0] * len(bvh.nodes)
+    nodes = bvh._nodes
+    depths = [0] * len(nodes)
 
     def walk(ni, d):
-        if ni < 0 or ni >= len(bvh.nodes):
+        if ni < 0 or ni >= len(nodes):
             return
         depths[ni] = d
-        node = bvh.nodes[ni]
-        if not node.is_leaf:
-            walk(node.left, d + 1)
-            walk(node.right, d + 1)
+        nd = nodes[ni]
+        if nd[7] >= 0:
+            walk(int(nd[6]), d + 1)
+            walk(int(nd[7]), d + 1)
 
-    if bvh.nodes:
-        walk(len(bvh.nodes) - 1, 0)
+    if len(nodes) > 0:
+        walk(len(nodes) - 1, 0)
     return depths
 
 
@@ -359,7 +605,7 @@ _EDGE_PAIRS = np.array([
 
 
 def build_bvh_arrays(bvh, max_depth: int = -1):
-    n = len(bvh.nodes)
+    n = len(bvh._nodes)
     if n == 0:
         return None, None, None
     if max_depth < 0:
@@ -373,8 +619,9 @@ def build_bvh_arrays(bvh, max_depth: int = -1):
             return None, None, None
     corners = np.empty((count, 8, 3), dtype=np.float32)
     if mask is None:
-        for i, node in enumerate(bvh.nodes):
-            mn, mx = node.bmin, node.bmax
+        for i in range(n):
+            nd = bvh._nodes[i]
+            mn, mx = nd[0:3], nd[3:6]
             corners[i, 0] = (mn[0], mn[1], mn[2])
             corners[i, 1] = (mx[0], mn[1], mn[2])
             corners[i, 2] = (mx[0], mx[1], mn[2])
@@ -385,10 +632,11 @@ def build_bvh_arrays(bvh, max_depth: int = -1):
             corners[i, 7] = (mn[0], mx[1], mx[2])
     else:
         idx = 0
-        for i, node in enumerate(bvh.nodes):
+        for i in range(n):
             if not mask[i]:
                 continue
-            mn, mx = node.bmin, node.bmax
+            nd = bvh._nodes[i]
+            mn, mx = nd[0:3], nd[3:6]
             corners[idx, 0] = (mn[0], mn[1], mn[2])
             corners[idx, 1] = (mx[0], mn[1], mn[2])
             corners[idx, 2] = (mx[0], mx[1], mn[2])

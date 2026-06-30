@@ -367,8 +367,9 @@ class RaytracingRenderer(Component):
             self._inst_np[i, 36] = float(tri_counts[i])
             self._inst_np[i, 37] = float(nc)
             bvh = all_bvhs[i]
-            if bvh and bvh.nodes:
-                root = bvh.nodes[-1]
+            root_nodes = bvh.nodes if bvh else []
+            if root_nodes:
+                root = root_nodes[-1]
                 lbmin = root.bmin
                 lbmax = root.bmax
                 corners = np.array([
