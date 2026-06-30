@@ -159,6 +159,8 @@ class _Profiler:
     @enabled.setter
     def enabled(self, v: bool):
         self._enabled = v
+        if v:
+            self._capture_frames = True
     @property
     def capture_frames(self) -> bool:
         return self._capture_frames

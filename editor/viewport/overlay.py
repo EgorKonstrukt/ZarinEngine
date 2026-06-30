@@ -121,10 +121,32 @@ def _get_vram_mb() -> tuple[float, float]:
 
 
 _SPIKE_LOG: list[tuple[float, dict[str, float]]] = []
+_last_spike_cumulative: dict[str, float] = {}
 
 
-def _log_spike(frame_time_ms: float, prof_data: dict[str, float]):
-    _SPIKE_LOG.append((frame_time_ms, dict(prof_data)))
+def _log_spike(frame_time_ms: float, prof):
+    per_frame: dict[str, float] = {}
+    cf = prof._current_frame
+    if cf is not None and cf.flat_data:
+        per_frame = dict(cf.flat_data)
+    else:
+        frames = prof.frames
+        if frames:
+            per_frame = dict(frames[-1].flat_data)
+
+    if not per_frame:
+        global _last_spike_cumulative
+        cur = dict(prof.data)
+        if _last_spike_cumulative:
+            for k, v in cur.items():
+                prev = _last_spike_cumulative.get(k, 0.0)
+                if isinstance(v, (int, float)) and isinstance(prev, (int, float)):
+                    delta = v - prev
+                    if delta > 0.01:
+                        per_frame[k] = delta
+        _last_spike_cumulative = cur
+
+    _SPIKE_LOG.append((frame_time_ms, per_frame))
     if len(_SPIKE_LOG) > 20:
         _SPIKE_LOG.pop(0)
 
@@ -183,7 +205,7 @@ def draw_stats_overlay(vp, painter):
         if current_ft > 33.0:
             prof = getattr(vp._engine, '_profiler', None)
             if prof and prof.enabled:
-                _log_spike(current_ft, prof.data)
+                _log_spike(current_ft, prof)
 
     sorted_ft = sorted(vp._frame_times_ms)
     n = len(sorted_ft)
