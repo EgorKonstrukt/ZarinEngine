@@ -123,6 +123,7 @@ class TracemallocPanel(QDockWidget):
         self._gc_history: deque[int] = deque(maxlen=60)
         self._last_gc_counts = [0, 0, 0]
         self._prev_snapshot: tracemalloc.Snapshot | None = None
+        self._refresh_tick = 0
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh)
@@ -132,74 +133,98 @@ class TracemallocPanel(QDockWidget):
         lines = []
         counts = gc.get_count()
         thresh = gc.get_threshold()
-        lines.append(f"GC collections: gen0={counts[0]}  gen1={counts[1]}  gen2={counts[2]}  total={sum(counts)}")
-        lines.append(f"GC thresholds:  gen0={thresh[0]}  gen1={thresh[1]}  gen2={thresh[2]}")
         rate = sum(self._gc_history) / max(len(self._gc_history), 1)
-        lines.append(f"GC rate: {rate:.1f} col/s")
-        tracing = tracemalloc.is_tracing()
-        lines.append(f"tracemalloc: {'RUNNING' if tracing else 'STOPPED'}")
-        if tracing:
-            cur, peak = tracemalloc.get_traced_memory()
-            lines.append(f"traced memory: cur={cur/1024:.1f}K  peak={peak/1024:.1f}K")
-            try:
-                snap = tracemalloc.take_snapshot()
-                stats = snap.statistics('lineno')[:10]
-                lines.append(f"")
-                lines.append("Top 10 allocators (file:line):")
-                for st in stats:
-                    lines.append(f"  {self._format_size(st.size):>10}  {st.count:>6}x  {str(st.traceback.format())[:100]}")
-            except Exception:
-                pass
-        return "\n".join(lines)
 
-    def _build_full_report(self) -> str:
-        lines = []
-        lines.append("=" * 72)
-        lines.append("Tracemalloc Debug Report")
-        lines.append(f"Generated: {datetime.now().isoformat()}")
-        lines.append("=" * 72)
+        lines.append("== GC ==")
+        lines.append(f"collections:  gen0={counts[0]}  gen1={counts[1]}  gen2={counts[2]}  total={sum(counts)}")
+        lines.append(f"thresholds:   gen0={thresh[0]}  gen1={thresh[1]}  gen2={thresh[2]}")
+        lines.append(f"rate:         {rate:.1f} col/s  (60s window)")
         lines.append(f"")
 
-        lines.append("--- GC Collections ---")
-        counts = gc.get_count()
-        thresh = gc.get_threshold()
-        lines.append(f"  Gen 0: {counts[0]}  (threshold: {thresh[0]})")
-        lines.append(f"  Gen 1: {counts[1]}  (threshold: {thresh[1]})")
-        lines.append(f"  Gen 2: {counts[2]}  (threshold: {thresh[2]})")
-        lines.append(f"  Total: {sum(counts)}")
-        rate = sum(self._gc_history) / max(len(self._gc_history), 1)
-        lines.append(f"  Rate:  {rate:.1f} col/s  (60s window)")
+        lines.append("== gc.get_stats() ==")
+        for i, stat in enumerate(gc.get_stats()):
+            lines.append(f"  gen{i}:  collected={stat['collected']:>8}  "
+                         f"uncollectable={stat['uncollectable']}  "
+                         f"collections={stat['collections']}")
         lines.append(f"")
 
-        lines.append("--- tracemalloc ---")
         tracing = tracemalloc.is_tracing()
-        lines.append(f"  Status: {'RUNNING' if tracing else 'STOPPED'}")
+        lines.append(f"== tracemalloc ==")
+        lines.append(f"  {'ON' if tracing else 'OFF'}")
         if tracing:
             cur, peak = tracemalloc.get_traced_memory()
-            lines.append(f"  Current: {self._format_size(cur)}")
-            lines.append(f"  Peak:    {self._format_size(peak)}")
+            lines.append(f"  current={cur/1024:.1f}K  peak={peak/1024:.1f}K")
             lines.append(f"")
             try:
                 snap = tracemalloc.take_snapshot()
-                stats = snap.statistics('lineno')[:200]
-                lines.append(f"Top allocators ({len(stats)} entries):")
-                for i, st in enumerate(stats):
-                    lines.append(f"  {i+1:>3}. {self._format_size(st.size):>10}  {st.count:>6}x  {str(st.traceback.format())[:120]}")
+                stats = snap.statistics('lineno')[:10]
+                lines.append(f"top 10 allocators:")
+                for st in stats:
+                    loc = str(st.traceback.format())
+                    lines.append(f"  {self._format_size(st.size):>7}  {st.count:>5}x  {loc[:120]}")
+            except Exception:
+                lines.append(f"  (snapshot error)")
+        return "\n".join(lines)
+
+    def _build_full_report(self) -> str:
+        import io
+        buf = io.StringIO()
+
+        def p(s: str = ""):
+            buf.write(s.rstrip() + "\n")
+
+        counts = gc.get_count()
+        thresh = gc.get_threshold()
+        rate = sum(self._gc_history) / max(len(self._gc_history), 1)
+
+        p("=" * 72)
+        p("  TRACEMALLOC / GC REPORT")
+        p(f"  {datetime.now().isoformat()}")
+        p("=" * 72)
+        p()
+
+        # ── summary ──────────────────────────────────────────────────────
+        p("┌─ GC")
+        p(f"│ collections:  gen0={counts[0]}  gen1={counts[1]}  gen2={counts[2]}  total={sum(counts)}")
+        p(f"│ thresholds:   gen0={thresh[0]}  gen1={thresh[1]}  gen2={thresh[2]}")
+        p(f"│ rate:         {rate:.1f} col/s  (60s window)")
+        p()
+
+        p("│ gc.get_stats() per-generation:")
+        total_collected = 0
+        total_uncollectable = 0
+        for i, st in enumerate(gc.get_stats()):
+            total_collected += st["collected"] or 0
+            total_uncollectable += st["uncollectable"] or 0
+            p(f"│   gen{i}:  collected={st['collected']:>8}  "
+              f"uncollectable={st['uncollectable']}  "
+              f"collections={st['collections']}")
+        p(f"│   ─────────────────────────────────")
+        p(f"│   total collected: {total_collected}")
+        p(f"│   uncollectable:   {total_uncollectable}")
+        if total_uncollectable:
+            p(f"│   ⚠ LEAK: {total_uncollectable} objects are uncollectable!")
+        p()
+
+        tracing = tracemalloc.is_tracing()
+        p("├─ tracemalloc")
+        p(f"│   {'ON' if tracing else 'OFF'}")
+        if tracing:
+            cur, peak = tracemalloc.get_traced_memory()
+            p(f"│   current={cur/1024:.1f}K  peak={peak/1024:.1f}K")
+            p(f"│")
+            try:
+                snap = tracemalloc.take_snapshot()
+                stats = snap.statistics('lineno')
+                p(f"│   top allocators ({len(stats)} total):")
+                for i, st in enumerate(stats[:30]):
+                    loc = str(st.traceback.format())
+                    p(f"│   {i+1:>2}. {self._format_size(st.size):>7}  {st.count:>5}x  {loc[:120]}")
             except Exception as e:
-                lines.append(f"  (snapshot error: {e})")
-        else:
-            lines.append(f"  (start tracemalloc to collect allocation data)")
-        lines.append(f"")
+                p(f"│   (snapshot error: {e})")
+        p()
 
-        lines.append("--- gc.get_stats() ---")
-        try:
-            for i, stat in enumerate(gc.get_stats()):
-                lines.append(f"  Gen {i}: collections={stat['collections']}  collected={stat['collected']}  uncollectable={stat['uncollectable']}")
-        except Exception as e:
-            lines.append(f"  (error: {e})")
-        lines.append(f"")
-
-        lines.append("--- Object Counts ---")
+        p("├─ gc.get_objects()")
         try:
             objs = gc.get_objects()
             type_counts: dict[str, int] = {}
@@ -210,18 +235,56 @@ class TracemallocPanel(QDockWidget):
                 except Exception:
                     pass
             sorted_types = sorted(type_counts.items(), key=lambda x: -x[1])
-            lines.append(f"Total objects tracked: {len(objs)}")
-            lines.append(f"Distinct types: {len(sorted_types)}")
-            lines.append(f"")
-            lines.append("Top types:")
-            for tname, cnt in sorted_types[:50]:
-                lines.append(f"  {cnt:>8}x  {tname}")
+            p(f"│   total tracked: {len(objs)}")
+            p(f"│   distinct types: {len(sorted_types)}")
+            p(f"│")
+            p(f"│   top 40 types:")
+            for tname, cnt in sorted_types[:40]:
+                p(f"│   {cnt:>8}x  {tname}")
         except Exception as e:
-            lines.append(f"  (error: {e})")
-        lines.append(f"")
-        lines.append("=" * 72)
-        lines.append("End of Report")
-        return "\n".join(lines)
+            p(f"│   (error: {e})")
+        p()
+
+        # ── GC analysis (DEBUG_SAVEALL) ──────────────────────────────────
+        p("│")
+        p("└─ gc garbage analysis (DEBUG_SAVEALL sample)")
+        old_debug = gc.get_debug()
+        n_collected = 0
+        new_garbage = []
+        try:
+            gc.set_debug(gc.DEBUG_SAVEALL)
+            old_len = len(gc.garbage)
+            n_collected = gc.collect()
+            new_garbage = gc.garbage[old_len:]
+            gc.garbage.clear()
+        except Exception:
+            pass
+        finally:
+            gc.set_debug(old_debug)
+
+        p(f"    gc.collect() freed: {n_collected}")
+        p(f"    cyclic garbage:     {len(new_garbage)}")
+        if n_collected:
+            p(f"    overhead ratio:     {len(new_garbage)/max(n_collected,1)*100:.1f}%")
+            if new_garbage:
+                type_cnt = Counter(type(o).__name__ for o in new_garbage)
+                p(f"")
+                p(f"    types in garbage:")
+                for tname, cnt in type_cnt.most_common(30):
+                    p(f"      {cnt:>6}x  {tname}")
+
+                ctypes_keywords = {'cfield', 'pychar', 'pycstruct', 'pycfuncptr', 'funcptr',
+                                   'windll', 'getset_descriptor'}
+                ctypes_cycle = sum(v for k, v in type_cnt.items()
+                                   if any(w in k.lower().replace('_', '') for w in ctypes_keywords))
+                if ctypes_cycle > 0:
+                    pct = ctypes_cycle / len(new_garbage) * 100
+                    p(f"")
+                    p(f"    ⚠ ctypes-related: {ctypes_cycle}/{len(new_garbage)} ({pct:.0f}%)")
+        p()
+        p("=" * 72)
+        p("END")
+        return buf.getvalue()
 
     def _on_copy_report(self):
         report = self._build_short_report()
@@ -314,10 +377,17 @@ class TracemallocPanel(QDockWidget):
             f"collected={n_collected}  cycles={len(new_garbage)}")
 
     def _refresh(self):
+        self._refresh_tick += 1
+        tick = self._refresh_tick
+
         self._update_gc_stats()
-        if tracemalloc.is_tracing():
-            self._update_tracemalloc()
-        self._update_object_counts()
+
+        if tick % 5 == 0:
+            if tracemalloc.is_tracing():
+                self._update_tracemalloc()
+
+        if tick % 3 == 0:
+            self._update_object_counts()
 
     def _update_gc_stats(self):
         counts = gc.get_count()
