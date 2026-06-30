@@ -78,6 +78,27 @@ def _fmt_count(n: int) -> str:
 _vram_cache = {'used_mb': 0.0, 'total_mb': 0.0, 'last_query': 0.0}
 
 
+try:
+    import ctypes as _nvml_ctypes
+
+    class _NVMLMem(_nvml_ctypes.Structure):
+        _fields_ = [
+            ('total', _nvml_ctypes.c_ulonglong),
+            ('free', _nvml_ctypes.c_ulonglong),
+            ('used', _nvml_ctypes.c_ulonglong),
+        ]
+
+    _nvml_handle = _nvml_ctypes.WinDLL('nvml.dll')
+    _nvml_handle.nvmlInit()
+    _nvml_dev_handle = _nvml_ctypes.c_void_p()
+    _nvml_handle.nvmlDeviceGetHandleByIndex(0, _nvml_ctypes.byref(_nvml_dev_handle))
+    _nvml_available = True
+except Exception:
+    _nvml_available = False
+    _nvml_dev_handle = None
+    _NVMLMem = None
+
+
 def _get_vram_mb() -> tuple[float, float]:
     global _vram_cache
     now = time.time()
@@ -85,28 +106,27 @@ def _get_vram_mb() -> tuple[float, float]:
         return _vram_cache['used_mb'], _vram_cache['total_mb']
 
     used_mb = total_mb = 0.0
-    try:
-        import ctypes
-        nvml = ctypes.WinDLL('nvml.dll')
-        nvml.nvmlInit()
-        handle = ctypes.c_void_p()
-        nvml.nvmlDeviceGetHandleByIndex(0, ctypes.byref(handle))
-
-        class _NVMLMem(ctypes.Structure):
-            _fields_ = [
-                ('total', ctypes.c_ulonglong),
-                ('free', ctypes.c_ulonglong),
-                ('used', ctypes.c_ulonglong),
-            ]
-        mem = _NVMLMem()
-        nvml.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
-        total_mb = mem.total / (1024 * 1024)
-        used_mb = mem.used / (1024 * 1024)
-    except Exception:
-        pass
+    if _nvml_available and _nvml_dev_handle is not None:
+        try:
+            mem = _NVMLMem()
+            _nvml_handle.nvmlDeviceGetMemoryInfo(
+                _nvml_dev_handle, _nvml_ctypes.byref(mem))
+            total_mb = mem.total / (1024 * 1024)
+            used_mb = mem.used / (1024 * 1024)
+        except Exception:
+            pass
 
     _vram_cache = {'used_mb': used_mb, 'total_mb': total_mb, 'last_query': now}
     return used_mb, total_mb
+
+
+_SPIKE_LOG: list[tuple[float, dict[str, float]]] = []
+
+
+def _log_spike(frame_time_ms: float, prof_data: dict[str, float]):
+    _SPIKE_LOG.append((frame_time_ms, dict(prof_data)))
+    if len(_SPIKE_LOG) > 20:
+        _SPIKE_LOG.pop(0)
 
 
 def _draw_val(painter, label, val, fm, cx, cy, line_height):
@@ -157,6 +177,13 @@ def draw_stats_overlay(vp, painter):
         vp._frame_times_ms.append(paint_dt * 1000.0)
         if len(vp._frame_times_ms) > 300:
             vp._frame_times_ms.pop(0)
+
+    if vp._frame_times_ms:
+        current_ft = vp._frame_times_ms[-1]
+        if current_ft > 33.0:
+            prof = getattr(vp._engine, '_profiler', None)
+            if prof and prof.enabled:
+                _log_spike(current_ft, prof.data)
 
     sorted_ft = sorted(vp._frame_times_ms)
     n = len(sorted_ft)
@@ -271,6 +298,58 @@ def draw_stats_overlay(vp, painter):
                 painter.drawText(QRect(cx, cy, fm.horizontalAdvance(sep), line_height),
                                  Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, sep)
                 cx += fm.horizontalAdvance(sep)
+
+    # ── frame time bar chart ─────────────────────────────────────
+    chart_y = y + total_h + 6
+    chart_h = 30
+    chart_rect = QRect(x, chart_y, int(max_w), chart_h)
+    painter.fillRect(chart_rect, bg_color)
+    painter.setPen(QPen(border_color, 1))
+    painter.drawRect(chart_rect)
+    ft_list = vp._frame_times_ms
+    n_bars = min(len(ft_list), chart_rect.width() - 4)
+    if n_bars > 1:
+        bar_w = (chart_rect.width() - 4) / n_bars
+        max_ft = max(max(ft_list[-n_bars:]) * 1.1, 16.0)
+        for bi in range(n_bars):
+            ft_val = ft_list[-n_bars + bi]
+            bh = max(1, int((ft_val / max_ft) * (chart_h - 4)))
+            bar_x = chart_rect.x() + 2 + int(bar_w * bi)
+            bar_y = chart_rect.bottom() - 2 - bh
+            if ft_val > 33.0:
+                painter.setBrush(QBrush(QColor(255, 80, 80, 180)))
+            elif ft_val > 16.0:
+                painter.setBrush(QBrush(QColor(255, 200, 80, 160)))
+            else:
+                painter.setBrush(QBrush(QColor(80, 200, 80, 140)))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(QRect(int(bar_x), bar_y, max(1, int(bar_w)), bh))
+        # reference lines
+        painter.setPen(QPen(QColor(255, 255, 255, 40), 1))
+        ref_y = chart_rect.bottom() - 2 - int((16.0 / max_ft) * (chart_h - 4))
+        if ref_y > chart_rect.y() + 2:
+            painter.drawLine(chart_rect.x() + 2, ref_y, chart_rect.right() - 2, ref_y)
+
+    # ── last spike detail ────────────────────────────────────────
+    if _SPIKE_LOG:
+        spike_ft, spike_prof = _SPIKE_LOG[-1]
+        spike_lines = [f"Spike: {spike_ft:.0f}ms  frame"]
+        sorted_spike = sorted(spike_prof.items(), key=lambda kv: -kv[1])[:3]
+        for sp_name, sp_val in sorted_spike:
+            spike_lines.append(f"  {sp_name}: {sp_val:.1f}ms")
+        spike_y = chart_y + chart_h + 6
+        spike_h = len(spike_lines) * line_height + padding * 2
+        spike_rect = QRect(x, spike_y, int(max_w), spike_h)
+        painter.fillRect(spike_rect, QColor(60, 20, 20, 200))
+        painter.setPen(QPen(QColor(255, 80, 80, 200), 1))
+        painter.drawRect(spike_rect)
+        painter.setFont(font)
+        for si, sline in enumerate(spike_lines):
+            sx = x + padding
+            sy = spike_y + padding + si * line_height
+            painter.setPen(QColor(255, 200, 200))
+            painter.drawText(QRect(sx, sy, int(max_w), line_height),
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, sline)
 
 
 def draw_delta_label(vp, painter):
