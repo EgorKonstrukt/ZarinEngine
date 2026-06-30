@@ -202,12 +202,14 @@ def draw_stats_overlay(vp, painter):
     gizmo_lines = vp._renderer._gizmo._stat_lines if vp._renderer._gizmo else 0
     gizmo_draws = vp._renderer._gizmo._stat_draws if vp._renderer._gizmo else 0
 
+    particles = vp._renderer._particle_count if hasattr(vp._renderer, '_particle_count') else 0
+
     stats_lines = [
         f"FPS: {fps:.1f}  |  1%: {1000.0/max(p1_low,0.1):.1f}  |  0.1%: {1000.0/max(p01_low,0.1):.1f}  |  CPU: {cpu_ms:.1f}ms  |  GPU: {gpu_ms:.1f}ms  |  Res: {fw}x{fh}",
         f"RAM: {ram_mb:.0f} MB  |  VRAM: {vram_used:.0f}/{vram_total:.0f} MB  |  GC: {gc_gen0}/{gc_gen1}/{gc_gen2}  |  TPS: {tps:.0f}  |  TS: {time_scale:.2f}",
         f"DSP: {dsp_load:.0f}%  |  Sounds: {active_sounds}/{total_sounds}",
         f"Entities: {entities}  |  Culled: {culled_str}  |  Draw Calls: {draw_calls}  |  Tris: {_fmt_count(triangles)}  |  Verts: {_fmt_count(vertices)}",
-        f"Batches: {batches}  |  Instanced: {instanced}  |  Gizmo Draws: {gizmo_draws}  |  GLines: {_fmt_count(gizmo_lines)}",
+        f"Particles: {_fmt_count(particles)}  |  Batches: {batches}  |  Instanced: {instanced}  |  Gizmo Draws: {gizmo_draws}  |  GLines: {_fmt_count(gizmo_lines)}",
     ]
 
     text_color = QColor(255, 255, 255)

@@ -134,6 +134,7 @@ class Renderer:
         self._draw_calls: int = 0
         self._triangles_drawn: int = 0
         self._vertices_drawn: int = 0
+        self._particle_count: int = 0
         self._culled_total: int = 0
         self._culled_visible: int = 0
         self._render_callback: Optional[Callable] = None
@@ -886,6 +887,9 @@ void main() {
                 dead = self._particles.read_dead_list()
                 ps.replenish_free_list(dead)
             self._particles.render(scene, view_mat, proj_mat, cam_pos, snap.particle_systems)
+            self._particle_count = sum(ps._alive_count for ps in snap.particle_systems)
+        else:
+            self._particle_count = 0
         if prof:
             prof.stop("render_particles")
         if outline_queue and self._outline_prog:

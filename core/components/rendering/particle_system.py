@@ -151,7 +151,7 @@ class ParticleSystem(Component):
             InspectorField("inherit_velocity", "Inherit Velocity", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
             InspectorField("gravity_modifier", "Gravity Modifier", FieldType.FLOAT, min_val=0.0, max_val=10.0, step=0.01, decimals=3),
             InspectorField("simulation_space", "Simulation Space", FieldType.ENUM, enum_class=SimulationSpace),
-            InspectorField("max_particles", "Max Particles", FieldType.INT, min_val=1, max_val=100000, step=1, decimals=0),
+            InspectorField("max_particles", "Max Particles", FieldType.INT, min_val=1, max_val=10000000, step=1, decimals=0),
             InspectorField("rate_over_time", "Rate over Time", FieldType.FLOAT, min_val=0.0, max_val=100000.0, step=1.0, decimals=1),
             InspectorField("shape_type", "Shape", FieldType.ENUM, enum_class=ShapeType),
             InspectorField("shape_angle", "Shape Angle", FieldType.FLOAT, min_val=0.0, max_val=360.0, step=1.0, decimals=1),
