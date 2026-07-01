@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
 from PyQt6.QtGui import QAction, QColor, QFont, QPixmap, QIcon, QCursor, QDrag, QPalette
 
-from core.math3d import Vec2, Vec3, Quat
+from core.math3d import Vec2, Vec3, Vec4, Quat
 from core.logger import Logger
 from core.commands import SetComponentCommand, CompoundCommand, get_history
 from core.curve import Curve
@@ -916,6 +916,71 @@ def _make_vec3_row(label: str, vec: Vec3, callback, reset_to: Optional[list] = N
     return w, spinboxes
 
 
+def _make_vec4_row(label: str, vec: Vec4, callback) -> tuple[QWidget, list[QDoubleSpinBox]]:
+    w = QWidget()
+    layout = QHBoxLayout(w)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+    lbl = QLabel(label)
+    lbl.setFixedWidth(scale(80))
+    layout.addWidget(lbl)
+    spinboxes = []
+    for val, comp_label in [(vec.x, "X"), (vec.y, "Y"), (vec.z, "Z"), (vec.w, "W")]:
+        sb = _make_spinbox(val)
+        sb.valueChanged.connect(callback)
+        lbl_c = _DragLabel(comp_label, _XYZ_COLORS.get(comp_label, "#aaa"), sb)
+        layout.addWidget(lbl_c)
+        layout.addWidget(sb)
+        spinboxes.append(sb)
+    return w, spinboxes
+
+
+def _make_vec2_slider_row(label: str, vec: Vec2, callback, lo=0.0, hi=1.0) -> tuple[QWidget, list[QDoubleSpinBox]]:
+    w = QWidget()
+    layout = QHBoxLayout(w)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+    if label:
+        lbl = QLabel(label)
+        lbl.setFixedWidth(scale(80))
+        lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
+        layout.addWidget(lbl)
+    spinboxes = []
+    for val, comp_label in [(vec.x, "X"), (vec.y, "Y")]:
+        lbl_c = _DragLabel(comp_label, _XYZ_COLORS.get(comp_label, "#aaa"), None)
+        layout.addWidget(lbl_c)
+        sb = _make_spinbox(val, lo, hi, (hi - lo) / 100.0)
+        sb.setMinimumWidth(60)
+        lbl_c._spinbox = sb
+        sb.valueChanged.connect(callback)
+        layout.addWidget(sb)
+        spinboxes.append(sb)
+    return w, spinboxes
+
+
+def _make_vec3_slider_row(label: str, vec: Vec3, callback, lo=0.0, hi=1.0) -> tuple[QWidget, list[QDoubleSpinBox]]:
+    w = QWidget()
+    layout = QHBoxLayout(w)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+    if label:
+        lbl = QLabel(label)
+        lbl.setFixedWidth(scale(80))
+        lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
+        layout.addWidget(lbl)
+    spinboxes = []
+    for val, comp_label in [(vec.x, "X"), (vec.y, "Y"), (vec.z, "Z")]:
+        lbl_c = _DragLabel(comp_label, _XYZ_COLORS.get(comp_label, "#aaa"), None)
+        layout.addWidget(lbl_c)
+        sb = _make_spinbox(val, lo, hi, (hi - lo) / 100.0)
+        sb.setMinimumWidth(60)
+        lbl_c._spinbox = sb
+        sb.valueChanged.connect(callback)
+        layout.addWidget(sb)
+        spinboxes.append(sb)
+    return w, spinboxes
+
+
 def _get_component_source_path(comp_cls: type) -> str:
     import inspect
     try:
@@ -1426,11 +1491,11 @@ class ComponentWidget(QWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 0, 0, 0)
             rl.setSpacing(4)
-            scale = 1000.0
+            _slider_scale = 1000.0
             slider = QSlider(Qt.Orientation.Horizontal)
-            slider.setRange(int(field.min_val * scale), int(field.max_val * scale))
-            slider.setValue(int(value * scale))
-            slider.setSingleStep(max(1, int(field.step * scale)))
+            slider.setRange(int(field.min_val * _slider_scale), int(field.max_val * _slider_scale))
+            slider.setValue(int(value * _slider_scale))
+            slider.setSingleStep(max(1, int(field.step * _slider_scale)))
             slider.setStyleSheet(f"""
                 QSlider::groove:horizontal {{
                     border: none;
@@ -1735,6 +1800,51 @@ class ComponentWidget(QWidget):
                 w, sbs = _make_vec3_row(field.label, vec_val, lambda: self._on_vec3_changed(prop_name, sbs))
                 setattr(self, f"_sbs_{prop_name}", sbs)
                 self._layout.addWidget(w)
+
+        elif field.field_type.value == "vec4":
+            vec_val = getattr(c, prop_name)
+            if isinstance(vec_val, Vec4):
+                w, sbs = _make_vec4_row(field.label, vec_val, lambda: self._on_vec4_changed(prop_name, sbs))
+                setattr(self, f"_sbs_{prop_name}", sbs)
+                self._layout.addWidget(w)
+
+        elif field.field_type.value == "vec2_slider":
+            vec_val = getattr(c, prop_name)
+            if isinstance(vec_val, Vec2):
+                lo = field.min_val if field.min_val is not None else 0.0
+                hi = field.max_val if field.max_val is not None else 1.0
+                w, sbs = _make_vec2_slider_row(field.label, vec_val, lambda: self._on_vec2_changed(prop_name, sbs), lo, hi)
+                setattr(self, f"_sbs_{prop_name}", sbs)
+                self._layout.addWidget(w)
+
+        elif field.field_type.value == "vec3_slider":
+            vec_val = getattr(c, prop_name)
+            if isinstance(vec_val, Vec3):
+                lo = field.min_val if field.min_val is not None else 0.0
+                hi = field.max_val if field.max_val is not None else 1.0
+                w, sbs = _make_vec3_slider_row(field.label, vec_val, lambda: self._on_vec3_changed(prop_name, sbs), lo, hi)
+                setattr(self, f"_sbs_{prop_name}", sbs)
+                self._layout.addWidget(w)
+
+        elif field.field_type.value == "keybinding":
+            from editor.keybinding_widget import KeybindingWidget
+            row = QWidget()
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(4)
+            lbl = QLabel(field.label)
+            lbl.setFixedWidth(scale(80))
+            lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
+            rl.addWidget(lbl)
+            kb = KeybindingWidget(value if value else "")
+            def _on_binding(b, _pn=prop_name):
+                old = getattr(c, _pn)
+                setattr(c, _pn, b)
+                if self._entity:
+                    get_history().execute(SetComponentCommand(self._entity, type(c), _pn, old, b))
+            kb.bindingChanged.connect(_on_binding)
+            rl.addWidget(kb, 1)
+            self._add_field("", row, prop_name, field.toggle_field)
 
         elif field.field_type.value == "anchor":
             container = QWidget()
@@ -2155,6 +2265,24 @@ class ComponentWidget(QWidget):
         setattr(c, prop_name, new_val)
         if self._entity:
             get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, old_val, new_val))
+
+    def _on_vec4_changed(self, prop_name: str, spinboxes: list):
+        if self._updating: return
+        c = self._component
+        old_val = getattr(c, prop_name)
+        new_val = Vec4(spinboxes[0].value(), spinboxes[1].value(), spinboxes[2].value(), spinboxes[3].value())
+        setattr(c, prop_name, new_val)
+        if self._entity:
+            get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, old_val, new_val))
+
+    def refresh_vec4_field(self, prop_name: str):
+        c = self._component
+        sbs_key = f"_sbs_{prop_name}"
+        if not hasattr(self, sbs_key): return
+        sbs = getattr(self, sbs_key)
+        val = getattr(c, prop_name)
+        for sb, v in zip(sbs, [val.x, val.y, val.z, val.w]):
+            sb.setValue(v)
 
     def _on_gradient_changed(self, comp, prop_name, stops):
         if self._updating: return
@@ -3638,6 +3766,12 @@ class InspectorPanel(QDockWidget):
                         except: pass
                     elif f.field_type.value == "vec3":
                         try: cw.refresh_vec3_field(f.name)
+                        except: pass
+                    elif f.field_type.value == "vec4":
+                        try: cw.refresh_vec4_field(f.name)
+                        except: pass
+                    elif f.field_type.value in ("vec2_slider", "vec3_slider"):
+                        try: cw.refresh_vec2_field(f.name) if f.field_type.value == "vec2_slider" else cw.refresh_vec3_field(f.name)
                         except: pass
 
     def _on_active_changed(self, checked: bool):

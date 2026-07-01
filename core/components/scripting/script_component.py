@@ -4,7 +4,7 @@ from typing import Optional, Any, get_type_hints
 from core.ecs import Component, ComponentRegistry
 from core.logger import Logger
 from core.components.inspector_meta import FieldType, InspectorField
-from core.math3d import Vec2, Vec3
+from core.math3d import Vec2, Vec3, Vec4
 from core.input_system import Input, KeyCode
 import importlib.util
 import os
@@ -28,6 +28,7 @@ PY_TYPE_TO_FIELD = {
     str: FieldType.STRING,
     Vec2: FieldType.VEC2,
     Vec3: FieldType.VEC3,
+    Vec4: FieldType.VEC4,
 }
 
 @ComponentRegistry.register
@@ -154,6 +155,8 @@ class ScriptComponent(Component):
             return FieldType.VEC2
         if t is Vec3:
             return FieldType.VEC3
+        if t is Vec4:
+            return FieldType.VEC4
         if isinstance(t, str):
             t_clean = t.strip("'\"")
             if t_clean == 'Entity':
@@ -192,6 +195,8 @@ class ScriptComponent(Component):
                     setattr(self._py_instance, name, Vec2(value[0], value[1]))
                 elif isinstance(value, list) and hint is Vec3:
                     setattr(self._py_instance, name, Vec3(value[0], value[1], value[2]))
+                elif isinstance(value, list) and hint is Vec4:
+                    setattr(self._py_instance, name, Vec4(value[0], value[1], value[2], value[3]))
                 elif isinstance(hint, str) and hint.strip("'\"") == 'Entity':
                     setattr(self._py_instance, name, self._resolve_entity(value))
                 elif hint is not None and hasattr(hint, '__name__') and hint.__name__ == 'Entity':
@@ -324,6 +329,8 @@ class ScriptComponent(Component):
                 fields[name] = [value.x, value.y]
             elif isinstance(value, Vec3):
                 fields[name] = [value.x, value.y, value.z]
+            elif isinstance(value, Vec4):
+                fields[name] = [value.x, value.y, value.z, value.w]
             elif isinstance(value, Enum):
                 fields[name] = value.value
             else:

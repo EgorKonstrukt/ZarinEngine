@@ -28,6 +28,10 @@ class FieldType(Enum):
     ASSET = "asset"
     TEXTAREA = "textarea"
     GRADIENT = "gradient"
+    VEC4 = "vec4"
+    KEYBINDING = "keybinding"
+    VEC2_SLIDER = "vec2_slider"
+    VEC3_SLIDER = "vec3_slider"
 
 
 @dataclass
