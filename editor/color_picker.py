@@ -496,6 +496,17 @@ class ColorDialog(QDialog):
     def get_color(self) -> QColor:
         return self._color
 
+    @staticmethod
+    def getColor(initial: QColor = None, parent=None, title="") -> QColor:
+        dlg = ColorDialog(initial, parent)
+        if title:
+            dlg.setWindowTitle(title)
+        result = dlg.exec()
+        c = dlg.get_color()
+        if result == QDialog.DialogCode.Accepted:
+            return c
+        return initial if initial and initial.isValid() else QColor()
+
 
 class ColorLineEdit(QWidget):
     colorChanged = pyqtSignal(object)

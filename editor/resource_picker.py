@@ -10,8 +10,8 @@ from typing import Optional, Callable
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
                               QListWidget, QListWidgetItem, QLabel,
                               QPushButton, QWidget, QSplitter, QFileDialog,
-                              QListWidgetItem, QAbstractItemView)
-from PyQt6.QtCore import Qt, QSize, QRect, QRectF, QPoint, QThread, pyqtSignal, QTimer, QMutex
+                              QListWidgetItem, QAbstractItemView, QListView)
+from PyQt6.QtCore import Qt, QSize, QRect, QRectF, QPoint, QThread, pyqtSignal, QTimer, QMutex, QCoreApplication
 from PyQt6.QtGui import (QFont, QPixmap, QPainter, QPainterPath, QColor, QPen, QBrush,
                          QFontMetrics, QLinearGradient, QRadialGradient, QIcon, QPalette,
                          QImageReader, QPolygonF, QImage)
@@ -21,6 +21,16 @@ _thumbnail_mutex = QMutex()
 
 from editor.constants import THUMB_SIZE, PREVIEW_SIZE
 from core.editor_scale import scale, scale_xy
+
+_placeholder_icon: Optional[QIcon] = None
+
+
+def _get_placeholder_icon() -> QIcon:
+    global _placeholder_icon
+    if _placeholder_icon is None:
+        _placeholder_icon = QIcon(_draw_file_icon(THUMB_SIZE))
+    return _placeholder_icon
+
 
 EXTENSION_FILTERS = {
     "Models (*.obj *.fbx *.stl *.gltf *.glb *.usdz)": (".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz"),
@@ -197,10 +207,6 @@ def _render_mesh_for_cache(path: str, size: int, verts: np.ndarray, idx: np.ndar
         _mesh_thumb_cache[cache_key] = pm
         _mesh_thumb_mutex.unlock()
     return pm
-
-
-_thumbnail_cache: dict[str, QPixmap] = {}
-_thumbnail_mutex = QMutex()
 
 
 def _get_thumbnail(path: str, size: int) -> QPixmap:
@@ -536,22 +542,34 @@ def _format_size(size_bytes: int) -> str:
     else: return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 class _PopulateWorker(QThread):
-    items_ready = pyqtSignal(object)
+    batch_ready = pyqtSignal(object)
 
     def __init__(self, project_root: str, extensions: tuple, filter_text: str):
         super().__init__()
         self._project_root = project_root
         self._extensions = extensions
         self._filter_text = filter_text
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
 
     def run(self):
         _skip_dirs = {"build", "build_output", ".git", ".idea", "__pycache__",
                        "node_modules", ".venv", "venv", "tools", ".pytest_cache",
-                       "core", "editor", "physics_solvers"}
-        items_data = []
-        for root, dirs, files in os.walk(self._project_root):
-            dirs[:] = [d for d in dirs if d not in _skip_dirs and not d.startswith(".")]
-            for f in sorted(files):
+                       "physics_solvers", "thirdparty", "lib"}
+        search_root = self._project_root
+        assets_dir = os.path.join(self._project_root, "assets")
+        if os.path.isdir(assets_dir):
+            search_root = assets_dir
+        batch: list = []
+        for root, dirs, files in os.walk(search_root):
+            if self._cancelled:
+                return
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _skip_dirs]
+            for f in files:
+                if self._cancelled:
+                    return
                 if f.startswith("."):
                     continue
                 ext = os.path.splitext(f)[1].lower()
@@ -565,12 +583,16 @@ class _PopulateWorker(QThread):
                     file_size = os.path.getsize(full_path)
                 except OSError:
                     file_size = 0
-                items_data.append((full_path, f, rel_path, file_size))
-        self.items_ready.emit(items_data)
+                batch.append((full_path, f, rel_path, file_size))
+                if len(batch) >= 100:
+                    self.batch_ready.emit(batch)
+                    batch = []
+        if batch:
+            self.batch_ready.emit(batch)
 
 
 class _ThumbnailLoader(QThread):
-    thumbnail_loaded = pyqtSignal(int, object)
+    thumbnail_loaded = pyqtSignal(object, object)
 
     def __init__(self, items: list[tuple], thumb_size: int):
         super().__init__()
@@ -582,6 +604,7 @@ class _ThumbnailLoader(QThread):
         self._cancelled = True
 
     def run(self):
+        batch: list[tuple[int, str]] = []
         for idx, (full_path, filename, rel_path, file_size) in enumerate(self._items):
             if self._cancelled:
                 return
@@ -595,9 +618,12 @@ class _ThumbnailLoader(QThread):
                     _thumbnail_mutex.lock()
                     _thumbnail_cache[cache_key] = pm
                     _thumbnail_mutex.unlock()
-            if self._cancelled:
-                return
-            self.thumbnail_loaded.emit(idx, full_path)
+            batch.append((idx, full_path))
+            if len(batch) >= 32:
+                self.thumbnail_loaded.emit(batch, None)
+                batch.clear()
+        if batch:
+            self.thumbnail_loaded.emit(batch, None)
 
 
 class ResourcePickerDialog(QDialog):
@@ -612,6 +638,10 @@ class ResourcePickerDialog(QDialog):
         self._extensions = self._parse_extensions(filter_str)
         self._search_text = ""
         self._setup_ui()
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self._do_search)
         self._start_populate("")
 
     def _parse_extensions(self, filter_str: str) -> tuple:
@@ -648,6 +678,8 @@ class ResourcePickerDialog(QDialog):
         self._list.setSpacing(4)
         self._list.setUniformItemSizes(True)
         self._list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self._list.setLayoutMode(QListView.LayoutMode.Batched)
+        self._list.setBatchSize(50)
         self._list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._list.itemSelectionChanged.connect(self._on_selection_changed)
         self._list.itemDoubleClicked.connect(self._accept_selection)
@@ -695,6 +727,7 @@ class ResourcePickerDialog(QDialog):
 
     def _start_populate(self, filter_text: str):
         if hasattr(self, '_worker') and self._worker.isRunning():
+            self._worker.cancel()
             self._worker.quit()
             self._worker.wait()
         if hasattr(self, '_loader') and self._loader.isRunning():
@@ -702,56 +735,95 @@ class ResourcePickerDialog(QDialog):
             self._loader.quit()
             self._loader.wait()
         self._search_text = filter_text
+        self._list.setUpdatesEnabled(False)
         self._list.clear()
+        self._list.setUpdatesEnabled(True)
         self._pending_items: list[tuple[str, str, str, int]] = []
+        self._all_items: list[tuple[str, str, str, int]] = []
         self._item_paths: dict[int, str] = {}
+        self._batch_queue: list = []
+        self._processing_batch = False
+        self._placeholder = _get_placeholder_icon()
+        self._thumb_queue: list = []
+        self._processing_thumbs = False
         self._worker = _PopulateWorker(
             self._project_root,
             self._extensions,
             filter_text,
         )
-        self._worker.items_ready.connect(self._on_items_ready)
+        self._worker.batch_ready.connect(self._on_batch_ready)
         self._worker.start()
 
-    def _on_items_ready(self, items_data: list):
-        self._pending_items = items_data
-        for idx, (full_path, filename, rel_path, file_size) in enumerate(items_data):
-            placeholder = _draw_file_icon(THUMB_SIZE)
+    def _on_batch_ready(self, batch: list):
+        self._batch_queue.append(batch)
+        if not self._processing_batch:
+            self._processing_batch = True
+            QTimer.singleShot(0, self._process_next_batch)
+
+    def _process_next_batch(self):
+        if not self._batch_queue:
+            self._processing_batch = False
+            self._list.setUpdatesEnabled(True)
+            self._pending_items = self._all_items
+            if self._all_items:
+                self._start_thumbnail_loader()
+            return
+        batch = self._batch_queue.pop(0)
+        placeholder = self._placeholder
+        self._list.setUpdatesEnabled(False)
+        for full_path, filename, rel_path, file_size in batch:
             item = QListWidgetItem(QIcon(placeholder), os.path.splitext(filename)[0])
             item.setData(Qt.ItemDataRole.UserRole, full_path)
             item.setToolTip(f"{rel_path}\n{_format_size(file_size)}")
             self._list.addItem(item)
             self._item_paths[self._list.count() - 1] = full_path
-        if items_data:
-            self._start_thumbnail_loader()
+        self._list.setUpdatesEnabled(True)
+        self._all_items.extend(batch)
+        QTimer.singleShot(0, self._process_next_batch)
 
     def _start_thumbnail_loader(self):
-        if not self._pending_items:
+        items = self._pending_items
+        if not items:
             return
         if hasattr(self, '_loader') and self._loader.isRunning():
             self._loader.cancel()
             self._loader.quit()
             self._loader.wait()
-        self._loader = _ThumbnailLoader(self._pending_items, THUMB_SIZE)
+        self._pending_items = []
+        self._loader = _ThumbnailLoader(items, THUMB_SIZE)
         self._loader.thumbnail_loaded.connect(self._on_thumbnail_loaded)
         self._loader.start()
 
-    def _on_thumbnail_loaded(self, idx: int):
-        if idx >= self._list.count():
+    def _on_thumbnail_loaded(self, batch, _):
+        self._thumb_queue.extend(batch)
+        if not self._processing_thumbs:
+            self._processing_thumbs = True
+            QTimer.singleShot(0, self._process_thumb_batch)
+
+    def _process_thumb_batch(self):
+        if not self._thumb_queue:
+            self._processing_thumbs = False
             return
-        item = self._list.item(idx)
-        path = self._item_paths.get(idx)
-        if not path:
-            return
-        cache_key = f"thumb:{path}:{THUMB_SIZE}"
-        _thumbnail_mutex.lock()
-        pm = _thumbnail_cache.get(cache_key)
-        _thumbnail_mutex.unlock()
-        if pm:
-            item.setIcon(QIcon(pm))
+        count = 0
+        while self._thumb_queue and count < 8:
+            idx, path = self._thumb_queue.pop(0)
+            if idx < self._list.count():
+                cache_key = f"thumb:{path}:{THUMB_SIZE}"
+                _thumbnail_mutex.lock()
+                pm = _thumbnail_cache.get(cache_key)
+                _thumbnail_mutex.unlock()
+                if pm:
+                    item = self._list.item(idx)
+                    if item:
+                        item.setIcon(QIcon(pm))
+            count += 1
+        QTimer.singleShot(8, self._process_thumb_batch)
 
     def _on_search(self, text: str):
-        self._start_populate(text)
+        self._search_timer.start()
+
+    def _do_search(self):
+        self._start_populate(self._search.text())
 
     def _on_selection_changed(self):
         items = self._list.selectedItems()
@@ -802,6 +874,10 @@ class ResourcePickerDialog(QDialog):
         self._preview_info.setText("\n".join(info_lines))
 
     def closeEvent(self, event):
+        if hasattr(self, '_worker') and self._worker.isRunning():
+            self._worker.cancel()
+            self._worker.quit()
+            self._worker.wait()
         if hasattr(self, '_loader') and self._loader.isRunning():
             self._loader.cancel()
             self._loader.quit()
