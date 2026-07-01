@@ -12,9 +12,16 @@ _ENGINE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 def _resolve_shader_path(shader_path: str) -> str:
     if os.path.isabs(shader_path) or os.path.exists(shader_path):
         return shader_path
-    resolved = os.path.join(_ENGINE_ROOT, shader_path)
-    if os.path.exists(resolved):
-        return resolved
+    candidates = [
+        os.path.join(_ENGINE_ROOT, shader_path),
+        os.path.join(_ENGINE_ROOT, "core", "shaders", shader_path),
+    ]
+    shader_name = os.path.basename(shader_path)
+    if shader_name != shader_path:
+        candidates.append(os.path.join(_ENGINE_ROOT, "core", "shaders", shader_name))
+    for c in candidates:
+        if os.path.exists(c):
+            return c
     return shader_path
 
 

@@ -174,6 +174,24 @@ class Material:
     def set_property(self, name: str, value: Any): self.properties[name] = value
     def get_property(self, name: str, default: Any = None) -> Any: return self.properties.get(name, default)
 
+    @staticmethod
+    def _resolve_shader_path(shader_path: str, project_root: str) -> str:
+        if os.path.isabs(shader_path):
+            return shader_path
+        candidates = []
+        if project_root:
+            candidates.append(os.path.normpath(os.path.join(project_root, shader_path)))
+        engine_root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+        candidates.append(os.path.normpath(os.path.join(engine_root, shader_path)))
+        candidates.append(os.path.normpath(os.path.join(engine_root, "core", "shaders", shader_path)))
+        shader_name = os.path.basename(shader_path)
+        if shader_name != shader_path:
+            candidates.append(os.path.normpath(os.path.join(engine_root, "core", "shaders", shader_name)))
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        return candidates[0] if candidates else shader_path
+
     def load_shader_properties(self, shader_path: str, project_root: str = "") -> bool:
         """Parse a .shader file and populate properties from its Properties block.
         project_root: project root directory, used to resolve relative shader paths.
@@ -181,13 +199,7 @@ class Material:
         if not shader_path or shader_path in ("default", ""):
             self._shader_properties = []
             return False
-        if not os.path.isabs(shader_path):
-            if project_root:
-                abs_shader = os.path.normpath(os.path.join(project_root, shader_path))
-            else:
-                abs_shader = os.path.abspath(shader_path)
-        else:
-            abs_shader = shader_path
+        abs_shader = self._resolve_shader_path(shader_path, project_root)
         ext = os.path.splitext(abs_shader)[1].lower()
         if ext != ".shader":
             self._shader_properties = []
