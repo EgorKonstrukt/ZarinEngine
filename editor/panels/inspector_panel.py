@@ -3244,33 +3244,14 @@ class InspectorPanel(QDockWidget):
             lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
-            val = props.get(key, [1.0, 1.0, 1.0, 1.0])
-            swatch = QPushButton()
-            swatch.setFixedSize(*scale_xy(28, 22))
-            r = int(val[0]*255) if len(val) > 0 else 255
-            g = int(val[1]*255) if len(val) > 1 else 255
-            b = int(val[2]*255) if len(val) > 2 else 255
-            a = int(val[3]*255) if len(val) > 3 else 255
-            swatch.setStyleSheet(f"background: rgba({r},{g},{b},{a}); border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: {_FUSION_INPUT_RADIUS};")
-            def _pick_color(_key=key):
-                cv = props.get(_key, [1,1,1,1])
-                cr = int(cv[0]*255) if len(cv) > 0 else 255
-                cg = int(cv[1]*255) if len(cv) > 1 else 255
-                cb = int(cv[2]*255) if len(cv) > 2 else 255
-                c = QColorDialog.getColor(QColor(cr, cg, cb))
-                if c.isValid():
-                    new_val = [c.red()/255.0, c.green()/255.0, c.blue()/255.0]
-                    if len(cv) > 3:
-                        new_val.append(float(cv[3]))
-                    else:
-                        new_val.append(1.0)
-                    props[_key] = new_val
-                    swatch.setStyleSheet(f"background: rgba({c.red()},{c.green()},{c.blue()},{int(new_val[3]*255)}); border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: {_FUSION_INPUT_RADIUS};")
-                    _save()
-                    _update_preview()
-            swatch.clicked.connect(lambda: _pick_color())
-            rl.addWidget(swatch)
-            rl.addStretch()
+            from editor.color_picker import ColorLineEdit
+            cl = ColorLineEdit(props.get(key, [1.0, 1.0, 1.0, 1.0]))
+            def _on_color(_, _key=key):
+                props[_key] = cl.get_color_rgba()
+                _save()
+                _update_preview()
+            cl.colorChanged.connect(_on_color)
+            rl.addWidget(cl, 1)
             self._add_asset_widget(row)
 
         elif prop_type == "Range":
@@ -3354,32 +3335,14 @@ class InspectorPanel(QDockWidget):
             lbl.setFixedWidth(scale(120))
             lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
             rl.addWidget(lbl)
-            val = props.get(key, [1.0, 1.0, 1.0, 1.0])
-            swatch = QPushButton()
-            swatch.setFixedSize(*scale_xy(28, 22))
-            r = int(val[0]*255) if len(val) > 0 else 255
-            g = int(val[1]*255) if len(val) > 1 else 255
-            b = int(val[2]*255) if len(val) > 2 else 255
-            swatch.setStyleSheet(f"background: rgba({r},{g},{b},255); border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: {_FUSION_INPUT_RADIUS};")
-            def _pick_color(_key=key):
-                cv = props.get(_key, [1,1,1,1])
-                cr = int(cv[0]*255) if len(cv) > 0 else 255
-                cg = int(cv[1]*255) if len(cv) > 1 else 255
-                cb = int(cv[2]*255) if len(cv) > 2 else 255
-                c = QColorDialog.getColor(QColor(cr, cg, cb))
-                if c.isValid():
-                    new_val = [c.red()/255.0, c.green()/255.0, c.blue()/255.0]
-                    if len(cv) > 3:
-                        new_val.append(float(cv[3]))
-                    else:
-                        new_val.append(1.0)
-                    props[_key] = new_val
-                    swatch.setStyleSheet(f"background: rgba({c.red()},{c.green()},{c.blue()},255); border: 1px solid {_FUSION_BORDER_LIGHT}; border-radius: {_FUSION_INPUT_RADIUS};")
-                    _save()
-                    _update_preview()
-            swatch.clicked.connect(lambda: _pick_color())
-            rl.addWidget(swatch)
-            rl.addStretch()
+            from editor.color_picker import ColorLineEdit
+            cl = ColorLineEdit(props.get(key, [1.0, 1.0, 1.0, 1.0]))
+            def _on_color(_, _key=key):
+                props[_key] = cl.get_color_rgba()
+                _save()
+                _update_preview()
+            cl.colorChanged.connect(_on_color)
+            rl.addWidget(cl, 1)
             self._add_asset_widget(row)
 
         elif widget_type == "slider":
