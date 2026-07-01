@@ -175,6 +175,13 @@ class MaterialManager:
             prog["u_smoothness"].value = 0.5
         if "u_emission" in prog:
             prog["u_emission"].write(np.zeros(3, dtype=np.float32).tobytes())
+        if "u_normal_tex" in prog:
+            prog["u_normal_tex"].value = 0
+        if "u_roughness_tex" in prog:
+            prog["u_roughness_tex"].value = 0
+        for _old_active in ("u_use_albedo_tex", "u_use_normal_tex", "u_use_roughness_tex"):
+            if _old_active in prog:
+                prog[_old_active].value = 0
         if "_BaseMap" in prog:
             prog["_BaseMap"].value = 0
         if "_BaseColor" in prog:
