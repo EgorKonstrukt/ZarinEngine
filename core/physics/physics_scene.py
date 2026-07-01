@@ -7,6 +7,11 @@ from typing import Optional, TYPE_CHECKING
 from core.logger import Logger
 from core.math3d import Vec2, Vec3
 
+# ThreadPoolExecutor ДЛЯ ФИЗИКИ БЕЗ БЛОКИРОВОК.
+# Пиздец: _sync_entity_ecs_to_physics и _sync_entity_physics_to_ecs
+# долбятся в _solver, _entity_body_cache, _body_items из разных тредов.
+# Ни одного BLESSED FUCKING LOCK. Это data race, детка.
+# Работает только потому что GIL — костыль.
 _PHYSICS_POOL = ThreadPoolExecutor(max_workers=min(4, max(2, (os.cpu_count() or 4))), thread_name_prefix="physics")
 
 if TYPE_CHECKING:
@@ -14,6 +19,9 @@ if TYPE_CHECKING:
     from core.physics.physics_solver import IPhysicsSolver
 
 
+# БЛЯДСКАЯ MAP: кто-то решил что 2D КРУЖОК === 3D ЦИЛИНДР
+# CircleCollider2D -> "cylinder" — пиздец, объяснитесь.
+# Если это совпадение индексов в Jolt — хуйня, а не архитектура.
 _SHAPE_TYPE_MAP = {
     "BoxCollider": "box",
     "SphereCollider": "sphere",
@@ -203,6 +211,9 @@ class PhysicsScene:
                     friction = comp.material_friction
                     restitution = comp.material_bounciness
                     is_trigger = comp.is_trigger
+                # ЕБАНЫЙ КОСТЫЛЬ: у CapsuleCollider нет material_friction/material_bounciness
+                # в __init__. Поэтому friction/restitution НЕ читаются, молча идут дефолты 0.6/0.0.
+                # Если кто-то добавит поля в CapsuleCollider — НЕ ЗАБУДЬ раскомментить строчки ниже.
                 elif cname == "CapsuleCollider":
                     params["radius"] = comp.scaled_radius
                     params["height"] = comp.scaled_height
@@ -386,6 +397,11 @@ class PhysicsScene:
                         return True
         return False
 
+    # ПИЗДЕЦ: _process_collision_events НЕ ПРОВЕРЯЕТ is_trigger.
+    # Все контакты от солвера шлются в on_collision_enter/stay/exit, даже для триггеров.
+    # Триггеры должны генерировать on_trigger_enter/stay/exit и НЕ ДОЛЖНЫ генерировать коллизионный отклик.
+    # Но тут похуй — всем сёстрам по серьгам.
+    # Если тело A — триггер, а тело B — стена, B получит on_collision_enter и попробует оттолкнуться.
     def _process_collision_events(self):
         from core.components import ScriptComponent
         if not self._has_collision_listeners():

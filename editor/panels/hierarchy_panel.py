@@ -630,7 +630,7 @@ class HierarchyPanel(QDockWidget):
             probuilder.addAction(act)
 
         lights_menu = menu.addMenu("Light")
-        for ltype, label in [("directional", "Directional Light"), ("point", "Point Light"), ("spot", "Spot Light")]:
+        for ltype, label in [("sun", "Sun"), ("directional", "Directional Light"), ("point", "Point Light"), ("spot", "Spot Light")]:
             act = QAction(label, self)
             act.triggered.connect(lambda checked=False, lt=ltype: self._create_light(lt))
             lights_menu.addAction(act)
@@ -814,16 +814,22 @@ class HierarchyPanel(QDockWidget):
             return
         from core.commands import CreateEntityCommand, get_history
         from core.components import Transform, Light, LightType
-        name_map = {"directional": "Directional Light", "point": "Point Light", "spot": "Spot Light"}
+        from core.math3d import Vec3
+        name_map = {"sun": "Sun", "directional": "Directional Light", "point": "Point Light", "spot": "Spot Light"}
         cmd = CreateEntityCommand(self._scene, name_map.get(ltype, "Light"))
         get_history().execute(cmd)
         e = self._scene.get_entity(cmd._entity_id)
         if e:
             t = Transform()
+            if ltype == "sun":
+                t.local_euler_angles = Vec3(-45, 45, 0)
             e.add_component(t)
             l = Light()
-            type_map = {"directional": LightType.DIRECTIONAL, "point": LightType.POINT, "spot": LightType.SPOT}
+            type_map = {"sun": LightType.DIRECTIONAL, "directional": LightType.DIRECTIONAL, "point": LightType.POINT, "spot": LightType.SPOT}
             l.light_type = type_map[ltype]
+            if ltype == "sun":
+                l.procedural_sky_lighting = True
+                l.cast_shadows = True
             e.add_component(l)
         self._refresh()
         if e:

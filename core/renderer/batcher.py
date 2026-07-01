@@ -90,7 +90,7 @@ class RenderBatcher:
             shader_path = mat.shader_path if mat else ""
             prog = shaders.get_or_compile(shader_path) or self._default_prog
             mat_key = id(mat) if mat else id(self._MAT_NONE)
-            key = (id(prog), mat_key, id(mesh))
+            key = (id(prog), mat_key, id(mesh), mr.receive_shadows)
             groups[key].append((ent, tr, mesh, mr, mat, prog, wm))
         return groups
 
@@ -99,28 +99,28 @@ class RenderBatcher:
                       apply_material_fn, normal_cache: dict,
                       selected_entities: set, outline_queue: list):
         self.reset_stats()
-        for (prog_id, mat_path, mesh_id), group in groups.items():
+        for (prog_id, mat_path, mesh_id, receive_shadows), group in groups.items():
             _, _, mesh, _, mat, prog, _ = group[0]
             self._stats_batches += 1
             n = len(group)
-
+            group_disable_shadows = disable_shadows or not receive_shadows
             if n == 1:
                 self._render_single(group[0], prog, mesh, mat,
                                     view_f32, proj_f32, cam_pos, lights,
-                                    disable_shadows, set_scene_uniforms_fn,
+                                    group_disable_shadows, set_scene_uniforms_fn,
                                     apply_material_fn, normal_cache,
                                     selected_entities, outline_queue)
             elif _supports_instancing(prog):
                 self._render_instanced(group, prog, mesh, mat,
                                        view_f32, proj_f32, cam_pos, lights,
-                                       disable_shadows, set_scene_uniforms_fn,
+                                       group_disable_shadows, set_scene_uniforms_fn,
                                        apply_material_fn,
                                        selected_entities, outline_queue)
             else:
                 for item in group:
                     self._render_single(item, prog, mesh, mat,
                                         view_f32, proj_f32, cam_pos, lights,
-                                        disable_shadows, set_scene_uniforms_fn,
+                                        group_disable_shadows, set_scene_uniforms_fn,
                                         apply_material_fn, normal_cache,
                                         selected_entities, outline_queue)
 

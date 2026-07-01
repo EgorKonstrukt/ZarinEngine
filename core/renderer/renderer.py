@@ -65,7 +65,7 @@ class _SvgItem:
 
 class _RenderSnapshot:
     __slots__ = (
-        'lights', 'dir_light', 'sky_component', 'sky_entity', 'cloud_component',
+        'lights', 'dir_light', 'sky_component', 'sky_entity', 'cloud_components',
         'renderable', 'shadow_renderables', 'sprite_items', 'svg_items',
         'text_items', 'particle_systems', 'force_fields', 'culling_cache',
     )
@@ -74,7 +74,7 @@ class _RenderSnapshot:
         self.dir_light = None
         self.sky_component = None
         self.sky_entity = None
-        self.cloud_component = None
+        self.cloud_components: list = []
         self.renderable: list = []
         self.shadow_renderables: list = []
         self.sprite_items: list = []
@@ -128,7 +128,7 @@ class Renderer:
             }
             for i in range(self._max_lights)
         ]
-        self._ambient: list[float] = [0.05, 0.05, 0.05]
+        self._ambient: list[float] = [0.26, 0.28, 0.34]
         self._selection_outline_color: list[float] = [0.8, 0.5, 0.1, 1.0]
         self._selection_outline_thickness: float = 0.03
         self._draw_calls: int = 0
@@ -167,6 +167,7 @@ class Renderer:
         self._shaders: Optional[ShaderManager] = None
         self._mesh_loader: Optional[MeshLoader] = None
         self._cloud_quad: Optional[MeshData] = None
+        self._cloud_plane: Optional[MeshData] = None
         self._batcher: Optional[RenderBatcher] = None
 
     def load_config(self, config) -> None:
@@ -290,6 +291,8 @@ void main() {
             self._skybox_cube.build_gl(self._ctx, self._default_prog)
             self._cloud_quad = make_quad_mesh(2.0)
             self._cloud_quad.build_gl(self._ctx, self._default_prog)
+            self._cloud_plane = make_plane_mesh(1.0)
+            self._cloud_plane.build_gl(self._ctx, self._default_prog)
             self._particles = ParticleRenderer(self._ctx, self._particle_prog)
             self._particles.load_compute_shader(
                 os.path.join(os.path.dirname(os.path.dirname(__file__)), "shaders", "particle.compute")
@@ -373,7 +376,7 @@ void main() {
         self._scene_depth_tex.use(14)
         self._shadows.set_uniforms(overlay_prog)
         if "u_shadow_bias" in overlay_prog:
-            overlay_prog["u_shadow_bias"].value = 0.005
+            overlay_prog["u_shadow_bias"].value = 0.0008
 
     def get_or_create_mesh(self, name: str, file_path: str = "", scale: float = 1.0,
                            center_pivot: bool = False, flip_uvs: bool = False) -> Optional[MeshData]:
@@ -463,8 +466,9 @@ void main() {
                 break
         for ent in scene.get_entities_with_component(Cloud):
             if ent.active:
-                snap.cloud_component = ent.get_component(Cloud)
-                break
+                cloud = ent.get_component(Cloud)
+                if cloud and cloud.enabled:
+                    snap.cloud_components.append(cloud)
         self._sync_probuilder_meshes(scene)
         for ent in scene.get_entities_with_component(MeshFilter):
             if not ent.active:
@@ -559,7 +563,7 @@ void main() {
         dir_light = snap.dir_light
         sky_component = snap.sky_component
         sky_entity = snap.sky_entity
-        cloud_component = snap.cloud_component
+        cloud_components = snap.cloud_components
         renderable = snap.renderable
         if prof:
             prof.start("gl_state_setup")
@@ -591,33 +595,23 @@ void main() {
         self._ensure_scene_fbo(viewport_w, viewport_h)
         self._scene_fbo.clear(0.0, 0.0, 0.0, 1.0, 1.0)
         self._scene_fbo.use()
-        if sky_component and sky_component.enabled and self._skybox_cube and self._skybox_enabled:
-            if prof:
-                prof.start("render_skybox")
-            sky_component.render_sky(self._ctx, self._shaders, view_mat, proj_mat, dir_light, self._skybox_cube)
-            if prof:
-                prof.stop("render_skybox")
-        if cloud_component and cloud_component.enabled and self._cloud_quad and self._skybox_enabled:
-            if prof:
-                prof.start("render_clouds")
-            cloud_component.render_clouds(self._ctx, self._shaders, view_mat, proj_mat, dir_light, cam_pos, self._cloud_quad)
-            if prof:
-                prof.stop("render_clouds")
-        self._ctx.viewport = (0, 0, viewport_w, viewport_h)
-        if use_polygon_mode:
-            self._ctx.wireframe = True
         aspect = viewport_w / max(1, viewport_h)
         if prof:
             prof.start("render_shadow_pass")
         self._shadows.render_shadow_pass(snap.shadow_renderables, snap.lights, cam_near, cam_far, cam_fov, aspect, view_mat, self._mesh_loader._meshes)
         if prof:
             prof.stop("render_shadow_pass")
-        if prof:
-            prof.start("fbo_rebind")
         self._scene_fbo.use()
         self._ctx.viewport = (0, 0, viewport_w, viewport_h)
-        if prof:
-            prof.stop("fbo_rebind")
+        if sky_component and sky_component.enabled and self._skybox_cube and self._skybox_enabled:
+            if prof:
+                prof.start("render_skybox")
+            sky_component.render_sky(self._ctx, self._shaders, view_mat, proj_mat, dir_light, self._skybox_cube)
+            if prof:
+                prof.stop("render_skybox")
+        self._ctx.viewport = (0, 0, viewport_w, viewport_h)
+        if use_polygon_mode:
+            self._ctx.wireframe = True
         if prof:
             prof.start("process_pending_textures")
         self._materials.process_texture_pending()
@@ -666,7 +660,7 @@ void main() {
             groups = self._batcher.collect_groups(
                 renderable, self._materials, self._shaders)
             self._batcher.render_groups(
-                groups, view_f32, proj_f32, cam_pos, lights, True,
+                groups, view_f32, proj_f32, cam_pos, lights, False,
                 self._set_scene_uniforms, self._materials.apply_material,
                 self._normal_cache,
                 selected_entities or set(), outline_queue)
@@ -678,7 +672,7 @@ void main() {
                     mat = self._materials.load_material(mr.material_path)
                     shader_path = mat.shader_path if mat else ""
                     prog = self._shaders.get_or_compile(shader_path if shader_path else "") or self._default_prog
-                    self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
+                    self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=not mr.receive_shadows)
                     model = wm
                     model_f32 = model.to_f32()
                     if "u_model" in prog:
@@ -702,7 +696,7 @@ void main() {
                         outline_queue.append((mesh, wm))
                 except Exception:
                     prog = self._default_prog
-                    self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
+                    self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=not mr.receive_shadows)
                     model = wm
                     model_f32 = model.to_f32()
                     if "u_model" in prog:
@@ -735,6 +729,34 @@ void main() {
             self._grid.render(view_f32, proj_f32, cam_pos, self._clear_color, viewport_h, cam_fov)
             if prof:
                 prof.stop("render_grid")
+        if cloud_components and self._cloud_plane and self._skybox_enabled:
+            if prof:
+                prof.start("render_cloud_layer")
+            for cloud_component in cloud_components:
+                cloud_component.render_cloud_layer(self._ctx, self._shaders, view_mat, proj_mat, dir_light, cam_pos, self._cloud_plane)
+            if prof:
+                prof.stop("render_cloud_layer")
+        if cloud_components and self._cloud_quad and self._skybox_enabled:
+            if prof:
+                prof.start("render_clouds")
+            self._ensure_pp_fbo(viewport_w, viewport_h)
+            self._ctx.copy_framebuffer(self._pp_fbo_a, self._scene_fbo)
+            self._pp_fbo_a.use()
+            self._pp_fbo_a.viewport = (0, 0, viewport_w, viewport_h)
+            self._ctx.viewport = (0, 0, viewport_w, viewport_h)
+            self._ctx.disable(moderngl.DEPTH_TEST)
+            for cloud_component in cloud_components:
+                cloud_component.render_clouds(self._ctx, self._shaders, view_mat, proj_mat, dir_light, cam_pos, self._cloud_quad, self._shadows, self._scene_depth_tex, (viewport_w, viewport_h))
+            self._scene_fbo.use()
+            self._scene_fbo.viewport = (0, 0, viewport_w, viewport_h)
+            self._ctx.viewport = (0, 0, viewport_w, viewport_h)
+            self._ctx.disable(moderngl.DEPTH_TEST)
+            self._pp_copy_prog["u_input_tex"] = 0
+            self._pp_color_tex_a.use(0)
+            self._pp_copy_vao.render()
+            self._ctx.enable(moderngl.DEPTH_TEST)
+            if prof:
+                prof.stop("render_clouds")
         if prof:
             prof.start("render_overlay")
         if fbo is not None:
@@ -744,10 +766,9 @@ void main() {
             self._ctx.screen.use()
         self._ctx.viewport = (0, 0, viewport_w, viewport_h)
         self._ctx.disable(moderngl.DEPTH_TEST)
-        inv_vp = view_mat * proj_mat
-        inv_vp = inv_vp.inverted()
-        self._set_overlay_uniforms(self._overlay_prog, view_f32, inv_vp.to_f32())
-        self._quad_vao.render()
+        self._pp_copy_prog["u_input_tex"] = 0
+        self._scene_color_tex.use(0)
+        self._pp_copy_vao.render()
         self._ctx.enable(moderngl.DEPTH_TEST)
         if prof:
             prof.stop("render_overlay")
@@ -1241,6 +1262,8 @@ void main() {
             self._text.release()
         if self._cloud_quad:
             self._cloud_quad.release()
+        if self._cloud_plane:
+            self._cloud_plane.release()
         if self._icons:
             self._icons.release()
         if self._materials:

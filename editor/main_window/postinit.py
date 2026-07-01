@@ -37,7 +37,7 @@ def post_init(mw):
         from core.math3d import Vec3
         dir_light = scene.create_entity("Directional Light")
         t = Transform()
-        t.local_euler_angles = Vec3(45, 45, 0)
+        t.local_euler_angles = Vec3(-45, 45, 0)
         dir_light.add_component(t)
         l = Light()
         l.light_type = LightType.DIRECTIONAL

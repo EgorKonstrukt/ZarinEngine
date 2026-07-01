@@ -9,12 +9,11 @@ from core.components.transform import Transform
 from core.components.rendering.mesh_filter import MeshFilter
 from core.components.rendering.mesh_renderer import MeshRenderer
 from core.renderer.mesh_data import MeshData
-from core.logger import Logger
 
 
 class ShadowRenderer:
     def __init__(self, ctx: moderngl.Context, shadow_prog: moderngl.Program,
-                 shadow_resolution: int = 1024, shadow_distance: float = 50.0):
+                 shadow_resolution: int = 4096, shadow_distance: float = 50.0):
         self._ctx = ctx
         self._prog = shadow_prog
         self._shadow_resolution = shadow_resolution
@@ -54,6 +53,8 @@ class ShadowRenderer:
         res = self._shadow_resolution
         for _ in range(3):
             tex = self._ctx.depth_texture((res, res))
+            tex.repeat_x = False
+            tex.repeat_y = False
             fbo = self._ctx.framebuffer(depth_attachment=tex)
             self._shadow_maps.append(tex)
             self._shadow_fbos.append(fbo)
@@ -62,6 +63,8 @@ class ShadowRenderer:
         res = self._point_shadow_resolution
         for _ in range(6):
             tex = self._ctx.depth_texture((res, res))
+            tex.repeat_x = False
+            tex.repeat_y = False
             fbo = self._ctx.framebuffer(depth_attachment=tex)
             self._point_shadow_maps.append(tex)
             self._point_shadow_fbos.append(fbo)
@@ -69,6 +72,8 @@ class ShadowRenderer:
     def _create_spot_shadow_resources(self):
         res = self._shadow_resolution
         tex = self._ctx.depth_texture((res, res))
+        tex.repeat_x = False
+        tex.repeat_y = False
         self._spot_shadow_map = tex
         self._spot_shadow_fbo = self._ctx.framebuffer(depth_attachment=self._spot_shadow_map)
 
@@ -136,7 +141,6 @@ class ShadowRenderer:
                 sun_transform = lt
                 break
         if sun_light and renderable_shadow:
-            self._cascade_splits = [1000000.0] * 3
             self._render_directional_shadow(sun_transform, renderable_shadow,
                                             cam_near, cam_far, cam_fov, aspect, view_mat)
         else:
@@ -165,45 +169,75 @@ class ShadowRenderer:
             self._has_spot_shadow = False
         self._get_mesh = None
 
-    def _render_directional_shadow(self, sun_transform, renderable_shadow,
-                                   cam_near, cam_far, cam_fov, aspect, view_mat):
-        light_dir = sun_transform.forward.normalized()
-        inv_view = np.linalg.inv(view_mat._d)
+    def _get_frustum_corners(self, near_z: float, far_z: float, cam_fov: float, aspect: float, inv_view: np.ndarray) -> list[np.ndarray]:
         tan_half_fov = math.tan(math.radians(cam_fov) * 0.5)
-        csm_far = min(cam_far, self._shadow_distance)
         corners = []
-        for z in (cam_near, csm_far):
+        for z in (near_z, far_z):
             half_h = tan_half_fov * z
             half_w = half_h * aspect
             for y_sign in (-1, 1):
                 for x_sign in (-1, 1):
-                    view_pt = np.array([x_sign * half_w, y_sign * half_h, -z, 1.0], dtype=np.float32)
+                    view_pt = np.array([x_sign * half_w, y_sign * half_h, -z, 1.0], dtype=np.float64)
                     world_pt = view_pt @ inv_view
                     world_pt = world_pt / world_pt[3]
                     corners.append(world_pt[:3])
-        center = np.mean(corners, axis=0)
-        light_pos = Vec3(*center) - light_dir * self._shadow_distance
+        return corners
+
+    def _cascade_distances(self, cam_near: float, cam_far: float) -> list[float]:
+        near_z = max(cam_near, 0.01)
+        far_z = max(near_z + 0.1, min(cam_far, self._shadow_distance))
+        span = far_z - near_z
+        first = near_z + span * 0.14
+        second = near_z + span * 0.38
+        return [first, max(first + 0.1, second), far_z]
+
+    def _render_directional_shadow(self, sun_transform, renderable_shadow,
+                                   cam_near, cam_far, cam_fov, aspect, view_mat):
+        light_dir = sun_transform.forward.normalized()
+        inv_view = np.linalg.inv(view_mat._d)
+        splits = self._cascade_distances(cam_near, cam_far)
+        self._cascade_splits = splits
+        near_z = max(cam_near, 0.01)
+        for cascade_idx, split_far in enumerate(splits):
+            corners = self._get_frustum_corners(near_z, split_far, cam_fov, aspect, inv_view)
+            vp = self._build_directional_cascade(light_dir, corners, split_far - near_z)
+            self._light_space_matrices[cascade_idx] = vp
+            self.render_geometry(vp, self._shadow_fbos[cascade_idx], renderable_shadow, resolution=self._shadow_resolution)
+            near_z = split_far
+
+    def _build_directional_cascade(self, light_dir: Vec3, corners: list[np.ndarray], depth_span: float) -> np.ndarray:
+        corners_np = np.array(corners, dtype=np.float64)
+        center = np.mean(corners_np, axis=0)
+        radius = 0.0
+        for c in corners_np:
+            radius = max(radius, float(np.linalg.norm(c - center)))
+        radius = max(radius, 0.25)
+        radius = math.ceil(radius * 16.0) / 16.0
+        light_pos = Vec3(*center) - light_dir * max(radius * 2.0, depth_span + 10.0)
         light_up = Vec3(0.0, 1.0, 0.0)
         if abs(light_dir.dot(light_up)) > 0.999:
             light_up = Vec3(0.0, 0.0, 1.0)
         view = Mat4.look_at(light_pos, Vec3(*center), light_up)
+        center_light = np.append(center, 1.0) @ view._d
+        texel_size = (radius * 2.0) / max(1, self._shadow_resolution)
+        center_light[0] = math.floor(center_light[0] / texel_size) * texel_size
+        center_light[1] = math.floor(center_light[1] / texel_size) * texel_size
+        left = center_light[0] - radius
+        right = center_light[0] + radius
+        bottom = center_light[1] - radius
+        top = center_light[1] + radius
         corners_light = []
         for c in corners:
             p = np.append(c, 1.0) @ view._d
             corners_light.append(p[:3] / p[3])
         corners_light = np.array(corners_light)
-        min_pt = np.min(corners_light, axis=0)
-        max_pt = np.max(corners_light, axis=0)
-        r = max(abs(min_pt[0]), abs(max_pt[0])) + self._shadow_distance * 0.08
-        t = max(abs(min_pt[1]), abs(max_pt[1])) + self._shadow_distance * 0.08
-        z_margin = self._shadow_distance * 0.1
-        n_val = max(-max_pt[2] - z_margin, 0.01)
-        f_val = max(-min_pt[2] + z_margin, n_val + 0.01)
-        proj = Mat4.orthographic(-r, r, -t, t, n_val, f_val)
-        vp = view._d @ proj._d
-        self._light_space_matrices[0] = vp
-        # Logger.info(f"DirShadow: r={r:.2f} t={t:.2f} n={n_val:.2f} f={f_val:.2f} res={self._shadow_resolution}")
-        self.render_geometry(vp, self._shadow_fbos[0], renderable_shadow, resolution=self._shadow_resolution)
+        min_z = float(np.min(corners_light[:, 2]))
+        max_z = float(np.max(corners_light[:, 2]))
+        z_margin = max(depth_span * 0.45, 6.0)
+        n_val = max(-max_z - z_margin, 0.01)
+        f_val = max(-min_z + z_margin, n_val + 0.01)
+        proj = Mat4.orthographic(left, right, bottom, top, n_val, f_val)
+        return view._d @ proj._d
 
     def _render_point_shadow(self, point_light, point_transform, renderable_shadow, lights):
         if not self._point_shadow_maps:
@@ -273,7 +307,7 @@ class ShadowRenderer:
             if "u_cascade_count" in prog:
                 prog["u_cascade_count"].value = 0
         if "u_shadow_bias" in prog:
-            prog["u_shadow_bias"].value = 0.002
+            prog["u_shadow_bias"].value = 0.0008
         if self._has_point_shadow and "u_point_shadow_count" in prog:
             prog["u_point_shadow_count"].value = 1
             if "u_point_light_vps" in prog:

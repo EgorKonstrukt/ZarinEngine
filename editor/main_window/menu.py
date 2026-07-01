@@ -84,10 +84,15 @@ def setup_menu(mw):
         act.triggered.connect(lambda checked=False, n=name: mw._hierarchy._create_probuilder_primitive(n))
         probuilder_menu.addAction(act)
     lights_menu = go_menu.addMenu("Light")
-    for ltype in ["directional", "point", "spot"]:
-        act = QAction(ltype.replace("_", " ").title(), mw)
+    for ltype in ["sun", "directional", "point", "spot"]:
+        act = QAction("Sun" if ltype == "sun" else ltype.replace("_", " ").title(), mw)
         act.triggered.connect(lambda checked=False, lt=ltype: mw._hierarchy._create_light(lt))
         lights_menu.addAction(act)
+    effects_menu = go_menu.addMenu("Effects")
+    for label, comp_cls in [("Sky", "Sky"), ("Clouds", "Cloud")]:
+        act = QAction(label, mw)
+        act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: mw._hierarchy._create_from_component(n, cc, None))
+        effects_menu.addAction(act)
     cam_act = QAction("Camera", mw)
     cam_act.triggered.connect(mw._hierarchy._create_camera)
     go_menu.addAction(cam_act)

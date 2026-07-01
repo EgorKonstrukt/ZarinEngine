@@ -14,7 +14,7 @@ class Sky(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
-            InspectorField("material_path", "Sky Material", FieldType.RESOURCE_PATH, file_filter="Material (*.mat)"),
+            InspectorField("material_path", "Sky Shader", FieldType.RESOURCE_PATH, file_filter="Shader (*.shader)"),
         ]
 
     def __init__(self):

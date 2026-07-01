@@ -1054,6 +1054,7 @@ class SceneViewport(QOpenGLWidget):
         return mapping.get(qt_key)
 
     def contextMenuEvent(self, event):
+        from editor.viewport.collaboration import is_collab_locked
         menu = QMenu(self)
         create_menu = menu.addMenu("Create")
         create_empty = create_menu.addAction("Empty")
@@ -1063,18 +1064,23 @@ class SceneViewport(QOpenGLWidget):
             act = primitives_menu.addAction(name)
             act.triggered.connect(lambda checked=False, n=name.lower(): self._emit_create_request(n))
         lights_menu = create_menu.addMenu("Light")
+        sun_act = lights_menu.addAction("Sun")
+        sun_act.triggered.connect(lambda checked=False: self._emit_create_request("sun"))
         for ltype in ["Directional", "Point", "Spot"]:
             act = lights_menu.addAction(ltype)
             act.triggered.connect(lambda checked=False, lt=ltype.lower(): self._emit_create_request("light", lt))
         cam_act = create_menu.addAction("Camera")
         cam_act.triggered.connect(lambda: self._emit_create_request("camera"))
         effects_menu = create_menu.addMenu("Effects")
+        sky_act = effects_menu.addAction("Sky")
+        sky_act.triggered.connect(lambda checked=False: self._emit_create_request("sky"))
+        clouds_act = effects_menu.addAction("Clouds")
+        clouds_act.triggered.connect(lambda checked=False: self._emit_create_request("clouds"))
         ps_act = effects_menu.addAction("Particle System")
         ps_act.triggered.connect(lambda: self._emit_create_request("particle_system"))
         if self._selected_entities:
             menu.addSeparator()
             delete_act = menu.addAction("Delete")
-            from editor.viewport.collaboration import is_collab_locked
             delete_act.setEnabled(not is_collab_locked(self))
             delete_act.triggered.connect(self._delete_selected)
         if is_collab_locked(self):
@@ -1083,12 +1089,26 @@ class SceneViewport(QOpenGLWidget):
 
     def _emit_create_request(self, obj_type="empty", subtype=None):
         from core.commands import CreateEntityCommand, get_history
-        from core.components import Transform, MeshFilter, MeshRenderer, Light, LightType, Camera, ParticleSystem
+        from core.components import Transform, MeshFilter, MeshRenderer, Light, LightType, Camera, ParticleSystem, Sky, Cloud
         scene = self._engine.scene
         from editor.viewport.collaboration import is_collab_locked
         if not scene or is_collab_locked(self):
             return
-        if obj_type == "particle_system":
+        if obj_type == "sky":
+            cmd = CreateEntityCommand(scene, "Sky")
+            get_history().execute(cmd)
+            e = scene.get_entity(cmd._entity_id)
+            if e:
+                e.add_component(Transform())
+                e.add_component(Sky())
+        elif obj_type == "clouds":
+            cmd = CreateEntityCommand(scene, "Clouds")
+            get_history().execute(cmd)
+            e = scene.get_entity(cmd._entity_id)
+            if e:
+                e.add_component(Transform())
+                e.add_component(Cloud())
+        elif obj_type == "particle_system":
             cmd = CreateEntityCommand(scene, "Particle System")
             get_history().execute(cmd)
             e = scene.get_entity(cmd._entity_id)
@@ -1125,6 +1145,19 @@ class SceneViewport(QOpenGLWidget):
                 e.add_component(Transform())
                 mf = MeshFilter(); mf.mesh_name = "plane"; e.add_component(mf)
                 e.add_component(MeshRenderer())
+        elif obj_type == "sun":
+            cmd = CreateEntityCommand(scene, "Sun")
+            get_history().execute(cmd)
+            e = scene.get_entity(cmd._entity_id)
+            if e:
+                t = Transform()
+                t.local_euler_angles = Vec3(-45, 45, 0)
+                e.add_component(t)
+                l = Light()
+                l.light_type = LightType.DIRECTIONAL
+                l.procedural_sky_lighting = True
+                l.cast_shadows = True
+                e.add_component(l)
         elif obj_type == "light" and subtype:
             name_map = {"directional": "Directional Light", "point": "Point Light", "spot": "Spot Light"}
             type_map = {"directional": LightType.DIRECTIONAL, "point": LightType.POINT, "spot": LightType.SPOT}

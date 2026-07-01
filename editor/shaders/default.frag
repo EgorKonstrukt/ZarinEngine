@@ -57,13 +57,26 @@ float sample_shadow(sampler2D shadow_map, vec3 proj_coords) {
     float current_depth = proj_coords.z - u_shadow_bias;
     float result = 0.0;
     vec2 texel_size = 1.0 / vec2(textureSize(shadow_map, 0));
+    float radius = 0.75;
+    float weight_sum = 0.0;
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
-            float pcf_depth = texture(shadow_map, proj_coords.xy + vec2(x, y) * texel_size * 4.0).r;
-            result += current_depth > pcf_depth ? 1.0 : 0.0;
+            float weight = 1.0;
+            if (x == 0)
+            {
+                weight += 1.0;
+            }
+            if (y == 0)
+            {
+                weight += 1.0;
+            }
+            float pcf_depth = texture(shadow_map, proj_coords.xy + vec2(x, y) * texel_size * radius).r;
+            result += (current_depth > pcf_depth ? 1.0 : 0.0) * weight;
+            weight_sum += weight;
         }
     }
-    return 1.0 - result / 9.0;
+    float lit = 1.0 - result / weight_sum;
+    return smoothstep(0.12, 0.88, lit);
 }
 float compute_shadow() {
     if (u_cascade_count <= 0) return 1.0;

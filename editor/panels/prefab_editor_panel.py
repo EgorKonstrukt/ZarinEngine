@@ -190,7 +190,8 @@ class PrefabEditorPanel(QDockWidget):
         roots = pref.instantiate(self._edit_scene, ComponentRegistry)
         for r in roots:
             r._prefab_guid = pref.guid
-        self._prefab_name_label.setText(f"Prefab: {pref.name} ({path.split('/')[-1].split('\\\\')[-1]})")
+        prefab_file = path.replace("\\", "/").split("/")[-1]
+        self._prefab_name_label.setText(f"Prefab: {pref.name} ({prefab_file})")
         self._save_btn.setEnabled(True)
         self._return_btn.setEnabled(True)
 
