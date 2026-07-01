@@ -5,7 +5,7 @@ import moderngl
 from typing import Optional, Any
 from core.engine import Engine
 from core.logger import Logger
-from core.material import Material
+from core.material import Material, MaterialLibrary
 from core.texture_import_settings import TextureImportSettings
 
 
@@ -37,8 +37,12 @@ class MaterialManager:
             return None
         eng = Engine.instance()
         root = eng.project_root if eng and eng.project_root else os.getcwd()
-        abs_path = path if os.path.isabs(path) else os.path.normpath(os.path.join(root, path))
+        abs_path = os.path.normpath(path if os.path.isabs(path) else os.path.join(root, path))
+        lib_mat = MaterialLibrary._materials.get(abs_path)
         cached = self._material_cache.get(abs_path)
+        if lib_mat is not None and lib_mat is not cached:
+            self._material_cache[abs_path] = lib_mat
+            return lib_mat
         if cached is not None:
             return cached
         m = Material.load(abs_path, root)
@@ -171,6 +175,27 @@ class MaterialManager:
             prog["u_smoothness"].value = 0.5
         if "u_emission" in prog:
             prog["u_emission"].write(np.zeros(3, dtype=np.float32).tobytes())
+        if "_BaseMap" in prog:
+            prog["_BaseMap"].value = 0
+        if "_BaseColor" in prog:
+            prog["_BaseColor"].write(np.array([1, 1, 1, 1], dtype=np.float32).tobytes())
+        if "_Metallic" in prog:
+            prog["_Metallic"].value = 0.0
+        if "_Smoothness" in prog:
+            prog["_Smoothness"].value = 0.5
+        if "_EmissionColor" in prog:
+            prog["_EmissionColor"].write(np.zeros(3, dtype=np.float32).tobytes())
+        if "_EmissionIntensity" in prog:
+            prog["_EmissionIntensity"].value = 0.0
+        if "_NormalMap" in prog:
+            prog["_NormalMap"].value = 0
+        if "_OcclusionMap" in prog:
+            prog["_OcclusionMap"].value = 0
+        for _active in ("_BaseMap_Active", "_NormalMap_Active", "_OcclusionMap_Active",
+                        "_HeightMap_Active", "_EmissionMap_Active", "_DetailAlbedoMap_Active",
+                        "_DetailNormalMap_Active"):
+            if _active in prog:
+                prog[_active].value = 0
         if mat is None:
             return
         props = mat.properties

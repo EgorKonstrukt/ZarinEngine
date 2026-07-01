@@ -268,6 +268,15 @@ class Material:
             if not m.shader_path:
                 m.shader_path = "default"
 
+            # Repair corrupted "false" key (old bug stored color as boolean key)
+            false_val = m.properties.pop("false", None)
+            if false_val is not None and isinstance(false_val, list) and len(false_val) >= 3:
+                m.properties.setdefault("albedo_color", false_val)
+
+            for old_key, new_key in _PROP_MIGRATION.items():
+                if old_key in m.properties and new_key not in m.properties:
+                    m.properties[new_key] = m.properties[old_key]
+
             m.load_shader_properties(m.shader_path, project_root)
 
             for k, v in list(m.properties.items()):
@@ -278,6 +287,7 @@ class Material:
                     if resolved:
                         m.properties[k] = resolved
 
+            MaterialLibrary._materials[os.path.normpath(path)] = m
             return m
         except Exception as e:
             Logger.error(f"Failed to load .mat file '{path}': {e}", e)
@@ -293,6 +303,15 @@ class Material:
             if not m.shader_path:
                 m.shader_path = "default"
             m.properties.update(data.get("properties", {}))
+
+            false_val = m.properties.pop("false", None)
+            if false_val is not None and isinstance(false_val, list) and len(false_val) >= 3:
+                m.properties.setdefault("albedo_color", false_val)
+
+            for old_key, new_key in _PROP_MIGRATION.items():
+                if old_key in m.properties and new_key not in m.properties:
+                    m.properties[new_key] = m.properties[old_key]
+
             root = project_root or os.getcwd()
             mat_dir = os.path.dirname(path)
             for k, v in list(m.properties.items()):
@@ -300,6 +319,8 @@ class Material:
                     resolved = cls._resolve_tex_path(v, mat_dir, root)
                     if resolved:
                         m.properties[k] = resolved
+            m.load_shader_properties(m.shader_path, project_root)
+            MaterialLibrary._materials[os.path.normpath(path)] = m
             return m
         except Exception as e:
             Logger.error(f"Failed to load material '{path}': {e}", e)
@@ -362,6 +383,20 @@ class Material:
         except ValueError:
             pass
         return val
+
+
+_PROP_MIGRATION = {
+    "albedo_color": "_BaseColor",
+    "metallic": "_Metallic",
+    "smoothness": "_Smoothness",
+    "emission_color": "_EmissionColor",
+    "emission_intensity": "_EmissionIntensity",
+    "albedo_texture": "_BaseMap",
+    "normal_texture": "_NormalMap",
+    "roughness_texture": "_RoughnessMap",
+    "occlusion_texture": "_OcclusionMap",
+    "emission_texture": "_EmissionMap",
+}
 
 
 class MaterialLibrary:

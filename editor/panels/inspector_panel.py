@@ -3083,7 +3083,10 @@ class InspectorPanel(QDockWidget):
     def _build_material_editor(self):
         from core.material import Material
         from editor.material_preview import MaterialPreviewWidget
-        mat = Material.load(self._asset_path, self._engine.project_root if self._engine else "")
+        try:
+            mat = Material.load(self._asset_path, self._engine.project_root if self._engine else "")
+        except Exception:
+            mat = None
         if mat is None:
             lbl = QLabel("Failed to load material.")
             lbl.setStyleSheet(f"color: {_FUSION_ACCENT_RED};")
@@ -3097,22 +3100,27 @@ class InspectorPanel(QDockWidget):
         preview = MaterialPreviewWidget()
         preview.setFixedHeight(200)
         preview_vals = {}
-        if "albedo_color" in props:
-            ac = props["albedo_color"]
+        ac = props.get("albedo_color") or props.get("_BaseColor")
+        if ac:
             preview_vals["albedo"] = ac[:3] if len(ac) >= 3 else [1.0, 1.0, 1.0]
-        if "metallic" in props:
-            preview_vals["metallic"] = props["metallic"]
-        if "smoothness" in props:
-            preview_vals["smoothness"] = props["smoothness"]
-        if "emission_color" in props:
-            preview_vals["emission"] = props["emission_color"]
-        if "emission_intensity" in props:
-            preview_vals["emit_intensity"] = props["emission_intensity"]
+        m = props.get("metallic") if "metallic" in props else props.get("_Metallic")
+        if m is not None:
+            preview_vals["metallic"] = m
+        s = props.get("smoothness") if "smoothness" in props else props.get("_Smoothness")
+        if s is not None:
+            preview_vals["smoothness"] = s
+        ec = props.get("emission_color") or props.get("_EmissionColor")
+        if ec:
+            preview_vals["emission"] = ec
+        ei = props.get("emission_intensity") if "emission_intensity" in props else props.get("_EmissionIntensity")
+        if ei is not None:
+            preview_vals["emit_intensity"] = ei
         for tex_key in ("albedo_texture", "_BaseMap", "_BaseTex"):
             if tex_key in props and props[tex_key]:
                 preview_vals["albedo_tex"] = props[tex_key]
                 break
-        preview.set_properties(**preview_vals)
+        if preview_vals:
+            preview.set_properties(**preview_vals)
         self._add_asset_widget(preview)
 
         def _save():
@@ -3120,22 +3128,27 @@ class InspectorPanel(QDockWidget):
 
         def _update_preview():
             pv = {}
-            if "albedo_color" in props:
-                ac = props["albedo_color"]
+            ac = props.get("albedo_color") or props.get("_BaseColor")
+            if ac:
                 pv["albedo"] = ac[:3] if len(ac) >= 3 else [1.0, 1.0, 1.0]
-            if "metallic" in props:
-                pv["metallic"] = props["metallic"]
-            if "smoothness" in props:
-                pv["smoothness"] = props["smoothness"]
-            if "emission_color" in props:
-                pv["emission"] = props["emission_color"]
-            if "emission_intensity" in props:
-                pv["emit_intensity"] = props["emission_intensity"]
+            m = props.get("metallic") if "metallic" in props else props.get("_Metallic")
+            if m is not None:
+                pv["metallic"] = m
+            s = props.get("smoothness") if "smoothness" in props else props.get("_Smoothness")
+            if s is not None:
+                pv["smoothness"] = s
+            ec = props.get("emission_color") or props.get("_EmissionColor")
+            if ec:
+                pv["emission"] = ec
+            ei = props.get("emission_intensity") if "emission_intensity" in props else props.get("_EmissionIntensity")
+            if ei is not None:
+                pv["emit_intensity"] = ei
             for tex_key in ("albedo_texture", "_BaseMap", "_BaseTex"):
                 if tex_key in props and props[tex_key]:
                     pv["albedo_tex"] = props[tex_key]
                     break
-            preview.set_properties(**pv)
+            if pv:
+                preview.set_properties(**pv)
 
         # Shader picker
         shader_row = QWidget()

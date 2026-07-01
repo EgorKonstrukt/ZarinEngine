@@ -16,6 +16,7 @@ _sph_ibo: Optional[moderngl.Buffer] = None
 _sph_count: int = 0
 _mdl_prog: Optional[moderngl.Program] = None
 _ready: bool = False
+_safe: bool = True
 
 SPH_VSHADER = """
 #version 460 core
@@ -113,9 +114,11 @@ void main() {
 
 
 def _ensure() -> bool:
-    global _ctx, _ready
+    global _ctx, _ready, _safe
     if _ready:
-        return True
+        return _safe
+    if not _safe:
+        return False
     try:
         _ctx = moderngl.create_standalone_context(require=460)
         _ctx.pixel_alignment = 1
@@ -123,6 +126,7 @@ def _ensure() -> bool:
         return True
     except Exception as e:
         Logger.warn(f"gl_offscreen: cannot create GL context: {e}")
+        _safe = False
         return False
 
 
@@ -236,11 +240,15 @@ def render_sphere(w: int, h: int, albedo, metallic, smoothness,
         _sph_prog["u_has_tex"].value = False
     _sph_vao.render(moderngl.TRIANGLES)
     data = fbo.read(components=4, dtype='f1')
-    fbo.color_attachments[0].release()
-    fbo.depth_attachment.release()
+    color_tex = fbo.color_attachments[0]
+    depth_tex = fbo.depth_attachment
     fbo.release()
+    color_tex.release()
+    depth_tex.release()
     if tex:
         tex.release()
+    if data is None or len(data) < w * h * 4:
+        return None
     img = QImage(data, w, h, QImage.Format.Format_RGBA8888)
     return QPixmap.fromImage(img)
 
@@ -272,7 +280,7 @@ def _compute_normals(pts: np.ndarray, indices: np.ndarray) -> np.ndarray:
 def render_mesh(w: int, h: int, verts: np.ndarray, indices: np.ndarray,
                 theta, phi, dist, color=(0.7, 0.7, 0.7),
                 normals: Optional[np.ndarray] = None) -> Optional[QPixmap]:
-    if not _ensure() or w < 1 or h < 1 or len(verts) < 3 or len(indices) < 3:
+    if not _ensure() or w < 4 or h < 4 or len(verts) < 3 or len(indices) < 3:
         return None
     global _mdl_prog
     if _mdl_prog is None:
@@ -315,8 +323,15 @@ def render_mesh(w: int, h: int, verts: np.ndarray, indices: np.ndarray,
     vao.release()
     vbo.release()
     ibo.release()
-    fbo.color_attachments[0].release()
-    fbo.depth_attachment.release()
+    color_tex = fbo.color_attachments[0]
+    depth_tex = fbo.depth_attachment
     fbo.release()
+    color_tex.release()
+    depth_tex.release()
+    if data is None or len(data) < w * h * 4:
+        return None
     img = QImage(data, w, h, QImage.Format.Format_RGBA8888)
     return QPixmap.fromImage(img)
+
+
+_ensure()
