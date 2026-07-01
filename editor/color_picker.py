@@ -1,12 +1,11 @@
 from __future__ import annotations
-import re
+import math
 from PyQt6.QtWidgets import (
     QDialog, QLineEdit, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QSlider, QSpinBox, QDialogButtonBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QRect
-from PyQt6.QtGui import QColor, QPixmap, QPainter, QLinearGradient, QBrush, QPen, QImage
-from math import floor, sqrt
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QPixmap, QPainter, QLinearGradient, QConicalGradient, QBrush, QPen, QImage
 
 
 def _hsv_to_rgb(h, s, v):
@@ -48,8 +47,17 @@ def _rgb_to_hsv(r, g, b):
     return (h % 360, s, v)
 
 
-class _TriangleWidget(QWidget):
-    colorChanged = pyqtSignal(float, float, float, float)
+def _hue_to_screen_angle(hue_deg):
+    return math.radians((hue_deg + 90) % 360)
+
+
+def _screen_angle_to_hue(angle_rad):
+    return (math.degrees(angle_rad) - 90 + 360) % 360
+
+
+class _ColorWheelWidget(QWidget):
+    colorChanged = pyqtSignal()
+    hueChanged = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -57,205 +65,238 @@ class _TriangleWidget(QWidget):
         self._hue = 0.0
         self._sat = 1.0
         self._val = 1.0
-        self._image = None
-        self._dragging = False
+        self._wheel_pixmap = None
+        self._tri_image = None
+        self._dragging = None
+
+    @property
+    def _cx(self):
+        return self.width() / 2
+
+    @property
+    def _cy(self):
+        return self.height() / 2
+
+    @property
+    def _R_outer(self):
+        return min(self.width(), self.height()) / 2 - 2
+
+    @property
+    def _R_inner(self):
+        return self._R_outer - 22
+
+    @property
+    def _R_tri(self):
+        return self._R_inner - 6
 
     def set_hue(self, h):
-        self._hue = h
-        self._image = None
-        self.update()
+        h = h % 360
+        if h != self._hue:
+            self._hue = h
+            self._tri_image = None
+            self.update()
 
     def set_sv(self, s, v):
         self._sat = max(0, min(1, s))
         self._val = max(0, min(1, v))
         self.update()
 
-    def _vert_coords(self):
-        w, h = self.width(), self.height()
-        return (w / 2, 5), (5, h - 5), (w - 5, h - 5)
+    def get_hue(self):
+        return self._hue
 
-    def _barycentric(self, px, py):
-        (ax, ay), (bx, by), (cx, cy) = self._vert_coords()
-        area2 = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay)
-        if area2 == 0:
-            return None
-        u = ((bx - px) * (cy - py) - (cx - px) * (by - py)) / area2
-        v = ((cx - px) * (ay - py) - (ax - px) * (cy - py)) / area2
-        w = ((ax - px) * (by - py) - (bx - px) * (ay - py)) / area2
-        return u, v, w
+    def get_sv(self):
+        return (self._sat, self._val)
 
-    def _xy_to_sv(self, px, py):
-        bc = self._barycentric(px, py)
-        if bc is None:
-            return (0, 0)
-        u, v, w = bc
-        s = max(0, min(1, w))
-        val = max(0, min(1, u + w))
-        return (s, val)
-
-    def _sv_to_xy(self, s, v):
-        (ax, ay), (bx, by), (cx, cy) = self._vert_coords()
-        w_coord = max(0, min(1, s))
-        v_coord = max(0, min(1, 1 - v))
-        u_coord = max(0, min(1, 1 - v_coord - w_coord))
-        total = u_coord + v_coord + w_coord
-        if total > 0:
-            u_coord /= total
-            v_coord /= total
-            w_coord /= total
-        px = u_coord * ax + v_coord * bx + w_coord * cx
-        py = u_coord * ay + v_coord * by + w_coord * cy
-        return (px, py)
+    def _tri_vertices(self):
+        hue_rad = _hue_to_screen_angle(self._hue)
+        offset = 2 * math.pi / 3
+        r = self._R_tri
+        cx, cy = self._cx, self._cy
+        return [
+            (cx + r * math.cos(hue_rad), cy + r * math.sin(hue_rad)),
+            (cx + r * math.cos(hue_rad + offset), cy + r * math.sin(hue_rad + offset)),
+            (cx + r * math.cos(hue_rad - offset), cy + r * math.sin(hue_rad - offset)),
+        ]
 
     def paintEvent(self, event):
-        if self._image is None or self._image.size() != self.size():
-            self._render_image()
+        if self._wheel_pixmap is None:
+            self._render_wheel()
+        if self._tri_image is None:
+            self._render_triangle()
         p = QPainter(self)
-        p.drawImage(0, 0, self._image)
-        ix, iy = self._sv_to_xy(self._sat, self._val)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.drawPixmap(0, 0, self._wheel_pixmap)
+        p.drawImage(0, 0, self._tri_image)
+        self._draw_tri_indicator(p)
+        self._draw_wheel_indicator(p)
+
+    def _render_wheel(self):
+        w, h = self.width(), self.height()
+        cx, cy = self._cx, self._cy
+        R_out = self._R_outer
+        R_in = self._R_inner
+        pm = QPixmap(w, h)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        grad = QConicalGradient(cx, cy, 90)
+        for i in range(361):
+            pos = i / 360
+            hue = i % 360
+            grad.setColorAt(pos, QColor.fromHsvF(hue / 360, 1, 1))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(int(cx - R_out), int(cy - R_out), int(R_out * 2), int(R_out * 2))
+        p.setBrush(QBrush(QColor(35, 35, 35)))
+        p.drawEllipse(int(cx - R_in), int(cy - R_in), int(R_in * 2), int(R_in * 2))
+        p.end()
+        self._wheel_pixmap = pm
+
+    def _render_triangle(self):
+        w, h = self.width(), self.height()
+        img = QImage(w, h, QImage.Format.Format_ARGB32)
+        img.fill(0)
+        verts = self._tri_vertices()
+        ax, ay = verts[0]
+        bx, by = verts[1]
+        cx_v, cy_v = verts[2]
+        area2 = (bx - ax) * (cy_v - ay) - (cx_v - ax) * (by - ay)
+        if abs(area2) < 0.001:
+            self._tri_image = img
+            return
+        min_x = max(0, int(min(ax, bx, cx_v)))
+        max_x = min(w, int(max(ax, bx, cx_v)) + 1)
+        min_y = max(0, int(min(ay, by, cy_v)))
+        max_y = min(h, int(max(ay, by, cy_v)) + 1)
+        for py in range(min_y, max_y):
+            for px in range(min_x, max_x):
+                u = ((bx - px) * (cy_v - py) - (cx_v - px) * (by - py)) / area2
+                v = ((cx_v - px) * (ay - py) - (ax - px) * (cy_v - py)) / area2
+                wv = 1 - u - v
+                if u >= 0 and v >= 0 and wv >= 0:
+                    s = u
+                    val = 1 - wv
+                    r, g, b = _hsv_to_rgb(self._hue, s, val)
+                    rgb = (0xFF << 24) | (int(r * 255) << 16) | (int(g * 255) << 8) | int(b * 255)
+                    img.setPixel(px, py, rgb)
+        self._tri_image = img
+
+    def _draw_wheel_indicator(self, p):
+        R_mid = (self._R_outer + self._R_inner) / 2
+        hue_rad = _hue_to_screen_angle(self._hue)
+        ix = self._cx + R_mid * math.cos(hue_rad)
+        iy = self._cy + R_mid * math.sin(hue_rad)
+        p.setPen(QPen(Qt.GlobalColor.black, 1))
+        p.setBrush(QBrush(Qt.GlobalColor.white))
+        p.drawEllipse(int(ix) - 5, int(iy) - 5, 10, 10)
+        p.setPen(QPen(Qt.GlobalColor.black, 2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(int(ix) - 5, int(iy) - 5, 10, 10)
+
+    def _draw_tri_indicator(self, p):
+        verts = self._tri_vertices()
+        ax, ay = verts[0]
+        bx, by = verts[1]
+        cx_v, cy_v = verts[2]
+        u = self._sat
+        wv = 1 - self._val
+        v = 1 - u - wv
+        total = u + v + wv
+        if total > 0:
+            u /= total
+            v /= total
+            wv /= total
+        else:
+            u, v, wv = 1, 0, 0
+        px = u * ax + v * bx + wv * cx_v
+        py = u * ay + v * by + wv * cy_v
         lum = self._val * 0.299 + self._sat * 0.587 + (1 - self._val) * 0.114
         pen = QPen(Qt.GlobalColor.black if lum > 0.5 else Qt.GlobalColor.white)
         pen.setWidth(2)
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(int(ix) - 5, int(iy) - 5, 10, 10)
-        p.setPen(QPen(Qt.GlobalColor.black if lum > 0.5 else Qt.GlobalColor.white, 1))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(int(ix) - 4, int(iy) - 4, 8, 8)
+        p.drawEllipse(int(px) - 5, int(py) - 5, 10, 10)
 
-    def _render_image(self):
-        w, h = self.width(), self.height()
-        if w < 1 or h < 1:
-            return
-        self._image = QImage(w, h, QImage.Format.Format_RGB32)
-        (ax, ay), (bx, by), (cx, cy) = self._vert_coords()
-        area2 = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay)
-        if area2 == 0:
-            self._image.fill(0xFF333333)
-            return
-        for py in range(h):
-            for px in range(w):
-                u = ((bx - px) * (cy - py) - (cx - px) * (by - py)) / area2
-                vv = ((cx - px) * (ay - py) - (ax - px) * (cy - py)) / area2
-                wv = ((ax - px) * (by - py) - (bx - px) * (ay - py)) / area2
-                if u >= 0 and vv >= 0 and wv >= 0:
-                    s = wv
-                    val = u + wv
-                    r, g, b = _hsv_to_rgb(self._hue, s, val)
-                    self._image.setPixel(px, py, (0xFF << 24) | (int(r * 255) << 16) | (int(g * 255) << 8) | int(b * 255))
-                else:
-                    self._image.setPixel(px, py, 0xFF333333)
+    def mousePressEvent(self, event):
+        px = event.position().x()
+        py = event.position().y()
+        dx = px - self._cx
+        dy = py - self._cy
+        dist = math.hypot(dx, dy)
+        if self._R_inner <= dist <= self._R_outer:
+            self._dragging = "wheel"
+            self._update_hue(px, py)
+        elif dist < self._R_inner:
+            self._dragging = "triangle"
+            self._update_sv(px, py)
 
-    def _clamp_to_triangle(self, px, py):
-        (ax, ay), (bx, by), (cx, cy) = self._vert_coords()
-        area2 = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay)
-        if area2 == 0:
-            return (ax, ay)
-        u = ((bx - px) * (cy - py) - (cx - px) * (by - py)) / area2
-        vv = ((cx - px) * (ay - py) - (ax - px) * (cy - py)) / area2
-        wv = ((ax - px) * (by - py) - (bx - px) * (ay - py)) / area2
-        if u >= 0 and vv >= 0 and wv >= 0:
-            return (px, py)
+    def mouseMoveEvent(self, event):
+        if self._dragging == "wheel":
+            self._update_hue(event.position().x(), event.position().y())
+        elif self._dragging == "triangle":
+            self._update_sv(event.position().x(), event.position().y())
+
+    def mouseReleaseEvent(self, event):
+        if self._dragging == "wheel":
+            self._update_hue(event.position().x(), event.position().y())
+        elif self._dragging == "triangle":
+            self._update_sv(event.position().x(), event.position().y())
+        self._dragging = None
+
+    def _update_hue(self, px, py):
+        dx = px - self._cx
+        dy = py - self._cy
+        angle = math.atan2(dy, dx)
+        new_hue = _screen_angle_to_hue(angle)
+        if new_hue != self._hue:
+            self._hue = new_hue
+            self._tri_image = None
+            self.update()
+            self.hueChanged.emit(self._hue)
+            self.colorChanged.emit()
+
+    def _update_sv(self, px, py):
+        verts = self._tri_vertices()
+        ax, ay = verts[0]
+        bx, by = verts[1]
+        cx_v, cy_v = verts[2]
+        area2 = (bx - ax) * (cy_v - ay) - (cx_v - ax) * (by - ay)
+        if abs(area2) < 0.001:
+            return
+        u = ((bx - px) * (cy_v - py) - (cx_v - px) * (by - py)) / area2
+        v = ((cx_v - px) * (ay - py) - (ax - px) * (cy_v - py)) / area2
+        wv = 1 - u - v
         if u < 0:
-            d = vv + wv
+            d = v + wv
             if d > 0:
-                vv /= d
+                v /= d
                 wv /= d
-            vv = max(0, min(1, vv))
-            wv = max(0, min(1, 1 - vv))
             u = 0
-        elif vv < 0:
+            v = max(0, min(1, v))
+            wv = max(0, min(1, 1 - v))
+        elif v < 0:
             d = u + wv
             if d > 0:
                 u /= d
                 wv /= d
             u = max(0, min(1, u))
             wv = max(0, min(1, 1 - u))
-            vv = 0
+            v = 0
         elif wv < 0:
-            d = u + vv
+            d = u + v
             if d > 0:
                 u /= d
-                vv /= d
+                v /= d
             u = max(0, min(1, u))
-            vv = max(0, min(1, 1 - u))
+            v = max(0, min(1, 1 - u))
             wv = 0
-        px = u * ax + vv * bx + wv * cx
-        py = u * ay + vv * by + wv * cy
-        return (px, py)
-
-    def mousePressEvent(self, event):
-        self._dragging = True
-        self._update_sv(event)
-
-    def mouseMoveEvent(self, event):
-        if self._dragging:
-            self._update_sv(event)
-
-    def mouseReleaseEvent(self, event):
-        if self._dragging:
-            self._dragging = False
-            self._update_sv(event)
-
-    def _update_sv(self, event):
-        px, py = self._clamp_to_triangle(event.position().x(), event.position().y())
-        s, val = self._xy_to_sv(px, py)
-        if s != self._sat or val != self._val:
-            self._sat = s
-            self._val = val
+        new_sat = u
+        new_val = 1 - wv
+        if new_sat != self._sat or new_val != self._val:
+            self._sat = new_sat
+            self._val = new_val
             self.update()
-            self.colorChanged.emit(self._hue, self._sat, self._val, -1.0)
-
-
-class _HueSlider(QWidget):
-    hueChanged = pyqtSignal(float)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(220, 20)
-        self._hue = 0.0
-        self._dragging = False
-
-    def set_hue(self, h):
-        self._hue = h % 360
-        self.update()
-
-    def paintEvent(self, event):
-        w, h = self.width(), self.height()
-        p = QPainter(self)
-        grad = QLinearGradient(0, 0, w, 0)
-        for i in range(0, 360, 30):
-            c = QColor.fromHsvF(i / 360, 1, 1)
-            grad.setColorAt(i / 360, c)
-        grad.setColorAt(1, QColor.fromHsvF(1, 1, 1))
-        p.fillRect(0, 0, w, h, grad)
-        x = int(self._hue / 360 * (w - 1))
-        p.setPen(QPen(Qt.GlobalColor.black, 2))
-        p.drawLine(x, 0, x, h)
-        p.setPen(QPen(Qt.GlobalColor.white, 1))
-        p.drawLine(x + 1, 0, x + 1, h)
-
-    def mousePressEvent(self, event):
-        self._dragging = True
-        self._update_hue(event)
-
-    def mouseMoveEvent(self, event):
-        if self._dragging:
-            self._update_hue(event)
-
-    def mouseReleaseEvent(self, event):
-        if self._dragging:
-            self._dragging = False
-            self._update_hue(event)
-
-    def _update_hue(self, event):
-        w = self.width()
-        if w < 1:
-            return
-        x = max(0, min(w - 1, event.position().x()))
-        self._hue = x / (w - 1) * 360
-        self.update()
-        self.hueChanged.emit(self._hue)
+            self.colorChanged.emit()
 
 
 class _AlphaWidget(QWidget):
@@ -329,14 +370,10 @@ class ColorDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        self._triangle = _TriangleWidget()
-        self._triangle.set_hue(h * 360)
-        self._triangle.set_sv(s, v)
-        layout.addWidget(self._triangle, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        self._hue_slider = _HueSlider()
-        self._hue_slider.set_hue(h * 360)
-        layout.addWidget(self._hue_slider)
+        self._wheel = _ColorWheelWidget()
+        self._wheel.set_hue(h * 360)
+        self._wheel.set_sv(s, v)
+        layout.addWidget(self._wheel, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self._alpha_slider = _AlphaWidget()
         self._alpha_slider.set_alpha(a)
@@ -383,8 +420,8 @@ class ColorDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self._triangle.colorChanged.connect(self._on_triangle_changed)
-        self._hue_slider.hueChanged.connect(self._on_hue_changed)
+        self._wheel.colorChanged.connect(self._on_wheel_changed)
+        self._wheel.hueChanged.connect(self._on_wheel_hue_changed)
         self._alpha_slider.alphaChanged.connect(self._on_alpha_changed)
         self._r_spin.valueChanged.connect(self._on_rgb_spin)
         self._g_spin.valueChanged.connect(self._on_rgb_spin)
@@ -392,18 +429,15 @@ class ColorDialog(QDialog):
         self._a_spin.valueChanged.connect(self._on_a_spin)
         self._hex_edit.editingFinished.connect(self._on_hex_edited)
 
-    def _on_triangle_changed(self, hue, s, v, _alpha_unused):
+    def _on_wheel_changed(self):
+        s, v = self._wheel.get_sv()
         a = self._color.alphaF()
-        self._color.setHsvF(hue / 360.0, s, v, a)
+        self._color.setHsvF(self._wheel.get_hue() / 360.0, s, v, a)
         self._sync_from_color()
         self.colorChanged.emit(self._color)
 
-    def _on_hue_changed(self, h):
-        self._triangle.set_hue(h)
-        s = self._triangle._sat
-        v = self._triangle._val
-        a = self._color.alphaF()
-        self._color.setHsvF(h / 360.0, s, v, a)
+    def _on_wheel_hue_changed(self, h):
+        self._color.setHsvF(h / 360.0, self._wheel._sat, self._wheel._val, self._color.alphaF())
         self._sync_from_color()
         self.colorChanged.emit(self._color)
 
@@ -450,9 +484,8 @@ class ColorDialog(QDialog):
         af = self._color.alphaF()
         self._alpha_slider.set_alpha(af)
         self._alpha_slider.set_color(self._color)
-        self._hue_slider.set_hue(h * 360)
-        self._triangle.set_hue(h * 360)
-        self._triangle.set_sv(s, v)
+        self._wheel.set_hue(h * 360)
+        self._wheel.set_sv(s, v)
         self._hex_edit.setText(self._color.name(QColor.NameFormat.HexArgb))
         self._update_preview()
 
@@ -518,7 +551,10 @@ class ColorLineEdit(QWidget):
 
         dlg.colorChanged.connect(_on_dialog_color)
         dlg.exec()
-        dlg.colorChanged.disconnect(_on_dialog_color)
+        try:
+            dlg.colorChanged.disconnect(_on_dialog_color)
+        except TypeError:
+            pass
         self._color = dlg.get_color().toRgb()
         self._update_swatch()
         self._edit.blockSignals(True)
