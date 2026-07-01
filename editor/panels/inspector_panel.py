@@ -1708,6 +1708,17 @@ class ComponentWidget(QWidget):
             preview.clicked.connect(_open_editor)
             self._add_field(field.label, row, prop_name, field.toggle_field)
 
+        elif field.field_type.value == "gradient":
+            row = QWidget()
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(4)
+            from editor.gradient_editor import GradientLineEdit
+            gle = GradientLineEdit(value if value else None)
+            gle.gradientChanged.connect(lambda stops, _pn=prop_name: self._on_gradient_changed(c, _pn, stops))
+            rl.addWidget(gle, 1)
+            self._add_field(field.label, row, prop_name, field.toggle_field)
+
         elif field.field_type.value == "list":
             self._build_list_field_standalone(field, prop_name)
 
@@ -2144,6 +2155,15 @@ class ComponentWidget(QWidget):
         setattr(c, prop_name, new_val)
         if self._entity:
             get_history().execute(SetComponentCommand(self._entity, type(c), prop_name, old_val, new_val))
+
+    def _on_gradient_changed(self, comp, prop_name, stops):
+        if self._updating: return
+        old_val = getattr(comp, prop_name)
+        setattr(comp, prop_name, stops)
+        if hasattr(comp, '_invalidate_caches'):
+            comp._invalidate_caches()
+        if self._entity:
+            get_history().execute(SetComponentCommand(self._entity, type(comp), prop_name, old_val, stops))
 
     def refresh_vec3_field(self, prop_name: str):
         c = self._component
@@ -3300,6 +3320,25 @@ class InspectorPanel(QDockWidget):
             rl.addWidget(sb, 1)
             self._add_asset_widget(row)
 
+        elif prop_type == "Gradient":
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 2, 0, 2)
+            lbl = QLabel(label)
+            lbl.setFixedWidth(scale(120))
+            lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
+            rl.addWidget(lbl)
+            from editor.gradient_editor import GradientLineEdit
+            gle = GradientLineEdit(props.get(key, None))
+            def _on_gradient(_, _key=key):
+                props[_key] = gle.get_stops()
+                _save()
+                _update_preview()
+            gle.gradientChanged.connect(_on_gradient)
+            rl.addWidget(gle, 1)
+            self._add_asset_widget(row)
+
     def _add_fallback_widget(self, key, cfg, props, _save, _update_preview):
         """Build a widget for a known fallback property key."""
         from editor.resource_picker import pick_resource
@@ -3364,6 +3403,25 @@ class InspectorPanel(QDockWidget):
                 _update_preview()
             sb.valueChanged.connect(_on_change)
             rl.addWidget(sb, 1)
+            self._add_asset_widget(row)
+
+        elif widget_type == "gradient":
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 2, 0, 2)
+            lbl = QLabel(label)
+            lbl.setFixedWidth(scale(120))
+            lbl.setStyleSheet(f"color: {_FUSION_TEXT}; font-size: 11px; background: transparent;")
+            rl.addWidget(lbl)
+            from editor.gradient_editor import GradientLineEdit
+            gle = GradientLineEdit(props.get(key, None))
+            def _on_gradient(_, _key=key):
+                props[_key] = gle.get_stops()
+                _save()
+                _update_preview()
+            gle.gradientChanged.connect(_on_gradient)
+            rl.addWidget(gle, 1)
             self._add_asset_widget(row)
 
     def _build_animator_state_inspector(self, state: AnimatorState):

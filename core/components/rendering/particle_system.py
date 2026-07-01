@@ -44,10 +44,17 @@ def _build_curve_cache(curve_list) -> Optional[tuple]:
     arr = np.array(curve_list, dtype=np.float32)
     return arr[:, 0], arr[:, 1]
 
-def _build_gradient_cache(grad: dict) -> Optional[tuple]:
+def _build_gradient_cache(grad) -> Optional[tuple]:
     if not grad:
         return None
-    ck = grad.get("color_keys", [(0, [1,1,1]), (1, [1,1,1])])
+    if isinstance(grad, (list, tuple)):
+        stops = sorted(grad, key=lambda s: s[0])
+        c_t = np.array([s[0] for s in stops], dtype=np.float32)
+        c_v = np.array([s[1][:3] for s in stops], dtype=np.float32).reshape(-1, 3)
+        a_t = np.array([s[0] for s in stops], dtype=np.float32)
+        a_v = np.array([s[1][3] if len(s[1]) > 3 else 1.0 for s in stops], dtype=np.float32)
+        return c_t, c_v, a_t, a_v
+    ck = grad.get("color_keys", [(0, [1, 1, 1]), (1, [1, 1, 1])])
     ak = grad.get("alpha_keys", [(0, 1.0), (1, 1.0)])
     c_t = np.array([k[0] for k in ck], dtype=np.float32)
     c_v = np.array([k[1] for k in ck], dtype=np.float32).reshape(-1, 3)
@@ -166,6 +173,7 @@ class ParticleSystem(Component):
             InspectorField("size_over_lifetime_enabled", "Size over Lifetime", FieldType.BOOL),
             InspectorField("size_over_lifetime_curve", "Size Curve", FieldType.CURVE, toggle_field="size_over_lifetime_enabled"),
             InspectorField("color_over_lifetime_enabled", "Color over Lifetime", FieldType.BOOL),
+            InspectorField("color_over_lifetime_gradient", "Color Gradient", FieldType.GRADIENT, toggle_field="color_over_lifetime_enabled"),
             InspectorField("rotation_over_lifetime_enabled", "Rotation over Lifetime", FieldType.BOOL),
             InspectorField("velocity_over_lifetime_enabled", "Velocity over Lifetime", FieldType.BOOL),
         ]
@@ -761,9 +769,9 @@ class ParticleSystem(Component):
             "size_over_lifetime_curve_x": self.size_over_lifetime_curve_x or [[0,1],[1,1]],
             "size_over_lifetime_curve_y": self.size_over_lifetime_curve_y or [[0,1],[1,1]],
             "color_over_lifetime_enabled": self.color_over_lifetime_enabled,
-            "color_over_lifetime_gradient": self.color_over_lifetime_gradient or {
-                "alpha_keys": [[0,1],[1,0]],
-                "color_keys": [[0,[1,1,1]],[1,[1,1,1]]]
+            "color_over_lifetime_gradient": self.color_over_lifetime_gradient if self.color_over_lifetime_gradient is not None else {
+                "alpha_keys": [[0, 1], [1, 0]],
+                "color_keys": [[0, [1, 1, 1]], [1, [1, 1, 1]]]
             },
             "rotation_over_lifetime_enabled": self.rotation_over_lifetime_enabled,
             "rotation_over_lifetime_angular_velocity": self.rotation_over_lifetime_angular_velocity,
