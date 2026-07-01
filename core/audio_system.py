@@ -429,6 +429,26 @@ class AudioSourceManager:
         except Exception:
             pass
 
+    def pause(self, source: int):
+        if not source or not al.oalGetInit(): return
+        try:
+            state = al.ctypes.c_int()
+            al.alGetSourcei(source, al.AL_SOURCE_STATE, state)
+            if state.value == al.AL_PLAYING:
+                al.alSourcePause(source)
+        except Exception:
+            pass
+
+    def resume(self, source: int):
+        if not source or not al.oalGetInit(): return
+        try:
+            state = al.ctypes.c_int()
+            al.alGetSourcei(source, al.AL_SOURCE_STATE, state)
+            if state.value == al.AL_PAUSED:
+                al.alSourcePlay(source)
+        except Exception:
+            pass
+
     def stop(self, source: int):
         if not source or not al.oalGetInit(): return
         try:

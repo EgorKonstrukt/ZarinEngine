@@ -22,6 +22,7 @@ from core.components.rendering.particle_system import ParticleSystem
 from core.components.rendering.particle_force_field import ParticleForceField, FORCE_FIELD_DTYPE, MAX_FORCE_FIELDS
 from core.components.mesh_editor import ProBuilderMesh
 from core.components.rendering.graphics_effect import GraphicsEffect
+from core.components.rendering.video_renderer import VideoRenderer
 from core.math3d import Mat4, Vec3
 
 from core.renderer.types import RenderMode
@@ -35,6 +36,7 @@ from core.components.rendering.clouds import Cloud
 from core.renderer.particles import ParticleRenderer
 from core.renderer.sprites import SpriteRendererGL
 from core.renderer.svgs import SvgRendererGL
+from core.renderer.video import VideoRendererGL
 from core.renderer.icons import IconRenderer
 from core.renderer.text import TextRendererGL
 from core.renderer.materials import MaterialManager
@@ -63,11 +65,25 @@ class _SvgItem:
         self.abs_path = abs_path
         self.pixels_per_unit = pixels_per_unit
 
+class _VideoItem:
+    __slots__ = ('world_matrix', 'color', 'flip_x', 'flip_y', 'video_path', 'entity_id', 'loop', 'volume', 'offset', 'audio_source_entity_id')
+    def __init__(self, world_matrix, color, flip_x, flip_y, video_path, entity_id, loop, volume, offset=0.0, audio_source_entity_id=""):
+        self.world_matrix = world_matrix
+        self.color = list(color) if color else [1, 1, 1, 1]
+        self.flip_x = flip_x
+        self.flip_y = flip_y
+        self.video_path = video_path
+        self.entity_id = entity_id
+        self.loop = loop
+        self.volume = volume
+        self.offset = offset
+        self.audio_source_entity_id = audio_source_entity_id
+
 class _RenderSnapshot:
     __slots__ = (
         'lights', 'dir_light', 'sky_component', 'sky_entity', 'cloud_components',
-        'renderable', 'shadow_renderables', 'sprite_items', 'svg_items',
-        'text_items', 'particle_systems', 'force_fields', 'culling_cache',
+        'renderable', 'shadow_renderables', 'sprite_items', 'video_items',
+        'svg_items', 'text_items', 'particle_systems', 'force_fields', 'culling_cache',
     )
     def __init__(self):
         self.lights: list = []
@@ -78,6 +94,7 @@ class _RenderSnapshot:
         self.renderable: list = []
         self.shadow_renderables: list = []
         self.sprite_items: list = []
+        self.video_items: list = []
         self.svg_items: list = []
         self.text_items: list = []
         self.particle_systems: list = []
@@ -103,6 +120,7 @@ class Renderer:
         self._icon_prog: Optional[moderngl.Program] = None
         self._icon_textures: dict = {}
         self._sprite_prog: Optional[moderngl.Program] = None
+        self._video_prog: Optional[moderngl.Program] = None
         self._text_prog: Optional[moderngl.Program] = None
         self._overlay_prog: Optional[moderngl.Program] = None
         self._quad_vbo: Optional[moderngl.Buffer] = None
@@ -159,6 +177,7 @@ class Renderer:
         self._skybox_enabled: bool = True
         self._particles: Optional[ParticleRenderer] = None
         self._sprites: Optional[SpriteRendererGL] = None
+        self._videos: Optional[VideoRendererGL] = None
         self._text: Optional[TextRendererGL] = None
         self._svgs: Optional[SvgRendererGL] = None
         self._culler: Optional[Any] = None
@@ -234,6 +253,10 @@ class Renderer:
                 vertex_shader=read_shader("sprite.vert"),
                 fragment_shader=read_shader("sprite.frag")
             )
+            self._video_prog = self._ctx.program(
+                vertex_shader=read_shader("video.vert"),
+                fragment_shader=read_shader("video.frag")
+            )
             self._text_prog = self._ctx.program(
                 vertex_shader=read_shader("text.vert"),
                 fragment_shader=read_shader("text.frag")
@@ -299,6 +322,7 @@ void main() {
             )
             self._sprites = SpriteRendererGL(self._ctx, self._sprite_prog)
             self._sprites.set_texture_loader(self._materials.load_texture)
+            self._videos = VideoRendererGL(self._ctx, self._video_prog)
             self._text = TextRendererGL(self._ctx, self._text_prog)
             self._svgs = SvgRendererGL(self._ctx, self._sprite_prog)
             self._icons = IconRenderer(self._ctx, self._icon_prog)
@@ -507,6 +531,19 @@ void main() {
                 continue
             snap.sprite_items.append(_SpriteItem(
                 tr.world_matrix, sr.color, sr.flip_x, sr.flip_y, sr.texture_path))
+        for ent in scene.get_entities_with_component(VideoRenderer):
+            if not ent.active:
+                continue
+            vr = ent.get_component(VideoRenderer)
+            if not vr or not vr.enabled:
+                continue
+            tr = ent.get_component(Transform)
+            if not tr:
+                continue
+            snap.video_items.append(_VideoItem(
+                tr.world_matrix, vr.color, vr.flip_x, vr.flip_y,
+                vr.video_path, ent._id, vr.loop, vr.volume, vr.offset,
+                vr.audio_source_entity_id))
         for ent in scene.get_entities_with_component(SvgRenderer):
             if not ent.active:
                 continue
@@ -718,6 +755,16 @@ void main() {
                 self._text.render(scene, view_mat, proj_mat, viewport_w, viewport_h, world_space_only=True)
         if prof:
             prof.stop("render_text_world")
+        if prof:
+            prof.start("render_sprites")
+        self._sprites.render_snapshot(snap.sprite_items, view_mat, proj_mat)
+        if prof:
+            prof.stop("render_sprites")
+        if prof:
+            prof.start("render_videos")
+        self._videos.render_snapshot(snap.video_items, view_mat, proj_mat)
+        if prof:
+            prof.stop("render_videos")
         if self._grid and self._grid.show:
             if prof:
                 prof.start("render_grid")
@@ -870,11 +917,6 @@ void main() {
                 self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
             if prof:
                 prof.stop("render_graphics_effects")
-        if prof:
-            prof.start("render_sprites")
-        self._sprites.render_snapshot(snap.sprite_items, view_mat, proj_mat)
-        if prof:
-            prof.stop("render_sprites")
         if prof:
             prof.start("render_text")
         if self._text and scene:
