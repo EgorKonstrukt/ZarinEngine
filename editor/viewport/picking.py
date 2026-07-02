@@ -93,6 +93,17 @@ def _world_aabb_of(entity, only_expanded: bool = False) -> tuple | None:
         np.minimum(bmin, pts[:, :3].min(axis=0), out=bmin)
         np.maximum(bmax, pts[:, :3].max(axis=0), out=bmax)
         expanded = True
+    from core.components.rendering.video_renderer import VideoRenderer
+    vr = entity.get_component(VideoRenderer)
+    if vr and vr.enabled and vr.video_path:
+        wm = t.world_matrix._d
+        corners = np.array([
+            [-0.5, -0.5, 0, 1], [0.5, -0.5, 0, 1], [0.5, 0.5, 0, 1], [-0.5, 0.5, 0, 1],
+        ], dtype=np.float32)
+        pts = corners @ wm
+        np.minimum(bmin, pts[:, :3].min(axis=0), out=bmin)
+        np.maximum(bmax, pts[:, :3].max(axis=0), out=bmax)
+        expanded = True
     from core.components.rendering.text_renderer import TextRenderer
     from core.font_atlas import FontAtlas
     from core.font_atlas import get_default_font_path as get_def_font
