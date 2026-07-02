@@ -158,7 +158,7 @@ class Renderer:
         self._render_callback: Optional[Callable] = None
         self._shadow_resolution: int = 4096
         self._shadow_distance: float = 50.0
-        self._line_width: float = 1.0
+        self._line_width: float = 0.6667
         self._clear_color: list = [0.18, 0.18, 0.18]
         self._import_meta_cache: dict[str, tuple] = {}
         self._normal_cache: dict[int, np.ndarray] = {}

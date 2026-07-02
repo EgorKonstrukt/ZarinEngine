@@ -13,6 +13,7 @@ class Light(Component):
     _icon = "Light.png"
     _gizmo_icon_color = (255, 220, 50)
     _gizmo_icon_label = "L"
+    _gizmo_pass = "light"
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
@@ -36,6 +37,78 @@ class Light(Component):
         self.spot_angle: float = 30.0
         self.spot_inner_angle: float = 20.0
         self.cast_shadows: bool = True
+
+    def gizmo(self):
+        tr = self.transform
+        if not tr:
+            return []
+        from core.ecs import GizmoPrimitive
+        pos = tr.position
+        fwd = tr.forward
+        up = tr.up
+        right = tr.right
+        c = self.color or [1.0, 1.0, 1.0]
+        brightness = max(c[0], c[1], c[2])
+        if brightness < 0.01:
+            col = [1.0, 1.0, 1.0, 0.8]
+        else:
+            col = [c[0] / brightness, c[1] / brightness, c[2] / brightness, 0.8]
+        lines = []
+        segments = 32
+        if self.light_type == LightType.DIRECTIONAL:
+            r = 0.3
+            ray_len = 1.5
+            pts = []
+            for i in range(segments):
+                a = 2.0 * math.pi * i / segments
+                pts.append(pos + (right * math.cos(a) + up * math.sin(a)) * r)
+            for i in range(segments):
+                lines.append((pts[i], pts[(i + 1) % segments], col))
+            spacing = 0.2
+            for i in (-1, 0, 1):
+                dx = right * (i * spacing)
+                for j in (-1, 0, 1):
+                    origin = pos + dx + up * (j * spacing)
+                    tip = origin + fwd * ray_len
+                    lines.append((origin, tip, col))
+        elif self.light_type == LightType.POINT:
+            rng = max(self.range, 0.1)
+            for axis_idx in range(3):
+                pts = []
+                for i in range(segments):
+                    a = 2.0 * math.pi * i / segments
+                    if axis_idx == 0:
+                        pt = right * 0.0 + up * (math.cos(a) * rng) + fwd * (math.sin(a) * rng)
+                    elif axis_idx == 1:
+                        pt = right * (math.cos(a) * rng) + up * 0.0 + fwd * (math.sin(a) * rng)
+                    else:
+                        pt = right * (math.cos(a) * rng) + up * (math.sin(a) * rng) + fwd * 0.0
+                    pts.append(pos + pt)
+                for i in range(segments):
+                    lines.append((pts[i], pts[(i + 1) % segments], col))
+            half = rng * 0.15
+            for d in [(1,0,0), (-1,0,0), (0,1,0), (0,-1,0), (0,0,1), (0,0,-1)]:
+                end = pos + right * d[0] * half + up * d[1] * half + fwd * d[2] * half
+                lines.append((pos, end, col))
+        elif self.light_type == LightType.SPOT:
+            rng = max(self.range, 0.1)
+            half_angle = self.spot_angle * 0.5 * math.pi / 180.0
+            cone_r = rng * math.tan(half_angle)
+            base_center = pos + fwd * rng
+            base_pts = []
+            for i in range(segments):
+                a = 2.0 * math.pi * i / segments
+                base_pts.append(base_center + (right * math.cos(a) + up * math.sin(a)) * cone_r)
+            for i in range(segments):
+                lines.append((base_pts[i], base_pts[(i + 1) % segments], col))
+            for i in range(8):
+                a = 2.0 * math.pi * i / 8
+                bp = base_center + (right * math.cos(a) + up * math.sin(a)) * cone_r
+                lines.append((pos, bp, col))
+            lines.append((pos, base_center, col))
+        if not lines:
+            return []
+        return [GizmoPrimitive.from_lines(lines)]
 
     @staticmethod
     def compute_sun_light(sun_dir: Vec3) -> tuple[list[float], float]:
