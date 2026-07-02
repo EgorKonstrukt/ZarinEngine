@@ -208,76 +208,39 @@ float compute_area_shadow() {
     float z_view = 2.0 * near_z * far_z / max(far_z + near_z - z_ndc * (far_z - near_z), 0.001);
     return area_pcss(u_area_shadow_map, proj_coords, z_view);
 }
-float projected_solid_angle(vec3 verts[4], vec3 n) {
-    vec3 clipped[8];
-    int cnt = 0;
-    for (int i = 0; i < 4; i++) {
-        vec3 a = verts[i];
-        vec3 b = verts[(i + 1) % 4];
-        float da = dot(a, n);
-        float db = dot(b, n);
-        if (da > 0.0) {
-            clipped[cnt] = a;
-            cnt++;
-        }
-        if ((da > 0.0) != (db > 0.0)) {
-            float t = da / max(da - db, 1e-8);
-            vec3 inter = normalize(a + t * (b - a));
-            clipped[cnt] = inter;
-            cnt++;
-        }
-    }
-    if (cnt < 3) return 0.0;
-    float sum = 0.0;
-    for (int i = 0; i < cnt; i++) {
-        vec3 a = clipped[i];
-        vec3 b = clipped[(i + 1) % cnt];
-        float ang = acos(clamp(dot(a, b), -1.0, 1.0));
-        vec3 e = normalize(cross(a, b));
-        sum += ang * max(0.0, dot(e, n));
-    }
-    return sum * 0.5;
-}
 vec3 calc_area_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo) {
     vec3 right = light.right;
     vec3 up = light.up;
     float hw = light.area_width * 0.5;
     float hh = light.area_height * 0.5;
     vec3 c = light.position;
-    vec3 verts[4];
-    verts[0] = c - right * hw - up * hh;
-    verts[1] = c + right * hw - up * hh;
-    verts[2] = c + right * hw + up * hh;
-    verts[3] = c - right * hw + up * hh;
-    vec3 tangent = normalize(cross(normal, abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
-    vec3 bitangent = cross(normal, tangent);
-    vec3 ts_verts[4];
-    for (int i = 0; i < 4; i++) {
-        vec3 d = verts[i] - v_world_pos;
-        ts_verts[i] = normalize(vec3(dot(d, tangent), dot(d, bitangent), dot(d, normal)));
-    }
-    float ff = projected_solid_angle(ts_verts, vec3(0.0, 0.0, 1.0));
-    vec3 diffuse = (ff / PI) * albedo * light.color * light.intensity;
-    vec3 specular = vec3(0.0);
+    const int S = 6;
+    float inv_n = 1.0 / float(S * S);
+    vec3 diff = vec3(0.0);
+    vec3 spec = vec3(0.0);
     vec3 ref = reflect(-view_dir, normal);
-    float denom = dot(ref, -light.direction);
-    if (denom > 0.0) {
-        float t = dot(c - v_world_pos, -light.direction) / denom;
-        vec3 hit = v_world_pos + ref * t;
-        vec3 local = hit - c;
-        float u = clamp(dot(local, right) / hw, -1.0, 1.0);
-        float v = clamp(dot(local, up) / hh, -1.0, 1.0);
-        vec3 rep = c + right * u * hw + up * v * hh;
-        vec3 to_rep = rep - v_world_pos;
-        float d = length(to_rep);
-        vec3 ld = to_rep / d;
-        vec3 h = normalize(ld + view_dir);
-        float sp = pow(max(dot(normal, h), 0.0), max(1.0, u_smoothness * 128.0));
-        float att = clamp(1.0 - d / light.range, 0.0, 1.0);
-        att *= att;
-        specular = sp * light.color * light.intensity * u_metallic * att;
+    float r1 = 1.0 / float(S);
+    float r2 = 1.0 / float(S);
+    for (int i = 0; i < S; i++) {
+        for (int j = 0; j < S; j++) {
+            float u = (float(i) + 0.5) * r2 * 2.0 - 1.0;
+            float v = (float(j) + 0.5) * r1 * 2.0 - 1.0;
+            vec3 sp = c + right * u * hw + up * v * hh;
+            vec3 to_sp = sp - v_world_pos;
+            float dist = length(to_sp);
+            vec3 ld = to_sp / dist;
+            float NdL = max(dot(normal, ld), 0.0);
+            if (NdL <= 0.0) continue;
+            float att = clamp(1.0 - dist / light.range, 0.0, 1.0);
+            att *= att;
+            vec3 contrib = light.color * light.intensity * att * inv_n;
+            diff += contrib * NdL;
+            vec3 h = normalize(ld + view_dir);
+            float NdH = max(dot(normal, h), 0.0);
+            spec += contrib * pow(NdH, max(1.0, u_smoothness * 128.0));
+        }
     }
-    return diffuse + specular;
+    return diff * albedo + spec * u_metallic;
 }
 vec3 calc_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo, float shadow_factor) {
     vec3 light_dir;
