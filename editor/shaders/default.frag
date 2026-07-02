@@ -65,6 +65,11 @@ uniform float u_area_light_size;
 uniform float u_area_light_fov_scale;
 uniform vec2 u_area_light_near_far;
 uniform int u_area_shadow_light_index;
+float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
 float sample_shadow(sampler2D shadow_map, vec3 proj_coords) {
     float current_depth = proj_coords.z - u_shadow_bias;
     float result = 0.0;
@@ -145,13 +150,18 @@ float area_pcss(sampler2D shadow_map, vec3 proj_coords, float z_view) {
     float z_ndc = proj_coords.z;
     float near_z = u_area_light_near_far.x;
     float far_z = u_area_light_near_far.y;
+    float a = hash(gl_FragCoord.xy) * 6.2831853;
+    float ca = cos(a);
+    float sa = sin(a);
     float proj_light_size = u_area_light_size * u_area_light_fov_scale / max(z_view, 0.001);
     float search_step = max(proj_light_size * 0.25, texel_size.x * 2.0);
     float blocker_sum = 0.0;
     float blocker_count = 0.0;
     for (int x = -2; x <= 2; x++) {
         for (int y = -2; y <= 2; y++) {
-            vec2 uv = proj_coords.xy + vec2(float(x), float(y)) * search_step;
+            vec2 off = vec2(float(x), float(y));
+            vec2 rot = vec2(off.x * ca - off.y * sa, off.x * sa + off.y * ca);
+            vec2 uv = proj_coords.xy + rot * search_step;
             float d = texture(shadow_map, uv).r;
             if (d < z_ndc - u_shadow_bias) {
                 blocker_sum += d;
@@ -175,7 +185,9 @@ float area_pcss(sampler2D shadow_map, vec3 proj_coords, float z_view) {
             float w = 1.0;
             if (x == 0) w += 1.0;
             if (y == 0) w += 1.0;
-            vec2 uv = proj_coords.xy + vec2(float(x), float(y)) * pcf_step;
+            vec2 off = vec2(float(x), float(y));
+            vec2 rot = vec2(off.x * ca - off.y * sa, off.x * sa + off.y * ca);
+            vec2 uv = proj_coords.xy + rot * pcf_step;
             float d = texture(shadow_map, uv).r;
             result += (z_ndc - u_shadow_bias > d ? 1.0 : 0.0) * w;
             wsum += w;
