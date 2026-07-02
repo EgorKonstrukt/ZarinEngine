@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import gc
 import math
 import os
 import time
@@ -53,6 +54,8 @@ class SceneViewport(QOpenGLWidget):
 
     def __init__(self, engine, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self._engine = engine
         self._ctx: Optional[moderngl.Context] = None
         self._renderer: Optional[Renderer] = None
@@ -72,9 +75,6 @@ class SceneViewport(QOpenGLWidget):
         self._fps_accum: float = 0.0
         self._fps_frames: int = 0
         self._screen_fbo: Optional[moderngl.Framebuffer] = None
-        self._update_timer = QTimer(self)
-        self._update_timer.timeout.connect(self.update_scene)
-        self._update_timer.start(16)
         self._render_timer = QTimer(self)
         self._render_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._render_timer.timeout.connect(self._on_render_tick)
@@ -127,8 +127,12 @@ class SceneViewport(QOpenGLWidget):
         self._collab_throttle_gizmo: float = 0.0
         self._collab_last_gizmo_state: tuple[str, int, bool] = ("none", -1, False)
         self._pb_scale_gizmo: "PbScaleGizmo | None" = None
+        self._in_update: bool = False
+        self._last_status_update: float = 0.0
+        # GC deliberately disabled in initializeGL; see gc.disable() below
         from editor.viewport.toolbar import setup_toolbar
         setup_toolbar(self)
+        self._refresh_no_qt_overlay()
 
     def _init_format(self):
         from core.config import get_global_config
@@ -141,28 +145,24 @@ class SceneViewport(QOpenGLWidget):
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         fmt.setSwapInterval(1 if self._vsync_enabled else 0)
         self.setFormat(fmt)
-        self._update_timer.setInterval(16)
-        try:
-            import ctypes
-            result = ctypes.windll.winmm.timeBeginPeriod(1)
-            if result != 0:
-                ctypes.windll.winmm.timeBeginPeriod(2)
-        except Exception:
-            pass
         self._apply_config()
+
+    @property
+    def _no_qt_overlay(self) -> bool:
+        return self._engine._debug_no_qt_overlay if hasattr(self._engine, '_debug_no_qt_overlay') else False
+
+    def _refresh_no_qt_overlay(self):
+        no = self._no_qt_overlay
+        if hasattr(self, '_overlay_widget') and self._overlay_widget:
+            self._overlay_widget.setVisible(not no)
+        if hasattr(self, '_toolbar') and self._toolbar:
+            self._toolbar.setVisible(not no)
 
     def _apply_config(self):
         if not self._vsync_enabled:
-            self._update_timer.stop()
             self._render_timer.start(1)
         else:
             self._render_timer.stop()
-            fps = self._target_fps
-            if fps <= 0 or fps > 240:
-                fps = 240
-            interval = max(1, int(1000.0 / fps))
-            self._update_timer.setInterval(interval)
-            self._update_timer.start()
 
     def _on_render_tick(self):
         if getattr(self, '_in_render_tick', False):
@@ -362,23 +362,29 @@ class SceneViewport(QOpenGLWidget):
             SWP_NOSIZE = 0x0001
             SWP_NOZORDER = 0x0004
             SWP_NOACTIVATE = 0x0010
-            GA_ROOT = 2
+            def _collect_hwnds(h):
+                items = {h}
+                c = user32.GetWindow(h, 5)
+                while c:
+                    items.add(c)
+                    items |= _collect_hwnds(c)
+                    c = user32.GetWindow(c, 2)
+                return items
             hwnd = int(self.winId())
-            root = user32.GetAncestor(hwnd, GA_ROOT)
-            hwnds = {hwnd, root}
-            child = user32.FindWindowExW(root, None, None, None)
-            while child:
-                hwnds.add(child)
-                child = user32.FindWindowExW(root, child, None, None)
-            for h in hwnds:
-                current = user32.GetWindowLongW(h, GWL_EXSTYLE)
-                user32.SetWindowLongW(h, GWL_EXSTYLE, current | WS_EX_NOREDIRECTIONBITMAP)
-                user32.SetWindowPos(h, 0, 0, 0, 0, 0,
-                                    SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
+            root = user32.GetAncestor(hwnd, 2)
+            for h in _collect_hwnds(root):
+                try:
+                    cur = user32.GetWindowLongW(h, GWL_EXSTYLE)
+                    user32.SetWindowLongW(h, GWL_EXSTYLE, cur | WS_EX_NOREDIRECTIONBITMAP)
+                    user32.SetWindowPos(h, 0, 0, 0, 0, 0,
+                                        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
+                except Exception:
+                    pass
         except Exception:
             pass
 
     def initializeGL(self):
+        gc.disable()
         try:
             self._ctx = moderngl.create_context(standalone=False)
             try:
@@ -386,17 +392,16 @@ class SceneViewport(QOpenGLWidget):
             except Exception:
                 pass
             self._bind_screen_fbo()
-            if not self._vsync_enabled:
-                self._disable_dwm_throttle()
-                try:
-                    import ctypes
-                    opengl32 = ctypes.windll.opengl32
-                    addr = opengl32.wglGetProcAddress(b"wglSwapIntervalEXT")
-                    if addr:
-                        func = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(addr)
-                        func(0)
-                except Exception:
-                    pass
+            self._disable_dwm_throttle()
+            try:
+                import ctypes
+                opengl32 = ctypes.windll.opengl32
+                addr = opengl32.wglGetProcAddress(b"wglSwapIntervalEXT")
+                if addr:
+                    func = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(addr)
+                    func(0 if not self._vsync_enabled else 1)
+            except Exception:
+                pass
             from core.renderer.renderer import Renderer
             self._renderer = Renderer(self._ctx)
             self._renderer.initialize()
@@ -434,22 +439,24 @@ class SceneViewport(QOpenGLWidget):
         self._physical_w = pw
         self._physical_h = ph
         self._cam.set_viewport_size(w, h)
-        if hasattr(self, '_toolbar') and self._toolbar:
-            self._toolbar.setGeometry(0, 0, w, self._toolbar.height())
-        self._overlay_widget.resize(w, h)
+        if not self._no_qt_overlay:
+            if hasattr(self, '_toolbar') and self._toolbar:
+                self._toolbar.setGeometry(0, 0, w, self._toolbar.height())
+            self._overlay_widget.resize(w, h)
         if self._ctx:
             self._bind_screen_fbo()
             self._ctx.viewport = (0, 0, pw, ph)
 
     def paintGL(self):
+        self._refresh_no_qt_overlay()
         _p0 = time.perf_counter()
         _paint_gap = _p0 - getattr(self, '_last_paint_enter', _p0)
         self._last_paint_enter = _p0
         self._paint_dt = _paint_gap
-        bu = getattr(self, '_before_update', 0)
-        if bu:
-            self._engine.set_profiler_data("update_to_paint_ms", (_p0 - bu) * 1000.0)
-            self._before_update = 0
+        eng = self._engine
+        prof = eng._profiler
+        prof.capture_frame()
+        prof.start("frame")
         now = _p0
         self._fps_accum += now - self._last_paint_time
         self._last_paint_time = now
@@ -461,7 +468,7 @@ class SceneViewport(QOpenGLWidget):
         if not self._ctx or not self._renderer:
             return
         eng = self._engine
-        if not self._vsync_enabled:
+        if not self._in_update:
             dt = now - self._last_frame_time
             self._last_frame_time = now
             self._last_dt = dt
@@ -584,7 +591,9 @@ class SceneViewport(QOpenGLWidget):
                 t2 = time.perf_counter()
                 if in_frame:
                     prof.start("overlay_draw")
-                self._overlay_widget.resize(self.width(), self.height())
+                if not self._no_qt_overlay:
+                    if self._overlay_widget.width() != self.width() or self._overlay_widget.height() != self.height():
+                        self._overlay_widget.resize(self.width(), self.height())
                 if in_frame:
                     prof.stop("overlay_draw")
                 eng.set_profiler_data("overlay_time", (time.perf_counter() - t2) * 1000.0)
@@ -592,84 +601,15 @@ class SceneViewport(QOpenGLWidget):
         except Exception as e:
             traceback.print_exc()
             Logger.error(f"Render error: {e}", e)
+        prof.stop("frame")
         _paint_dur = (time.perf_counter() - _p0) * 1000.0
         eng.set_profiler_data("paint_full_ms", _paint_dur)
         eng.set_profiler_data("paint_gap_ms", _paint_gap * 1000.0)
+        if self._vsync_enabled:
+            self.update()
 
     def update_scene(self):
-        _u0 = time.perf_counter()
-        eng = self._engine
-        eng.set_profiler_data("timer_interval_ms", float(self._update_timer.interval()))
-        eng.set_profiler_data("target_fps", float(self._target_fps))
-        prof = eng._profiler
-        prof.capture_frame()
-        prof.start("frame")
-        now = time.perf_counter()
-        dt = now - self._last_frame_time
-        self._last_frame_time = now
-        self._last_dt = dt
-        prof.start("input_handling")
-        if self._im:
-            self._im.new_frame()
-        if self._focused and self.isActiveWindow():
-            if self._im and self._im.key_just_pressed(KEY_Q):
-                self._gizmo.mode = GizmoMode.NONE
-                send_collab_gizmo_state(self)
-            elif self._im and self._im.key_just_pressed(KEY_W):
-                self._gizmo.mode = GizmoMode.TRANSLATE
-                send_collab_gizmo_state(self)
-            elif self._im and self._im.key_just_pressed(KEY_E):
-                self._gizmo.mode = GizmoMode.ROTATE
-                send_collab_gizmo_state(self)
-            elif self._im and self._im.key_just_pressed(KEY_R):
-                self._gizmo.mode = GizmoMode.SCALE
-                send_collab_gizmo_state(self)
-            elif self._im and self._im.key_just_pressed(KEY_F):
-                if self._selected_entities:
-                    t = self._selected_entities[0].get_component_by_name("Transform")
-                    if t:
-                        self._cam.frame_bounds(t.position)
-            elif self._im and self._im.key_just_pressed(KEY_DELETE):
-                if self._selected_entities and eng.scene:
-                    from editor.viewport.collaboration import is_collab_locked
-                    if not is_collab_locked(self):
-                        from core.commands import DeleteEntityCommand, get_history
-                        for ent in list(self._selected_entities):
-                            cmd = DeleteEntityCommand(eng.scene, ent.id)
-                            get_history().execute(cmd)
-                        self._selected_entities.clear()
-                        self._set_gizmo_entity(None)
-                        self.entity_selected.emit(None)
-                        from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
-        prof.stop("input_handling")
-        prof.start("logic_update")
-        if eng.play_mode:
-            pass
-        else:
-            prof.start("editor_particles")
-            self._update_editor_particles(dt, self._selected_entities)
-            prof.stop("editor_particles")
-        prof.start("collab_camera")
-        send_collab_camera(self)
-        prof.stop("collab_camera")
-        prof.start("cam_update")
-        self._cam.update(dt)
-        prof.stop("cam_update")
-        with eng._scene_lock:
-            self._gizmos_api.update(dt)
-        prof.stop("logic_update")
-        prof.start("render_widget")
-        if self.isVisible():
-            _u1 = time.perf_counter()
-            eng.set_profiler_data("full_frame_ms", (_u1 - self._last_update_gap) * 1000.0)
-            self._last_update_gap = _u1
-            self._before_update = _u1
-            if self._vsync_enabled:
-                self.update()
-        prof.stop("render_widget")
-        self._update_status_labels()
-        eng.set_profiler_data("logic_total_ms", (time.perf_counter() - _u0) * 1000.0)
-        prof.stop("frame")
+        self.update()
 
     def _update_editor_particles(self, dt: float, selected: list = None):
         from core.components import ParticleSystem
@@ -691,6 +631,12 @@ class SceneViewport(QOpenGLWidget):
                 pass
 
     def _update_status_labels(self):
+        if self._no_qt_overlay:
+            return
+        now = time.perf_counter()
+        if now - self._last_status_update < 0.2:
+            return
+        self._last_status_update = now
         pos = self._cam.position
         self._cam_pos_label.setText(f"Cam: {pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}")
 

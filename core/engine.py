@@ -203,6 +203,16 @@ class Engine:
         self._project_settings_path: Optional[str] = None
     @classmethod
     def instance(cls) -> Optional[Engine]: return cls._instance
+
+    _debug_no_qt_overlay: bool = False
+    @property
+    def debug_no_qt_overlay(self) -> bool:
+        """When True, hides all Qt child widgets from SceneViewport
+        (overlay, toolbar, labels) to isolate QOpenGLWidget compositor overhead."""
+        return self._debug_no_qt_overlay
+    @debug_no_qt_overlay.setter
+    def debug_no_qt_overlay(self, value: bool):
+        self._debug_no_qt_overlay = value
     @property
     def plugin_manager(self) -> PluginManager: return self._plugin_manager
     @property

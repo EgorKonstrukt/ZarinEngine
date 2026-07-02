@@ -97,7 +97,7 @@ class ConsolePanel(QDockWidget):
         self._font_family: str = "Consolas"
         self._font_size: int = 9
         self._max_groups: int = 2000
-        self._refresh_interval: int = 100
+        self._refresh_interval: int = 300
         self._groups: list[ConsoleGroup] = []
         self._pending: list[LogEntry] = []
         self._selected_group: ConsoleGroup | None = None

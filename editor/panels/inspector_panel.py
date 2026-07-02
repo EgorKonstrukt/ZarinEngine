@@ -2874,7 +2874,7 @@ class InspectorPanel(QDockWidget):
         self._asset_path: Optional[str] = None
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh_transform)
-        self._refresh_timer.start(100)
+        self._refresh_timer.start(300)
         self._animator_mode = False
         self._animator_state: Optional[AnimatorState] = None
         self._animator_transition: Optional[AnimatorTransition] = None
@@ -2884,7 +2884,7 @@ class InspectorPanel(QDockWidget):
         self._setup_ui()
 
     def load_config(self, config) -> None:
-        refresh_interval = config.get("inspector.refresh_interval", 100)
+        refresh_interval = config.get("inspector.refresh_interval", 300)
         self._refresh_timer.setInterval(refresh_interval)
 
     def _setup_ui(self):

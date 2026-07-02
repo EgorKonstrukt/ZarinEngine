@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import time
 from typing import Optional, TYPE_CHECKING
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QTreeWidget, QTreeWidgetItem, QPushButton,
@@ -317,9 +318,9 @@ class HierarchyPanel(QDockWidget):
         self.setWidget(w)
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._periodic_refresh)
-        self._refresh_timer.start(500)
+        self._refresh_timer.start(2000)
     def load_config(self, config) -> None:
-        refresh_interval = config.get("hierarchy.refresh_interval", 500)
+        refresh_interval = config.get("hierarchy.refresh_interval", 2000)
         self._refresh_timer.setInterval(refresh_interval)
     def _update_scene_header(self):
         if self._scene:
@@ -556,6 +557,10 @@ class HierarchyPanel(QDockWidget):
         if rv != self._last_render_version:
             self._last_render_version = rv
             if self._tree.state() != QTreeWidget.State.EditingState and not self._tree._drag_started and self._tree._press_item is None:
+                now = time.perf_counter()
+                if now - getattr(self, '_last_refresh_time', 0) < 0.5:
+                    return
+                self._last_refresh_time = now
                 self._refresh()
         if self._tree.currentItem() is None and self._selected_entity:
             self._restore_selection(self._selected_entity.id)
