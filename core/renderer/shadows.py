@@ -4,7 +4,7 @@ import numpy as np
 import moderngl
 from typing import Optional, Any
 from core.math3d import Vec3, Mat4
-from core.components.lighting.light import Light, LightType
+from core.components.lighting.light import Light, LightType, LightAreaType
 from core.components.transform import Transform
 from core.components.rendering.mesh_filter import MeshFilter
 from core.components.rendering.mesh_renderer import MeshRenderer
@@ -35,6 +35,17 @@ class ShadowRenderer:
         self._spot_light_vp: np.ndarray = np.eye(4, dtype=np.float32)
         self._has_spot_shadow: bool = False
         self._spot_light_idx: int = -1
+        self._area_shadow_map: Optional[Any] = None
+        self._area_shadow_fbo: Optional[Any] = None
+        self._area_light_vp: np.ndarray = np.eye(4, dtype=np.float32)
+        self._has_area_shadow: bool = False
+        self._area_light_idx: int = -1
+        self._area_light_size: float = 1.0
+        self._area_light_pos: Vec3 = Vec3.zero()
+        self._area_light_range: float = 10.0
+        self._area_light_near: float = 0.1
+        self._area_light_far: float = 10.0
+        self._area_light_fov_scale: float = 1.0
         self._create_csm_resources()
 
     def _create_csm_resources(self):
@@ -76,6 +87,14 @@ class ShadowRenderer:
         tex.repeat_y = False
         self._spot_shadow_map = tex
         self._spot_shadow_fbo = self._ctx.framebuffer(depth_attachment=self._spot_shadow_map)
+
+    def _create_area_shadow_resources(self):
+        res = self._shadow_resolution
+        tex = self._ctx.depth_texture((res, res))
+        tex.repeat_x = False
+        tex.repeat_y = False
+        self._area_shadow_map = tex
+        self._area_shadow_fbo = self._ctx.framebuffer(depth_attachment=self._area_shadow_map)
 
     def _build_renderable_shadow(self, scene) -> list[tuple[MeshData, Mat4]]:
         result = []
@@ -167,6 +186,17 @@ class ShadowRenderer:
             self._render_spot_shadow(spot_light, spot_transform, renderable_shadow, lights)
         else:
             self._has_spot_shadow = False
+        area_light = None
+        area_transform = None
+        for l, lt in lights:
+            if l.light_type == LightType.AREA and l.cast_shadows:
+                area_light = l
+                area_transform = lt
+                break
+        if area_light:
+            self._render_area_shadow(area_light, area_transform, renderable_shadow, lights)
+        else:
+            self._has_area_shadow = False
         self._get_mesh = None
 
     def _get_frustum_corners(self, near_z: float, far_z: float, cam_fov: float, aspect: float, inv_view: np.ndarray) -> list[np.ndarray]:
@@ -288,6 +318,36 @@ class ShadowRenderer:
         )
         self.render_geometry(vp, self._spot_shadow_fbo, renderable_shadow, resolution=self._shadow_resolution)
 
+    def _render_area_shadow(self, area_light, area_transform, renderable_shadow, lights):
+        if not self._area_shadow_map:
+            self._create_area_shadow_resources()
+        light_pos = area_transform.position
+        light_dir = area_transform.forward.normalized()
+        light_up = area_transform.up.normalized()
+        if abs(light_dir.dot(light_up)) > 0.999:
+            light_up = Vec3(0.0, 0.0, 1.0)
+        light_range = max(area_light.range, 0.1)
+        near_plane = 0.1
+        far_plane = light_range
+        self._area_light_near = near_plane
+        self._area_light_far = far_plane
+        fov = max(90.0, min(150.0, math.degrees(2.0 * math.atan2(max(area_light.area_width, area_light.area_height) * 0.5, near_plane))))
+        fov_rad = math.radians(fov)
+        tan_half_fov = math.tan(fov_rad * 0.5)
+        self._area_light_fov_scale = float(1.0 / (2.0 * tan_half_fov))
+        view = Mat4.look_at(light_pos, light_pos + light_dir, light_up)
+        proj = Mat4.perspective(fov, 1.0, near_plane, far_plane)
+        vp = view._d @ proj._d
+        self._area_light_vp = vp
+        self._has_area_shadow = True
+        self._area_light_pos = light_pos
+        self._area_light_range = light_range
+        self._area_light_size = max(area_light.area_width, area_light.area_height) * 0.5
+        self._area_light_idx = next(
+            (i for i, (l, lt) in enumerate(lights) if l is area_light and lt is area_transform), -1
+        )
+        self.render_geometry(vp, self._area_shadow_fbo, renderable_shadow, resolution=self._shadow_resolution)
+
     def set_uniforms(self, prog):
         has_csm = self._cascade_splits[2] > 0.0
         if has_csm and "u_cascade_count" in prog:
@@ -343,6 +403,26 @@ class ShadowRenderer:
         else:
             if "u_spot_shadow_count" in prog:
                 prog["u_spot_shadow_count"].value = 0
+        if self._has_area_shadow and "u_area_shadow_light_index" in prog:
+            tex_unit = 15
+            self._area_shadow_map.use(tex_unit)
+            if "u_area_shadow_map" in prog:
+                prog["u_area_shadow_map"].value = tex_unit
+            if "u_area_light_vp" in prog:
+                prog["u_area_light_vp"].write(self._area_light_vp.astype(np.float32).tobytes())
+            if "u_area_light_size" in prog:
+                prog["u_area_light_size"].value = float(self._area_light_size)
+            if "u_area_light_fov_scale" in prog:
+                prog["u_area_light_fov_scale"].value = float(self._area_light_fov_scale)
+            if "u_area_light_near_far" in prog:
+                prog["u_area_light_near_far"].write(
+                    np.array([self._area_light_near, self._area_light_far], dtype=np.float32).tobytes()
+                )
+            if "u_area_shadow_light_index" in prog:
+                prog["u_area_shadow_light_index"].value = self._area_light_idx if self._area_light_idx >= 0 else -1
+        else:
+            if "u_area_shadow_light_index" in prog:
+                prog["u_area_shadow_light_index"].value = -1
 
     def release(self):
         for sm in self._shadow_maps:
@@ -373,5 +453,15 @@ class ShadowRenderer:
         if self._spot_shadow_fbo:
             try:
                 self._spot_shadow_fbo.release()
+            except Exception:
+                pass
+        if self._area_shadow_map:
+            try:
+                self._area_shadow_map.release()
+            except Exception:
+                pass
+        if self._area_shadow_fbo:
+            try:
+                self._area_shadow_fbo.release()
             except Exception:
                 pass
