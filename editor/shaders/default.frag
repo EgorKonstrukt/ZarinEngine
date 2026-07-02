@@ -1,6 +1,7 @@
 #version 460 core
 #define MAX_LIGHTS 8
 #define CASCADE_COUNT 3
+#define PI 3.14159265359
 in vec3 v_world_pos;
 in vec3 v_normal;
 in vec2 v_uv;
@@ -15,6 +16,11 @@ struct Light {
     float range;
     float spot_angle;
     float spot_inner_angle;
+    vec3 right;
+    vec3 up;
+    float area_width;
+    float area_height;
+    int area_type;
 };
 uniform vec4 u_albedo_color;
 uniform float u_metallic;
@@ -128,6 +134,77 @@ float compute_spot_shadow() {
     if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
     return sample_shadow(u_spot_shadow_map, proj_coords);
 }
+float projected_solid_angle(vec3 verts[4], vec3 n) {
+    vec3 clipped[8];
+    int cnt = 0;
+    for (int i = 0; i < 4; i++) {
+        vec3 a = verts[i];
+        vec3 b = verts[(i + 1) % 4];
+        float da = dot(a, n);
+        float db = dot(b, n);
+        if (da > 0.0) {
+            clipped[cnt] = a;
+            cnt++;
+        }
+        if ((da > 0.0) != (db > 0.0)) {
+            float t = da / max(da - db, 1e-8);
+            vec3 inter = normalize(a + t * (b - a));
+            clipped[cnt] = inter;
+            cnt++;
+        }
+    }
+    if (cnt < 3) return 0.0;
+    float sum = 0.0;
+    for (int i = 0; i < cnt; i++) {
+        vec3 a = clipped[i];
+        vec3 b = clipped[(i + 1) % cnt];
+        float ang = acos(clamp(dot(a, b), -1.0, 1.0));
+        vec3 e = normalize(cross(a, b));
+        sum += ang * max(0.0, dot(e, n));
+    }
+    return sum * 0.5;
+}
+vec3 calc_area_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo) {
+    vec3 right = light.right;
+    vec3 up = light.up;
+    float hw = light.area_width * 0.5;
+    float hh = light.area_height * 0.5;
+    vec3 c = light.position;
+    vec3 verts[4];
+    verts[0] = c - right * hw - up * hh;
+    verts[1] = c + right * hw - up * hh;
+    verts[2] = c + right * hw + up * hh;
+    verts[3] = c - right * hw + up * hh;
+    vec3 tangent = normalize(cross(normal, abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+    vec3 bitangent = cross(normal, tangent);
+    vec3 ts_verts[4];
+    for (int i = 0; i < 4; i++) {
+        vec3 d = verts[i] - v_world_pos;
+        ts_verts[i] = normalize(vec3(dot(d, tangent), dot(d, bitangent), dot(d, normal)));
+    }
+    float ff = projected_solid_angle(ts_verts, vec3(0.0, 0.0, 1.0));
+    vec3 diffuse = (ff / PI) * albedo * light.color * light.intensity;
+    vec3 specular = vec3(0.0);
+    vec3 ref = reflect(-view_dir, normal);
+    float denom = dot(ref, -light.direction);
+    if (denom > 0.0) {
+        float t = dot(c - v_world_pos, -light.direction) / denom;
+        vec3 hit = v_world_pos + ref * t;
+        vec3 local = hit - c;
+        float u = clamp(dot(local, right) / hw, -1.0, 1.0);
+        float v = clamp(dot(local, up) / hh, -1.0, 1.0);
+        vec3 rep = c + right * u * hw + up * v * hh;
+        vec3 to_rep = rep - v_world_pos;
+        float d = length(to_rep);
+        vec3 ld = to_rep / d;
+        vec3 h = normalize(ld + view_dir);
+        float sp = pow(max(dot(normal, h), 0.0), max(1.0, u_smoothness * 128.0));
+        float att = clamp(1.0 - d / light.range, 0.0, 1.0);
+        att *= att;
+        specular = sp * light.color * light.intensity * u_metallic * att;
+    }
+    return diffuse + specular;
+}
 vec3 calc_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo, float shadow_factor) {
     vec3 light_dir;
     float attenuation = 1.0;
@@ -181,7 +258,11 @@ void main() {
         if (i == u_shadow_light_index) sf = min(sf, shadow_factor);
         if (i == u_point_shadow_light_index) sf = min(sf, point_shadow_factor);
         if (i == u_spot_shadow_light_index) sf = min(sf, spot_shadow_factor);
-        result += calc_light(u_lights[i], normal, view_dir, albedo, sf);
+        if (u_lights[i].type == 3) {
+            result += calc_area_light(u_lights[i], normal, view_dir, albedo);
+        } else {
+            result += calc_light(u_lights[i], normal, view_dir, albedo, sf);
+        }
     }
     result += u_emission;
     frag_color = vec4(result, u_albedo_color.a);

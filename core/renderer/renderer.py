@@ -9,7 +9,7 @@ import numpy as np
 import moderngl
 from typing import Optional, Any, Callable
 
-from core.components import LightType
+from core.components import LightType, LightAreaType
 from core.components.lighting import Light
 from core.engine import Engine
 from core.logger import Logger
@@ -143,6 +143,11 @@ class Renderer:
                 "range": f"u_lights[{i}].range",
                 "spot_angle": f"u_lights[{i}].spot_angle",
                 "spot_inner_angle": f"u_lights[{i}].spot_inner_angle",
+                "right": f"u_lights[{i}].right",
+                "up": f"u_lights[{i}].up",
+                "area_width": f"u_lights[{i}].area_width",
+                "area_height": f"u_lights[{i}].area_height",
+                "area_type": f"u_lights[{i}].area_type",
             }
             for i in range(self._max_lights)
         ]
@@ -442,7 +447,14 @@ void main() {
             prog["u_shadow_light_index"].value = shadow_light_idx if shadow_light_idx >= 0 else -1
         for i, (l, lt) in enumerate(lights[:self._max_lights]):
             unames = self._light_uniforms[i]
-            ltype_int = 0 if l.light_type == LightType.DIRECTIONAL else (1 if l.light_type == LightType.POINT else 2)
+            if l.light_type == LightType.DIRECTIONAL:
+                ltype_int = 0
+            elif l.light_type == LightType.POINT:
+                ltype_int = 1
+            elif l.light_type == LightType.SPOT:
+                ltype_int = 2
+            else:
+                ltype_int = 3
             if unames["type"] in prog:
                 prog[unames["type"]].value = ltype_int
             pos = lt.position
@@ -466,6 +478,18 @@ void main() {
                 prog[unames["spot_angle"]].value = float(l.spot_angle)
             if unames["spot_inner_angle"] in prog:
                 prog[unames["spot_inner_angle"]].value = float(l.spot_inner_angle)
+            if unames["right"] in prog:
+                rv = lt.right
+                prog[unames["right"]].write(np.array([rv.x, rv.y, rv.z], dtype=np.float32).tobytes())
+            if unames["up"] in prog:
+                uv = lt.up
+                prog[unames["up"]].write(np.array([uv.x, uv.y, uv.z], dtype=np.float32).tobytes())
+            if unames["area_width"] in prog:
+                prog[unames["area_width"]].value = float(l.area_width)
+            if unames["area_height"] in prog:
+                prog[unames["area_height"]].value = float(l.area_height)
+            if unames["area_type"] in prog:
+                prog[unames["area_type"]].value = 0 if l.area_type == LightAreaType.RECT else 1
         if not disable_shadows:
             self._shadows.set_uniforms(prog)
 

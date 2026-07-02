@@ -1,3 +1,3 @@
-from core.components.lighting.light import Light, LightType
+from core.components.lighting.light import Light, LightType, LightAreaType
 
-__all__ = ["Light", "LightType"]
+__all__ = ["Light", "LightType", "LightAreaType"]

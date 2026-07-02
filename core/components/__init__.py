@@ -19,9 +19,9 @@ for _module_info in pkgutil.iter_modules([_package_dir]):
 
 from core.ecs import ComponentRegistry
 from core.components.rendering.camera import CameraProjection
-from core.components.lighting.light import LightType
+from core.components.lighting.light import LightType, LightAreaType
 
-__all__ = ["ComponentRegistry", "CameraProjection", "LightType"]
+__all__ = ["ComponentRegistry", "CameraProjection", "LightType", "LightAreaType"]
 for _name, _cls in ComponentRegistry.all().items():
     globals()[_name] = _cls
     __all__.append(_name)

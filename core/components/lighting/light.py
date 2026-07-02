@@ -8,6 +8,10 @@ class LightType(Enum):
     DIRECTIONAL = "directional"
     POINT = "point"
     SPOT = "spot"
+    AREA = "area"
+class LightAreaType(Enum):
+    RECT = "rect"
+    DISK = "disk"
 @ComponentRegistry.register
 class Light(Component):
     _icon = "Light.png"
@@ -25,6 +29,9 @@ class Light(Component):
             InspectorField("range", "Range", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("spot_angle", "Spot Angle", FieldType.FLOAT, min_val=1.0, max_val=179.0, step=1.0, decimals=1),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
+            InspectorField("area_type", "Area Type", FieldType.ENUM, enum_class=LightAreaType),
+            InspectorField("area_width", "Area Width", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.1, decimals=2),
+            InspectorField("area_height", "Area Height", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.1, decimals=2),
         ]
 
     def __init__(self):
@@ -37,6 +44,9 @@ class Light(Component):
         self.spot_angle: float = 30.0
         self.spot_inner_angle: float = 20.0
         self.cast_shadows: bool = True
+        self.area_type: LightAreaType = LightAreaType.RECT
+        self.area_width: float = 1.0
+        self.area_height: float = 1.0
 
     def gizmo(self):
         tr = self.transform
@@ -106,6 +116,26 @@ class Light(Component):
                 bp = base_center + (right * math.cos(a) + up * math.sin(a)) * cone_r
                 lines.append((pos, bp, col))
             lines.append((pos, base_center, col))
+        elif self.light_type == LightType.AREA:
+            hw = self.area_width * 0.5
+            hh = self.area_height * 0.5
+            corners = [
+                pos - right * hw - up * hh,
+                pos + right * hw - up * hh,
+                pos + right * hw + up * hh,
+                pos - right * hw + up * hh,
+            ]
+            for i in range(4):
+                lines.append((corners[i], corners[(i + 1) % 4], col))
+            mid_r = pos + fwd * 0.1
+            lines.append((pos, mid_r, col))
+            if self.area_type == LightAreaType.DISK:
+                disk_pts = []
+                for i in range(segments):
+                    a = 2.0 * math.pi * i / segments
+                    disk_pts.append(pos + (right * math.cos(a) + up * math.sin(a)) * hw)
+                for i in range(segments):
+                    lines.append((disk_pts[i], disk_pts[(i + 1) % segments], [col[0], col[1], col[2], 0.3]))
         if not lines:
             return []
         return [GizmoPrimitive.from_lines(lines)]
@@ -135,6 +165,8 @@ class Light(Component):
             "spot_angle": self.spot_angle, "spot_inner_angle": self.spot_inner_angle,
             "cast_shadows": self.cast_shadows,
             "procedural_sky_lighting": self.procedural_sky_lighting,
+            "area_type": self.area_type.value, "area_width": self.area_width,
+            "area_height": self.area_height,
         })
         return d
     @classmethod
@@ -149,4 +181,7 @@ class Light(Component):
         l.spot_angle = data.get("spot_angle", 30.0)
         l.spot_inner_angle = data.get("spot_inner_angle", 20.0)
         l.cast_shadows = data.get("cast_shadows", True)
+        l.area_type = LightAreaType(data.get("area_type", "rect"))
+        l.area_width = data.get("area_width", 1.0)
+        l.area_height = data.get("area_height", 1.0)
         return l
