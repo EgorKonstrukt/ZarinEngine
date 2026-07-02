@@ -307,7 +307,3 @@ python build_nuitka.py
 Uses Nuitka to compile the engine into a standalone executable. Configuration in `build_profiles.json`.
 
 ---
-
-## License
-
-MIT — do whatever you want. Contributions, forks, and commercial use are welcome.
