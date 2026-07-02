@@ -21,6 +21,8 @@ struct Light {
     float area_width;
     float area_height;
     int area_type;
+    int area_samples;
+    float area_double_sided;
 };
 uniform vec4 u_albedo_color;
 uniform float u_metallic;
@@ -65,6 +67,7 @@ uniform float u_area_light_size;
 uniform float u_area_light_fov_scale;
 uniform vec2 u_area_light_near_far;
 uniform int u_area_shadow_light_index;
+uniform float u_area_shadow_bias;
 float hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
@@ -163,7 +166,7 @@ float area_pcss(sampler2D shadow_map, vec3 proj_coords, float z_view) {
             vec2 rot = vec2(off.x * ca - off.y * sa, off.x * sa + off.y * ca);
             vec2 uv = proj_coords.xy + rot * search_step;
             float d = texture(shadow_map, uv).r;
-            if (d < z_ndc - u_shadow_bias) {
+            if (d < z_ndc - u_area_shadow_bias) {
                 blocker_sum += d;
                 blocker_count += 1.0;
             }
@@ -189,7 +192,7 @@ float area_pcss(sampler2D shadow_map, vec3 proj_coords, float z_view) {
             vec2 rot = vec2(off.x * ca - off.y * sa, off.x * sa + off.y * ca);
             vec2 uv = proj_coords.xy + rot * pcf_step;
             float d = texture(shadow_map, uv).r;
-            result += (z_ndc - u_shadow_bias > d ? 1.0 : 0.0) * w;
+            result += (z_ndc - u_area_shadow_bias > d ? 1.0 : 0.0) * w;
             wsum += w;
         }
     }
@@ -214,11 +217,11 @@ vec3 calc_area_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo) {
     float hw = light.area_width * 0.5;
     float hh = light.area_height * 0.5;
     vec3 c = light.position;
-    const int S = 6;
+    int S = max(1, light.area_samples);
+    bool ds = light.area_double_sided > 0.5;
     float inv_n = 1.0 / float(S * S);
     vec3 diff = vec3(0.0);
     vec3 spec = vec3(0.0);
-    vec3 ref = reflect(-view_dir, normal);
     float r1 = 1.0 / float(S);
     float r2 = 1.0 / float(S);
     for (int i = 0; i < S; i++) {
@@ -229,8 +232,13 @@ vec3 calc_area_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo) {
             vec3 to_sp = sp - v_world_pos;
             float dist = length(to_sp);
             vec3 ld = to_sp / dist;
-            float NdL = max(dot(normal, ld), 0.0);
-            if (NdL <= 0.0) continue;
+            float NdL = dot(normal, ld);
+            if (!ds) {
+                NdL = max(NdL, 0.0);
+                if (NdL <= 0.0) continue;
+            } else {
+                NdL = abs(NdL);
+            }
             float att = clamp(1.0 - dist / light.range, 0.0, 1.0);
             att *= att;
             vec3 contrib = light.color * light.intensity * att * inv_n;

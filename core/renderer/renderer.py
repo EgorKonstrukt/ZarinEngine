@@ -148,6 +148,8 @@ class Renderer:
                 "area_width": f"u_lights[{i}].area_width",
                 "area_height": f"u_lights[{i}].area_height",
                 "area_type": f"u_lights[{i}].area_type",
+                "area_samples": f"u_lights[{i}].area_samples",
+                "area_double_sided": f"u_lights[{i}].area_double_sided",
             }
             for i in range(self._max_lights)
         ]
@@ -490,6 +492,10 @@ void main() {
                 prog[unames["area_height"]].value = float(l.area_height)
             if unames["area_type"] in prog:
                 prog[unames["area_type"]].value = 0 if l.area_type == LightAreaType.RECT else 1
+            if unames["area_samples"] in prog:
+                prog[unames["area_samples"]].value = int(l.area_samples)
+            if unames["area_double_sided"] in prog:
+                prog[unames["area_double_sided"]].value = 1.0 if l.area_double_sided else 0.0
         if not disable_shadows:
             self._shadows.set_uniforms(prog)
 

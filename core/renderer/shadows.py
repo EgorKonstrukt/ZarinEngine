@@ -46,6 +46,7 @@ class ShadowRenderer:
         self._area_light_near: float = 0.1
         self._area_light_far: float = 10.0
         self._area_light_fov_scale: float = 1.0
+        self._area_shadow_bias: float = 0.005
         self._create_csm_resources()
 
     def _create_csm_resources(self):
@@ -335,6 +336,7 @@ class ShadowRenderer:
         fov_rad = math.radians(fov)
         tan_half_fov = math.tan(fov_rad * 0.5)
         self._area_light_fov_scale = float(1.0 / (2.0 * tan_half_fov))
+        self._area_shadow_bias = float(area_light.area_shadow_bias)
         view = Mat4.look_at(light_pos, light_pos + light_dir, light_up)
         proj = Mat4.perspective(fov, 1.0, near_plane, far_plane)
         vp = view._d @ proj._d
@@ -397,7 +399,7 @@ class ShadowRenderer:
             if "u_spot_shadow_map" in prog:
                 prog["u_spot_shadow_map"].value = tex_unit
             if "u_spot_light_vp" in prog:
-                prog["u_spot_light_vp"].write(self._spot_light_vp.astype(np.float32).tobytes())
+                prog["u_spot_light_vp"].write(self._spot_light_vp.tobytes())
             if "u_spot_shadow_light_index" in prog:
                 prog["u_spot_shadow_light_index"].value = self._spot_light_idx if self._spot_light_idx >= 0 else -1
         else:
@@ -409,7 +411,7 @@ class ShadowRenderer:
             if "u_area_shadow_map" in prog:
                 prog["u_area_shadow_map"].value = tex_unit
             if "u_area_light_vp" in prog:
-                prog["u_area_light_vp"].write(self._area_light_vp.astype(np.float32).tobytes())
+                prog["u_area_light_vp"].write(self._area_light_vp.tobytes())
             if "u_area_light_size" in prog:
                 prog["u_area_light_size"].value = float(self._area_light_size)
             if "u_area_light_fov_scale" in prog:
@@ -420,6 +422,8 @@ class ShadowRenderer:
                 )
             if "u_area_shadow_light_index" in prog:
                 prog["u_area_shadow_light_index"].value = self._area_light_idx if self._area_light_idx >= 0 else -1
+            if "u_area_shadow_bias" in prog:
+                prog["u_area_shadow_bias"].value = float(self._area_shadow_bias)
         else:
             if "u_area_shadow_light_index" in prog:
                 prog["u_area_shadow_light_index"].value = -1

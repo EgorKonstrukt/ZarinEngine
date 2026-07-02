@@ -32,6 +32,9 @@ class Light(Component):
             InspectorField("area_type", "Area Type", FieldType.ENUM, enum_class=LightAreaType),
             InspectorField("area_width", "Area Width", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.1, decimals=2),
             InspectorField("area_height", "Area Height", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.1, decimals=2),
+            InspectorField("area_double_sided", "Double Sided", FieldType.BOOL),
+            InspectorField("area_samples", "Samples", FieldType.INT, min_val=1, max_val=64, step=1),
+            InspectorField("area_shadow_bias", "Shadow Bias", FieldType.FLOAT, min_val=0.0, max_val=0.1, step=0.001, decimals=4),
         ]
 
     def __init__(self):
@@ -47,6 +50,9 @@ class Light(Component):
         self.area_type: LightAreaType = LightAreaType.RECT
         self.area_width: float = 1.0
         self.area_height: float = 1.0
+        self.area_double_sided: bool = False
+        self.area_samples: int = 6
+        self.area_shadow_bias: float = 0.005
 
     def gizmo(self):
         tr = self.transform
@@ -136,6 +142,16 @@ class Light(Component):
                     disk_pts.append(pos + (right * math.cos(a) + up * math.sin(a)) * hw)
                 for i in range(segments):
                     lines.append((disk_pts[i], disk_pts[(i + 1) % segments], [col[0], col[1], col[2], 0.3]))
+            if self.area_double_sided:
+                back_corners = [
+                    pos - fwd * 0.02 - right * hw - up * hh,
+                    pos - fwd * 0.02 + right * hw - up * hh,
+                    pos - fwd * 0.02 + right * hw + up * hh,
+                    pos - fwd * 0.02 - right * hw + up * hh,
+                ]
+                dim_col = [col[0] * 0.4, col[1] * 0.4, col[2] * 0.4, col[3] * 0.5]
+                for i in range(4):
+                    lines.append((back_corners[i], back_corners[(i + 1) % 4], dim_col))
         if not lines:
             return []
         return [GizmoPrimitive.from_lines(lines)]
@@ -166,7 +182,8 @@ class Light(Component):
             "cast_shadows": self.cast_shadows,
             "procedural_sky_lighting": self.procedural_sky_lighting,
             "area_type": self.area_type.value, "area_width": self.area_width,
-            "area_height": self.area_height,
+            "area_height": self.area_height, "area_double_sided": self.area_double_sided,
+            "area_samples": self.area_samples, "area_shadow_bias": self.area_shadow_bias,
         })
         return d
     @classmethod
@@ -184,4 +201,7 @@ class Light(Component):
         l.area_type = LightAreaType(data.get("area_type", "rect"))
         l.area_width = data.get("area_width", 1.0)
         l.area_height = data.get("area_height", 1.0)
+        l.area_double_sided = data.get("area_double_sided", False)
+        l.area_samples = data.get("area_samples", 6)
+        l.area_shadow_bias = data.get("area_shadow_bias", 0.005)
         return l

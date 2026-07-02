@@ -95,6 +95,13 @@ Shader "Zarin/PBR"
                 float range;
                 float spot_angle;
                 float spot_inner_angle;
+                vec3 right;
+                vec3 up;
+                float area_width;
+                float area_height;
+                int area_type;
+                int area_samples;
+                float area_double_sided;
             };
 
             uniform vec4 _BaseColor;
@@ -158,6 +165,14 @@ Shader "Zarin/PBR"
             uniform mat4 u_spot_light_vp;
             uniform int u_spot_shadow_count;
             uniform int u_spot_shadow_light_index;
+
+            uniform sampler2D u_area_shadow_map;
+            uniform mat4 u_area_light_vp;
+            uniform float u_area_light_size;
+            uniform float u_area_light_fov_scale;
+            uniform vec2 u_area_light_near_far;
+            uniform int u_area_shadow_light_index;
+            uniform float u_area_shadow_bias;
 
             uniform samplerCube u_irradiance_map;
             uniform int u_irradiance_map_Active;
@@ -262,6 +277,77 @@ Shader "Zarin/PBR"
                 proj_coords = proj_coords * 0.5 + 0.5;
                 if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
                 return sample_shadow_improved(u_spot_shadow_map, proj_coords);
+            }
+
+            float hash2(vec2 p) {
+                vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+                p3 += dot(p3, p3.yzx + 33.33);
+                return fract((p3.x + p3.y) * p3.z);
+            }
+
+            float area_pcss_improved(sampler2D shadow_map, vec3 proj_coords, float z_view) {
+                vec2 texel_size = 1.0 / vec2(textureSize(shadow_map, 0));
+                float z_ndc = proj_coords.z;
+                float near_z = u_area_light_near_far.x;
+                float far_z = u_area_light_near_far.y;
+                float a = hash2(gl_FragCoord.xy) * 6.2831853;
+                float ca = cos(a);
+                float sa = sin(a);
+                float proj_light_size = u_area_light_size * u_area_light_fov_scale / max(z_view, 0.001);
+                float search_step = max(proj_light_size * 0.25, texel_size.x * 2.0);
+                float blocker_sum = 0.0;
+                float blocker_count = 0.0;
+                for (int x = -2; x <= 2; x++) {
+                    for (int y = -2; y <= 2; y++) {
+                        vec2 off = vec2(float(x), float(y));
+                        vec2 rot = vec2(off.x * ca - off.y * sa, off.x * sa + off.y * ca);
+                        vec2 uv = proj_coords.xy + rot * search_step;
+                        float d = texture(shadow_map, uv).r;
+                        if (d < z_ndc - u_area_shadow_bias) {
+                            blocker_sum += d;
+                            blocker_count += 1.0;
+                        }
+                    }
+                }
+                if (blocker_count < 1.0) return 1.0;
+                float avg_blocker_ndc = blocker_sum / blocker_count;
+                float avg_blocker_z = 2.0 * near_z * far_z / max(far_z + near_z - (avg_blocker_ndc * 2.0 - 1.0) * (far_z - near_z), 0.001);
+                float penumbra_world = u_area_light_size * (z_view - avg_blocker_z) / max(avg_blocker_z, 0.001);
+                float proj_penumbra = penumbra_world * u_area_light_fov_scale / max(z_view, 0.001);
+                proj_penumbra = max(proj_penumbra, texel_size.x);
+                float filter_texels = proj_penumbra / texel_size.x;
+                int k = clamp(int(filter_texels * 0.3), 2, 9);
+                float pcf_step = proj_penumbra / max(float(k + k), 1.0);
+                float result = 0.0;
+                float wsum = 0.0;
+                for (int x = -k; x <= k; x++) {
+                    for (int y = -k; y <= k; y++) {
+                        float w = 1.0;
+                        if (x == 0) w += 1.0;
+                        if (y == 0) w += 1.0;
+                        vec2 off = vec2(float(x), float(y));
+                        vec2 rot = vec2(off.x * ca - off.y * sa, off.x * sa + off.y * ca);
+                        vec2 uv = proj_coords.xy + rot * pcf_step;
+                        float d = texture(shadow_map, uv).r;
+                        result += (z_ndc - u_area_shadow_bias > d ? 1.0 : 0.0) * w;
+                        wsum += w;
+                    }
+                }
+                float shadow = 1.0 - result / max(wsum, 1.0);
+                return smoothstep(0.05, 0.65, shadow);
+            }
+
+            float compute_area_shadow_improved() {
+                if (u_area_shadow_light_index < 0) return 1.0;
+                vec4 light_space_pos = u_area_light_vp * vec4(v_world_pos, 1.0);
+                vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
+                proj_coords = proj_coords * 0.5 + 0.5;
+                if (any(lessThan(proj_coords, vec3(0.0))) || any(greaterThan(proj_coords, vec3(1.0)))) return 1.0;
+                float z_ndc = proj_coords.z * 2.0 - 1.0;
+                float near_z = u_area_light_near_far.x;
+                float far_z = u_area_light_near_far.y;
+                float z_view = 2.0 * near_z * far_z / max(far_z + near_z - z_ndc * (far_z - near_z), 0.001);
+                return area_pcss_improved(u_area_shadow_map, proj_coords, z_view);
             }
 
             vec3 fresnel_schlick(float cos_theta, vec3 F0) {
@@ -439,6 +525,66 @@ Shader "Zarin/PBR"
                 return numerator / denominator * clear_coat * 0.25;
             }
 
+            vec3 calc_area_light_pbr(Light light, vec3 N, vec3 V, vec3 albedo, float roughness, float metallic, vec3 F0, vec3 T, vec3 B, float anisotropy, vec3 subsurface_color, float subsurface_amount) {
+                vec3 right = light.right;
+                vec3 up = light.up;
+                float hw = light.area_width * 0.5;
+                float hh = light.area_height * 0.5;
+                vec3 c = light.position;
+                int S = max(1, light.area_samples);
+                bool ds = light.area_double_sided > 0.5;
+                float inv_n = 1.0 / float(S * S);
+                vec3 diff = vec3(0.0);
+                vec3 spec = vec3(0.0);
+                float r1 = 1.0 / float(S);
+                float r2 = 1.0 / float(S);
+                for (int i = 0; i < S; i++) {
+                    for (int j = 0; j < S; j++) {
+                        float u = (float(i) + 0.5) * r2 * 2.0 - 1.0;
+                        float v = (float(j) + 0.5) * r1 * 2.0 - 1.0;
+                        vec3 sp = c + right * u * hw + up * v * hh;
+                        vec3 to_sp = sp - v_world_pos;
+                        float dist = length(to_sp);
+                        vec3 ld = to_sp / dist;
+                        float NdL = dot(N, ld);
+                        if (!ds) {
+                            NdL = max(NdL, 0.0);
+                            if (NdL <= 0.0) continue;
+                        } else {
+                            NdL = abs(NdL);
+                        }
+                        float att = clamp(1.0 - dist / light.range, 0.0, 1.0);
+                        att *= att;
+                        vec3 radiance = light.color * light.intensity * att * inv_n;
+                        vec3 H = normalize(V + ld);
+                        vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
+                        float NDF;
+                        float G;
+                        if (abs(anisotropy) > EPS) {
+                            float ax = max(roughness * roughness * (1.0 + anisotropy), 0.001);
+                            float ay = max(roughness * roughness * (1.0 - anisotropy), 0.001);
+                            NDF = distribution_ggx_aniso(N, H, T, B, ax, ay);
+                            G = geometry_smith_aniso(N, V, ld, T, B, ax, ay);
+                        } else {
+                            NDF = distribution_ggx(N, H, roughness);
+                            G = geometry_smith(N, V, ld, roughness);
+                        }
+                        vec3 kS = F;
+                        vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
+                        vec3 specular = NDF * G * F / max(4.0 * max(dot(N, V), 0.0) * max(dot(N, ld), 0.0) + 0.0001, 0.0001);
+                        vec3 diffuse = kD * albedo / PI;
+                        vec3 lo = (diffuse + specular) * radiance * NdL;
+                        if (subsurface_amount > EPS) {
+                            float NdotL_ss = max(dot(N, -ld), 0.0);
+                            float ss = pow(NdotL_ss, 3.0) * subsurface_amount;
+                            lo += subsurface_color * radiance * ss * 0.5;
+                        }
+                        diff += lo;
+                    }
+                }
+                return diff;
+            }
+
             vec3 ibl_contribution(vec3 N, vec3 V, vec3 albedo, float roughness, float metallic, vec3 F0, float occlusion, vec3 T, vec3 B, float anisotropy, float clear_coat, float cc_roughness) {
                 vec3 irradiance = u_ambient * albedo;
                 vec3 specular_ibl = vec3(0.0);
@@ -550,12 +696,18 @@ Shader "Zarin/PBR"
                 float shadow_factor = compute_shadow_improved();
                 float point_shadow_factor = compute_point_shadow_improved();
                 float spot_shadow_factor = compute_spot_shadow_improved();
+                float area_shadow_factor = compute_area_shadow_improved();
                 for (int i = 0; i < u_light_count && i < MAX_LIGHTS; i++) {
                     float sf = 1.0;
                     if (i == u_shadow_light_index) sf = min(sf, shadow_factor);
                     if (i == u_point_shadow_light_index) sf = min(sf, point_shadow_factor);
                     if (i == u_spot_shadow_light_index) sf = min(sf, spot_shadow_factor);
-                    result += calc_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, sf, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount);
+                    if (i == u_area_shadow_light_index) sf = min(sf, area_shadow_factor);
+                    if (u_lights[i].type == 3) {
+                        result += calc_area_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount) * sf;
+                    } else {
+                        result += calc_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, sf, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount);
+                    }
                 }
                 if (_ClearCoat > EPS) {
                     float cc_spec = 0.0;

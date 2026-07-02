@@ -9,7 +9,11 @@
 
 It is not a wrapper around Unreal or Unity. It is its own thing, written from scratch, and every piece of it is readable, modifiable, and debuggable in Python.
 
-- **License**: MIT
+## License
+
+This project is licensed under the Mozilla Public License 2.0. See the [LICENSE](LICENSE.md) file for details.
+
+Copyright (c) 2026 Zarrakun
 
 ![zarin_screenshot.png](zarin_screenshot.png)
 ---
