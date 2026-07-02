@@ -42,7 +42,7 @@ from editor.viewport.collaboration import (
 
 if TYPE_CHECKING:
     from core.ecs import Entity
-    from editor.renderer import Renderer
+    from core.renderer.renderer import Renderer
 
 
 class SceneViewport(QOpenGLWidget):
@@ -397,7 +397,7 @@ class SceneViewport(QOpenGLWidget):
                         func(0)
                 except Exception:
                     pass
-            from editor.renderer import Renderer
+            from core.renderer.renderer import Renderer
             self._renderer = Renderer(self._ctx)
             self._renderer.initialize()
             self._renderer.request_render(lambda: self.update())

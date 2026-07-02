@@ -52,7 +52,7 @@ class PlayViewport(QOpenGLWidget):
         try:
             self._ctx = moderngl.create_context(standalone=False)
             self._bind_screen_fbo()
-            from editor.renderer import Renderer
+            from core.renderer.renderer import Renderer
             self._renderer = Renderer(self._ctx)
             self._renderer.initialize()
         except Exception as e:

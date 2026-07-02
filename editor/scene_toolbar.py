@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QToolBar, QLabel, QPushButton, QCheckBox,
                              QDoubleSpinBox, QComboBox, QFrame)
 from PyQt6.QtCore import pyqtSignal
 from core.gizmo.gizmo import GizmoMode, GizmoSpace
-from editor.renderer import RenderMode
+from core.renderer.types import RenderMode
 class SceneToolbar(QToolBar):
     gizmo_mode_changed = pyqtSignal(object)
     gizmo_space_changed = pyqtSignal(object)
