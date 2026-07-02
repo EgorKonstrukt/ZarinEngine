@@ -271,7 +271,13 @@ def _test_entity_pick(entity, ro, rd, ray_origin, ray_dir):
                           box[0][0], box[0][1], box[0][2],
                           box[1][0], box[1][1], box[1][2])
         return d if d > 0 else -1.0
-    return -1.0
+    wp = t.position
+    half = 0.5
+    d = _ray_aabb_min(ray_origin.x, ray_origin.y, ray_origin.z,
+                      ray_dir.x, ray_dir.y, ray_dir.z,
+                      wp.x - half, wp.y - half, wp.z - half,
+                      wp.x + half, wp.y + half, wp.z + half)
+    return d if d > 0 else -1.0
 
 
 def pick_entity(vp, sx: int, sy: int):
