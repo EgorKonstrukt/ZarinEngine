@@ -85,43 +85,47 @@ class PhysicsWorker(threading.Thread):
             if ps is None or solver is None:
                 return
 
-            for eid, data in ecs_data.items():
-                bid = ps._entity_to_body.get(eid)
-                if bid is None:
+            for eid, bid in ps._entity_to_body.items():
+                data = ecs_data.get(eid)
+                if data is None:
                     continue
-                is_kinematic = data.get("is_kinematic", False)
-                if is_kinematic:
+                if data.get("is_kinematic", False):
                     pos = data.get("pos", (0, 0, 0))
                     rot = data.get("rot", (0, 0, 0))
                     solver.set_body_transform(bid, pos, rot)
                 else:
-                    vel = data.get("vel", None)
+                    vel = data.get("vel")
                     if vel is not None:
                         solver.set_velocity(bid, vel)
-                    ang_vel = data.get("ang_vel", None)
+                    ang_vel = data.get("ang_vel")
                     if ang_vel is not None:
                         solver.set_angular_velocity(bid, ang_vel)
                 force = data.get("force", (0, 0, 0))
-                if force[0] != 0.0 or force[1] != 0.0 or force[2] != 0.0:
+                fx, fy, fz = force
+                if fx or fy or fz:
                     solver.apply_force(bid, force)
                 torque = data.get("torque", (0, 0, 0))
-                if torque[0] != 0.0 or torque[1] != 0.0 or torque[2] != 0.0:
+                tx, ty, tz = torque
+                if tx or ty or tz:
                     solver.apply_torque(bid, torque)
 
             solver.step_simulation(dt)
 
             transforms = {}
-            for eid, bid in ps._entity_to_body.items():
-                entity_data = ecs_data.get(eid, {})
-                if entity_data.get("is_kinematic", False):
+            entity_to_body = ps._entity_to_body
+            for eid, bid in entity_to_body.items():
+                data = ecs_data.get(eid)
+                if data and data.get("is_kinematic", False):
                     continue
-                if entity_data.get("is_2d", False):
+                if data and data.get("is_2d", False):
                     vel = solver.get_velocity(bid)
+                    vx, vy, vz = vel
+                    if vx or vy or vz:
+                        solver.set_velocity(bid, (vx, vy, 0.0))
                     ang_vel = solver.get_angular_velocity(bid)
-                    if vel[0] != 0.0 or vel[1] != 0.0 or vel[2] != 0.0:
-                        solver.set_velocity(bid, (vel[0], vel[1], 0.0))
-                    if ang_vel[0] != 0.0 or ang_vel[1] != 0.0 or ang_vel[2] != 0.0:
-                        solver.set_angular_velocity(bid, (0.0, 0.0, ang_vel[2]))
+                    ax, ay, az = ang_vel
+                    if ax or ay or az:
+                        solver.set_angular_velocity(bid, (0.0, 0.0, az))
                 pos, rot = solver.get_body_transform(bid)
                 vel = solver.get_velocity(bid)
                 ang_vel = solver.get_angular_velocity(bid)
@@ -137,19 +141,21 @@ class PhysicsWorker(threading.Thread):
             else:
                 raw_events = []
 
-            events = []
-            for ev in raw_events:
-                ba, bb = ev.get("body_a", -1), ev.get("body_b", -1)
-                events.append({
+            body_to_entity = ps._body_to_entity
+            events = [None] * len(raw_events)
+            for i, ev in enumerate(raw_events):
+                ba = ev.get("body_a", -1)
+                bb = ev.get("body_b", -1)
+                events[i] = {
                     "body_a": ba,
                     "body_b": bb,
-                    "entity_a": ps._body_to_entity.get(ba, ""),
-                    "entity_b": ps._body_to_entity.get(bb, ""),
+                    "entity_a": body_to_entity.get(ba, ""),
+                    "entity_b": body_to_entity.get(bb, ""),
                     "position": ev.get("position", (0, 0, 0)),
                     "normal": ev.get("normal", (0, 0, 0)),
                     "distance": ev.get("distance", 0.0),
                     "force": ev.get("force", 0.0),
-                })
+                }
 
             result = {
                 "type": "step_result",

@@ -7,7 +7,7 @@ from core.logger import Logger
 from core.physics import PhysicsProcess, PhysicsScene
 from core.physics.shared_buffer import MAX_ENTITIES
 from core.physics.physics_solver import IPhysicsSolver
-from core.math3d import Vec2, Vec3, Quat
+from core.math3d import Vec2, Vec3
 from core.config import get_project_config
 
 if TYPE_CHECKING:
@@ -136,6 +136,8 @@ class PhysicsPlugin(PluginBase):
         self._project_root: str = os.path.normpath(
             os.path.join(os.path.dirname(__file__), "..")
         )
+        self._step_caches: dict[int, tuple] = {}
+        self._cache_version: int = 0
 
     @property
     def enabled(self) -> bool:
@@ -253,6 +255,7 @@ class PhysicsPlugin(PluginBase):
 
         slot = proc.alloc_slot()
         proc.entity_slot_map[entity.id] = slot
+        self._cache_version += 1
         return {
             "slot": slot,
             "entity_id": entity.id,
@@ -281,12 +284,14 @@ class PhysicsPlugin(PluginBase):
         self._last_entity_count = -1
         self._prev_frame_contacts.clear()
         self._last_result_ver = -1
+        self._step_caches.clear()
 
     def on_scene_unloaded(self, scene):
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
         self._prev_frame_contacts.clear()
         self._last_result_ver = -1
+        self._step_caches.clear()
         self._reset_entity_velocities(scene)
         if self._simulation_mode == "per_layer_process":
             for proc in self._layer_processes.values():
@@ -475,45 +480,83 @@ class PhysicsPlugin(PluginBase):
                 if bd:
                     self._physics_process.send({"type": "add_body", "body": bd})
 
+    def _rebuild_step_cache(self, proc, entities):
+        _cache = []
+        for eid, slot in proc.entity_slot_map.items():
+            entity = entities.get(eid)
+            if not entity or not entity._active:
+                continue
+            rb = entity._components.get("Rigidbody")
+            rb2d = entity._components.get("Rigidbody2D")
+            tr = entity._components.get("Transform")
+            if not tr:
+                continue
+            _cache.append((entity, rb, rb2d, tr, slot))
+        return _cache
+
     def _step_process(self, proc: PhysicsProcess, scene, dt: float, prof) -> list:
         shared = proc.shared
         ets = proc.entity_slot_map
         last_rv = self._proc_ver.get(id(shared), -1)
         rv = shared.get_result_version()
+        entities = scene._entities
+
+        proc_id = id(proc)
+        gen_key = (len(ets), self._cache_version)
+        entry = self._step_caches.get(proc_id)
+        if entry is None or entry[0] != gen_key:
+            self._step_caches[proc_id] = (gen_key, self._rebuild_step_cache(proc, entities))
+        _cache = self._step_caches[proc_id][1]
+
         if rv != last_rv:
             self._proc_ver[id(shared)] = rv
             if rv > 0:
-                entities = scene._entities
-                for eid, slot in ets.items():
-                    flags = shared.get_flags(slot)
+                for entity, rb, rb2d, tr, slot in _cache:
+                    flags = shared._flags_nd[slot]
                     if not (flags & 1) or (flags & 4):
                         continue
-                    pos, rot, vel, ang_vel = shared.read_result(slot)
-                    entity = entities.get(eid)
-                    if not entity:
-                        continue
-                    rb = entity._components.get("Rigidbody")
-                    rb2d = entity._components.get("Rigidbody2D")
-                    tr = entity._components.get("Transform")
-                    if not tr:
-                        continue
+                    row = shared._rdata_nd[slot]
                     if rb2d:
-                        tr._local_pos = Vec3(pos[0], pos[1], 0.0)
-                        half_z = rot[2] * 0.5
-                        tr._local_rot = Quat(0.0, 0.0, math.sin(half_z), math.cos(half_z))
-                        tr._mark_dirty()
-                        rb2d._velocity = Vec2(vel[0], vel[1])
-                        rb2d._angular_velocity = ang_vel[2]
-                        rb2d._force_accum = Vec2.zero()
+                        tr._local_pos._x = row[0]
+                        tr._local_pos._y = row[1]
+                        tr._local_pos._z = 0.0
+                        hz = row[5] * 0.5
+                        tr._local_rot._x = 0.0
+                        tr._local_rot._y = 0.0
+                        tr._local_rot._z = math.sin(hz)
+                        tr._local_rot._w = math.cos(hz)
+                        tr._dirty = True
+                        rb2d._velocity._x = row[6]
+                        rb2d._velocity._y = row[7]
+                        rb2d._angular_velocity = row[11]
+                        rb2d._force_accum._x = 0.0
+                        rb2d._force_accum._y = 0.0
                         rb2d._torque_accum = 0.0
                     elif rb:
-                        tr._local_pos = Vec3(pos[0], pos[1], pos[2])
-                        tr.local_euler_angles = Vec3(_DEG(rot[0]), _DEG(rot[1]), _DEG(rot[2]))
-                        tr._mark_dirty()
-                        rb._velocity = Vec3(vel[0], vel[1], vel[2])
-                        rb._angular_velocity = Vec3(ang_vel[0], ang_vel[1], ang_vel[2])
-                        rb._force_accum = Vec3.zero()
-                        rb._torque_accum = Vec3.zero()
+                        tr._local_pos._x = row[0]
+                        tr._local_pos._y = row[1]
+                        tr._local_pos._z = row[2]
+                        r0 = row[3]; r1 = row[4]; r2 = row[5]
+                        sr, cr = math.sin(r0 * 0.5), math.cos(r0 * 0.5)
+                        sp, cp = math.sin(r1 * 0.5), math.cos(r1 * 0.5)
+                        sy, cy = math.sin(r2 * 0.5), math.cos(r2 * 0.5)
+                        tr._local_rot._x = sr * cp * cy - cr * sp * sy
+                        tr._local_rot._y = cr * sp * cy + sr * cp * sy
+                        tr._local_rot._z = cr * cp * sy - sr * sp * cy
+                        tr._local_rot._w = cr * cp * cy + sr * sp * sy
+                        tr._dirty = True
+                        rb._velocity._x = row[6]
+                        rb._velocity._y = row[7]
+                        rb._velocity._z = row[8]
+                        rb._angular_velocity._x = row[9]
+                        rb._angular_velocity._y = row[10]
+                        rb._angular_velocity._z = row[11]
+                        rb._force_accum._x = 0.0
+                        rb._force_accum._y = 0.0
+                        rb._force_accum._z = 0.0
+                        rb._torque_accum._x = 0.0
+                        rb._torque_accum._y = 0.0
+                        rb._torque_accum._z = 0.0
 
         events_accum = []
         result = proc.poll()
@@ -522,49 +565,62 @@ class PhysicsPlugin(PluginBase):
                 events_accum.extend(result.get("collision_events", []))
             result = proc.poll()
 
-        for eid, slot in ets.items():
-            entity = scene._entities.get(eid)
-            if not entity or not entity._active:
-                continue
-            rb = entity._components.get("Rigidbody")
-            rb2d = entity._components.get("Rigidbody2D")
-            tr = entity._components.get("Transform")
-            if not tr:
+        max_slot = -1
+        for entity, rb, rb2d, tr, slot in _cache:
+            if not entity._active:
                 continue
             lp = tr._local_pos
             if rb2d:
-                r = rb2d
                 q = tr._local_rot
-                sz = 2.0 * math.asin(max(-1.0, min(1.0, q.z)))
-                frc = r._force_accum._d
-                shared.write_entity_data(slot,
-                    (lp.x, lp.y, 0.0), (0.0, 0.0, sz),
-                    (r._velocity.x, r._velocity.y, 0.0),
-                    (0.0, 0.0, r._angular_velocity))
-                shared.write_force_data(slot,
-                    (float(frc[0]), float(frc[1]), 0.0),
-                    (0.0, 0.0, r._torque_accum))
-                shared.set_kinematic(slot, r.is_kinematic)
-                shared.set_2d(slot, True)
-                shared.set_dirty(slot, True)
+                sz = 2.0 * math.asin(max(-1.0, min(1.0, q._z)))
+                fa = rb2d._force_accum
+                shared._edata_nd[slot, 0] = lp._x
+                shared._edata_nd[slot, 1] = lp._y
+                shared._edata_nd[slot, 2] = 0.0
+                shared._edata_nd[slot, 3] = 0.0
+                shared._edata_nd[slot, 4] = 0.0
+                shared._edata_nd[slot, 5] = sz
+                shared._edata_nd[slot, 6] = rb2d._velocity._x
+                shared._edata_nd[slot, 7] = rb2d._velocity._y
+                shared._edata_nd[slot, 8] = 0.0
+                shared._edata_nd[slot, 9] = 0.0
+                shared._edata_nd[slot, 10] = 0.0
+                shared._edata_nd[slot, 11] = rb2d._angular_velocity
+                shared._fdata_nd[slot, 0] = fa._x
+                shared._fdata_nd[slot, 1] = fa._y
+                shared._fdata_nd[slot, 2] = 0.0
+                shared._fdata_nd[slot, 3] = 0.0
+                shared._fdata_nd[slot, 4] = 0.0
+                shared._fdata_nd[slot, 5] = rb2d._torque_accum
+                shared._flags_nd[slot] = 11 if not rb2d.is_kinematic else 15
             elif rb:
-                r = rb
-                frc = r._force_accum._d
-                tor = r._torque_accum._d
-                euler = tr.local_euler_angles
-                shared.write_entity_data(slot,
-                    (lp.x, lp.y, lp.z),
-                    (_RAD(euler.x), _RAD(euler.y), _RAD(euler.z)),
-                    (r._velocity.x, r._velocity.y, r._velocity.z),
-                    (r._angular_velocity.x, r._angular_velocity.y, r._angular_velocity.z))
-                shared.write_force_data(slot,
-                    (float(frc[0]), float(frc[1]), float(frc[2])),
-                    (float(tor[0]), float(tor[1]), float(tor[2])))
-                shared.set_kinematic(slot, r.is_kinematic)
-                shared.set_2d(slot, False)
-                shared.set_dirty(slot, True)
-            shared.set_active(slot, True)
-        shared.set_num_entities(max(ets.values(), default=-1) + 1 if ets else 0)
+                fa = rb._force_accum
+                ta = rb._torque_accum
+                q = tr._local_rot
+                qx, qy, qz, qw = q._x, q._y, q._z, q._w
+                shared._edata_nd[slot, 0] = lp._x
+                shared._edata_nd[slot, 1] = lp._y
+                shared._edata_nd[slot, 2] = lp._z
+                shared._edata_nd[slot, 3] = math.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
+                shared._edata_nd[slot, 4] = math.asin(max(-1.0, min(1.0, 2.0 * (qw * qy - qz * qx))))
+                shared._edata_nd[slot, 5] = math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+                shared._edata_nd[slot, 6] = rb._velocity._x
+                shared._edata_nd[slot, 7] = rb._velocity._y
+                shared._edata_nd[slot, 8] = rb._velocity._z
+                shared._edata_nd[slot, 9] = rb._angular_velocity._x
+                shared._edata_nd[slot, 10] = rb._angular_velocity._y
+                shared._edata_nd[slot, 11] = rb._angular_velocity._z
+                shared._fdata_nd[slot, 0] = fa._x
+                shared._fdata_nd[slot, 1] = fa._y
+                shared._fdata_nd[slot, 2] = fa._z
+                shared._fdata_nd[slot, 3] = ta._x
+                shared._fdata_nd[slot, 4] = ta._y
+                shared._fdata_nd[slot, 5] = ta._z
+                shared._flags_nd[slot] = 3 if not rb.is_kinematic else 7
+            if slot > max_slot:
+                max_slot = slot
+
+        shared.set_num_entities(max_slot + 1 if max_slot >= 0 else 0)
 
         proc.send({"type": "step", "dt": dt})
         return events_accum

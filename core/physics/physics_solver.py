@@ -3,9 +3,6 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 
-# 22 абстрактных метода. НИ ОДНОЙ имплементации в этих файлах.
-# Это не "интерфейс", это обещание нахуй.
-# Если где-то нет JoltPhysicsSolver или BulletPhysicsSolver — физики нет.
 class IPhysicsSolver(ABC):
     """Abstract interface for physics engine solvers."""
 
