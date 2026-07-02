@@ -1,5 +1,11 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 """
-Build Settings — Unity-style scene list and build configuration.
+Build Settings вЂ” Unity-style scene list and build configuration.
 First scene in the list is loaded on game startup.
 """
 from __future__ import annotations
@@ -34,7 +40,7 @@ class BuildSettings:
     def instance(cls) -> Optional["BuildSettings"]:
         return cls._instance
 
-    # ─── Scenes ──────────────────────────────────────────────────────────────
+    # в”Ђв”Ђв”Ђ Scenes в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     @property
     def scenes(self) -> list[str]:
@@ -51,7 +57,7 @@ class BuildSettings:
 
     @property
     def startup_scene(self) -> Optional[str]:
-        """First scene in the list — loaded on game start."""
+        """First scene in the list вЂ” loaded on game start."""
         if self._scenes:
             return self._scenes[0]
         return None
@@ -85,7 +91,7 @@ class BuildSettings:
             if self._active_scene_index == old_index:
                 self._active_scene_index = new_index
 
-    # ─── Plugins ─────────────────────────────────────────────────────────────
+    # в”Ђв”Ђв”Ђ Plugins в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     @property
     def build_plugins(self) -> list[str]:
@@ -102,7 +108,7 @@ class BuildSettings:
         if name in self._build_plugins:
             self._build_plugins.remove(name)
 
-    # ─── Serialization ───────────────────────────────────────────────────────
+    # в”Ђв”Ђв”Ђ Serialization в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     def save(self, path: Optional[str] = None):
         save_path = path or self._path
@@ -136,7 +142,7 @@ class BuildSettings:
         except Exception as e:
             Logger.error(f"BuildSettings load failed: {e}")
 
-    # ─── Asset Resolution ────────────────────────────────────────────────────
+    # в”Ђв”Ђв”Ђ Asset Resolution в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     def get_included_scene_paths(self, project_root: str) -> list[str]:
         """Resolve scene paths relative to project root."""

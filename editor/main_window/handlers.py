@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 
 import os
@@ -649,5 +655,6 @@ def show_build_dialog(mw):
 
 
 def show_about(mw):
-    QMessageBox.about(mw, "About Zarin Engine",
-                      "Zarin Engine v0.1.0\n\nPython 3.13, ModernGL, PyQt6\n64-bit ECS 3D Engine\n\nPlugin-based architecture")
+    from editor.about_dialog import AboutDialog
+    dlg = AboutDialog(mw)
+    dlg.exec()

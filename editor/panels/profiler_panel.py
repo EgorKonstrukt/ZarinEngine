@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import hashlib
 from collections import deque
@@ -195,7 +201,7 @@ class HierarchyView(QTreeWidget):
         self._built = False
 
     def set_frame_data(self, samples: list, frame_time_ms: float, flat_data: dict | None = None):
-        # Add Unaccounted — time between frames not covered by "frame" scope
+        # Add Unaccounted вЂ” time between frames not covered by "frame" scope
         frame_dur = frame_time_ms
         for s in samples:
             if s.name == "frame" and s.depth == 0:

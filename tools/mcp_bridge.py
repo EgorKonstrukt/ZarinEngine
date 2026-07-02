@@ -1,5 +1,11 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 """
-MCP bridge — connects opencode (stdio) to a running Zarin Engine editor (TCP).
+MCP bridge вЂ” connects opencode (stdio) to a running Zarin Engine editor (TCP).
 
 Usage (opencode config):
     "zarin-engine": {
@@ -36,7 +42,7 @@ def _read_stdin_n(n: int) -> str:
 
 
 async def bridge():
-    """Forward stdio MCP (Content-Length framing) ↔ TCP (newline JSON)."""
+    """Forward stdio MCP (Content-Length framing) в†” TCP (newline JSON)."""
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(HOST, PORT), timeout=5

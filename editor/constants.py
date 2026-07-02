@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 
 import os
@@ -72,7 +78,7 @@ TIPS = [
     "Did you know? The Inspector supports Vec2, Vec3, Quat, color pickers, and curve editors.",
     "Did you know? The Console groups duplicate messages and supports level filtering.",
     "Did you know? The Profiler shows live frame time breakdowns per system.",
-    "Did you know? Prefabs let you reuse complex objects — drag them from Project into the scene.",
+    "Did you know? Prefabs let you reuse complex objects вЂ” drag them from Project into the scene.",
     "Did you know? The Project panel has Icon, List, and Details view modes.",
     "Did you know? Press F5 in the Project panel to refresh the file listing.",
     "Did you know? Press Alt+Up in the Project panel to navigate to the parent directory.",
@@ -90,7 +96,7 @@ TIPS = [
     "Did you know? The Collaboration feature lets you host or join peer-to-peer editing sessions.",
     "Did you know? The Play Window opens a separate viewport for play-mode rendering.",
     "Did you know? The Terminal panel supports PowerShell and Python REPL modes.",
-    "Did you know? You can manage plugins via the Plugin Manager — enable/disable at runtime.",
+    "Did you know? You can manage plugins via the Plugin Manager вЂ” enable/disable at runtime.",
     "Did you know? The engine includes 10 constraint components like AimConstraint and ParentConstraint.",
     "Did you know? Area-select multiple entities by click-dragging in the viewport.",
     "Did you know? Drop prefab files from Project onto the viewport to instantiate them.",

@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 from core.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QPushButton, QLabel,
@@ -80,13 +86,13 @@ class GuiEditorToolbar(QFrame):
         self._screen_preset = QComboBox()
         self._screen_preset.setStyleSheet("QComboBox { background-color:#1e1e1e; color:#ddd; border:1px solid #555; border-radius:2px; padding:2px; font-size:10px; min-width:100px; } QComboBox::drop-down { border:none; } QComboBox::down-arrow { image:none; }")
         presets = [
-            ("1920×1080 (1080p)", 1920, 1080),
-            ("2560×1440 (1440p)", 2560, 1440),
-            ("3840×2160 (4K)", 3840, 2160),
-            ("1366×768 (HD)", 1366, 768),
-            ("1280×720 (720p)", 1280, 720),
-            ("1024×768 (XGA)", 1024, 768),
-            ("800×600 (SVGA)", 800, 600),
+            ("1920Г—1080 (1080p)", 1920, 1080),
+            ("2560Г—1440 (1440p)", 2560, 1440),
+            ("3840Г—2160 (4K)", 3840, 2160),
+            ("1366Г—768 (HD)", 1366, 768),
+            ("1280Г—720 (720p)", 1280, 720),
+            ("1024Г—768 (XGA)", 1024, 768),
+            ("800Г—600 (SVGA)", 800, 600),
         ]
         self._preset_data = presets
         for name, w, h in presets:
@@ -105,7 +111,7 @@ class GuiEditorToolbar(QFrame):
         self._screen_h_sb.setSingleStep(90)
         layout.addWidget(self._screen_h_sb)
         layout.addWidget(_separator())
-        self._zoom_out_btn = QPushButton("−")
+        self._zoom_out_btn = QPushButton("в€’")
         self._zoom_out_btn.setFixedWidth(scale(24))
         self._zoom_out_btn.clicked.connect(lambda: self.zoom_changed.emit(-0.1))
         layout.addWidget(self._zoom_out_btn)

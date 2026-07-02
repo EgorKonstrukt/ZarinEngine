@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import threading
 import time
@@ -15,9 +21,9 @@ class GameWorker(QThread):
 
     Staged execution so the renderer (main thread) can acquire
     ``engine._scene_lock`` between stages:
-        → flush transforms (lock held briefly)
-        → fixed update (physics, at capped rate)
-        → script update (at ``update_rate``)
+        в†’ flush transforms (lock held briefly)
+        в†’ fixed update (physics, at capped rate)
+        в†’ script update (at ``update_rate``)
     """
 
     def __init__(self, engine: Engine, update_rate: float = 120.0,
@@ -39,7 +45,7 @@ class GameWorker(QThread):
             # Stage 1: flush transforms, calc dt
             with engine._scene_lock:
                 dt = engine.tick_begin()
-            # Lock released — renderer can read transforms
+            # Lock released вЂ” renderer can read transforms
 
             # Stage 2: fixed update steps (physics, at capped rate)
             for _ in range(_MAX_FIXED_STEPS):
@@ -47,12 +53,12 @@ class GameWorker(QThread):
                     if not engine.tick_fixed_step():
                         break
                 # Lock released between each fixed step
-            # Lock released — renderer can read physics results
+            # Lock released вЂ” renderer can read physics results
 
             # Stage 3: script update (at full update_rate)
             with engine._scene_lock:
                 engine.tick_update(dt)
-            # Lock released — renderer can read script results
+            # Lock released вЂ” renderer can read script results
 
             next_update += update_dt
             sleep_time = max(0, next_update - time.perf_counter())

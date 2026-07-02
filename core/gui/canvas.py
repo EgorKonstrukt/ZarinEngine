@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import json
 from typing import Optional, Any
@@ -503,7 +509,7 @@ class GuiCanvas(QWidget):
         font = painter.font()
         font.setPointSize(10)
         painter.setFont(font)
-        label = f"{self._screen_w} × {self._screen_h}"
+        label = f"{self._screen_w} Г— {self._screen_h}"
         painter.drawText(px + 6, py + sh - 6, label)
 
     def _draw_selection(self, painter: QPainter):
@@ -551,12 +557,12 @@ class GuiCanvas(QWidget):
         painter.setFont(font)
         if self._drag_widget is sel:
             if self._drag_handle == "move":
-                dd = f" Δx:{sel.x() - self._drag_start_x:+d} Δy:{sel.y() - self._drag_start_y:+d}"
+                dd = f" О”x:{sel.x() - self._drag_start_x:+d} О”y:{sel.y() - self._drag_start_y:+d}"
             else:
-                dd = f" Δw:{sel.width() - self._drag_start_w:+d} Δh:{sel.height() - self._drag_start_h:+d}"
+                dd = f" О”w:{sel.width() - self._drag_start_w:+d} О”h:{sel.height() - self._drag_start_h:+d}"
         else:
             dd = ""
-        info = f"x:{gx} y:{gy}  {gw}×{gh}{dd}"
+        info = f"x:{gx} y:{gy}  {gw}Г—{gh}{dd}"
         iw = painter.fontMetrics().horizontalAdvance(info) + 8
         ih = painter.fontMetrics().height() + 2
         ix = sx

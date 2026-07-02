@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 import sys
 import os
 import traceback
@@ -54,7 +60,7 @@ def _resolve_startup_scene(project_root: str) -> str:
         if os.path.exists(arg_path):
             return arg_path
 
-    # 2. BuildSettings.json — first scene in list
+    # 2. BuildSettings.json вЂ” first scene in list
     build_settings_path = os.path.join(project_root, "BuildSettings.json")
     _log(f"Checking BuildSettings at: {build_settings_path}  exists={os.path.exists(build_settings_path)}")
     if os.path.exists(build_settings_path):
@@ -78,7 +84,7 @@ def _resolve_startup_scene(project_root: str) -> str:
         except Exception as e:
             _log(f"Error reading BuildSettings: {e}")
 
-    # 3. ProjectSettings.json — legacy default_scene
+    # 3. ProjectSettings.json вЂ” legacy default_scene
     settings_path = os.path.join(project_root, "ProjectSettings.json")
     _log(f"Checking ProjectSettings at: {settings_path}  exists={os.path.exists(settings_path)}")
     if os.path.exists(settings_path):

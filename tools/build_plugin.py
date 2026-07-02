@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 """
 Plugin packaging tool.
 
@@ -118,7 +124,7 @@ def build_plugin(plugin_path: str, output_dir: str = "dist", backend: str = "aut
         return False
 
     if os.path.isdir(plugin_path):
-        # Plugin directory — package it
+        # Plugin directory вЂ” package it
         plugin_name = os.path.basename(plugin_path)
         init = os.path.join(plugin_path, "__init__.py")
         if os.path.isfile(init):

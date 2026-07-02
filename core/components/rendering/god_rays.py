@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import numpy as np
 import moderngl
@@ -73,7 +79,7 @@ void main() {
 @ComponentRegistry.register
 class GodRays(GraphicsEffect):
     _allow_multiple = False
-    _gizmo_icon_label = "☀"
+    _gizmo_icon_label = "вЂ"
     _intensity_prop = "_intensity"
 
     def __init__(self):

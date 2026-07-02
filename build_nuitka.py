@@ -1,5 +1,11 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 """
-Zarin Engine — Nuitka build script.
+Zarin Engine вЂ” Nuitka build script.
 Uses BuildSettings.json to determine which scenes and assets to include.
 """
 import subprocess
@@ -64,7 +70,7 @@ def _minify_pil():
         return
     original = src.read_text(encoding="utf-8")
     bak.write_text(original, encoding="utf-8")
-    # Keep only plugins loaded by preinit() — drops _avif, _webp, _imagingcms, etc.
+    # Keep only plugins loaded by preinit() вЂ” drops _avif, _webp, _imagingcms, etc.
     kept = {
         "BmpImagePlugin", "GifImagePlugin", "JpegImagePlugin",
         "PpmImagePlugin", "PngImagePlugin",
@@ -217,7 +223,7 @@ def build():
     else:
         print("No optional packages to remove\n")
 
-    # Verify numba is actually gone — abort if not
+    # Verify numba is actually gone вЂ” abort if not
     try:
         import importlib
         importlib.import_module("numba")
@@ -326,7 +332,7 @@ def build():
         "--include-package=core",
         "--include-package=plugins",
         f"--include-package=physics_solvers.{_resolve_physics_solver()}_solver",
-        # Data — use RELATIVE paths (Nuitka resolves relative to CWD which is ROOT)
+        # Data вЂ” use RELATIVE paths (Nuitka resolves relative to CWD which is ROOT)
         "--include-data-file=" + _ASSIMP_SRC + "=" + _ASSIMP_SRC,
         # Use auto-generated BuildSettings if build_plugins was empty (includes auto-discovered plugins)
         "--include-data-file=" + ("_build_BuildSettings.json" if build_plugins != bs.get("build_plugins") else "BuildSettings.json") + "=BuildSettings.json",
@@ -360,10 +366,10 @@ def build():
         print(f"Included {len(included_scenes)} scenes")
         print(f"  _build_scenes contents: {[str(p.name) for p in temp_scenes.iterdir()]}")
     else:
-        # No BuildSettings — include all scenes (fallback)
+        # No BuildSettings вЂ” include all scenes (fallback)
         if scenes_dir.exists():
             NUITKA_OPTIONS.append(f"--include-data-dir=scenes=scenes")
-            print(f"No BuildSettings — including ALL scenes ({len(list(scenes_dir.iterdir()))} files)")
+            print(f"No BuildSettings вЂ” including ALL scenes ({len(list(scenes_dir.iterdir()))} files)")
 
     # Include only referenced assets (or all if strip_unused is false)
     temp_assets = ROOT / "_build_assets"
@@ -392,7 +398,7 @@ def build():
         print(f"Assets: {copied} referenced files copied (of {len(resolved_assets)} refs)")
         print(f"  _build_assets contents: {[str(p.relative_to(temp_assets)) for p in temp_assets.rglob('*') if p.is_file()]}")
     else:
-        # No filtering — include everything
+        # No filtering вЂ” include everything
         if (ROOT / "assets").exists():
             NUITKA_OPTIONS.append(f"--include-data-dir=assets=assets")
             print("Assets: including ALL (no filtering)")
@@ -406,7 +412,7 @@ def build():
     if (ROOT / "editor" / "shaders").exists():
         NUITKA_OPTIONS.append("--include-data-dir=editor/shaders=editor/shaders")
 
-    # Entry module MUST be last — Nuitka treats everything after it as positional args
+    # Entry module MUST be last вЂ” Nuitka treats everything after it as positional args
     NUITKA_OPTIONS.append(ENTRY)
 
     print("\nRunning Nuitka with options:")

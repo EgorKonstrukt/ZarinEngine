@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import time
 import json
@@ -279,7 +285,7 @@ class Engine:
         candidate = os.path.normpath(os.path.join(root, val))
         if os.path.exists(candidate):
             return candidate.replace("\\", "/")
-        # Windows absolute path (C:\...) on Linux — extract subpath after project name
+        # Windows absolute path (C:\...) on Linux вЂ” extract subpath after project name
         if len(val) > 1 and val[1] == ":":
             parts = val.replace("\\", "/").split("/")
             # Try each suffix from longest to shortest

@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 
 import gc as _gc
@@ -321,7 +327,7 @@ def draw_stats_overlay(vp, painter):
                                  Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, sep)
                 cx += fm.horizontalAdvance(sep)
 
-    # ── frame time bar chart ─────────────────────────────────────
+    # в”Ђв”Ђ frame time bar chart в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     chart_y = y + total_h + 6
     chart_h = 30
     chart_rect = QRect(x, chart_y, int(max_w), chart_h)
@@ -352,7 +358,7 @@ def draw_stats_overlay(vp, painter):
         if ref_y > chart_rect.y() + 2:
             painter.drawLine(chart_rect.x() + 2, ref_y, chart_rect.right() - 2, ref_y)
 
-    # ── last spike detail ────────────────────────────────────────
+    # в”Ђв”Ђ last spike detail в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     if _SPIKE_LOG:
         spike_ft, spike_prof = _SPIKE_LOG[-1]
         spike_lines = [f"Spike: {spike_ft:.0f}ms  frame"]

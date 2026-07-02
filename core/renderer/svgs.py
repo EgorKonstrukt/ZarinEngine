@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import os
 import numpy as np
@@ -184,7 +190,7 @@ class SvgRendererGL:
         # alpha cutoff once
         if self._has_alpha_cutoff:
             prog["u_alpha_cutoff"].value = self._alpha_cutoff_val
-        # entity loop — batch writes
+        # entity loop вЂ” batch writes
         entities = scene.get_entities_with_component(SvgRenderer)
         for ent in entities:
             if not ent.active:

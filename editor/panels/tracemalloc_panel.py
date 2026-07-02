@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import gc
 import tracemalloc
@@ -183,48 +189,48 @@ class TracemallocPanel(QDockWidget):
         p("=" * 72)
         p()
 
-        # ── summary ──────────────────────────────────────────────────────
-        p("┌─ GC")
-        p(f"│ collections:  gen0={counts[0]}  gen1={counts[1]}  gen2={counts[2]}  total={sum(counts)}")
-        p(f"│ thresholds:   gen0={thresh[0]}  gen1={thresh[1]}  gen2={thresh[2]}")
-        p(f"│ rate:         {rate:.1f} col/s  (60s window)")
+        # в”Ђв”Ђ summary в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+        p("в”Њв”Ђ GC")
+        p(f"в”‚ collections:  gen0={counts[0]}  gen1={counts[1]}  gen2={counts[2]}  total={sum(counts)}")
+        p(f"в”‚ thresholds:   gen0={thresh[0]}  gen1={thresh[1]}  gen2={thresh[2]}")
+        p(f"в”‚ rate:         {rate:.1f} col/s  (60s window)")
         p()
 
-        p("│ gc.get_stats() per-generation:")
+        p("в”‚ gc.get_stats() per-generation:")
         total_collected = 0
         total_uncollectable = 0
         for i, st in enumerate(gc.get_stats()):
             total_collected += st["collected"] or 0
             total_uncollectable += st["uncollectable"] or 0
-            p(f"│   gen{i}:  collected={st['collected']:>8}  "
+            p(f"в”‚   gen{i}:  collected={st['collected']:>8}  "
               f"uncollectable={st['uncollectable']}  "
               f"collections={st['collections']}")
-        p(f"│   ─────────────────────────────────")
-        p(f"│   total collected: {total_collected}")
-        p(f"│   uncollectable:   {total_uncollectable}")
+        p(f"в”‚   в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ")
+        p(f"в”‚   total collected: {total_collected}")
+        p(f"в”‚   uncollectable:   {total_uncollectable}")
         if total_uncollectable:
-            p(f"│   ⚠ LEAK: {total_uncollectable} objects are uncollectable!")
+            p(f"в”‚   вљ  LEAK: {total_uncollectable} objects are uncollectable!")
         p()
 
         tracing = tracemalloc.is_tracing()
-        p("├─ tracemalloc")
-        p(f"│   {'ON' if tracing else 'OFF'}")
+        p("в”њв”Ђ tracemalloc")
+        p(f"в”‚   {'ON' if tracing else 'OFF'}")
         if tracing:
             cur, peak = tracemalloc.get_traced_memory()
-            p(f"│   current={cur/1024:.1f}K  peak={peak/1024:.1f}K")
-            p(f"│")
+            p(f"в”‚   current={cur/1024:.1f}K  peak={peak/1024:.1f}K")
+            p(f"в”‚")
             try:
                 snap = tracemalloc.take_snapshot()
                 stats = snap.statistics('lineno')
-                p(f"│   top allocators ({len(stats)} total):")
+                p(f"в”‚   top allocators ({len(stats)} total):")
                 for i, st in enumerate(stats[:30]):
                     loc = str(st.traceback.format())
-                    p(f"│   {i+1:>2}. {self._format_size(st.size):>7}  {st.count:>5}x  {loc[:120]}")
+                    p(f"в”‚   {i+1:>2}. {self._format_size(st.size):>7}  {st.count:>5}x  {loc[:120]}")
             except Exception as e:
-                p(f"│   (snapshot error: {e})")
+                p(f"в”‚   (snapshot error: {e})")
         p()
 
-        p("├─ gc.get_objects()")
+        p("в”њв”Ђ gc.get_objects()")
         try:
             objs = gc.get_objects()
             type_counts: dict[str, int] = {}
@@ -235,19 +241,19 @@ class TracemallocPanel(QDockWidget):
                 except Exception:
                     pass
             sorted_types = sorted(type_counts.items(), key=lambda x: -x[1])
-            p(f"│   total tracked: {len(objs)}")
-            p(f"│   distinct types: {len(sorted_types)}")
-            p(f"│")
-            p(f"│   top 40 types:")
+            p(f"в”‚   total tracked: {len(objs)}")
+            p(f"в”‚   distinct types: {len(sorted_types)}")
+            p(f"в”‚")
+            p(f"в”‚   top 40 types:")
             for tname, cnt in sorted_types[:40]:
-                p(f"│   {cnt:>8}x  {tname}")
+                p(f"в”‚   {cnt:>8}x  {tname}")
         except Exception as e:
-            p(f"│   (error: {e})")
+            p(f"в”‚   (error: {e})")
         p()
 
-        # ── GC analysis (DEBUG_SAVEALL) ──────────────────────────────────
-        p("│")
-        p("└─ gc garbage analysis (DEBUG_SAVEALL sample)")
+        # в”Ђв”Ђ GC analysis (DEBUG_SAVEALL) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+        p("в”‚")
+        p("в””в”Ђ gc garbage analysis (DEBUG_SAVEALL sample)")
         old_debug = gc.get_debug()
         n_collected = 0
         new_garbage = []
@@ -280,7 +286,7 @@ class TracemallocPanel(QDockWidget):
                 if ctypes_cycle > 0:
                     pct = ctypes_cycle / len(new_garbage) * 100
                     p(f"")
-                    p(f"    ⚠ ctypes-related: {ctypes_cycle}/{len(new_garbage)} ({pct:.0f}%)")
+                    p(f"    вљ  ctypes-related: {ctypes_cycle}/{len(new_garbage)} ({pct:.0f}%)")
         p()
         p("=" * 72)
         p("END")
@@ -357,8 +363,8 @@ class TracemallocPanel(QDockWidget):
             if ctypes_cycle > 0:
                 pct = ctypes_cycle / len(new_garbage) * 100
                 lines.append("")
-                lines.append(f"  ⚠ ctypes cycle objects: {ctypes_cycle}/{len(new_garbage)} ({pct:.0f}%)")
-                lines.append(f"    ctypes Structures/FuncPtrs define classes per-call → reference cycles")
+                lines.append(f"  вљ  ctypes cycle objects: {ctypes_cycle}/{len(new_garbage)} ({pct:.0f}%)")
+                lines.append(f"    ctypes Structures/FuncPtrs define classes per-call в†’ reference cycles")
 
             lines.append("")
             lines.append("  What garbage objects reference (top 10):")

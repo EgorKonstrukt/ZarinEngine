@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 
 import os
@@ -121,7 +127,7 @@ class SplashScreen(QSplashScreen):
         self._base = _build_base_pixmap(tip)
         super().__init__(self._base)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        # self.setWindowOpacity removed — only the background has alpha
+        # self.setWindowOpacity removed вЂ” only the background has alpha
         self.setWindowFlags(SPLASH_WINDOW_FLAGS)
         self._progress = 0
         self._message = ""

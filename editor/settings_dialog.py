@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 from typing import Optional, Any
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
@@ -657,9 +663,9 @@ class SettingsDialog(QDialog):
             cb.currentTextChanged.connect(lambda t, k=key: self._on_value_changed(k, t))
             vl.addWidget(cb)
             info = QLabel(
-                "single = всё в основном потоке, отладка\n"
-                "multi_threaded = один отдельный процесс, стандарт\n"
-                "per_layer_process = свой процесс на каждый слой коллизии, для безумных симуляций"
+                "single = РІСЃС‘ РІ РѕСЃРЅРѕРІРЅРѕРј РїРѕС‚РѕРєРµ, РѕС‚Р»Р°РґРєР°\n"
+                "multi_threaded = РѕРґРёРЅ РѕС‚РґРµР»СЊРЅС‹Р№ РїСЂРѕС†РµСЃСЃ, СЃС‚Р°РЅРґР°СЂС‚\n"
+                "per_layer_process = СЃРІРѕР№ РїСЂРѕС†РµСЃСЃ РЅР° РєР°Р¶РґС‹Р№ СЃР»РѕР№ РєРѕР»Р»РёР·РёРё, РґР»СЏ Р±РµР·СѓРјРЅС‹С… СЃРёРјСѓР»СЏС†РёР№"
             )
             info.setStyleSheet("color: #888; font-size: 11px; padding-left: 4px;")
             info.setWordWrap(True)

@@ -1,5 +1,11 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 """
-Build Settings dialog — Unity-style scene list and plugin management.
+Build Settings dialog вЂ” Unity-style scene list and plugin management.
 Allows configuring which scenes and plugins are included in the build.
 """
 from __future__ import annotations
@@ -33,7 +39,7 @@ class BuildSettingsDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        # ── Scenes section ──
+        # в”Ђв”Ђ Scenes section в”Ђв”Ђ
         header = QLabel("Scenes In Build")
         header.setFont(QFont("", 12, QFont.Weight.Bold))
         layout.addWidget(header)
@@ -56,17 +62,17 @@ class BuildSettingsDialog(QDialog):
         self._remove_btn.clicked.connect(self._remove_scene)
         btn_layout.addWidget(self._remove_btn)
         btn_layout.addStretch()
-        self._up_btn = QPushButton("▲")
+        self._up_btn = QPushButton("в–І")
         self._up_btn.setFixedWidth(30)
         self._up_btn.clicked.connect(self._move_up)
         btn_layout.addWidget(self._up_btn)
-        self._down_btn = QPushButton("▼")
+        self._down_btn = QPushButton("в–ј")
         self._down_btn.setFixedWidth(30)
         self._down_btn.clicked.connect(self._move_down)
         btn_layout.addWidget(self._down_btn)
         layout.addLayout(btn_layout)
 
-        # ── Plugins section ──
+        # в”Ђв”Ђ Plugins section в”Ђв”Ђ
         plugin_header = QLabel("Plugins In Build")
         plugin_header.setFont(QFont("", 12, QFont.Weight.Bold))
         layout.addWidget(plugin_header)
@@ -84,7 +90,7 @@ class BuildSettingsDialog(QDialog):
         scroll.setWidget(self._plugin_container)
         layout.addWidget(scroll)
 
-        # ── Build Options ──
+        # в”Ђв”Ђ Build Options в”Ђв”Ђ
         options_group = QGroupBox("Build Options")
         options_layout = QVBoxLayout()
         self._strip_check = QCheckBox("Strip unused assets (scan scenes for references)")
@@ -93,7 +99,7 @@ class BuildSettingsDialog(QDialog):
         options_group.setLayout(options_layout)
         layout.addWidget(options_group)
 
-        # ── Bottom buttons ──
+        # в”Ђв”Ђ Bottom buttons в”Ђв”Ђ
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
         save_btn = QPushButton("Save")

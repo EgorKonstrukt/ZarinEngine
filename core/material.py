@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import json
 import re
@@ -359,7 +365,7 @@ class Material:
         candidate = os.path.normpath(os.path.join(root, val))
         if os.path.exists(candidate):
             return candidate.replace("\\", "/")
-        # Windows absolute path — extract subpath
+        # Windows absolute path вЂ” extract subpath
         if len(val) > 1 and val[1] == ":":
             parts = val.replace("\\", "/").split("/")
             for i in range(len(parts)):

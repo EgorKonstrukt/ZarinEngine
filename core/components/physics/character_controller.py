@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
 from __future__ import annotations
 import math
 from core.ecs import Component, ComponentRegistry
@@ -6,13 +12,13 @@ from core.components.inspector_meta import FieldType, InspectorField, ComponentI
 from core.input_system import Input, KeyCode
 
 
-# БЛЯДСКИЙ CharacterController: НЕ ИСПОЛЬЗУЕТ ФИЗИЧЕСКИЙ СОЛВЕР ВООБЩЕ.
-# Всё нахуй ручное: position += vel * dt, ground check через брутфорс всех энтити,
-# проверяет ТОЛЬКО BoxCollider (сферы, капсулы, меши — похуй).
-# Скольжения вдоль стен нет, step-up/down не работает (параметры есть — похуй).
-# Дважды копипастнутый ray-AABB алгоритм (отличий ноль).
-# Engine.instance() внутри цикла — красота.
-# Кто это писал — руки оторвать.
+# Р‘Р›РЇР”РЎРљРР™ CharacterController: РќР• РРЎРџРћР›Р¬Р—РЈР•Рў Р¤РР—РР§Р•РЎРљРР™ РЎРћР›Р’Р•Р  Р’РћРћР‘Р©Р•.
+# Р’СЃС‘ РЅР°С…СѓР№ СЂСѓС‡РЅРѕРµ: position += vel * dt, ground check С‡РµСЂРµР· Р±СЂСѓС‚С„РѕСЂСЃ РІСЃРµС… СЌРЅС‚РёС‚Рё,
+# РїСЂРѕРІРµСЂСЏРµС‚ РўРћР›Р¬РљРћ BoxCollider (СЃС„РµСЂС‹, РєР°РїСЃСѓР»С‹, РјРµС€Рё вЂ” РїРѕС…СѓР№).
+# РЎРєРѕР»СЊР¶РµРЅРёСЏ РІРґРѕР»СЊ СЃС‚РµРЅ РЅРµС‚, step-up/down РЅРµ СЂР°Р±РѕС‚Р°РµС‚ (РїР°СЂР°РјРµС‚СЂС‹ РµСЃС‚СЊ вЂ” РїРѕС…СѓР№).
+# Р”РІР°Р¶РґС‹ РєРѕРїРёРїР°СЃС‚РЅСѓС‚С‹Р№ ray-AABB Р°Р»РіРѕСЂРёС‚Рј (РѕС‚Р»РёС‡РёР№ РЅРѕР»СЊ).
+# Engine.instance() РІРЅСѓС‚СЂРё С†РёРєР»Р° вЂ” РєСЂР°СЃРѕС‚Р°.
+# РљС‚Рѕ СЌС‚Рѕ РїРёСЃР°Р» вЂ” СЂСѓРєРё РѕС‚РѕСЂРІР°С‚СЊ.
 @ComponentRegistry.register
 class CharacterController(Component):
     _icon = "CharacterController.png"
@@ -149,12 +155,12 @@ class CharacterController(Component):
             wish = wish.normalized()
         return wish
 
-    # ЕБАНЫЙ БРУТФОРС: бежит по ВСЕМ Entity сцены.
-    # Проверяет ТОЛЬКО BoxCollider — сфера/капсула/меш ПОФИГУ.
-    # Внутри лупа дёргает Engine.instance() каждый кадр.
-    # С 1000+ объектами это просто floor(1/fps) секунд в жопе.
-    # Нет spatial hash, нет broadphase, нет cached ближайших поверхностей.
-    # И да, параметры step_up/step_down ВООБЩЕ НЕ ИСПОЛЬЗУЮТСЯ.
+    # Р•Р‘РђРќР«Р™ Р‘Р РЈРўР¤РћР РЎ: Р±РµР¶РёС‚ РїРѕ Р’РЎР•Рњ Entity СЃС†РµРЅС‹.
+    # РџСЂРѕРІРµСЂСЏРµС‚ РўРћР›Р¬РљРћ BoxCollider вЂ” СЃС„РµСЂР°/РєР°РїСЃСѓР»Р°/РјРµС€ РџРћР¤РР“РЈ.
+    # Р’РЅСѓС‚СЂРё Р»СѓРїР° РґС‘СЂРіР°РµС‚ Engine.instance() РєР°Р¶РґС‹Р№ РєР°РґСЂ.
+    # РЎ 1000+ РѕР±СЉРµРєС‚Р°РјРё СЌС‚Рѕ РїСЂРѕСЃС‚Рѕ floor(1/fps) СЃРµРєСѓРЅРґ РІ Р¶РѕРїРµ.
+    # РќРµС‚ spatial hash, РЅРµС‚ broadphase, РЅРµС‚ cached Р±Р»РёР¶Р°Р№С€РёС… РїРѕРІРµСЂС…РЅРѕСЃС‚РµР№.
+    # Р РґР°, РїР°СЂР°РјРµС‚СЂС‹ step_up/step_down Р’РћРћР‘Р©Р• РќР• РРЎРџРћР›Р¬Р—РЈР®РўРЎРЇ.
     def _check_ground(self) -> tuple[bool, float]:
         if not self.transform:
             return False, 0.0
@@ -188,9 +194,9 @@ class CharacterController(Component):
         h = Vec3(sz.x * 0.5, sz.y * 0.5, sz.z * 0.5)
         return (world_pos - h, world_pos + h)
 
-    # ПИЗДЕЦ: _ray_aabb_intersect и _ray_aabb_entry — ЭТО ОДНО И ТО ЖЕ.
-    # Серьёзно, открой глаза: 95% кода идентично. Одна возвращает bool, другая float.
-    # Можно было сделать _ray_aabb_test(..., need_entry=True) — но нет, ЛЕНЬ.
+    # РџРР—Р”Р•Р¦: _ray_aabb_intersect Рё _ray_aabb_entry вЂ” Р­РўРћ РћР”РќРћ Р РўРћ Р–Р•.
+    # РЎРµСЂСЊС‘Р·РЅРѕ, РѕС‚РєСЂРѕР№ РіР»Р°Р·Р°: 95% РєРѕРґР° РёРґРµРЅС‚РёС‡РЅРѕ. РћРґРЅР° РІРѕР·РІСЂР°С‰Р°РµС‚ bool, РґСЂСѓРіР°СЏ float.
+    # РњРѕР¶РЅРѕ Р±С‹Р»Рѕ СЃРґРµР»Р°С‚СЊ _ray_aabb_test(..., need_entry=True) вЂ” РЅРѕ РЅРµС‚, Р›Р•РќР¬.
     def _ray_aabb_intersect(self, origin: Vec3, dir: Vec3, max_dist: float,
                              aabb_min: Vec3, aabb_max: Vec3) -> bool:
         tmin = -1e9
@@ -214,7 +220,7 @@ class CharacterController(Component):
                     return False
         return tmin < max_dist and tmax >= 0
 
-    # БЛЯДЬ, КОПИПАСТА _ray_aabb_intersect С ДРУГИМ RETURN. ХВАТИЛО УМА ПЕРЕИМЕНОВАТЬ min(tmin, max_dist) В entry.
+    # Р‘Р›РЇР”Р¬, РљРћРџРРџРђРЎРўРђ _ray_aabb_intersect РЎ Р”Р РЈР“РРњ RETURN. РҐР’РђРўРР›Рћ РЈРњРђ РџР•Р Р•РРњР•РќРћР’РђРўР¬ min(tmin, max_dist) Р’ entry.
     def _ray_aabb_entry(self, origin: Vec3, dir: Vec3, aabb_min: Vec3, aabb_max: Vec3) -> float | None:
         tmin = -1e9
         tmax = 1e9
@@ -379,10 +385,10 @@ class CharacterController(Component):
             self._move_air(dt)
             vel = self.velocity
 
-        # БЛЯДЬ: НЕТ СТЕН. НИКАКИХ. position += vel * dt — и в дамки.
-        # Ступенька в 1 см? Пройдёшь. Стена? Пройдёшь насквозь.
-        # Нет sliding, нет response, нет fucking collision check по горизонтали.
-        # step_up/step_down в параметрах есть — работают как placebo.
+        # Р‘Р›РЇР”Р¬: РќР•Рў РЎРўР•Рќ. РќРРљРђРљРРҐ. position += vel * dt вЂ” Рё РІ РґР°РјРєРё.
+        # РЎС‚СѓРїРµРЅСЊРєР° РІ 1 СЃРј? РџСЂРѕР№РґС‘С€СЊ. РЎС‚РµРЅР°? РџСЂРѕР№РґС‘С€СЊ РЅР°СЃРєРІРѕР·СЊ.
+        # РќРµС‚ sliding, РЅРµС‚ response, РЅРµС‚ fucking collision check РїРѕ РіРѕСЂРёР·РѕРЅС‚Р°Р»Рё.
+        # step_up/step_down РІ РїР°СЂР°РјРµС‚СЂР°С… РµСЃС‚СЊ вЂ” СЂР°Р±РѕС‚Р°СЋС‚ РєР°Рє placebo.
         pos = tr.local_position
         new_pos = Vec3(
             pos.x + vel.x * dt,
