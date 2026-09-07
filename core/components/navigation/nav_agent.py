@@ -95,6 +95,9 @@ class NavAgent(Component):
         self._last_path_goal = None
         self._path_grid_gid = None
         self._last_cc = None
+        self._cc_fixed_seen: int = -1
+        self._cc_stall_time: float = 0.0
+        self._cc_dead: bool = False
 
     def _active_controller(self):
         if not self.use_physical_controller or self.flying:
@@ -259,7 +262,45 @@ class NavAgent(Component):
         except Exception:
             cc = None
         if cc is not None:
-            self._set_cc_drive(cc, direction)
+            try:
+                fixed_count = cc.fixed_update_count
+            except Exception:
+                fixed_count = -1
+            if fixed_count < 0:
+                self._set_cc_drive(cc, direction)
+            elif self._cc_dead:
+                if fixed_count != self._cc_fixed_seen:
+                    revived = False
+                    try:
+                        revived = bool(cc.resync_character())
+                    except Exception:
+                        revived = False
+                    if revived:
+                        self._cc_dead = False
+                        self._cc_fixed_seen = fixed_count
+                        self._cc_stall_time = 0.0
+                        self._set_cc_drive(cc, direction)
+                    else:
+                        self._set_cc_drive(None, None)
+                        move = direction * min(self.max_speed * dt, dist)
+                        tr.local_position = current_pos + move
+                else:
+                    self._set_cc_drive(None, None)
+                    move = direction * min(self.max_speed * dt, dist)
+                    tr.local_position = current_pos + move
+            elif fixed_count != self._cc_fixed_seen:
+                self._cc_fixed_seen = fixed_count
+                self._cc_stall_time = 0.0
+                self._set_cc_drive(cc, direction)
+            else:
+                self._cc_stall_time += dt
+                if self._cc_stall_time > 0.5:
+                    self._cc_dead = True
+                    self._set_cc_drive(None, None)
+                    move = direction * min(self.max_speed * dt, dist)
+                    tr.local_position = current_pos + move
+                else:
+                    self._set_cc_drive(cc, direction)
         else:
             self._set_cc_drive(None, None)
             move = direction * min(self.max_speed * dt, dist)
@@ -450,6 +491,9 @@ class NavAgent(Component):
         self._pending_req_id = None
         self._blocked_frames = 0
         self._fail_streak = 0
+        self._cc_fixed_seen = -1
+        self._cc_stall_time = 0.0
+        self._cc_dead = False
         self._set_cc_drive(None, None)
 
     def _btn_set_target(self):

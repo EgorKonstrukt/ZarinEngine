@@ -161,6 +161,7 @@ class CharacterController(Component):
         self._character: Optional["CulverinCharacter"] = None
         self._ai_wish_dir: Optional[Vec3] = None
         self._ai_wish_speed: Optional[float] = None
+        self._fixed_update_count: int = 0
         self._velocity: Vec3 = Vec3.zero()
         self._pitch: float = 0.0
         self._yaw: float = 0.0
@@ -218,6 +219,27 @@ class CharacterController(Component):
     def ai_driving(self) -> bool:
         return (self._ai_wish_dir is not None and self._ai_wish_speed is not None
                 and self._ai_wish_speed > 0.0)
+
+    @property
+    def fixed_update_count(self) -> int:
+        return self._fixed_update_count
+
+    def resync_character(self) -> bool:
+        try:
+            if self._solver is not None and self._character is not None:
+                try:
+                    self._solver.destroy_character(self._character)
+                except Exception:
+                    pass
+                self._character = None
+            self._velocity = Vec3.zero()
+            tr = self.transform
+            if self._solver is None or tr is None:
+                return False
+            self._character = self._create_character(self._solver, tr.local_position)
+            return self._character is not None
+        except Exception:
+            return False
 
     def _capsule_total_height(self) -> float:
         return max(self.capsule_radius * 2.0 + 0.1, self.capsule_height)
@@ -319,6 +341,7 @@ class CharacterController(Component):
     def on_start(self):
         self._solver = None
         self._character = None
+        self._fixed_update_count = 0
         self._velocity = Vec3.zero()
         self._pitch = 0.0
         self._yaw = 0.0
@@ -380,6 +403,7 @@ class CharacterController(Component):
     def on_fixed_update(self, dt: float):
         if not self._entity or not self.enabled:
             return
+        self._fixed_update_count += 1
         char = self._character
         if char is None or self._solver is None:
             if self._solver is None:
