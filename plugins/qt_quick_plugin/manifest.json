@@ -1,0 +1,11 @@
+{
+  "name": "QtQuickWorldPlugin",
+  "version": "1.0.0",
+  "description": "Qt Quick world-space UI components rendered into 3D world",
+  "author": "Zarrakun",
+  "type": "plugin",
+  "entry": "__init__.py",
+  "engine_api": "1",
+  "provides": {},
+  "dependencies": []
+}
