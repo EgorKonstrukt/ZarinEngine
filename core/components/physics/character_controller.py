@@ -159,6 +159,8 @@ class CharacterController(Component):
 
         self._solver = None
         self._character: Optional["CulverinCharacter"] = None
+        self._ai_wish_dir: Optional[Vec3] = None
+        self._ai_wish_speed: Optional[float] = None
         self._velocity: Vec3 = Vec3.zero()
         self._pitch: float = 0.0
         self._yaw: float = 0.0
@@ -188,6 +190,35 @@ class CharacterController(Component):
     def is_crouching(self) -> bool:
         return self._is_crouching
 
+    @property
+    def camera_entity_id(self) -> str:
+        return self._camera_entity_id or ""
+
+    @camera_entity_id.setter
+    def camera_entity_id(self, v: str):
+        self._camera_entity_id = v or ""
+
+    def set_ai_drive(self, wish_dir: Optional[Vec3], speed: float = 0.0):
+        if wish_dir is None:
+            self._ai_wish_dir = None
+            self._ai_wish_speed = None
+            return
+        try:
+            length = wish_dir.length()
+        except Exception:
+            return
+        if length < 1e-6:
+            self._ai_wish_dir = None
+            self._ai_wish_speed = None
+            return
+        self._ai_wish_dir = wish_dir * (1.0 / length)
+        self._ai_wish_speed = max(0.0, float(speed))
+
+    @property
+    def ai_driving(self) -> bool:
+        return (self._ai_wish_dir is not None and self._ai_wish_speed is not None
+                and self._ai_wish_speed > 0.0)
+
     def _capsule_total_height(self) -> float:
         return max(self.capsule_radius * 2.0 + 0.1, self.capsule_height)
 
@@ -206,6 +237,8 @@ class CharacterController(Component):
         return char
 
     def get_move_speed(self) -> float:
+        if self.ai_driving:
+            return float(self._ai_wish_speed)
         if self._is_crouching:
             return self.crouch_speed * self.crouch_speed_mult
         if Input.GetKey(KeyCode.LEFT_SHIFT) or Input.GetKey(KeyCode.RIGHT_SHIFT):
@@ -213,6 +246,11 @@ class CharacterController(Component):
         return self.walk_speed
 
     def get_wish_dir(self) -> Vec3:
+        if self.ai_driving:
+            flat = Vec3(self._ai_wish_dir.x, 0.0, self._ai_wish_dir.z)
+            if flat.length_sq() > 1e-8:
+                return flat.normalized()
+            return Vec3.zero()
         fwd = self.transform.forward if self.transform else Vec3.forward()
         right = self.transform.right if self.transform else Vec3.right()
         fwd.y = 0.0
@@ -376,18 +414,18 @@ class CharacterController(Component):
         else:
             self._coyote_timer -= dt
 
-        if Input.GetKeyDown(KeyCode.SPACE):
+        if not self.ai_driving and Input.GetKeyDown(KeyCode.SPACE):
             self._jump_buffer_timer = self.jump_buffer_time
         else:
             self._jump_buffer_timer -= dt
 
-        if Input.GetKeyDown(KeyCode.C):
+        if not self.ai_driving and Input.GetKeyDown(KeyCode.C):
             self._wants_to_crouch = not self._wants_to_crouch
             if self.crouch_toggle:
                 self._is_crouching = self._wants_to_crouch
             else:
                 self._is_crouching = not self._is_crouching
-        if not self.crouch_toggle:
+        if not self.crouch_toggle and not self.ai_driving:
             self._is_crouching = Input.GetKey(KeyCode.C)
 
         can_jump = self._jump_buffer_timer > 0.0 and self._coyote_timer > 0.0

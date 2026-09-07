@@ -13,6 +13,20 @@ from core.components.inspector_meta import FieldType, InspectorField
 from core.shaders.nav_pathfinding import NavWorld
 
 
+_CC_TYPE = None
+def _load_cc_type():
+    global _CC_TYPE
+    if _CC_TYPE is not None:
+        return _CC_TYPE
+    try:
+        from core.components.physics.character_controller import CharacterController
+        _CC_TYPE = CharacterController
+    except Exception:
+        _CC_TYPE = None
+    return _CC_TYPE
+_load_cc_type()
+
+
 @ComponentRegistry.register
 class NavAgent(Component):
     _icon = "NavAgent.png"
@@ -34,6 +48,7 @@ class NavAgent(Component):
             InspectorField("max_slope", "Max Slope", FieldType.FLOAT, min_val=0.0, max_val=89.0, step=1.0),
             InspectorField("max_speed", "Max Speed", FieldType.FLOAT, min_val=0.0, max_val=1000.0, step=0.1),
             InspectorField("max_angular_speed", "Angular Speed", FieldType.FLOAT, min_val=0.0, max_val=1000.0, step=1.0),
+            InspectorField("use_physical_controller", "Physical Controller", FieldType.BOOL),
             InspectorField("flying", "Flying Mode", FieldType.BOOL),
             InspectorField("auto_move", "Auto Move", FieldType.BOOL),
             InspectorField("show_path_cells", "Show Path Cells", FieldType.BOOL),
@@ -56,6 +71,7 @@ class NavAgent(Component):
         self.max_slope: float = 45.0
         self.max_speed: float = 5.0
         self.max_angular_speed: float = 360.0
+        self.use_physical_controller: bool = True
         self.flying: bool = False
         self.auto_move: bool = False
         self.show_path_cells: bool = False
@@ -78,6 +94,94 @@ class NavAgent(Component):
         self._fail_streak: int = 0
         self._last_path_goal = None
         self._path_grid_gid = None
+        self._last_cc = None
+
+    def _active_controller(self):
+        if not self.use_physical_controller or self.flying:
+            return None
+        try:
+            ent = self.entity
+        except Exception:
+            return None
+        if ent is None:
+            return None
+        try:
+            cc_type = _load_cc_type()
+            cc = ent.get_component(cc_type) if cc_type is not None else None
+        except Exception:
+            return None
+        if cc is None:
+            return None
+        try:
+            if not cc.enabled:
+                return None
+        except Exception:
+            pass
+        if not hasattr(cc, "set_ai_drive"):
+            return None
+        try:
+            if getattr(cc, "_character", None) is None:
+                return None
+        except Exception:
+            return None
+        return cc
+
+    def _set_cc_drive(self, cc, direction):
+        try:
+            prev = self._last_cc
+        except Exception:
+            prev = None
+        if cc is None:
+            if prev is not None:
+                try:
+                    prev.set_ai_drive(None, 0.0)
+                except Exception:
+                    pass
+                self._last_cc = None
+            return
+        try:
+            cc.set_ai_drive(direction, self.max_speed)
+        except Exception:
+            pass
+        if prev is not None and prev is not cc:
+            try:
+                prev.set_ai_drive(None, 0.0)
+            except Exception:
+                pass
+        self._last_cc = cc
+
+    def _effective_nav_params(self):
+        radius = self.agent_radius
+        height = self.agent_height
+        climb = self.max_climb
+        slope = self.max_slope
+        try:
+            cc = self._active_controller()
+        except Exception:
+            cc = None
+        if cc is not None:
+            cc_radius = 0.0
+            try:
+                cc_radius = float(cc.capsule_radius)
+                if cc_radius > 0.0:
+                    radius = cc_radius
+            except Exception:
+                pass
+            try:
+                ch = float(cc.capsule_height)
+                if ch > 0.0:
+                    height = max(cc_radius * 2.0 + 0.1, ch) if cc_radius > 0.0 else ch
+            except Exception:
+                pass
+            try:
+                climb = max(0.0, float(cc.step_height))
+            except Exception:
+                pass
+            try:
+                slope = max(0.0, min(89.0, float(cc.max_slope)))
+            except Exception:
+                pass
+        return radius, height, climb, slope
 
     def on_start(self):
         self._repath_timer = 0.0
@@ -86,8 +190,10 @@ class NavAgent(Component):
 
     def on_update(self, dt: float):
         if not self.auto_move:
+            self._set_cc_drive(None, None)
             return
         if not self._ensure_nav_world():
+            self._set_cc_drive(None, None)
             return
 
         self._poll_path_result()
@@ -99,10 +205,12 @@ class NavAgent(Component):
             self._request_path()
 
         if not self._path or self._path_index >= len(self._path):
+            self._set_cc_drive(None, None)
             return
 
         tr = self.transform
         if not tr:
+            self._set_cc_drive(None, None)
             return
 
         target = self._path[self._path_index]
@@ -129,6 +237,7 @@ class NavAgent(Component):
                     self._blocked_frames = 0
                     self._pending_req_id = None
                     self._repath_timer = self.repath_interval
+                self._set_cc_drive(None, None)
                 return
         else:
             self._blocked_frames = 0
@@ -140,11 +249,21 @@ class NavAgent(Component):
             if self._path_index >= len(self._path):
                 self._path = []
                 self._path_index = 0
+                self._set_cc_drive(None, None)
             return
 
         direction = to_target * (1.0 / dist) if dist > 0.001 else Vec3(0, 0, 1)
-        move = direction * min(self.max_speed * dt, dist)
-        tr.local_position = current_pos + move
+        cc = None
+        try:
+            cc = self._active_controller()
+        except Exception:
+            cc = None
+        if cc is not None:
+            self._set_cc_drive(cc, direction)
+        else:
+            self._set_cc_drive(None, None)
+            move = direction * min(self.max_speed * dt, dist)
+            tr.local_position = current_pos + move
 
         if self.max_angular_speed > 0:
             current_angles = tr.local_euler_angles
@@ -256,9 +375,10 @@ class NavAgent(Component):
         padding = self.agent_padding if self.agent_padding > 0 else None
         if self.flying:
             self._nav_world.dilate_for_agent(padding if padding is not None else self.agent_radius)
+        radius, height, climb, slope = self._effective_nav_params()
         req_id = self._nav_world.find_path_gpu_deferred(
-            start, end, self.agent_radius, self.agent_height, self.flying,
-            self.max_climb, self.max_slope, padding
+            start, end, radius, height, self.flying,
+            climb, slope, padding
         )
         self._pending_req_id = req_id
 
@@ -302,9 +422,10 @@ class NavAgent(Component):
             padding = self.agent_padding if self.agent_padding > 0 else None
             if self.flying:
                 self._nav_world.dilate_for_agent(padding if padding is not None else self.agent_radius)
+            radius, height, climb, slope = self._effective_nav_params()
             req_id = self._nav_world.find_path_gpu_deferred(
-                start, pos, self.agent_radius, self.agent_height, self.flying,
-                self.max_climb, self.max_slope, padding
+                start, pos, radius, height, self.flying,
+                climb, slope, padding
             )
             self._pending_req_id = req_id
 
@@ -329,6 +450,7 @@ class NavAgent(Component):
         self._pending_req_id = None
         self._blocked_frames = 0
         self._fail_streak = 0
+        self._set_cc_drive(None, None)
 
     def _btn_set_target(self):
         tr = self.transform
@@ -440,6 +562,7 @@ class NavAgent(Component):
             "max_slope": self.max_slope,
             "max_speed": self.max_speed,
             "max_angular_speed": self.max_angular_speed,
+            "use_physical_controller": self.use_physical_controller,
             "flying": self.flying,
             "auto_move": self.auto_move,
             "show_path_cells": self.show_path_cells,
@@ -465,6 +588,7 @@ class NavAgent(Component):
         na.max_slope = data.get("max_slope", 45.0)
         na.max_speed = data.get("max_speed", 5.0)
         na.max_angular_speed = data.get("max_angular_speed", 360.0)
+        na.use_physical_controller = data.get("use_physical_controller", True)
         na.flying = data.get("flying", False)
         na.auto_move = data.get("auto_move", False)
         na.show_path_cells = data.get("show_path_cells", False)
