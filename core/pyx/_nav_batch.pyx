@@ -6,7 +6,7 @@
 # cython: boundscheck=False, wraparound=False, cdivision=True, nonecheck=False, initializedcheck=False, overflowcheck=False, infer_types=True
 import numpy as np
 cimport numpy as np
-from libc.math cimport sqrt, fabs
+from libc.math cimport sqrt, fabs, ceil
 cimport cython
 
 cdef float _INF = 1e30
@@ -311,17 +311,17 @@ def flood_levels(np.ndarray[np.int32_t, ndim=3] cands, np.ndarray[np.uint8_t, nd
         if dd < bd or (dd == bd and y0 < best):
             bd = dd
             best = y0
-    cdef np.ndarray[np.int32_t, ndim=1] stack = np.empty(r * r, dtype=np.int32)
-    cdef np.int32_t[:] st = stack
-    cdef int sp = 0, cur, cx, cz, d, cy2, k, nk, cand, dd2, bk, bd2
+    cdef np.ndarray[np.int32_t, ndim=1] queue = np.empty(r * r, dtype=np.int32)
+    cdef np.int32_t[:] st = queue
+    cdef int hd = 0, tl = 0, cur, cx, cz, d, cy2, k, nk, cand, dd2, bk, bd2
     cdef float dh
     gv[sx, sz] = best
     wv[sx, sz] = 1
-    st[sp] = sx * r + sz
-    sp += 1
-    while sp > 0:
-        sp -= 1
-        cur = st[sp]
+    st[tl] = sx * r + sz
+    tl += 1
+    while hd < tl:
+        cur = st[hd]
+        hd += 1
         cx = cur // r
         cz = cur - cx * r
         cy2 = gv[cx, cz]
@@ -340,7 +340,7 @@ def flood_levels(np.ndarray[np.int32_t, ndim=3] cands, np.ndarray[np.uint8_t, nd
             for k in range(nk):
                 cand = cv[nx, nz, k]
                 dh = <float>(cand - cy2) * cell
-                if dh > climb:
+                if dh > climb or dh < -climb:
                     continue
                 dd2 = cand - cy2
                 if dd2 < 0:
@@ -352,8 +352,8 @@ def flood_levels(np.ndarray[np.int32_t, ndim=3] cands, np.ndarray[np.uint8_t, nd
                 continue
             gv[nx, nz] = bk
             wv[nx, nz] = 1
-            st[sp] = nx * r + nz
-            sp += 1
+            st[tl] = nx * r + nz
+            tl += 1
     return True
 
 def finalize_ground(np.ndarray[np.int32_t, ndim=2] ground, np.ndarray[np.uint8_t, ndim=2] walk,
@@ -366,18 +366,6 @@ def finalize_ground(np.ndarray[np.int32_t, ndim=2] ground, np.ndarray[np.uint8_t
     cdef int x, z, g0
     cdef float dh, tot, up, n
     with nogil:
-        for x in range(r):
-            for z in range(r):
-                if wv[x, z]:
-                    g0 = gv[x, z]
-                    if x > 0 and gv[x - 1, z] >= 0 and fabs(<float>(g0 - gv[x - 1, z])) > max_hdiff:
-                        wv[x, z] = 0
-                    elif x + 1 < r and gv[x + 1, z] >= 0 and fabs(<float>(g0 - gv[x + 1, z])) > max_hdiff:
-                        wv[x, z] = 0
-                    elif z > 0 and gv[x, z - 1] >= 0 and fabs(<float>(g0 - gv[x, z - 1])) > max_hdiff:
-                        wv[x, z] = 0
-                    elif z + 1 < r and gv[x, z + 1] >= 0 and fabs(<float>(g0 - gv[x, z + 1])) > max_hdiff:
-                        wv[x, z] = 0
         for x in range(r):
             for z in range(r):
                 if wv[x, z]:
@@ -471,12 +459,26 @@ def raster_box_obb(np.ndarray[np.uint8_t, ndim=3] grid, float cell, float half,
             bminz = qz_
         if qz_ > bmaxz:
             bmaxz = qz_
+    if bmaxx < -half or bminx > half or bmaxy < -half or bminy > half or bmaxz < -half or bminz > half:
+        return 0
     x1 = <int>((bminx + half) / cell)
     y1 = <int>((bminy + half) / cell)
     z1 = <int>((bminz + half) / cell)
-    x2 = <int>((bmaxx + half) / cell)
-    y2 = <int>((bmaxy + half) / cell)
-    z2 = <int>((bmaxz + half) / cell)
+    x2 = <int>ceil((bmaxx + half) / cell - 1e-9) - 1
+    y2 = <int>ceil((bmaxy + half) / cell - 1e-9) - 1
+    z2 = <int>ceil((bmaxz + half) / cell - 1e-9) - 1
+    if bmaxx <= -half + 1e-9:
+        x2 = 0
+    if bminx >= half - 1e-9:
+        x1 = r - 1
+    if bmaxy <= -half + 1e-9:
+        y2 = 0
+    if bminy >= half - 1e-9:
+        y1 = r - 1
+    if bmaxz <= -half + 1e-9:
+        z2 = 0
+    if bminz >= half - 1e-9:
+        z1 = r - 1
     if x1 < 0:
         x1 = 0
     if y1 < 0:
@@ -601,7 +603,7 @@ def label_components(np.ndarray[np.uint8_t, ndim=2] walk, np.ndarray[np.int32_t,
                         continue
                     if use_climb and gv[cx, cz] >= 0 and gv[nx, nz] >= 0:
                         dh = <float>(gv[nx, nz] - gv[cx, cz]) * cell
-                        if dh > climb:
+                        if dh > climb or dh < -climb:
                             continue
                     lv[nx, nz] = ncomp
                     st[sp] = nx * r + nz
@@ -681,7 +683,7 @@ cdef int _astar2d_run(unsigned char *walk, float *cost, np.int32_t *ground, bint
                 if walk[cx * r + nz] == 0 or walk[nx * r + cz] == 0:
                     continue
             if use_climb and ground[ci] >= 0 and ground[nidx] >= 0:
-                if <float>(ground[nidx] - ground[ci]) > climb_cells:
+                if fabs(<float>(ground[nidx] - ground[ci])) > climb_cells:
                     continue
             step = 1.0 if d < 4 else _SQRT2
             ng = gcur + step * (0.5 * (cost[ci] + cost[nidx]))
@@ -1284,7 +1286,7 @@ def segwalk2d(np.ndarray[np.uint8_t, ndim=2] walk, np.ndarray[np.int32_t, ndim=2
     if gx < 0 or gx >= r or gz < 0 or gz >= r or wv[gx, gz] == 0:
         return False
     surf = gv[gx, gz]
-    if surf < 0 or y0 - <float>(surf + 1) < lo or y0 - <float>(surf + 1) > climb + 0.5:
+    if surf < 0 or y0 - <float>(surf + 1) < lo - 1e-3 or y0 - <float>(surf + 1) > climb + 0.5 + 1e-3:
         return False
     psurf = surf
     if gx == ex and gz == ez:
@@ -1320,11 +1322,11 @@ def segwalk2d(np.ndarray[np.uint8_t, ndim=2] walk, np.ndarray[np.int32_t, ndim=2
         surf = gv[gx, gz]
         if surf < 0:
             return False
-        if <float>(surf - psurf) > climb:
+        if <float>(surf - psurf) > climb + 1e-3:
             return False
         psurf = surf
         y = y0 + t * dy
-        if y - <float>(surf + 1) < lo or y - <float>(surf + 1) > climb + 0.5:
+        if y - <float>(surf + 1) < lo - 1e-3 or y - <float>(surf + 1) > climb + 0.5 + 1e-3:
             return False
         if gx == ex and gz == ez:
             return True

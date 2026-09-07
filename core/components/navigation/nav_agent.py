@@ -273,6 +273,16 @@ class NavAgent(Component):
         padding = self.agent_padding if self.agent_padding > 0 else self.agent_radius
         if self.flying:
             nw.dilate_for_agent(padding)
+        try:
+            ent = self.entity
+            if ent is not None:
+                try:
+                    eid = ent.id
+                except Exception:
+                    eid = id(ent)
+                nw.ignore_entity(eid, True)
+        except Exception:
+            pass
         self._nav_world = nw
         return True
 

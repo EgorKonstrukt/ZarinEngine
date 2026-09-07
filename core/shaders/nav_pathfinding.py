@@ -35,6 +35,29 @@ _MAX_EXP_3D = 900000
 _FLY_COARSE = 80
 _FINE_3D_WIN = 56
 _TIME_BUDGET = 1.5
+_DYN_SCAN_DT = 0.25
+_RASTER_MIN_DT = 0.3
+_GRID_EPOCH = 0
+_EPOCH_LOCK = threading.Lock()
+_GRID_LOCK = threading.RLock()
+_FIELDS_SHARED: dict = {}
+_CANDS_SHARED: dict = {}
+
+
+def _bump_epoch():
+    global _GRID_EPOCH
+    with _EPOCH_LOCK:
+        _GRID_EPOCH += 1
+        return _GRID_EPOCH
+
+
+def _current_epoch():
+    return _GRID_EPOCH
+
+
+def _grid_snapshot(grid):
+    with _GRID_LOCK:
+        return grid._grid, _GRID_EPOCH
 
 _COLLIDER_TYPES = ("BoxCollider", "SphereCollider", "CapsuleCollider", "MeshCollider")
 
@@ -58,8 +81,8 @@ _COARSE_SHARED: dict = {}
 _COARSE_LOCK = threading.Lock()
 
 
-def _coarse_cached(base, f: int, dil: int):
-    key = (id(base), int(f), int(dil))
+def _coarse_cached(base, f: int, dil: int, ep: int, res: int):
+    key = (int(ep), int(res), int(f), int(dil))
     try:
         with _COARSE_LOCK:
             hit = _COARSE_SHARED.get(key)
@@ -67,7 +90,7 @@ def _coarse_cached(base, f: int, dil: int):
             return hit
     except Exception:
         pass
-    coarse = _nb.downsample_any3d(base, int(f))
+    coarse = _nb.downsample_any3d(np.ascontiguousarray(base), int(f))
     if dil > 0:
         coarse = _nb.dilate3d(coarse, int(dil))
     try:
@@ -105,7 +128,7 @@ class _NavSolveWorker(threading.Thread):
             if len(self._jobs) >= 8:
                 old = self._jobs.popleft()
                 try:
-                    self._results[old["req"]] = (old["gid"], None)
+                    self._results[old["req"]] = (old.get("gid"), None)
                 except Exception:
                     pass
             self._jobs.append(spec)
@@ -114,6 +137,78 @@ class _NavSolveWorker(threading.Thread):
     def take(self, req: str):
         with self._cond:
             return self._results.pop(req, None)
+
+    def _raster_apply(self, spec: dict):
+        try:
+            shell = spec["shell"]
+        except Exception:
+            return False
+        try:
+            if int(spec["seq"]) <= int(shell._raster_applied):
+                return False
+        except Exception:
+            pass
+        try:
+            r = int(spec["res"])
+            cell = float(spec["cell"])
+            half = float(spec["half"])
+            region = spec.get("region")
+            descs = spec.get("descs") or []
+            if region is None:
+                fresh = np.zeros((r, r, r), dtype=np.uint8)
+                for d in descs:
+                    try:
+                        if d[0] == "b":
+                            o = d[1]
+                            _nb.raster_box_obb(np.ascontiguousarray(fresh), cell, half,
+                                               o[0][0], o[0][1], o[0][2], o[1][0], o[1][1], o[1][2],
+                                               o[2][0], o[2][1], o[2][2], o[2][3])
+                        else:
+                            c = d[1]
+                            fresh[c[0]:c[3] + 1, c[1]:c[4] + 1, c[2]:c[5] + 1] = 1
+                    except Exception:
+                        pass
+            else:
+                try:
+                    fresh = np.array(shell._grid, dtype=np.uint8, copy=True)
+                except Exception:
+                    return False
+                cr, wr = region
+                x1, y1, z1, x2, y2, z2 = cr
+                try:
+                    fresh[x1:x2 + 1, y1:y2 + 1, z1:z2 + 1] = 0
+                except Exception:
+                    pass
+                for d in descs:
+                    try:
+                        wa = d[2]
+                        if wa[3] < wr[0] or wa[0] > wr[3] or wa[4] < wr[1] or wa[1] > wr[4] or wa[5] < wr[2] or wa[2] > wr[5]:
+                            continue
+                        if d[0] == "b":
+                            o = d[1]
+                            _nb.raster_box_obb(np.ascontiguousarray(fresh), cell, half,
+                                               o[0][0], o[0][1], o[0][2], o[1][0], o[1][1], o[1][2],
+                                               o[2][0], o[2][1], o[2][2], o[2][3])
+                        else:
+                            c = d[1]
+                            fresh[c[0]:c[3] + 1, c[1]:c[4] + 1, c[2]:c[5] + 1] = 1
+                    except Exception:
+                        pass
+            try:
+                with _GRID_LOCK:
+                    if int(spec["seq"]) <= int(shell._raster_applied):
+                        return False
+                    shell._grid = fresh
+                    shell._dirty = False
+                    shell._raster_applied = int(spec["seq"])
+                    if int(spec["seq"]) > int(shell._raster_done):
+                        shell._raster_done = int(spec["seq"])
+                    _bump_epoch()
+            except Exception:
+                return False
+            return True
+        except Exception:
+            return False
 
     def _solver_for(self, res: int, size: float):
         key = (int(res), round(float(size), 3))
@@ -131,9 +226,6 @@ class _NavSolveWorker(threading.Thread):
             s._path_rects = []
             s._path_aabbs = []
             s._is_flying = False
-            s._fields_cache = {}
-            s._cand_cache = {}
-            s._coarse_cache = {}
             s._fly_dilate = None
             s._guard_params = None
             s._los_walk = None
@@ -149,23 +241,31 @@ class _NavSolveWorker(threading.Thread):
 
     def run(self):
         while True:
-            with self._cond:
-                while not self._jobs:
-                    self._cond.wait(0.5)
-                spec = self._jobs.popleft()
             try:
-                out = self._solve(spec)
+                with self._cond:
+                    while not self._jobs:
+                        self._cond.wait(0.5)
+                    spec = self._jobs.popleft()
+                try:
+                    out = self._solve(spec)
+                except Exception:
+                    out = None
+                try:
+                    with self._cond:
+                        self._results[spec["req"]] = (spec.get("gid"), out)
+                        while len(self._results) > 64:
+                            try:
+                                self._results.pop(next(iter(self._results)))
+                            except Exception:
+                                break
+                except Exception:
+                    pass
             except Exception:
-                out = None
-            with self._cond:
-                self._results[spec["req"]] = (spec["gid"], out)
-                while len(self._results) > 64:
-                    try:
-                        self._results.pop(next(iter(self._results)))
-                    except Exception:
-                        break
+                pass
 
     def _solve(self, spec: dict):
+        if spec.get("kind") == "raster":
+            return self._raster_apply(spec)
         s = self._solver_for(spec["res"], spec["size"])
         g = s._grid
         g._grid = spec["grid"]
@@ -175,9 +275,10 @@ class _NavSolveWorker(threading.Thread):
         a = Vec3(float(spec["a"][0]), float(spec["a"][1]), float(spec["a"][2]))
         b = Vec3(float(spec["b"][0]), float(spec["b"][1]), float(spec["b"][2]))
         if spec["fly"]:
-            return s._find_path_fast_fly(a, b, float(spec["rad"]))
+            return s._find_path_fast_fly(a, b, float(spec["rad"]), spec["grid"], spec["gv"])
         return s._find_path_fast_ground(a, b, float(spec["rad"]), float(spec["h"]),
-                                        float(spec["climb"]), float(spec["slope"]), spec["pad"])
+                                        float(spec["climb"]), float(spec["slope"]), spec["pad"],
+                                        spec["grid"], spec["gv"])
 
 _NEIGHBOR_OFFSETS_3D = [
     (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1),
@@ -229,6 +330,13 @@ class NavGrid:
         self._grid: np.ndarray = np.zeros((resolution, resolution, resolution), dtype=np.uint8)
         self._raw_grid: Optional[np.ndarray] = None
         self._dirty = True
+        self._dyn_fp = None
+        self._dyn_scan = 0.0
+        self._raster_time = 0.0
+        self._raster_seq = 0
+        self._raster_done = 0
+        self._raster_applied = 0
+        self._ignore_eids: set = set()
 
     def cell_aabb(self, gx: int, gy: int, gz: int) -> AABB:
         c = self.grid_to_world(gx, gy, gz)
@@ -249,12 +357,32 @@ class NavGrid:
         )
 
     def _aabb_to_cell_range(self, aabb_min: Vec3, aabb_max: Vec3) -> tuple[int, int, int, int, int, int]:
-        gx1, gy1, gz1 = self.world_to_grid(aabb_min)
-        gx2, gy2, gz2 = self.world_to_grid(aabb_max)
         r = self.resolution
+        cs = self.cell_size
+        hw = self.half_world
+        if (aabb_max.x < -hw or aabb_min.x > hw or
+                aabb_max.y < -hw or aabb_min.y > hw or
+                aabb_max.z < -hw or aabb_min.z > hw):
+            return (0, 0, 0, -1, -1, -1)
+        gx1, gy1, gz1 = self.world_to_grid(aabb_min)
+        gx2 = int(math.ceil((aabb_max.x + hw) / cs - 1e-9)) - 1
+        gy2 = int(math.ceil((aabb_max.y + hw) / cs - 1e-9)) - 1
+        gz2 = int(math.ceil((aabb_max.z + hw) / cs - 1e-9)) - 1
+        if aabb_max.x <= -hw + 1e-9:
+            gx2 = 0
+        if aabb_min.x >= hw - 1e-9:
+            gx1 = r - 1
+        if aabb_max.y <= -hw + 1e-9:
+            gy2 = 0
+        if aabb_min.y >= hw - 1e-9:
+            gy1 = r - 1
+        if aabb_max.z <= -hw + 1e-9:
+            gz2 = 0
+        if aabb_min.z >= hw - 1e-9:
+            gz1 = r - 1
         return (
             max(0, min(r - 1, gx1)), max(0, min(r - 1, gy1)), max(0, min(r - 1, gz1)),
-            max(0, min(r - 1, gx2)), max(0, min(r - 1, gy2)), max(0, min(r - 1, gz2)),
+            min(r - 1, gx2), min(r - 1, gy2), min(r - 1, gz2),
         )
 
     def mark_blocked(self, aabb_min: Vec3, aabb_max: Vec3):
@@ -466,9 +594,6 @@ class NavWorld:
         self._path_rects: list[NavRect] = []
         self._path_aabbs: list[tuple[AABB, int]] = []
         self._is_flying: bool = False
-        self._fields_cache: dict = {}
-        self._cand_cache: dict = {}
-        self._coarse_cache: dict = {}
         self._fly_dilate: Optional[float] = None
         self._pending_jobs: dict = {}
         self._guard_params = None
@@ -492,6 +617,10 @@ class NavWorld:
         except Exception:
             pass
         try:
+            self._poll_dynamics()
+        except Exception:
+            pass
+        try:
             _pad = agent_padding if agent_padding is not None else agent_radius
             _gx, _gy, _gz = self._grid.world_to_grid(start_world)
             self._guard_params = (int(math.ceil(max(0.01, agent_height) / self._grid.cell_size)),
@@ -504,12 +633,12 @@ class NavWorld:
         except Exception:
             pass
         try:
-            arr = self._grid._grid
+            arr, gvep = _grid_snapshot(self._grid)
             spec = {
                 "req": req_id,
                 "grid": arr,
                 "gid": id(arr),
-                "gv": self._last_grid_version,
+                "gv": gvep,
                 "res": self._grid.resolution,
                 "size": self._grid.world_size,
                 "fly": bool(flying),
@@ -553,9 +682,10 @@ class NavWorld:
                     if tries < 3:
                         spec2 = dict(spec)
                         try:
-                            spec2["grid"] = self._grid._grid
-                            spec2["gid"] = id(self._grid._grid)
-                            spec2["gv"] = self._last_grid_version
+                            arr2, ep2 = _grid_snapshot(self._grid)
+                            spec2["grid"] = arr2
+                            spec2["gid"] = id(arr2)
+                            spec2["gv"] = ep2
                         except Exception:
                             pass
                         self._pending_jobs[req_id] = (spec2, tries + 1)
@@ -570,6 +700,10 @@ class NavWorld:
         return self._pending_results.pop(req_id, None)
 
     def has_los(self, a: Vec3, b: Vec3, flying: bool) -> bool:
+        try:
+            self._poll_dynamics()
+        except Exception:
+            pass
         try:
             grid = self._grid
             if flying:
@@ -586,7 +720,8 @@ class NavWorld:
                 if gp is None or len(gp) < 8 or not _HAS_NAV_CYTHON:
                     return True
                 try:
-                    F = self._derived_fields(gp[0], gp[1], gp[2], gp[3], gp[4], gp[5], gp[6], gp[7])
+                    arr0, ep0 = _grid_snapshot(grid)
+                    F = self._derived_fields(arr0, ep0, grid.cell_size, gp[0], gp[1], gp[2], gp[3], gp[4], gp[5], gp[6], gp[7])
                 except Exception:
                     return True
                 if F is None:
@@ -599,7 +734,7 @@ class NavWorld:
                 except Exception:
                     self._los_climb = 0.0
                 try:
-                    self._los_walk_gid = id(grid._grid)
+                    self._los_walk_gid = id(arr0)
                 except Exception:
                     self._los_walk_gid = None
             los_ground = self._los_ground
@@ -677,17 +812,56 @@ class NavWorld:
                         fresh[x1:x2 + 1, y1:y2 + 1, z1:z2 + 1] = 1
                     except Exception:
                         pass
-        grid._grid = fresh
-        grid._raw_grid = None
-        grid._dirty = False
-        self._last_grid_version += 1
+        with _GRID_LOCK:
+            grid._grid = fresh
+            grid._raw_grid = None
+            grid._dirty = False
+            self._last_grid_version = _bump_epoch()
         if e is not None and e[0]() is self._scene:
             e[1] = sv
-        self._fields_cache.clear()
-        self._cand_cache.clear()
-        self._coarse_cache.clear()
+        try:
+            grid._dyn_fp = self._fingerprint_colliders(self._scene, grid)
+            grid._dyn_scan = time.perf_counter()
+        except Exception:
+            pass
         self._los_walk = None
         self._los_base = None
+
+    def _box_obb_tuple(self, comp, tr):
+        scale = tr.local_scale
+        hx = float(comp.size.x * scale.x * 0.5)
+        hy = float(comp.size.y * scale.y * 0.5)
+        hz = float(comp.size.z * scale.z * 0.5)
+        if hx <= 0.0 or hy <= 0.0 or hz <= 0.0:
+            return None
+        pos = tr.local_position
+        rot = tr.local_rotation
+        cl = Vec3(float(comp.center.x * scale.x), float(comp.center.y * scale.y), float(comp.center.z * scale.z))
+        c = pos + rot.rotate_vec3(cl)
+        return ((float(c.x), float(c.y), float(c.z)), (hx, hy, hz),
+                (float(rot._x), float(rot._y), float(rot._z), float(rot._w)))
+
+    def _box_aligned(self, q) -> bool:
+        try:
+            qx, qy, qz, qw = float(q[0]), float(q[1]), float(q[2]), float(q[3])
+            nq = qx * qx + qy * qy + qz * qz + qw * qw
+            if nq > 1e-12:
+                inv = 1.0 / math.sqrt(nq)
+                qx *= inv
+                qy *= inv
+                qz *= inv
+                qw *= inv
+            rows = (
+                (1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy - qz * qw), 2.0 * (qx * qz + qy * qw)),
+                (2.0 * (qx * qy + qz * qw), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz - qx * qw)),
+                (2.0 * (qx * qz - qy * qw), 2.0 * (qy * qz + qx * qw), 1.0 - 2.0 * (qx * qx + qy * qy)),
+            )
+            for row in rows:
+                if sum(1 for v in row if abs(v) > 0.999999) != 1:
+                    return False
+            return True
+        except Exception:
+            return False
 
     def _raster_box_obb(self, comp, grid: "NavGrid", fresh: np.ndarray) -> bool:
         entity = comp._entity
@@ -696,20 +870,320 @@ class NavWorld:
         tr = entity.transform
         if not tr:
             return False
-        pos = tr.local_position
-        rot = tr.local_rotation
-        scale = tr.local_scale
-        hx = float(comp.size.x * scale.x * 0.5)
-        hy = float(comp.size.y * scale.y * 0.5)
-        hz = float(comp.size.z * scale.z * 0.5)
-        if hx <= 0.0 or hy <= 0.0 or hz <= 0.0:
+        try:
+            tup = self._box_obb_tuple(comp, tr)
+        except Exception:
             return False
-        cl = Vec3(float(comp.center.x * scale.x), float(comp.center.y * scale.y), float(comp.center.z * scale.z))
-        c = pos + rot.rotate_vec3(cl)
-        _nb.raster_box_obb(np.ascontiguousarray(fresh), float(grid.cell_size), float(grid.half_world),
-                           float(c.x), float(c.y), float(c.z),
-                           hx, hy, hz, float(rot._x), float(rot._y), float(rot._z), float(rot._w))
-        return True
+        if tup is None:
+            return False
+        (cx, cy, cz), (hx, hy, hz), q = tup
+        if self._box_aligned(q):
+            try:
+                aabb = self._get_collider_world_aabb(comp)
+                if aabb:
+                    x1, y1, z1, x2, y2, z2 = grid._aabb_to_cell_range(aabb.min, aabb.max)
+                    fresh[x1:x2 + 1, y1:y2 + 1, z1:z2 + 1] = 1
+                return True
+            except Exception:
+                return False
+        try:
+            _nb.raster_box_obb(np.ascontiguousarray(fresh), float(grid.cell_size), float(grid.half_world),
+                               cx, cy, cz, hx, hy, hz, q[0], q[1], q[2], q[3])
+            return True
+        except Exception:
+            return False
+
+    def ignore_entity(self, eid, ignore: bool = True):
+        try:
+            if ignore:
+                self._grid._ignore_eids.add(eid)
+            else:
+                self._grid._ignore_eids.discard(eid)
+        except Exception:
+            pass
+
+    def _entity_nav_key(self, entity):
+        try:
+            eid = entity.id
+            if eid is None:
+                eid = id(entity)
+        except Exception:
+            eid = id(entity)
+        return eid
+
+    def _fingerprint_colliders(self, scene, grid):
+        try:
+            entities = scene.get_all_entities()
+        except Exception:
+            return None
+        ignore = grid._ignore_eids
+        try:
+            cs = grid.cell_size
+            hw = grid.half_world
+            rr = grid.resolution
+        except Exception:
+            return None
+        fp = []
+        for entity in entities:
+            try:
+                tm = getattr(entity, "_type_map", None)
+                if tm:
+                    cols = []
+                    for t, lst in tm.items():
+                        try:
+                            nm = t.__name__
+                        except Exception:
+                            continue
+                        if nm in _COLLIDER_TYPES and lst:
+                            try:
+                                cols.extend([c for c in lst if c is not None])
+                            except Exception:
+                                pass
+                    if not cols:
+                        continue
+                    comps = cols
+                else:
+                    comps = entity.get_all_components()
+            except Exception:
+                continue
+            parts = []
+            maxr = 0.0
+            has_col = False
+            for comp in comps:
+                try:
+                    cname = type(comp).__name__
+                except Exception:
+                    continue
+                if cname not in _COLLIDER_TYPES:
+                    continue
+                has_col = True
+                try:
+                    en = bool(comp.enabled)
+                except Exception:
+                    en = True
+                try:
+                    if cname == "BoxCollider":
+                        sz = comp.size
+                        cn = comp.center
+                        parts.append(("b", round(float(sz.x), 3), round(float(sz.y), 3), round(float(sz.z), 3),
+                                      round(float(cn.x), 3), round(float(cn.y), 3), round(float(cn.z), 3), en))
+                        m = max(float(sz.x), float(sz.y), float(sz.z))
+                        if m > maxr:
+                            maxr = m
+                    elif cname == "SphereCollider":
+                        cn = comp.center
+                        parts.append(("s", round(float(comp.radius), 3),
+                                      round(float(cn.x), 3), round(float(cn.y), 3), round(float(cn.z), 3), en))
+                        m = float(comp.radius) * 2.0
+                        if m > maxr:
+                            maxr = m
+                    elif cname == "CapsuleCollider":
+                        cn = comp.center
+                        parts.append(("c", round(float(comp.radius), 3), round(float(comp.height), 3),
+                                      int(getattr(comp, "direction", 1)),
+                                      round(float(cn.x), 3), round(float(cn.y), 3), round(float(cn.z), 3), en))
+                        m = float(comp.height) + float(comp.radius) * 2.0
+                        if m > maxr:
+                            maxr = m
+                    elif cname == "MeshCollider":
+                        parts.append(("m", str(getattr(comp, "mesh_path", "")), en))
+                        try:
+                            mab = self._get_collider_world_aabb(comp)
+                            if mab is not None:
+                                m = max(float(mab.max.x - mab.min.x), float(mab.max.y - mab.min.y),
+                                        float(mab.max.z - mab.min.z))
+                                if m > maxr:
+                                    maxr = m
+                            else:
+                                maxr = 1e30
+                        except Exception:
+                            maxr = 1e30
+                except Exception:
+                    parts.append((cname, en))
+            if not has_col:
+                continue
+            key = self._entity_nav_key(entity)
+            if key in ignore:
+                continue
+            try:
+                tr = entity.transform
+                if tr is None:
+                    continue
+                lp = tr.local_position
+                lr = tr.local_rotation
+                ls = tr.local_scale
+                px, py, pz = float(lp.x), float(lp.y), float(lp.z)
+                t = (round(px, 3), round(py, 3), round(pz, 3),
+                     round(float(lr._x), 4), round(float(lr._y), 4), round(float(lr._z), 4), round(float(lr._w), 4),
+                     round(float(ls.x), 3), round(float(ls.y), 3), round(float(ls.z), 3))
+            except Exception:
+                continue
+            try:
+                act = bool(entity.active)
+            except Exception:
+                act = True
+            try:
+                sm = max(float(ls.x), float(ls.y), float(ls.z)) * maxr * 0.5 + cs
+                gx = max(0, min(rr - 1, int((px + hw) / cs)))
+                gy = max(0, min(rr - 1, int((py + hw) / cs)))
+                gz = max(0, min(rr - 1, int((pz + hw) / cs)))
+                rad = max(1, min(rr, int(sm / cs) + 2))
+            except Exception:
+                gx, gy, gz, rad = 0, 0, 0, rr
+            fp.append((key, act, t, tuple(parts), (gx, gy, gz, rad)))
+        return fp
+
+    def _snapshot_descs(self, scene, grid):
+        try:
+            entities = scene.get_all_entities()
+        except Exception:
+            return None
+        ignore = grid._ignore_eids
+        descs = []
+        for entity in entities:
+            try:
+                comps = entity.get_all_components()
+            except Exception:
+                continue
+            if self._entity_nav_key(entity) in ignore:
+                continue
+            try:
+                tr = entity.transform
+            except Exception:
+                tr = None
+            for comp in comps:
+                try:
+                    cname = type(comp).__name__
+                except Exception:
+                    continue
+                if cname not in _COLLIDER_TYPES:
+                    continue
+                try:
+                    ab = self._get_collider_world_aabb(comp)
+                    if ab is None:
+                        continue
+                    wa = (float(ab.min.x), float(ab.min.y), float(ab.min.z),
+                          float(ab.max.x), float(ab.max.y), float(ab.max.z))
+                except Exception:
+                    continue
+                try:
+                    if cname == "BoxCollider" and tr is not None and _HAS_NAV_CYTHON:
+                        tup = self._box_obb_tuple(comp, tr)
+                        if tup is not None and not self._box_aligned(tup[2]):
+                            descs.append(("b", tup, wa))
+                            continue
+                    x1, y1, z1, x2, y2, z2 = grid._aabb_to_cell_range(ab.min, ab.max)
+                    descs.append(("a", (x1, y1, z1, x2, y2, z2), wa))
+                except Exception:
+                    pass
+        return descs
+
+    def _poll_dynamics(self) -> bool:
+        try:
+            sc = self._scene
+            if sc is None:
+                return False
+            grid = self._grid
+            now = time.perf_counter()
+            if now - float(grid._dyn_scan) < _DYN_SCAN_DT:
+                return False
+            grid._dyn_scan = now
+            fp = self._fingerprint_colliders(sc, grid)
+            if fp is None:
+                return False
+            if grid._dyn_fp is not None and fp == grid._dyn_fp:
+                return False
+            old = grid._dyn_fp
+            grid._dyn_fp = fp
+            if old is None:
+                return False
+            if now - float(grid._raster_time) < _RASTER_MIN_DT:
+                return True
+            if int(grid._raster_done) < int(grid._raster_seq):
+                return True
+            self._submit_raster(sc, grid, old, fp, now)
+            return True
+        except Exception:
+            return False
+
+    def _submit_raster(self, sc, grid, old_fp, new_fp, now: float):
+        try:
+            r = grid.resolution
+            cs = grid.cell_size
+            hw = grid.half_world
+            old_map = {}
+            for e in old_fp:
+                try:
+                    old_map[e[0]] = e
+                except Exception:
+                    pass
+            x1, y1, z1 = r, r, r
+            x2, y2, z2 = -1, -1, -1
+            changed = 0
+
+            def _grow(ce):
+                try:
+                    return (max(0, ce[0] - ce[3]), max(0, ce[1] - ce[3]), max(0, ce[2] - ce[3]),
+                            min(r - 1, ce[0] + ce[3]), min(r - 1, ce[1] + ce[3]), min(r - 1, ce[2] + ce[3]))
+                except Exception:
+                    return None
+
+            def _feed(ce):
+                if ce is None:
+                    return
+                gr = _grow(ce)
+                if gr is None:
+                    return
+                nonlocal x1, y1, z1, x2, y2, z2
+                x1 = min(x1, gr[0])
+                y1 = min(y1, gr[1])
+                z1 = min(z1, gr[2])
+                x2 = max(x2, gr[3])
+                y2 = max(y2, gr[4])
+                z2 = max(z2, gr[5])
+
+            for e in new_fp:
+                try:
+                    o = old_map.pop(e[0], None)
+                    if o is not None and o == e:
+                        continue
+                    changed += 1
+                    if o is not None:
+                        _feed(o[4])
+                    _feed(e[4])
+                except Exception:
+                    pass
+            for e in old_map.values():
+                try:
+                    changed += 1
+                    _feed(e[4])
+                except Exception:
+                    pass
+            if changed == 0:
+                return False
+            region = None
+            if changed <= 200 and x1 <= x2:
+                try:
+                    vol = (x2 - x1 + 1) * (y2 - y1 + 1) * (z2 - z1 + 1)
+                    if vol <= r * r * r // 4:
+                        region = ((x1, y1, z1, x2, y2, z2),
+                                  (x1 * cs - hw, y1 * cs - hw, z1 * cs - hw,
+                                   (x2 + 1) * cs - hw, (y2 + 1) * cs - hw, (z2 + 1) * cs - hw))
+                except Exception:
+                    region = None
+            descs = self._snapshot_descs(sc, grid)
+            if descs is None:
+                return False
+            grid._raster_seq = int(grid._raster_seq) + 1
+            spec = {"kind": "raster", "req": "__raster_%d" % int(grid._raster_seq),
+                    "shell": grid, "descs": descs,
+                    "res": int(r), "cell": float(grid.cell_size), "half": float(grid.half_world),
+                    "seq": int(grid._raster_seq), "region": region}
+            _get_nav_worker().submit(spec)
+            grid._raster_time = now
+            return True
+        except Exception:
+            return False
 
     def _get_collider_world_aabb(self, comp) -> Optional[AABB]:
         entity = comp._entity
@@ -1112,47 +1586,48 @@ class NavWorld:
     def _over_budget(self) -> bool:
         return (time.perf_counter() - self._t0) > _TIME_BUDGET
 
-    def _level_candidates(self, hc: int, cc: int):
-        key = (self._last_grid_version, int(hc), int(cc))
-        hit = self._cand_cache.get(key)
+    def _level_candidates(self, arr, ep: int, hc: int, cc: int):
+        r = int(arr.shape[0])
+        key = (int(ep), r, int(hc), int(cc))
+        hit = _CANDS_SHARED.get(key)
         if hit is not None:
             return hit
-        grid = self._grid
-        r = grid.resolution
-        raw = np.ascontiguousarray(grid._grid, dtype=np.uint8)
+        raw = np.ascontiguousarray(arr, dtype=np.uint8)
         cands = np.zeros((r, r, 4), dtype=np.int32)
         ncnt = np.zeros((r, r), dtype=np.uint8)
         _nb.collect_candidates(raw, int(hc + cc), cands, ncnt)
         hit = (cands, ncnt)
-        self._cand_cache[key] = hit
-        while len(self._cand_cache) > 4:
-            self._cand_cache.pop(next(iter(self._cand_cache)))
+        try:
+            _CANDS_SHARED[key] = hit
+            while len(_CANDS_SHARED) > 4:
+                _CANDS_SHARED.pop(next(iter(_CANDS_SHARED)))
+        except Exception:
+            pass
         return hit
 
-    def _derived_fields(self, hc: int, cc: int, slope: float, rad: int, climb: float,
+    def _derived_fields(self, arr, ep: int, cell: float, hc: int, cc: int, slope: float, rad: int, climb: float,
                       sx: int = 0, sz: int = 0, ref_y: int = 0) -> Optional[dict]:
-        key = (self._last_grid_version, int(hc), int(cc), round(float(slope), 3), int(rad),
+        r = int(arr.shape[0])
+        key = (int(ep), r, int(hc), int(cc), round(float(slope), 3), int(rad),
                round(float(climb), 3), int(sx), int(sz), int(ref_y))
-        f = self._fields_cache.get(key)
+        f = _FIELDS_SHARED.get(key)
         if f is not None:
             return f
-        grid = self._grid
-        r = grid.resolution
-        climb_cells = max(0.0, float(climb)) / max(1e-6, float(grid.cell_size))
+        climb_cells = max(0.0, float(climb)) / max(1e-6, float(cell))
         if 0 < slope < 90:
             max_hdiff = max(math.tan(math.radians(slope)), climb_cells)
         else:
             max_hdiff = 1e9
         try:
-            cands, ncnt = self._level_candidates(hc, cc)
+            cands, ncnt = self._level_candidates(arr, ep, hc, cc)
             walkable = np.zeros((r, r), dtype=np.uint8)
             ground = np.full((r, r), -1, dtype=np.int32)
             cost = np.ones((r, r), dtype=np.float32)
             ok = bool(_nb.flood_levels(cands, ncnt, int(sx), int(sz), int(ref_y),
-                                       float(grid.cell_size), float(climb), ground, walkable))
+                                       float(cell), float(climb), ground, walkable))
             if not ok:
                 return None
-            _nb.finalize_ground(ground, walkable, float(max_hdiff), float(grid.cell_size), 0.15, 0.6, cost)
+            _nb.finalize_ground(ground, walkable, float(max_hdiff), float(cell), 0.15, 0.6, cost)
         except Exception:
             return None
         if rad > 0:
@@ -1161,12 +1636,15 @@ class NavWorld:
             walkable = dw
         labels = np.full((r, r), -1, dtype=np.int32)
         sizes = np.zeros(r * r, dtype=np.int32)
-        ncomp = int(_nb.label_components(walkable, ground, float(grid.cell_size),
+        ncomp = int(_nb.label_components(walkable, ground, float(cell),
                                          float(climb) if climb >= 0 else -1.0, labels, sizes))
         f = {"walk": walkable, "ground": ground, "cost": cost, "labels": labels, "ncomp": ncomp}
-        self._fields_cache[key] = f
-        while len(self._fields_cache) > 8:
-            self._fields_cache.pop(next(iter(self._fields_cache)))
+        try:
+            _FIELDS_SHARED[key] = f
+            while len(_FIELDS_SHARED) > 6:
+                _FIELDS_SHARED.pop(next(iter(_FIELDS_SHARED)))
+        except Exception:
+            pass
         return f
 
     def _snap_g(self, walk: np.ndarray, gx: int, gz: int) -> tuple[int, int]:
@@ -1364,7 +1842,7 @@ class NavWorld:
             gy = int(ground[gx, gz])
             if gy < 0:
                 return None
-            if abs(y - float(gy + 1)) <= float(climb_cells) + 1.0:
+            if abs(y - float(gy + 1)) <= 0.5:
                 return float(gy + 1)
             return y
         except Exception:
@@ -1422,7 +1900,7 @@ class NavWorld:
         self._path_rects = []
 
     def _fly_cells(self, base: np.ndarray, r: int, s: tuple[int, int, int], e: tuple[int, int, int],
-                   rad_world: float, cell: float) -> Optional[list[tuple[int, int, int]]]:
+                   rad_world: float, cell: float, ep: int = 0) -> Optional[list[tuple[int, int, int]]]:
         frad = int(round(rad_world / cell)) if cell > 0 else 0
         if frad < 0:
             frad = 0
@@ -1452,7 +1930,7 @@ class NavWorld:
         f = max(1, int(math.ceil(r / _FLY_COARSE)))
         dil = int(rad_world / (cell * f)) if cell * f > 0 else 0
         try:
-            coarse = _coarse_cached(base, f, dil)
+            coarse = _coarse_cached(base, f, dil, ep, r)
         except Exception:
             return None
         if coarse is None:
@@ -1578,7 +2056,7 @@ class NavWorld:
     def _find_path_fast_ground(self, start_world: Vec3, end_world: Vec3,
                                agent_radius: float, agent_height: float,
                                max_climb: float, max_slope: float,
-                               agent_padding: Optional[float]) -> Optional[list[Vec3]]:
+                               agent_padding: Optional[float], arr=None, ep=None) -> Optional[list[Vec3]]:
         grid = self._grid
         r = grid.resolution
         sx, sy, sz = grid.world_to_grid(start_world)
@@ -1593,8 +2071,13 @@ class NavWorld:
         cc = int(math.ceil(max(0.0, max_climb) / grid.cell_size))
         rad = int(max(0.0, padding) / grid.cell_size + 0.5)
         ref_y = max(0, min(r - 1, sy))
+        if arr is None or ep is None:
+            try:
+                arr, ep = _grid_snapshot(grid)
+            except Exception:
+                arr, ep = grid._grid, _current_epoch()
         try:
-            F = self._derived_fields(hc, cc, max_slope, rad, max_climb, sx, sz, ref_y)
+            F = self._derived_fields(arr, ep, grid.cell_size, hc, cc, max_slope, rad, max_climb, sx, sz, ref_y)
         except Exception:
             return None
         if F is None:
@@ -1607,7 +2090,7 @@ class NavWorld:
         except Exception:
             self._los_climb = 0.0
         try:
-            self._los_walk_gid = id(grid._grid)
+            self._los_walk_gid = id(arr)
         except Exception:
             self._los_walk_gid = None
         s = self._snap_g(walk, sx, sz)
@@ -1633,7 +2116,8 @@ class NavWorld:
         self._build_path_aabbs()
         return pts
 
-    def _find_path_fast_fly(self, start_world: Vec3, end_world: Vec3, agent_radius: float) -> Optional[list[Vec3]]:
+    def _find_path_fast_fly(self, start_world: Vec3, end_world: Vec3, agent_radius: float,
+                            arr=None, ep=None) -> Optional[list[Vec3]]:
         grid = self._grid
         r = grid.resolution
         sx, sy, sz = grid.world_to_grid(start_world)
@@ -1643,14 +2127,19 @@ class NavWorld:
         self._path_aabbs.clear()
         self._path_rects = []
         self._is_flying = True
-        base = np.ascontiguousarray(grid._grid)
+        if arr is None or ep is None:
+            try:
+                arr, ep = _grid_snapshot(grid)
+            except Exception:
+                arr, ep = grid._grid, _current_epoch()
+        base = np.ascontiguousarray(arr)
         self._los_base = base
         try:
             self._los_fly_rad = max(0, int(round(max(0.0, float(agent_radius)) / float(grid.cell_size))))
         except Exception:
             self._los_fly_rad = 0
         try:
-            self._los_base_gid = id(grid._grid)
+            self._los_base_gid = id(arr)
         except Exception:
             self._los_base_gid = None
         try:
@@ -1668,7 +2157,7 @@ class NavWorld:
             return [start_world, end_world]
         rad_w = self._fly_dilate if self._fly_dilate is not None else agent_radius
         try:
-            cells = self._fly_cells(base, r, s, e, max(0.0, float(rad_w)), float(grid.cell_size))
+            cells = self._fly_cells(base, r, s, e, max(0.0, float(rad_w)), float(grid.cell_size), ep)
         except Exception:
             return None
         if not cells or self._over_budget():
