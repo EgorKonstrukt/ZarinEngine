@@ -43,6 +43,59 @@ _EPOCH_LOCK = threading.Lock()
 _GRID_LOCK = threading.RLock()
 _FIELDS_SHARED: dict = {}
 _CANDS_SHARED: dict = {}
+_NAV_STATS: dict = {}
+_NAV_STATS_LOCK = threading.Lock()
+
+
+def _stat(key: str, dt_ms: float):
+    try:
+        with _NAV_STATS_LOCK:
+            e = _NAV_STATS.get(key)
+            if e is None:
+                e = _NAV_STATS[key] = [0, 0.0, 0.0]
+            e[0] += 1
+            e[1] += dt_ms
+            if dt_ms > e[2]:
+                e[2] = dt_ms
+    except Exception:
+        pass
+
+
+def _timed(key: str):
+    def deco(fn):
+        try:
+            import functools
+
+            @functools.wraps(fn)
+            def wrap(*a, **k):
+                t0 = time.perf_counter()
+                try:
+                    return fn(*a, **k)
+                finally:
+                    try:
+                        _stat(key, (time.perf_counter() - t0) * 1000.0)
+                    except Exception:
+                        pass
+            return wrap
+        except Exception:
+            return fn
+    return deco
+
+
+def nav_stats(reset: bool = False) -> dict:
+    try:
+        out = {k: {"n": v[0], "total_ms": round(v[1], 1),
+                   "avg_ms": round(v[1] / v[0], 3) if v[0] else 0.0,
+                   "max_ms": round(v[2], 2)} for k, v in _NAV_STATS.items()}
+    except Exception:
+        out = {}
+    if reset:
+        try:
+            with _NAV_STATS_LOCK:
+                _NAV_STATS.clear()
+        except Exception:
+            pass
+    return out
 
 
 def _bump_epoch():
@@ -146,10 +199,28 @@ class _NavSolveWorker(threading.Thread):
 
     def submit(self, spec: dict):
         with self._cond:
-            if len(self._jobs) >= 8:
-                old = self._jobs.popleft()
+            if len(self._jobs) >= 24:
                 try:
-                    self._results[old["req"]] = (old.get("gid"), None)
+                    drop = None
+                    for i, old in enumerate(self._jobs):
+                        try:
+                            if old.get("kind") in ("raster", "rebuild"):
+                                drop = i
+                                break
+                        except Exception:
+                            continue
+                    if drop is None:
+                        old = self._jobs.popleft()
+                    else:
+                        old = self._jobs[drop]
+                        try:
+                            del self._jobs[drop]
+                        except Exception:
+                            pass
+                    try:
+                        self._results[old["req"]] = (old.get("gid"), None)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
             self._jobs.append(spec)
@@ -159,6 +230,7 @@ class _NavSolveWorker(threading.Thread):
         with self._cond:
             return self._results.pop(req, None)
 
+    @_timed("w_raster")
     def _raster_apply(self, spec: dict):
         try:
             shell = spec["shell"]
@@ -244,6 +316,7 @@ class _NavSolveWorker(threading.Thread):
             s._guard_params = None
             s._los_walk = None
             s._los_walk_gid = None
+            s._los_seed = None
             s._los_ground = None
             s._los_climb = 0.0
             s._los_base = None
@@ -277,6 +350,7 @@ class _NavSolveWorker(threading.Thread):
             except Exception:
                 pass
 
+    @_timed("w_rebuild")
     def _rebuild_apply(self, spec: dict):
         try:
             shell = spec["shell"]
@@ -315,11 +389,18 @@ class _NavSolveWorker(threading.Thread):
         s._t0 = time.perf_counter()
         a = Vec3(float(spec["a"][0]), float(spec["a"][1]), float(spec["a"][2]))
         b = Vec3(float(spec["b"][0]), float(spec["b"][1]), float(spec["b"][2]))
-        if spec["fly"]:
-            return s._find_path_fast_fly(a, b, float(spec["rad"]), spec["grid"], spec["gv"])
-        return s._find_path_fast_ground(a, b, float(spec["rad"]), float(spec["h"]),
-                                        float(spec["climb"]), float(spec["slope"]), spec["pad"],
-                                        spec["grid"], spec["gv"])
+        _wt0 = time.perf_counter()
+        try:
+            if spec["fly"]:
+                return s._find_path_fast_fly(a, b, float(spec["rad"]), spec["grid"], spec["gv"])
+            return s._find_path_fast_ground(a, b, float(spec["rad"]), float(spec["h"]),
+                                            float(spec["climb"]), float(spec["slope"]), spec["pad"],
+                                            spec["grid"], spec["gv"])
+        finally:
+            try:
+                _stat("w_path", (time.perf_counter() - _wt0) * 1000.0)
+            except Exception:
+                pass
 
 _NEIGHBOR_OFFSETS_3D = [
     (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1),
@@ -388,6 +469,10 @@ class NavGrid:
         self._nav_cache: dict = {}
         self._rb_job = None
         self._rb_pump_t = 0.0
+        self._raster_pending = None
+        self._raster_pending_seq = 0
+        self._raster_pending_t = 0.0
+        self._held_paths: list = []
         self._ignore_eids: set = set()
 
     def cell_aabb(self, gx: int, gy: int, gz: int) -> AABB:
@@ -651,6 +736,7 @@ class NavWorld:
         self._guard_params = None
         self._los_walk = None
         self._los_walk_gid = None
+        self._los_seed = None
         self._los_ground = None
         self._los_climb = 0.0
         self._los_base = None
@@ -658,6 +744,7 @@ class NavWorld:
         self._los_fly_rad = 0
         self._t0: float = 0.0
 
+    @_timed("deferred")
     def find_path_gpu_deferred(self, start_world: Vec3, end_world: Vec3,
                                  agent_radius: float = 0.5, agent_height: float = 2.0,
                                  flying: bool = False,
@@ -709,7 +796,7 @@ class NavWorld:
                     self._pending_jobs.pop(next(iter(self._pending_jobs)))
                 except Exception:
                     break
-            _get_nav_worker().submit(spec)
+            self._submit_or_hold(spec)
             return req_id
         except Exception:
             pass
@@ -721,9 +808,91 @@ class NavWorld:
             self._pending_results[req_id] = []
         return req_id
 
+    def _submit_or_hold(self, spec):
+        grid = self._grid
+        hold = False
+        try:
+            if not grid._built_once and (grid._rb_job is not None or grid._rebuild_req is not None):
+                hold = True
+        except Exception:
+            hold = False
+        if hold:
+            try:
+                hp = grid._held_paths
+            except Exception:
+                hp = None
+            if hp is None:
+                try:
+                    grid._held_paths = hp = []
+                except Exception:
+                    hp = None
+            if hp is not None:
+                hp.append(spec)
+                while len(hp) > 32:
+                    try:
+                        old = hp.pop(0)
+                        try:
+                            self._pending_results[old.get("req", "")] = []
+                        except Exception:
+                            pass
+                        try:
+                            self._pending_jobs.pop(old.get("req", ""), None)
+                        except Exception:
+                            pass
+                    except Exception:
+                        break
+                return
+        _get_nav_worker().submit(spec)
+
+    def _release_held_paths(self, grid) -> bool:
+        try:
+            hp = grid._held_paths
+            if not hp:
+                return False
+        except Exception:
+            return False
+        try:
+            ready = bool(grid._built_once)
+            if not ready:
+                try:
+                    ready = grid._rb_job is None and grid._rebuild_req is None
+                except Exception:
+                    ready = True
+            if not ready:
+                return False
+        except Exception:
+            return False
+        try:
+            arr, ep = _grid_snapshot(grid)
+        except Exception:
+            return False
+        try:
+            specs = list(hp)
+            del hp[:]
+        except Exception:
+            return False
+        for spec in specs:
+            try:
+                spec["grid"] = arr
+                spec["gid"] = id(arr)
+                spec["gv"] = ep
+                _get_nav_worker().submit(spec)
+            except Exception:
+                pass
+        return True
+
+    @_timed("poll")
     def poll_result(self, req_id: str) -> Optional[list[Vec3]]:
         try:
             self._poll_rebuild(self._grid)
+        except Exception:
+            pass
+        try:
+            self._drive_rebuild_pump()
+        except Exception:
+            pass
+        try:
+            self._release_held_paths(self._grid)
         except Exception:
             pass
         try:
@@ -731,7 +900,13 @@ class NavWorld:
             if r is not None:
                 gid, payload = r
                 slot = self._pending_jobs.pop(req_id, None)
-                if payload is not None and (slot is None or gid == id(self._grid._grid)):
+                try:
+                    _sh = self._grid
+                    prebuild = ((not _sh._built_once) and gid == id(_sh._grid)
+                                and (_sh._rb_job is not None or _sh._rebuild_req is not None))
+                except Exception:
+                    prebuild = False
+                if payload is not None and not prebuild and (slot is None or gid == id(self._grid._grid)):
                     return payload if payload else []
                 if slot is not None:
                     spec, tries = slot
@@ -746,7 +921,7 @@ class NavWorld:
                             pass
                         self._pending_jobs[req_id] = (spec2, tries + 1)
                         try:
-                            _get_nav_worker().submit(spec2)
+                            self._submit_or_hold(spec2)
                         except Exception:
                             pass
                         return None
@@ -755,6 +930,7 @@ class NavWorld:
             pass
         return self._pending_results.pop(req_id, None)
 
+    @_timed("los")
     def has_los(self, a: Vec3, b: Vec3, flying: bool) -> bool:
         try:
             self._poll_dynamics()
@@ -771,13 +947,22 @@ class NavWorld:
                 return bool(_nb.los3d_clear(np.ascontiguousarray(base), sa[0], sa[1], sa[2], sb[0], sb[1], sb[2],
                                             int(self._los_fly_rad)))
             walk = self._los_walk
-            if walk is None or self._los_walk_gid != id(grid._grid):
+            try:
+                _tbx, _tby, _tbz = grid.world_to_grid(b)
+            except Exception:
+                _tbx = _tby = _tbz = 0
+            try:
+                _seed = (int(_tbx), int(_tby), int(_tbz))
+            except Exception:
+                _seed = (0, 0, 0)
+            if walk is None or self._los_walk_gid != id(grid._grid) or getattr(self, "_los_seed", None) != _seed:
                 gp = getattr(self, "_guard_params", None)
                 if gp is None or len(gp) < 8 or not _HAS_NAV_CYTHON:
                     return True
                 try:
                     arr0, ep0 = _grid_snapshot(grid)
-                    F = self._derived_fields(arr0, ep0, grid.cell_size, gp[0], gp[1], gp[2], gp[3], gp[4], gp[5], gp[6], gp[7])
+                    F = self._derived_fields(arr0, ep0, grid.cell_size, gp[0], gp[1], gp[2], gp[3], gp[4],
+                                             _seed[0], _seed[2], _seed[1])
                 except Exception:
                     return True
                 if F is None:
@@ -785,6 +970,7 @@ class NavWorld:
                 walk = F["walk"]
                 self._los_walk = walk
                 self._los_ground = F["ground"]
+                self._los_seed = _seed
                 try:
                     self._los_climb = max(0.0, float(gp[4])) / max(1e-6, float(grid.cell_size))
                 except Exception:
@@ -1134,6 +1320,7 @@ class NavWorld:
                 grid._raster_seq = 0
                 grid._raster_done = 0
                 grid._raster_applied = 0
+                grid._raster_pending = None
                 grid._rebuild_done = int(seq)
                 grid._built_once = True
                 try:
@@ -1206,6 +1393,7 @@ class NavWorld:
             pass
         return False
 
+    @_timed("rebuild")
     def _rebuild_grid(self):
         if not self._scene:
             return
@@ -1238,6 +1426,10 @@ class NavWorld:
             pass
         try:
             self._maybe_pump_rebuild(grid, key, sv, _RB_BUDGET)
+        except Exception:
+            pass
+        try:
+            self._release_held_paths(grid)
         except Exception:
             pass
 
@@ -1482,6 +1674,21 @@ class NavWorld:
                 pass
         return out
 
+    def _drive_rebuild_pump(self):
+        try:
+            sc = self._scene
+            if sc is None:
+                return
+            grid = self._grid
+            if grid._rb_job is None:
+                return
+            sv = int(getattr(sc, '_render_version', -1))
+            key = (id(sc), int(grid.resolution), round(float(grid.world_size), 3))
+            self._maybe_pump_rebuild(grid, key, sv, _RB_BUDGET)
+        except Exception:
+            pass
+
+    @_timed("dyn")
     def _poll_dynamics(self) -> bool:
         try:
             sc = self._scene
@@ -1492,7 +1699,65 @@ class NavWorld:
                 self._poll_rebuild(grid)
             except Exception:
                 pass
+            try:
+                self._drive_rebuild_pump()
+            except Exception:
+                pass
+            try:
+                self._release_held_paths(grid)
+            except Exception:
+                pass
+            try:
+                if grid._rb_job is not None or grid._rebuild_req is not None:
+                    return False
+            except Exception:
+                pass
             now = time.perf_counter()
+            try:
+                pend = grid._raster_pending
+                if pend is not None:
+                    pseq, pmap, ptime = pend
+                    if int(grid._raster_applied) >= int(pseq):
+                        grid._raster_pending = None
+                    elif now - float(ptime) > 3.0:
+                        try:
+                            base0 = grid._dyn_fp
+                            dc0 = grid._dyn_descs
+                            if isinstance(base0, dict):
+                                for k, item in pmap.items():
+                                    try:
+                                        old, new, ent = item
+                                        if new is None:
+                                            if k not in base0 and old is not None:
+                                                base0[k] = old
+                                        else:
+                                            try:
+                                                same = base0.get(k, None) == new
+                                            except Exception:
+                                                same = False
+                                            if same:
+                                                if old is None:
+                                                    try:
+                                                        base0.pop(k, None)
+                                                    except Exception:
+                                                        pass
+                                                else:
+                                                    base0[k] = old
+                                                if isinstance(dc0, dict):
+                                                    try:
+                                                        dc0.pop(k, None)
+                                                    except Exception:
+                                                        pass
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                        try:
+                            grid._raster_pending = None
+                        except Exception:
+                            pass
+            except Exception:
+                pass
             if now - float(grid._dyn_scan) < _DYN_SCAN_DT:
                 return False
             grid._dyn_scan = now
@@ -1552,6 +1817,12 @@ class NavWorld:
             except Exception:
                 ok = False
             if ok:
+                try:
+                    grid._raster_pending = (int(grid._raster_seq), changed, now)
+                    grid._raster_pending_seq = int(grid._raster_seq)
+                    grid._raster_pending_t = now
+                except Exception:
+                    pass
                 try:
                     for key, item in changed.items():
                         try:
@@ -2088,6 +2359,19 @@ class NavWorld:
         f = _FIELDS_SHARED.get(key)
         if f is not None:
             return f
+        _ft0 = time.perf_counter()
+        try:
+            return self._derived_fields_build(arr, ep, cell, hc, cc, slope, rad, climb,
+                                              sx, sz, ref_y, key)
+        finally:
+            try:
+                _stat("fields_build", (time.perf_counter() - _ft0) * 1000.0)
+            except Exception:
+                pass
+
+    def _derived_fields_build(self, arr, ep: int, cell: float, hc: int, cc: int, slope: float, rad: int,
+                              climb: float, sx: int, sz: int, ref_y: int, key) -> Optional[dict]:
+        r = int(arr.shape[0])
         climb_cells = max(0.0, float(climb)) / max(1e-6, float(cell))
         if 0 < slope < 90:
             max_hdiff = max(math.tan(math.radians(slope)), climb_cells)
