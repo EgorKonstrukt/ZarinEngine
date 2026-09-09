@@ -7,6 +7,8 @@
 from __future__ import annotations
 import os
 
+from plugins.zarin_mcp.main_thread import run_on_main_thread
+
 
 def register(registry, engine):
 
@@ -16,16 +18,18 @@ def register(registry, engine):
         {"type": "object", "properties": {}},
     )
     def editor_get_selection():
-        viewport = getattr(engine, "viewport", None)
-        if viewport is None:
-            return {"selection": [], "message": "No viewport (headless mode)"}
-        selected = getattr(viewport, "_selected_entities", [])
-        return {
-            "selection": [
-                {"id": e.id, "name": e.name} for e in selected
-            ],
-            "count": len(selected),
-        }
+        def _do():
+            viewport = getattr(engine, "viewport", None)
+            if viewport is None:
+                return {"selection": [], "message": "No viewport (headless mode)"}
+            selected = list(getattr(viewport, "_selected_entities", []))
+            return {
+                "selection": [
+                    {"id": e.id, "name": e.name} for e in selected
+                ],
+                "count": len(selected),
+            }
+        return run_on_main_thread(_do, timeout_ms=15000)
 
     @registry.tool(
         "editor_set_selection",
@@ -45,22 +49,26 @@ def register(registry, engine):
     def editor_set_selection(entity_ids=None):
         if entity_ids is None:
             entity_ids = []
-        viewport = getattr(engine, "viewport", None)
-        if viewport is None:
-            return {"error": "No viewport (headless mode)"}
-        scene = engine.scene
-        if scene is None:
-            return {"error": "No scene loaded"}
-        entities = []
-        for eid in entity_ids:
-            e = scene.get_entity(eid)
-            if e:
-                entities.append(e)
-        if hasattr(viewport, "set_selected_entities"):
-            viewport.set_selected_entities(entities)
-        elif hasattr(viewport, "set_selected_entity") and len(entities) == 1:
-            viewport.set_selected_entity(entities[0])
-        return {"message": f"Selected {len(entities)} entities"}
+        ids = list(entity_ids)
+
+        def _do():
+            viewport = getattr(engine, "viewport", None)
+            if viewport is None:
+                return {"error": "No viewport (headless mode)"}
+            scene = engine.scene
+            if scene is None:
+                return {"error": "No scene loaded"}
+            entities = []
+            for eid in ids:
+                e = scene.get_entity(eid)
+                if e:
+                    entities.append(e)
+            if hasattr(viewport, "set_selected_entities"):
+                viewport.set_selected_entities(entities)
+            elif hasattr(viewport, "set_selected_entity") and len(entities) == 1:
+                viewport.set_selected_entity(entities[0])
+            return {"message": f"Selected {len(entities)} entities"}
+        return run_on_main_thread(_do, timeout_ms=15000)
 
     @registry.tool(
         "editor_clear_selection",
@@ -68,14 +76,16 @@ def register(registry, engine):
         {"type": "object", "properties": {}},
     )
     def editor_clear_selection():
-        viewport = getattr(engine, "viewport", None)
-        if viewport is None:
-            return {"error": "No viewport"}
-        if hasattr(viewport, "set_selected_entities"):
-            viewport.set_selected_entities([])
-        elif hasattr(viewport, "set_selected_entity"):
-            viewport.set_selected_entity(None)
-        return {"message": "Selection cleared"}
+        def _do():
+            viewport = getattr(engine, "viewport", None)
+            if viewport is None:
+                return {"error": "No viewport"}
+            if hasattr(viewport, "set_selected_entities"):
+                viewport.set_selected_entities([])
+            elif hasattr(viewport, "set_selected_entity"):
+                viewport.set_selected_entity(None)
+            return {"message": "Selection cleared"}
+        return run_on_main_thread(_do, timeout_ms=15000)
 
     @registry.tool(
         "editor_undo",

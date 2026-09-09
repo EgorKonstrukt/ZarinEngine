@@ -15,8 +15,8 @@ from plugins.zarin_mcp.mcp_server import McpServer
 
 class ZarinMCPPlugin(PluginBase):
     NAME = "ZarinMCP"
-    VERSION = "2.0.0"
-    DESCRIPTION = "MCP server providing LLMs full access to the engine, scene, assets, editor, and more. 60+ tools, 10+ resources, prompts."
+    VERSION = "2.1.0"
+    DESCRIPTION = "MCP server providing LLMs full access to the engine, scene, assets, editor, viewport capture and more. 65+ tools, 10+ resources, prompts."
     SYSTEM = False
 
     def __init__(self):
@@ -69,6 +69,7 @@ class ZarinMCPPlugin(PluginBase):
         import plugins.zarin_mcp.handlers.editor as _editor
         import plugins.zarin_mcp.handlers.console as _console
         import plugins.zarin_mcp.handlers.resources as _resources
+        import plugins.zarin_mcp.handlers.viewport as _viewport
 
         _scene.register(self._registry, engine)
         _components.register(self._registry, engine)
@@ -78,6 +79,7 @@ class ZarinMCPPlugin(PluginBase):
         _editor.register(self._registry, engine)
         _console.register(self._registry, engine)
         _resources.register(self._registry, engine)
+        _viewport.register(self._registry, engine)
 
         t = len(self._registry.tools)
         r = len(self._registry.resources)

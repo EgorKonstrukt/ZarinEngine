@@ -153,11 +153,26 @@ class McpServer:
             try:
                 result = tdef["handler"](**args)
                 ms = (_time.perf_counter() - started) * 1000.0
+                inline_image = None
+                if isinstance(result, dict) and "image_base64" in result:
+                    inline_image = {
+                        "data": str(result.pop("image_base64", "")),
+                        "mime_type": str(result.pop("mime_type", "image/jpeg")),
+                    }
+                    if not inline_image["data"]:
+                        inline_image = None
                 text = json.dumps(result, ensure_ascii=False, default=str)
                 summary = text if len(text) <= 400 else text[:400] + "..."
                 Logger.info(f"[ZarinMCP] {params.name} OK in {ms:.0f} ms: {summary}")
                 self._record_activity("tool", params.name, args=args, status="ok",
                                       ms=round(ms, 1), summary=summary)
+                if inline_image is not None:
+                    from mcp.types import ImageContent
+                    return CallToolResult(content=[
+                        ImageContent(type="image", data=inline_image["data"],
+                                     mime_type=inline_image["mime_type"]),
+                        TextContent(type="text", text=text),
+                    ])
                 return CallToolResult(content=[TextContent(type="text", text=text)])
             except Exception as e:
                 ms = (_time.perf_counter() - started) * 1000.0
