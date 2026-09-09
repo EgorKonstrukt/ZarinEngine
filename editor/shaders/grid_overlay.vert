@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {

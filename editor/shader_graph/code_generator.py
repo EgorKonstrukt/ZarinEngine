@@ -53,7 +53,7 @@ def generate_shader_code(graph, shader_name: str = "Custom/GeneratedShader") -> 
         Pass
         {{
             GLSLPROGRAM
-            #version 460 core
+            #version 430 core
             layout(location = 0) in vec3 in_position;
             layout(location = 1) in vec3 in_normal;
             layout(location = 2) in vec2 in_uv;
@@ -83,7 +83,7 @@ def generate_shader_code(graph, shader_name: str = "Custom/GeneratedShader") -> 
 
             // @FRAGMENT
 
-            #version 460 core
+            #version 430 core
             in vec3 v_world_pos;
             in vec3 v_normal;
             in vec2 v_uv;
@@ -183,7 +183,7 @@ def _empty_shader(name):
         Pass
         {{
             GLSLPROGRAM
-            #version 460 core
+            #version 430 core
             layout(location = 0) in vec3 in_position;
             layout(location = 1) in vec3 in_normal;
             layout(location = 2) in vec2 in_uv;
@@ -215,7 +215,7 @@ def _empty_shader(name):
 
             // @FRAGMENT
 
-            #version 460 core
+            #version 430 core
             in vec3 v_world_pos;
             in vec3 v_normal;
             in vec2 v_uv;

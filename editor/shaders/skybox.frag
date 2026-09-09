@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 in vec3 v_uv;
 out vec4 frag_color;
 

@@ -18,7 +18,7 @@ INDEX_BINDING = 5
 def _supports_compute(ctx: moderngl.Context) -> bool:
     try:
         ctx.compute_shader(
-            "#version 460 core\n"
+            "#version 430 core\n"
             "layout(local_size_x = 1) in;\n"
             "void main() {}\n"
         )

@@ -167,14 +167,15 @@ class RenderBatcher:
             return prog
         try:
             from core.renderer.mesh_data import SHADER_DIR
+            from core.renderer.shaders import program_with_fallback
             vpath = os.path.join(SHADER_DIR, "default.vert")
             fpath = os.path.join(SHADER_DIR, "default.frag")
             with open(vpath) as f:
                 vert = f.read()
             with open(fpath) as f:
                 frag = f.read()
-            new_prog = prog.ctx.program(vertex_shader=vert, fragment_shader=frag)
-            if _supports_instancing(new_prog):
+            new_prog = program_with_fallback(prog.ctx, vert, frag, label="default")
+            if new_prog is not None and _supports_instancing(new_prog):
                 return new_prog
         except Exception:
             pass

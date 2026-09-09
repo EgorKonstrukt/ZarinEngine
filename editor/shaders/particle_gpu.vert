@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 430 core
 
 struct Particle {
     vec4 position;

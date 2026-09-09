@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 uniform sampler2D u_depth_tex;
 uniform vec3 u_camera_pos;
 uniform float u_grid_size;

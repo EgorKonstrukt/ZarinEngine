@@ -85,7 +85,7 @@ class BVHDebugRenderer:
             try:
                 self._line_prog = ctx.program(
                     vertex_shader="""
-                    #version 460 core
+                    #version 330 core
                     in vec4 in_position;
                     in vec4 in_color;
                     out vec4 v_color;
@@ -95,7 +95,7 @@ class BVHDebugRenderer:
                     }
                     """,
                     fragment_shader="""
-                    #version 460 core
+                    #version 330 core
                     in vec4 v_color;
                     out vec4 frag_color;
                     void main() {

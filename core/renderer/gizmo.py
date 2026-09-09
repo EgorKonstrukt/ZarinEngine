@@ -23,7 +23,7 @@ _STRIP_S = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0], dtype=np.float32)
 _RL_DIFF_THRESHOLD = 50000
 
 FATLINE_VERT = """
-#version 460 core
+#version 330 core
 uniform mat4 u_mvp;
 in vec3 a_start;
 in vec3 a_end;
@@ -62,7 +62,7 @@ void main() {
 """
 
 FATLINE_FRAG = """
-#version 460 core
+#version 330 core
 in vec3 v_color;
 in float v_alpha;
 in float v_t;
@@ -87,7 +87,7 @@ void main() {
 """
 
 INSTANCED_VERT = """
-#version 460 core
+#version 330 core
 in vec3 in_position;
 in vec4 in_color;
 in vec4 i_row0;
@@ -105,7 +105,7 @@ void main() {
 """
 
 INSTANCED_FRAG = """
-#version 460 core
+#version 330 core
 in vec4 v_color;
 out vec4 fragColor;
 void main() {
@@ -114,7 +114,7 @@ void main() {
 """
 
 RAWLINES_VERT = """
-#version 460 core
+#version 330 core
 in vec4 i_start;
 in vec4 i_end;
 in vec4 i_color;
@@ -153,7 +153,7 @@ void main() {
 """
 
 RAWLINES_FRAG = """
-#version 460 core
+#version 330 core
 in vec4 v_color;
 in float v_t;
 in float v_line_len;
@@ -508,7 +508,7 @@ class GizmoRenderer:
         try:
             self._inst_line_prog = self._ctx.program(
                 vertex_shader="""
-#version 460 core
+#version 330 core
 layout(location = 0) in vec3 a_unit_start;
 layout(location = 1) in vec3 a_unit_end;
 layout(location = 2) in float a_t;
@@ -546,7 +546,7 @@ void main() {
 }
 """,
                 fragment_shader="""
-#version 460 core
+#version 330 core
 in vec4 v_color;
 in float v_world_z;
 uniform vec3 u_camera_pos;

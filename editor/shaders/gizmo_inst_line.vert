@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 layout(location = 0) in vec3 a_unit_start;
 layout(location = 1) in vec3 a_unit_end;
 layout(location = 2) in float a_t;

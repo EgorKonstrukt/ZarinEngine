@@ -35,6 +35,7 @@ class ShaderData:
     properties: list[ShaderProperty]
     passes: list[ShaderPass]
     fallback: str = ""
+    subshaders: list[list[ShaderPass]] = field(default_factory=list)
 
 
 _SHADER_PATTERN = re.compile(
@@ -182,12 +183,13 @@ def parse_shader_file(path: str) -> Optional[ShaderData]:
             props = _parse_properties_block(props_block)
 
     passes = []
-    subshader_match = re.search(r'SubShader\s*\{', content)
-    if subshader_match:
+    subshaders: list[list[ShaderPass]] = []
+    for subshader_match in re.finditer(r'SubShader\s*\{', content):
         sub_start = subshader_match.end()
         sub_end = _find_closing_brace(content, sub_start - 1)
         sub_content = content[sub_start:sub_end] if sub_end > sub_start else ""
 
+        sub_passes: list[ShaderPass] = []
         pass_pattern = re.compile(r'Pass\s*\{', re.DOTALL)
         for pm in pass_pattern.finditer(sub_content):
             pass_start = pm.end()
@@ -202,11 +204,15 @@ def parse_shader_file(path: str) -> Optional[ShaderData]:
                 if tag_match:
                     for kv in re.finditer(r'"([^"]*)"\s*=\s*"([^"]*)"', tag_match.group(1)):
                         pass_tags[kv.group(1)] = kv.group(2)
-                passes.append(ShaderPass(
+                sub_passes.append(ShaderPass(
                     vertex_source=vert_src,
                     fragment_source=frag_src,
                     tags=pass_tags
                 ))
+        if sub_passes:
+            subshaders.append(sub_passes)
+    if subshaders:
+        passes = subshaders[0]
 
     fallback_match = re.search(r'Fallback\s+"([^"]*)"', content)
     fallback = fallback_match.group(1) if fallback_match else ""
@@ -215,7 +221,8 @@ def parse_shader_file(path: str) -> Optional[ShaderData]:
         name=shader_name,
         properties=props,
         passes=passes,
-        fallback=fallback
+        fallback=fallback,
+        subshaders=subshaders
     )
 
 

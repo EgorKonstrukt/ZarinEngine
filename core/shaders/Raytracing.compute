@@ -11,7 +11,7 @@ ComputeShader "Zarin/Raytracing"
     }
 
     GLSLPROGRAM
-    #version 460 core
+    #version 430 core
     layout(local_size_x = 8, local_size_y = 8) in;
 
     #define MAX_INSTANCES 256

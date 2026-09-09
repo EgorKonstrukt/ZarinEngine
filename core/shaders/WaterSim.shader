@@ -19,7 +19,7 @@ Shader "Zarin/WaterSim"
         Pass
         {
             GLSLPROGRAM
-            #version 460 core
+            #version 330 core
             layout(location = 0) in vec2 in_position;
             out vec2 v_uv;
             void main() {
@@ -29,7 +29,7 @@ Shader "Zarin/WaterSim"
 
             // @FRAGMENT
 
-            #version 460 core
+            #version 330 core
             #define MAX_INTERACTORS 64
             in vec2 v_uv;
             out vec4 frag_color;

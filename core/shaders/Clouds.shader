@@ -35,7 +35,7 @@ Shader "Zarin/Clouds"
         Pass
         {
             GLSLPROGRAM
-            #version 460 core
+            #version 330 core
             layout(location = 0) in vec3 in_position;
             layout(location = 2) in vec2 in_uv;
             out vec2 v_uv;
@@ -47,7 +47,7 @@ Shader "Zarin/Clouds"
 
             // @FRAGMENT
 
-            #version 460 core
+            #version 330 core
             #define CASCADE_COUNT 4
             in vec2 v_uv;
             out vec4 frag_color;

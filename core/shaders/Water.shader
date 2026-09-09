@@ -99,7 +99,7 @@ Shader "Zarin/Water"
         Pass
         {
             GLSLPROGRAM
-            #version 460 core
+            #version 330 core
             #define MAX_WAVES 8
             layout(location = 0) in vec3 in_position;
             layout(location = 1) in vec3 in_normal;
@@ -345,7 +345,7 @@ Shader "Zarin/Water"
 
             // @FRAGMENT
 
-            #version 460 core
+            #version 330 core
             #define MAX_WAVES 8
             #define MAX_LIGHTS 16
             in vec3 v_world_pos;

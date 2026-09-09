@@ -7,7 +7,7 @@ ComputeShader "Zarin/BVHDebug"
     }
 
     GLSLPROGRAM
-    #version 460 core
+    #version 430 core
     layout(local_size_x = 256) in;
 
     layout(std430, binding = 0) restrict readonly buffer BVHNodes {

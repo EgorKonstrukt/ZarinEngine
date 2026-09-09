@@ -107,7 +107,7 @@ class TerrainGenWorker:
 
     def _run(self):
         try:
-            self._ctx = moderngl.create_standalone_context(require=460)
+            self._ctx = moderngl.create_standalone_context(require=430)
             self._ctx.pixel_alignment = 1
         except Exception as e:
             Logger.error(f"TerrainGenWorker: cannot create GL context: {e}", e)

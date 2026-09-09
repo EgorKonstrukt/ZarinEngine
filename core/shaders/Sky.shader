@@ -42,7 +42,7 @@ Shader "Zarin/Sky"
         Pass
         {
             GLSLPROGRAM
-            #version 460 core
+            #version 330 core
             layout(location = 0) in vec3 in_position;
             uniform mat4 u_mvp;
             out vec3 v_uv;
@@ -54,7 +54,7 @@ Shader "Zarin/Sky"
 
             // @FRAGMENT
 
-            #version 460 core
+            #version 330 core
             in vec3 v_uv;
             out vec4 frag_color;
             uniform vec3 _SunDirection;

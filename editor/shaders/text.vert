@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec2 in_uv;
 uniform mat4 u_model;

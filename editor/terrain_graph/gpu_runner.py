@@ -43,7 +43,7 @@ def _ensure_ctx() -> bool:
     except Exception:
         pass
     try:
-        _ctx = moderngl.create_standalone_context(require=460)
+        _ctx = moderngl.create_standalone_context(require=430)
         _ctx.pixel_alignment = 1
         return True
     except Exception as e:

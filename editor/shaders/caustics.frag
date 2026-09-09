@@ -15,7 +15,7 @@
 // operates entirely in screen space on the final image, it works with
 // every material and from above or below the surface.
 
-#version 460 core
+#version 330 core
 #define MAX_WAVES 8
 
 // Wave-field uniforms consumed by caustics.glsl -- declared BEFORE the

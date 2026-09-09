@@ -15,7 +15,7 @@ from core.maths.math3d import Vec2
 
 
 DIRECTIONAL_BLUR_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -25,7 +25,7 @@ void main() {
 """
 
 DIRECTIONAL_BLUR_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_input_tex;
 uniform vec2 u_direction;
 uniform float u_strength;

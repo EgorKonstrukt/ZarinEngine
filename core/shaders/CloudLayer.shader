@@ -32,7 +32,7 @@ Shader "Zarin/CloudLayer"
         Pass
         {
             GLSLPROGRAM
-            #version 460 core
+            #version 330 core
             layout(location = 0) in vec3 in_position;
             layout(location = 2) in vec2 in_uv;
             uniform mat4 u_model;
@@ -53,7 +53,7 @@ Shader "Zarin/CloudLayer"
 
             // @FRAGMENT
 
-            #version 460 core
+            #version 330 core
             in vec2 v_uv;
             in vec3 v_world_pos;
             in vec3 v_view_pos;

@@ -4,6 +4,6 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 void main() {
 }

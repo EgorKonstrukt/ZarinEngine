@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 layout(triangles) in;
 layout(triangle_strip, max_vertices = 3) out;
 

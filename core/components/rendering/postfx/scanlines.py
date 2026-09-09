@@ -14,7 +14,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 SCANLINE_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -24,7 +24,7 @@ void main() {
 """
 
 SCANLINE_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_input_tex;
 uniform vec2 u_resolution;
 uniform float u_intensity;

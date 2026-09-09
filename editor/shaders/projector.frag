@@ -1,4 +1,4 @@
-#version 460 core
+#version 330 core
 uniform sampler2D u_depth_tex;
 uniform mat4 u_inv_vp;
 uniform mat4 u_pj_0_vp;

@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 in vec3 in_position;
 in vec4 in_color;
 in vec2 in_texcoord;

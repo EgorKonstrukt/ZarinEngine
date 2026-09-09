@@ -13,7 +13,7 @@ from core.maths.math3d import Vec3
 from core.components.rendering.effects.object_effect import ObjectEffect
 
 
-SPIKE_GEOM_SHADER = """#version 460 core
+SPIKE_GEOM_SHADER = """#version 330 core
 layout(triangles) in;
 layout(triangle_strip, max_vertices = 12) out;
 

@@ -20,7 +20,7 @@ ComputeShader "Zarin/RadianceCascades"
     }
 
     GLSLPROGRAM
-    #version 460 core
+    #version 430 core
     layout(local_size_x = 8, local_size_y = 8) in;
 
     #define TAU 6.28318530718
@@ -355,7 +355,7 @@ ComputeShader "Zarin/RadianceCascades"
             ivec2 off = ivec2(i, 0);
             if (pixel.x + off.x >= screen.x) break;
 
-            vec4 sample = texelFetch(u_gi_input_tex, pixel + off, 0);
+            vec4 smp = texelFetch(u_gi_input_tex, pixel + off, 0);
             vec2 sample_uv = (vec2(pixel + off) + 0.5) / u_screen_size;
             float sd = texture(u_depth_tex, sample_uv).r;
             float depth_w = exp(-abs(sd - center_depth) * 50.0);
@@ -366,7 +366,7 @@ ComputeShader "Zarin/RadianceCascades"
             float spatial = exp(-float(i * i) * 0.5);
             float w = spatial * depth_w * normal_w;
 
-            sum += sample.rgb * w;
+            sum += smp.rgb * w;
             total += w;
         }
 
@@ -374,7 +374,7 @@ ComputeShader "Zarin/RadianceCascades"
             ivec2 off = ivec2(i, 0);
             if (pixel.x - off.x < 0) break;
 
-            vec4 sample = texelFetch(u_gi_input_tex, pixel - off, 0);
+            vec4 smp = texelFetch(u_gi_input_tex, pixel - off, 0);
             vec2 sample_uv = (vec2(pixel - off) + 0.5) / u_screen_size;
             float sd = texture(u_depth_tex, sample_uv).r;
             float depth_w = exp(-abs(sd - center_depth) * 50.0);
@@ -385,7 +385,7 @@ ComputeShader "Zarin/RadianceCascades"
             float spatial = exp(-float(i * i) * 0.5);
             float w = spatial * depth_w * normal_w;
 
-            sum += sample.rgb * w;
+            sum += smp.rgb * w;
             total += w;
         }
 
@@ -414,7 +414,7 @@ ComputeShader "Zarin/RadianceCascades"
             ivec2 off = ivec2(0, i);
             if (pixel.y + off.y >= screen.y) break;
 
-            vec4 sample = texelFetch(u_gi_input_tex, pixel + off, 0);
+            vec4 smp = texelFetch(u_gi_input_tex, pixel + off, 0);
             vec2 sample_uv = (vec2(pixel + off) + 0.5) / u_screen_size;
             float sd = texture(u_depth_tex, sample_uv).r;
             float depth_w = exp(-abs(sd - center_depth) * 50.0);
@@ -425,7 +425,7 @@ ComputeShader "Zarin/RadianceCascades"
             float spatial = exp(-float(i * i) * 0.5);
             float w = spatial * depth_w * normal_w;
 
-            sum += sample.rgb * w;
+            sum += smp.rgb * w;
             total += w;
         }
 
@@ -433,7 +433,7 @@ ComputeShader "Zarin/RadianceCascades"
             ivec2 off = ivec2(0, i);
             if (pixel.y - off.y < 0) break;
 
-            vec4 sample = texelFetch(u_gi_input_tex, pixel - off, 0);
+            vec4 smp = texelFetch(u_gi_input_tex, pixel - off, 0);
             vec2 sample_uv = (vec2(pixel - off) + 0.5) / u_screen_size;
             float sd = texture(u_depth_tex, sample_uv).r;
             float depth_w = exp(-abs(sd - center_depth) * 50.0);
@@ -444,7 +444,7 @@ ComputeShader "Zarin/RadianceCascades"
             float spatial = exp(-float(i * i) * 0.5);
             float w = spatial * depth_w * normal_w;
 
-            sum += sample.rgb * w;
+            sum += smp.rgb * w;
             total += w;
         }
 

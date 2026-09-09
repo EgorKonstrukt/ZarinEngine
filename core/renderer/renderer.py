@@ -62,7 +62,7 @@ from core.renderer.icons import IconRenderer
 from core.renderer.gaussian_splat_renderer import GaussianSplatRenderer
 from core.renderer.text import TextRendererGL
 from core.renderer.materials import MaterialManager
-from core.renderer.shaders import ShaderManager
+from core.renderer.shaders import ShaderManager, program_with_fallback
 from core.renderer.mesh_loader import MeshLoader
 from core.renderer.batcher import RenderBatcher, resolve_normal_matrix
 from core.renderer.culling import cpu_frustum_cull
@@ -438,9 +438,11 @@ class Renderer:
         try:
             default_frag_src = read_shader("default.frag")
             default_frag_src = ShaderManager._inject_area_shadows(default_frag_src)
-            self._default_prog = self._ctx.program(
+            self._default_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=read_shader("default.vert"),
-                fragment_shader=default_frag_src
+                fragment_shader=default_frag_src,
+                label="default"
             )
             self._grid_prog = self._ctx.program(
                 vertex_shader=read_shader("grid.vert"),
@@ -466,13 +468,17 @@ class Renderer:
                 vertex_shader=read_shader("outline.vert"),
                 fragment_shader=read_shader("outline.frag")
             )
-            self._shadow_prog = self._ctx.program(
+            self._shadow_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=read_shader("shadow.vert"),
-                fragment_shader=read_shader("shadow.frag")
+                fragment_shader=read_shader("shadow.frag"),
+                label="shadow"
             )
-            self._particle_prog = self._ctx.program(
+            self._particle_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=read_shader("particle_gpu.vert"),
-                fragment_shader=read_shader("particle.frag")
+                fragment_shader=read_shader("particle.frag"),
+                label="particle_gpu"
             )
             self._icon_prog = self._ctx.program(
                 vertex_shader=read_shader("icon.vert"),
@@ -499,7 +505,7 @@ class Renderer:
                 fragment_shader=read_shader("projector.frag")
             )
             PP_COPY_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_input_tex;
 in vec2 v_uv;
 out vec4 frag_color;
@@ -512,7 +518,7 @@ void main() {
                 fragment_shader=PP_COPY_FRAG
             )
             PP_TONEMAP_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_input_tex;
 uniform float u_exposure;
 in vec2 v_uv;
@@ -586,7 +592,7 @@ void main() {
             else:
                 self._caustics_vao = None
             VELOCITY_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_depth_tex;
 uniform mat4 u_inv_view_proj;
 uniform mat4 u_prev_view_proj;
@@ -624,7 +630,7 @@ void main() {
                 self._quad_ibo
             )
             VELOCITY_GEOM_VERT = """
-#version 460 core
+#version 330 core
 in vec3 in_position;
 uniform mat4 u_view_proj;
 uniform mat4 u_prev_view_proj;
@@ -641,7 +647,7 @@ void main() {
 }
 """
             VELOCITY_GEOM_FRAG = """
-#version 460 core
+#version 330 core
 in vec2 v_velocity;
 out vec2 frag_velocity;
 void main() {
@@ -710,7 +716,7 @@ void main() {
 
     _VOX_MAX_INSTANCES = 2200000
 
-    _FX_PASSTHROUGH_GEOM = """#version 460 core
+    _FX_PASSTHROUGH_GEOM = """#version 330 core
 layout(triangles) in;
 layout(triangle_strip, max_vertices = 3) out;
 in vec3 gs_world_pos[3];
@@ -737,7 +743,7 @@ void main() {
 }
 """
 
-    _VOXEL_INST_VERT = """#version 460 core
+    _VOXEL_INST_VERT = """#version 330 core
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_uv;
@@ -774,7 +780,7 @@ out vec3 v_local_pos;
 }
 """
 
-    _VOXEL_INST_FRAG = """#version 460 core
+    _VOXEL_INST_FRAG = """#version 330 core
 in vec3 v_world_pos;
 in vec3 v_normal;
 in vec2 v_uv;
@@ -826,10 +832,12 @@ out vec4 frag_color;
                 if gs:
                     geom = gs
                     break
-            prog = self._ctx.program(
+            prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=fx_vert,
                 fragment_shader=fx_frag,
                 geometry_shader=geom,
+                label="object_fx",
             )
         except Exception as e:
             Logger.error(f"Failed to compile object_fx program for {key}: {e}", e)

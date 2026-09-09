@@ -14,7 +14,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 FLARE_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -24,7 +24,7 @@ void main() {
 """
 
 EXTRACT_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_scene_color;
 uniform float u_threshold;
 uniform float u_soft_threshold;
@@ -43,7 +43,7 @@ void main() {
 """
 
 DOWNSAMPLE_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_src;
 uniform vec2 u_texel;
 in vec2 v_uv;
@@ -59,7 +59,7 @@ void main() {
 """
 
 FLARE_FRAG = """
-#version 460 core
+#version 330 core
 const int GHOSTS = 7;
 
 uniform sampler2D u_bright_tex;

@@ -1,4 +1,4 @@
-#version 460 core
+#version 430 core
 layout(location = 0) in vec3 in_position;
 layout(location = 3) in vec4 in_model0;
 layout(location = 4) in vec4 in_model1;

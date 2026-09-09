@@ -39,7 +39,7 @@ def _kernel_glsl(kernel: list[np.ndarray]) -> str:
 
 
 SSAO_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -52,7 +52,7 @@ void main() {
 def _build_ao_frag(kernel_size: int) -> str:
     kernel = _generate_kernel(kernel_size)
     k_glsl = _kernel_glsl(kernel)
-    return f"""#version 460 core
+    return f"""#version 330 core
 uniform sampler2D u_depth_tex;
 uniform sampler2D u_noise_tex;
 uniform mat4 u_proj;
@@ -119,7 +119,7 @@ void main() {{
 
 
 COMP_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_input_tex;
 uniform sampler2D u_ao_tex;
 uniform sampler2D u_depth_tex;

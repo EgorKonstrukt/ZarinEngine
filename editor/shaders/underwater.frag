@@ -13,7 +13,7 @@
 // instead of being a flat texture. Also adds volumetric sunlight shafts,
 // chromatic lens wobble at the edges and a teal color grade.
 
-#version 460 core
+#version 330 core
 #define MAX_WAVES 8
 
 // Wave-field uniforms consumed by caustics.glsl -- must be declared BEFORE

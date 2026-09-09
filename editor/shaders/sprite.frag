@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 in vec2 v_uv;
 uniform sampler2D u_texture;
 uniform vec4 u_color;

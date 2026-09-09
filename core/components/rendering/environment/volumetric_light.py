@@ -16,7 +16,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 VOLUMETRIC_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -26,7 +26,7 @@ void main() {
 """
 
 VOLUMETRIC_FRAG = """
-#version 460 core
+#version 330 core
 
 uniform sampler2D u_depth_tex;
 uniform mat4 u_inv_view_proj;

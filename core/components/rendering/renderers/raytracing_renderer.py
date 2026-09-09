@@ -165,7 +165,7 @@ class RaytracingRenderer(Component):
         if self._fullscreen_prog is None:
             self._fullscreen_prog = ctx.program(
                 vertex_shader="""
-                #version 460 core
+                #version 330 core
                 in vec2 in_position;
                 in vec2 in_uv;
                 out vec2 v_uv;
@@ -175,7 +175,7 @@ class RaytracingRenderer(Component):
                 }
                 """,
                 fragment_shader="""
-                #version 460 core
+                #version 330 core
                 in vec2 v_uv;
                 uniform sampler2D u_tex;
                 out vec4 frag_color;

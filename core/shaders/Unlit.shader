@@ -20,7 +20,7 @@ Shader "Zarin/Unlit"
         Pass
         {
             GLSLPROGRAM
-            #version 460 core
+            #version 330 core
             layout(location = 0) in vec3 in_position;
             layout(location = 1) in vec3 in_normal;
             layout(location = 2) in vec2 in_uv;
@@ -44,7 +44,7 @@ Shader "Zarin/Unlit"
 
             // @FRAGMENT
 
-            #version 460 core
+            #version 330 core
             in vec3 v_world_pos;
             in vec3 v_normal;
             in vec2 v_uv;

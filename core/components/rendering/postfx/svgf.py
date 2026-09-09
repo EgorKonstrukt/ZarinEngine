@@ -14,7 +14,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 SVGF_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -24,7 +24,7 @@ void main() {
 """
 
 SVGF_REPROJ_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_current;
 uniform sampler2D u_depth;
 uniform sampler2D u_velocity;
@@ -154,7 +154,7 @@ void main() {
 """
 
 SVGF_ATROUS_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_color;
 uniform sampler2D u_depth;
 uniform sampler2D u_moment;
@@ -230,7 +230,7 @@ void main() {
 """
 
 SVGF_FINAL_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_input;
 in vec2 v_uv;
 out vec4 frag_color;

@@ -9,14 +9,14 @@ from __future__ import annotations
 import numpy as np
 import moderngl
 
-_VERT = """#version 460
+_VERT = """#version 330 core
 in vec2 in_position;
 void main() {
     gl_Position = vec4(in_position, 0.0, 1.0);
 }
 """
 
-_FRAG = """#version 460
+_FRAG = """#version 330 core
 uniform sampler2D u_wave;
 uniform sampler2D u_spec;
 uniform sampler2D u_spec_hold;
@@ -146,7 +146,7 @@ _QUAD_VERTS = np.array([
 
 _QUAD_INDICES = np.array([0, 1, 2, 0, 2, 3], dtype=np.int32)
 
-_SCOPE_VERT = """#version 460
+_SCOPE_VERT = """#version 330 core
 in vec2 a_scope;
 uniform vec4 u_radar;
 uniform float u_fw;
@@ -160,7 +160,7 @@ void main() {
 }
 """
 
-_SCOPE_FRAG = """#version 460
+_SCOPE_FRAG = """#version 330 core
 uniform float u_has_signal;
 uniform float u_alpha;
 out vec4 out_color;

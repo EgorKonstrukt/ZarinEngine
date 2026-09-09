@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 in vec4 v_color;
 in float v_fade;
 uniform vec3 u_camera_pos;

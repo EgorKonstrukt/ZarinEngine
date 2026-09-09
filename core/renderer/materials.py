@@ -37,6 +37,7 @@ class MaterialManager:
     def __init__(self, ctx: moderngl.Context):
         self._ctx = ctx
         self._material_cache: dict[str, Material] = {}
+        self._missing_warned: set[str] = set()
         self._prog_uniform_names: dict[int, frozenset] = {}
         self._prog_tex_active_names: dict[int, dict] = {}
         self._texture_cache: dict[str, Any] = {}
@@ -56,6 +57,12 @@ class MaterialManager:
         eng = Engine.instance()
         root = eng.project_root if eng and eng.project_root else os.getcwd()
         abs_path = self._resolve_material_path(path, root)
+        if not os.path.exists(abs_path):
+            if abs_path not in self._missing_warned:
+                self._missing_warned.add(abs_path)
+                Logger.warning(f"Material file not found: '{path}', using default")
+            return None
+        self._missing_warned.discard(abs_path)
         lib_mat = MaterialLibrary._materials.get(abs_path)
         if lib_mat is not None:
             self._material_cache[path] = lib_mat

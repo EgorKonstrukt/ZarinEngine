@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 460 core
+#version 330 core
 #define MAX_LIGHTS 8
 #define CASCADE_COUNT 4
 #define MAX_POINT_SHADOWS 4

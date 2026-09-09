@@ -1,4 +1,4 @@
-#version 460 core
+#version 430 core
 layout(local_size_x = 64) in;
 layout(std430, binding = 0) readonly buffer WorldMats { mat4 world_mats[]; };
 layout(std430, binding = 1) readonly buffer InAABB { vec4 aabb_min[]; vec4 aabb_max[]; };

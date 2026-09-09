@@ -26,7 +26,7 @@ from core.components.rendering.environment.dynamic_cubemap import (
 )
 
 _EQUIRECT_TO_CUBE_FRAG = """
-#version 460 core
+#version 330 core
 in vec2 v_uv;
 out vec4 frag_color;
 uniform sampler2D u_equirect;

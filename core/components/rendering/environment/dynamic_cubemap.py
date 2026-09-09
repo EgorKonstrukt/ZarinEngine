@@ -160,7 +160,7 @@ _FACE_BASIS = [
 ]
 
 _FULLSCREEN_QUAD_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 in vec2 in_uv;
 out vec2 v_uv;
@@ -171,7 +171,7 @@ void main() {
 """
 
 _IRRADIANCE_FRAG = """
-#version 460 core
+#version 330 core
 in vec2 v_uv;
 out vec4 frag_color;
 uniform samplerCube u_cubemap;
@@ -202,7 +202,7 @@ void main() {
 """
 
 _PREFILTER_FRAG = """
-#version 460 core
+#version 330 core
 in vec2 v_uv;
 out vec4 frag_color;
 uniform samplerCube u_cubemap;
@@ -264,7 +264,7 @@ void main() {
 """
 
 _BRDF_LUT_FRAG = """
-#version 460 core
+#version 330 core
 in vec2 v_uv;
 out vec4 frag_color;
 const float PI = 3.14159265359;

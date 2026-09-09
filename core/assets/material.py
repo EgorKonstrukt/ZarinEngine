@@ -113,26 +113,27 @@ def _parse_shader_default(raw_type: str, raw_default: str) -> Any:
     return raw_default.strip()
 
 
+def _extract_all_subshaders(text: str) -> list[tuple[str, str]]:
+    results: list[tuple[str, str]] = []
+    for m in re.finditer(r'GLSLPROGRAM(.*?)ENDGLSL', text, re.DOTALL):
+        glsl_body = m.group(1).strip()
+        frag_marker = "// @FRAGMENT"
+        frag_pos = glsl_body.find(frag_marker)
+        if frag_pos < 0:
+            continue
+        vert_src = glsl_body[:frag_pos].strip()
+        frag_src = glsl_body[frag_pos + len(frag_marker):].strip()
+        results.append((vert_src, frag_src))
+    return results
+
+
 def _extract_glsl_from_shader(text: str) -> tuple[str, str] | None:
     """Extract vertex and fragment GLSL source from a .shader file.
     Returns (vert_src, frag_src) or None."""
-    glsl_start = text.find("GLSLPROGRAM")
-    if glsl_start < 0:
+    all_shaders = _extract_all_subshaders(text)
+    if not all_shaders:
         return None
-    glsl_start += len("GLSLPROGRAM")
-    glsl_end = text.find("ENDGLSL", glsl_start)
-    if glsl_end < 0:
-        return None
-    glsl_body = text[glsl_start:glsl_end].strip()
-
-    frag_marker = "// @FRAGMENT"
-    frag_pos = glsl_body.find(frag_marker)
-    if frag_pos < 0:
-        return None
-
-    vert_src = glsl_body[:frag_pos].strip()
-    frag_src = glsl_body[frag_pos + len(frag_marker):].strip()
-    return (vert_src, frag_src)
+    return all_shaders[0]
 
 
 def _parse_shader_file(path: str) -> tuple[list[ShaderProperty], str, str] | None:

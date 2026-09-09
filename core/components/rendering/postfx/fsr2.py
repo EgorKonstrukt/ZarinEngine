@@ -14,7 +14,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 FSR2_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -24,7 +24,7 @@ void main() {
 """
 
 EASU_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_src;
 uniform sampler2D u_depth;
 uniform vec2 u_src_size;
@@ -112,7 +112,7 @@ void main() {
 """
 
 TEMPORAL_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_current;
 uniform sampler2D u_depth;
 uniform sampler2D u_velocity;
@@ -298,7 +298,7 @@ void main() {
 """
 
 RCAS_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_rcas_input;
 uniform vec2 u_rcas_size;
 uniform float u_rcas_con;

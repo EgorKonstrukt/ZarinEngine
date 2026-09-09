@@ -25,7 +25,7 @@ except Exception:
     _HAS_GL = False
 
 
-QUICK_VERT = """#version 460 core
+QUICK_VERT = """#version 330 core
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec2 in_uv;
 uniform mat4 u_model;
@@ -38,7 +38,7 @@ void main() {
 }
 """
 
-QUICK_FRAG = """#version 460 core
+QUICK_FRAG = """#version 330 core
 in vec2 v_uv;
 uniform sampler2D u_texture;
 uniform float u_opacity;

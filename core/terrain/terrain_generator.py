@@ -130,7 +130,7 @@ class TerrainGenerator:
                 pass
             return True
         try:
-            self._ctx = moderngl.create_standalone_context(require=460)
+            self._ctx = moderngl.create_standalone_context(require=430)
             self._ctx.pixel_alignment = 1
             self._owns_ctx = True
         except Exception as e:

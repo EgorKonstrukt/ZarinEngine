@@ -14,7 +14,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 
 
 SSR_VERT = """
-#version 460 core
+#version 330 core
 in vec2 in_position;
 out vec2 v_uv;
 void main() {
@@ -25,7 +25,7 @@ void main() {
 
 
 SSR_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_depth_tex;
 uniform sampler2D u_input_tex;
 uniform mat4 u_proj;
@@ -126,7 +126,7 @@ void main() {
 
 
 COMP_FRAG = """
-#version 460 core
+#version 330 core
 uniform sampler2D u_input_tex;
 uniform sampler2D u_ssr_tex;
 uniform float u_intensity;
