@@ -282,6 +282,7 @@ class HierarchyPanel(QDockWidget):
         add_btn.setStyleSheet("QPushButton { background: #2e7d32; }")
         add_btn.clicked.connect(self._show_create_menu)
         toolbar.addWidget(add_btn)
+        self._add_btn = add_btn
         self._search = QLineEdit()
         self._search.setPlaceholderText("  All")
         self._search.setClearButtonEnabled(True)
@@ -744,7 +745,7 @@ class HierarchyPanel(QDockWidget):
             on_asset=lambda ap, p=parent_entity: self._create_prefab_asset(ap, p),
             on_search=lambda p=parent_entity: self._show_add_dialog(p),
         )
-    def _show_add_dialog(self, parent_entity=None):
+    def _show_add_dialog(self, parent_entity=None, pos=None):
         from editor.panels.add_entity_menu import AddEntityDialog
         title = "Add Entity"
         try:
@@ -753,6 +754,16 @@ class HierarchyPanel(QDockWidget):
         except Exception:
             pass
         dlg = AddEntityDialog(self, title)
+        if pos is not None:
+            try:
+                from PyQt6.QtWidgets import QApplication
+                screen = QApplication.screenAt(pos) or QApplication.primaryScreen()
+                geo = screen.availableGeometry()
+                x = min(max(pos.x(), geo.left()), max(geo.left(), geo.right() - dlg.width()))
+                y = min(max(pos.y(), geo.top()), max(geo.top(), geo.bottom() - dlg.height()))
+                dlg.move(x, y)
+            except Exception:
+                pass
         if dlg.exec() != dlg.DialogCode.Accepted:
             return
         if dlg.selected_menu_path:
@@ -760,7 +771,13 @@ class HierarchyPanel(QDockWidget):
         elif dlg.selected_asset_path:
             self._create_prefab_asset(dlg.selected_asset_path, parent_entity)
     def _show_create_menu(self):
-        self._show_add_dialog(None)
+        pos = None
+        try:
+            btn = self.sender() or self._add_btn
+            pos = btn.mapToGlobal(btn.rect().bottomLeft())
+        except Exception:
+            pos = None
+        self._show_add_dialog(None, pos)
     def _collab_sync_create(self, entity):
         mgr = getattr(self._engine, "collab_manager", None)
         if mgr and mgr.connected:

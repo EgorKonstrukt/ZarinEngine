@@ -16,3 +16,4 @@ qtawesome
 xxhash
 psutil
 culverin
+pyyaml

@@ -107,12 +107,61 @@ def _split_path(menu_path: str) -> list[str]:
     return [p for p in (s.strip() for s in str(menu_path).split("/")) if p]
 
 
+_icon_cache: dict[str, object] = {}
+
+
+def entry_icon(entry) -> object | None:
+    try:
+        from PyQt6.QtGui import QIcon
+        from core.ecs.ecs import ComponentRegistry
+        from editor.inspector.helpers import get_component_icon_pixmap
+        comp_name = str(getattr(entry, "icon", "") or "").strip()
+        if not comp_name:
+            return None
+        cached = _icon_cache.get(comp_name)
+        if cached is not None:
+            return cached
+        cls = ComponentRegistry.get(comp_name)
+        if cls is None:
+            return None
+        icon = QIcon(get_component_icon_pixmap(cls, 16))
+        _icon_cache[comp_name] = icon
+        return icon
+    except Exception:
+        return None
+
+
+def prefab_asset_icon() -> object | None:
+    try:
+        import qtawesome as qta
+        from PyQt6.QtGui import QIcon
+        cached = _icon_cache.get("__prefab__")
+        if cached is not None:
+            return cached
+        icon = QIcon(qta.icon("fa5s.cube", color="#88ccff").pixmap(16, 16))
+        _icon_cache["__prefab__"] = icon
+        return icon
+    except Exception:
+        return None
+
+
+def search_icon() -> object | None:
+    try:
+        import qtawesome as qta
+        return qta.icon("fa5s.search", color="#d4d4d4")
+    except Exception:
+        return None
+
+
 def populate_add_menu(menu, on_system: Callable[[str], None],
                       on_asset: Callable[[str], None],
                       on_search: Optional[Callable[[], None]] = None) -> None:
     from PyQt6.QtGui import QAction
     if on_search is not None:
         search_act = QAction("Search...", menu)
+        icon = search_icon()
+        if icon is not None:
+            search_act.setIcon(icon)
         search_act.triggered.connect(on_search)
         menu.addAction(search_act)
         menu.addSeparator()
@@ -138,6 +187,9 @@ def populate_add_menu(menu, on_system: Callable[[str], None],
             target = get_submenu(target, section)
         leaf = parts[-1]
         act = QAction(leaf, menu)
+        icon = entry_icon(entry)
+        if icon is not None:
+            act.setIcon(icon)
         tip = entry.menu_path
         if getattr(entry, "description", ""):
             tip = f"{entry.menu_path}\n{entry.description}"
@@ -156,6 +208,9 @@ def populate_add_menu(menu, on_system: Callable[[str], None],
                 target = get_submenu(target, section)
             leaf = parts[-1]
             act = QAction(leaf, menu)
+            icon = prefab_asset_icon()
+            if icon is not None:
+                act.setIcon(icon)
             prefix = "System prefab asset" if asset.is_system else "Prefab asset"
             act.setToolTip(f"{prefix}\n{asset.asset_path}")
             act.triggered.connect(lambda checked=False, ap=asset.asset_path: on_asset(ap))
@@ -264,6 +319,9 @@ if _HAS_QT:
                 parent_item = group_item(parts[:-1]) if len(parts) > 1 else self._tree.invisibleRootItem()
                 item = QTreeWidgetItem(parent_item)
                 item.setText(0, leaf)
+                icon = entry_icon(entry)
+                if icon is not None:
+                    item.setIcon(0, icon)
                 description = getattr(entry, "description", "") or ""
                 tip = entry.menu_path + (f"\n{description}" if description else "")
                 item.setToolTip(0, tip)
@@ -279,6 +337,9 @@ if _HAS_QT:
                 parent_item = group_item(parts[:-1]) if len(parts) > 1 else self._tree.invisibleRootItem()
                 item = QTreeWidgetItem(parent_item)
                 item.setText(0, f"{leaf}  [prefab]")
+                icon = prefab_asset_icon()
+                if icon is not None:
+                    item.setIcon(0, icon)
                 item.setToolTip(0, f"{asset.menu_path}\n{asset.asset_path}")
                 item.setData(0, Qt.ItemDataRole.UserRole, ("asset", asset.asset_path))
                 parent_item.setExpanded(True)
