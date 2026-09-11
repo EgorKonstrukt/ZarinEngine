@@ -196,6 +196,56 @@ class InstantiatePrefabCommand(Command):
         self.execute()
     @property
     def description(self): return f"Instantiate '{self._prefab.name}'"
+class CreateSystemPrefabCommand(Command):
+    def __init__(self, scene, menu_path: str, parent_id: Optional[str] = None):
+        self._scene = scene
+        self._menu_path = menu_path
+        self._parent_id = parent_id
+        self._spawned_ids: list[str] = []
+        self._spawned_data: list[dict] = []
+    def execute(self):
+        from core.prefabs.registry import create_system_prefab
+        parent = self._scene.get_entity(self._parent_id) if self._parent_id else None
+        spawned = create_system_prefab(self._menu_path, self._scene, parent)
+        self._spawned_ids = [e.id for e in spawned]
+        self._spawned_data = [e.serialize() for e in spawned]
+    def undo(self):
+        for eid in self._spawned_ids:
+            e = self._scene.get_entity(eid)
+            if e:
+                self._scene.remove_entity(eid)
+    def redo(self):
+        if self._spawned_data:
+            from core.engine.engine import Engine
+            from core.ecs.ecs import Entity
+            try:
+                reg = Engine.instance()._component_registry
+            except Exception:
+                reg = None
+            if reg is None:
+                self.execute()
+                return
+            self._spawned_ids = []
+            for data in self._spawned_data:
+                import copy
+                payload = copy.deepcopy(data)
+                parent_id = payload.get("parent")
+                payload.pop("parent", None)
+                e = Entity.deserialize(payload, reg)
+                self._scene.add_entity(e)
+                if parent_id:
+                    parent_ent = self._scene.get_entity(parent_id)
+                    if parent_ent is not None:
+                        e.set_parent(parent_ent)
+                elif self._parent_id:
+                    parent_ent = self._scene.get_entity(self._parent_id)
+                    if parent_ent is not None:
+                        e.set_parent(parent_ent)
+                self._spawned_ids.append(e.id)
+        else:
+            self.execute()
+    @property
+    def description(self): return f"Create '{self._menu_path}'"
 class RevertPrefabInstanceCommand(Command):
     def __init__(self, scene, root_entities: list, registry=None):
         self._scene = scene

@@ -4,7 +4,16 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from core.components.lighting.light import Light, LightType, LightAreaType
+from core.components.lighting.light import (
+    Light,
+    LightType,
+    LightAreaType,
+    DirectionalLight,
+    PointLight,
+    SpotLight,
+    AreaLight,
+    LIGHT_TYPES,
+)
 from core.components.lighting.projector import Projector
 
-__all__ = ["Light", "LightType", "LightAreaType", "Projector"]
+__all__ = ["Light", "LightType", "LightAreaType", "DirectionalLight", "PointLight", "SpotLight", "AreaLight", "LIGHT_TYPES", "Projector"]

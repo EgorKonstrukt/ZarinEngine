@@ -1414,13 +1414,11 @@ class SceneViewport(QOpenGLWidget):
             from PyQt6.QtGui import QAction
             menu = QMenu(self)
             gizmo_menu = menu.addMenu("Gizmo")
-            # Visibility
             vis_act = gizmo_menu.addAction("Visible")
             vis_act.setCheckable(True)
             vis_act.setChecked(self._gizmo.multigizmo_visible)
             vis_act.triggered.connect(lambda c: self._on_gizmo_visibility_toggled(c))
             gizmo_menu.addSeparator()
-            # Alignment
             align_menu = gizmo_menu.addMenu("Align To")
             for label in ["View", "World", "Local", "Custom"]:
                 act = align_menu.addAction(label)
@@ -1434,40 +1432,14 @@ class SceneViewport(QOpenGLWidget):
             lock_act.triggered.connect(lambda c: self._on_gizmo_orientation_lock_toggled(c))
             hide_act = gizmo_menu.addAction("Hide Gizmo")
             hide_act.triggered.connect(lambda: self._on_gizmo_visibility_toggled(False))
-            # Also show standard Create menu as submenu
             create_menu = menu.addMenu("Create")
-            create_empty = create_menu.addAction("Empty")
-            create_empty.triggered.connect(lambda: self._emit_create_request())
-            primitives_menu = create_menu.addMenu("3D Object")
-            for name in ["Cube", "Sphere", "Plane"]:
-                act = primitives_menu.addAction(name)
-                act.triggered.connect(lambda checked=False, n=name.lower(): self._emit_create_request(n))
+            self._populate_viewport_create_menu(create_menu)
             menu.exec(event.globalPos())
             return
         from editor.viewport.collaboration import is_collab_locked
         menu = QMenu(self)
         create_menu = menu.addMenu("Create")
-        create_empty = create_menu.addAction("Empty")
-        create_empty.triggered.connect(lambda: self._emit_create_request())
-        primitives_menu = create_menu.addMenu("3D Object")
-        for name in ["Cube", "Sphere", "Plane"]:
-            act = primitives_menu.addAction(name)
-            act.triggered.connect(lambda checked=False, n=name.lower(): self._emit_create_request(n))
-        lights_menu = create_menu.addMenu("Light")
-        sun_act = lights_menu.addAction("Sun")
-        sun_act.triggered.connect(lambda checked=False: self._emit_create_request("sun"))
-        for ltype in ["Directional", "Point", "Spot"]:
-            act = lights_menu.addAction(ltype)
-            act.triggered.connect(lambda checked=False, lt=ltype.lower(): self._emit_create_request("light", lt))
-        cam_act = create_menu.addAction("Camera")
-        cam_act.triggered.connect(lambda: self._emit_create_request("camera"))
-        effects_menu = create_menu.addMenu("Effects")
-        sky_act = effects_menu.addAction("Sky")
-        sky_act.triggered.connect(lambda checked=False: self._emit_create_request("sky"))
-        clouds_act = effects_menu.addAction("Clouds")
-        clouds_act.triggered.connect(lambda checked=False: self._emit_create_request("clouds"))
-        ps_act = effects_menu.addAction("Particle System")
-        ps_act.triggered.connect(lambda: self._emit_create_request("particle_system"))
+        self._populate_viewport_create_menu(create_menu)
         if self._selected_entities:
             menu.addSeparator()
             delete_act = menu.addAction("Delete")
@@ -1477,104 +1449,84 @@ class SceneViewport(QOpenGLWidget):
             create_menu.setEnabled(False)
         menu.exec(event.globalPos())
 
+    def _populate_viewport_create_menu(self, create_menu):
+        from editor.panels.add_entity_menu import populate_add_menu
+        populate_add_menu(
+            create_menu,
+            on_system=lambda mp: self._emit_create_request("system", mp),
+            on_asset=lambda ap: self._emit_create_request("asset", ap),
+            on_search=None,
+        )
+
     def _emit_create_request(self, obj_type="empty", subtype=None):
-        from core.foundation.commands import CreateEntityCommand, get_history
-        from core.components import Transform, MeshFilter, MeshRenderer, Light, LightType, Camera, ParticleSystem, Sky, Cloud
+        from core.foundation.commands import CreateSystemPrefabCommand, InstantiatePrefabCommand, get_history
         scene = self._engine.scene
         from editor.viewport.collaboration import is_collab_locked
         if not scene or is_collab_locked(self):
             return
-        if obj_type == "sky":
-            cmd = CreateEntityCommand(scene, "Sky")
+        if obj_type == "system" and subtype:
+            cmd = CreateSystemPrefabCommand(scene, subtype, None)
             get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
+            spawned = [scene.get_entity(eid) for eid in cmd._spawned_ids]
+            spawned = [e for e in spawned if e]
+            e = spawned[0] if spawned else None
             if e:
-                e.add_component(Transform())
-                e.add_component(Sky())
-        elif obj_type == "clouds":
-            cmd = CreateEntityCommand(scene, "Clouds")
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                e.add_component(Transform())
-                e.add_component(Cloud())
-        elif obj_type == "particle_system":
-            cmd = CreateEntityCommand(scene, "Particle System")
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                e.add_component(Transform())
-                e.add_component(ParticleSystem())
-        elif obj_type == "empty":
-            cmd = CreateEntityCommand(scene, "GameObject")
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                e.add_component(Transform())
-        elif obj_type == "cube":
-            cmd = CreateEntityCommand(scene, "Cube")
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                e.add_component(Transform())
-                mf = MeshFilter(); mf.mesh_name = "cube"; e.add_component(mf)
-                e.add_component(MeshRenderer())
-        elif obj_type == "sphere":
-            cmd = CreateEntityCommand(scene, "Sphere")
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                e.add_component(Transform())
-                mf = MeshFilter(); mf.mesh_name = "sphere"; e.add_component(mf)
-                e.add_component(MeshRenderer())
-        elif obj_type == "plane":
-            cmd = CreateEntityCommand(scene, "Plane")
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                e.add_component(Transform())
-                mf = MeshFilter(); mf.mesh_name = "plane"; e.add_component(mf)
-                e.add_component(MeshRenderer())
-        elif obj_type == "sun":
-            cmd = CreateEntityCommand(scene, "Sun")
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                t = Transform()
-                t.local_euler_angles = Vec3(-45, 45, 0)
-                e.add_component(t)
-                l = Light()
-                l.light_type = LightType.DIRECTIONAL
-                l.procedural_sky_lighting = True
-                l.cast_shadows = True
-                e.add_component(l)
-        elif obj_type == "light" and subtype:
-            name_map = {"directional": "Directional Light", "point": "Point Light", "spot": "Spot Light"}
-            type_map = {"directional": LightType.DIRECTIONAL, "point": LightType.POINT, "spot": LightType.SPOT}
-            cmd = CreateEntityCommand(scene, name_map.get(subtype, "Light"))
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                t = Transform()
-                if subtype == "directional":
-                    t.local_euler_angles = Vec3(-45, 45, 0)
-                e.add_component(t)
-                l = Light(); l.light_type = type_map[subtype]; e.add_component(l)
-        elif obj_type == "camera":
-            cmd = CreateEntityCommand(scene, "Camera")
-            get_history().execute(cmd)
-            e = scene.get_entity(cmd._entity_id)
-            if e:
-                e.add_component(Transform())
-                e.add_component(Camera())
-        else:
+                self._selected_entities = [e]
+                self._set_gizmo_entity(e)
+                self.entity_selected.emit(e)
+                from editor.viewport.collaboration import send_collab_entity_create
+                send_collab_entity_create(self, e.serialize())
             return
-        if e:
-            self._selected_entities = [e]
-            self._set_gizmo_entity(e)
-            self.entity_selected.emit(e)
-            from editor.viewport.collaboration import send_collab_entity_create
-            send_collab_entity_create(self, e.serialize())
+        if obj_type == "asset" and subtype:
+            from core.ecs.prefab import PrefabLibrary
+            prefab = PrefabLibrary.load(subtype)
+            if not prefab:
+                return
+            cmd = InstantiatePrefabCommand(scene, prefab, self._engine._component_registry)
+            get_history().execute(cmd)
+            spawned = [scene.get_entity(eid) for eid in cmd._spawned_ids]
+            spawned = [e for e in spawned if e]
+            e = spawned[0] if spawned else None
+            if e:
+                self._selected_entities = [e]
+                self._set_gizmo_entity(e)
+                self.entity_selected.emit(e)
+                from editor.viewport.collaboration import send_collab_entity_create
+                send_collab_entity_create(self, e.serialize())
+            return
+        legacy_map = {
+            "empty": "Create Empty",
+            "cube": "3D Object/Cube",
+            "sphere": "3D Object/Sphere",
+            "plane": "3D Object/Plane",
+            "sun": "Light/Sun",
+            "camera": "Camera",
+            "sky": "Effects/Sky",
+            "clouds": "Effects/Clouds",
+            "particle_system": "Effects/Particle System",
+        }
+        if obj_type == "light" and subtype:
+            legacy_map[obj_type] = {
+                "directional": "Light/Directional Light",
+                "point": "Light/Point Light",
+                "spot": "Light/Spot Light",
+                "area": "Light/Area Light",
+            }.get(subtype, "Light/Point Light")
+        menu_path = legacy_map.get(obj_type)
+        if menu_path:
+            cmd = CreateSystemPrefabCommand(scene, menu_path, None)
+            get_history().execute(cmd)
+            spawned = [scene.get_entity(eid) for eid in cmd._spawned_ids]
+            spawned = [e for e in spawned if e]
+            e = spawned[0] if spawned else None
+            if e:
+                self._selected_entities = [e]
+                self._set_gizmo_entity(e)
+                self.entity_selected.emit(e)
+                from editor.viewport.collaboration import send_collab_entity_create
+                send_collab_entity_create(self, e.serialize())
+            return
+        return
 
     def _delete_selected(self):
         if not self._selected_entities or not self._engine.scene:

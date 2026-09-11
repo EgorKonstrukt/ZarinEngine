@@ -674,9 +674,11 @@ class HierarchyPanel(QDockWidget):
                 dup_act = QAction("Duplicate\tCtrl+D", self)
                 dup_act.triggered.connect(lambda: self._duplicate_entity(entity))
                 menu.addAction(dup_act)
-                create_child_act = QAction("Create Child", self)
-                create_child_act.triggered.connect(lambda: self._create_child(entity))
+                create_child_act = QAction("Create Child...", self)
+                create_child_act.triggered.connect(lambda: self._show_add_dialog(entity))
                 menu.addAction(create_child_act)
+                child_menu = menu.addMenu("Create Child")
+                self._add_create_menu_entries(child_menu, entity)
                 menu.addSeparator()
                 if entity.is_prefab_instance:
                     from core.ecs.prefab import Prefab, PrefabLibrary
@@ -722,106 +724,43 @@ class HierarchyPanel(QDockWidget):
                 del_act.triggered.connect(lambda: self._delete_entity(entity))
                 menu.addAction(del_act)
                 menu.addSeparator()
-        self._add_create_menu_entries(menu)
+                add_menu = menu.addMenu("Add Entity")
+                self._add_create_menu_entries(add_menu, None)
+                menu.addSeparator()
+                add_child_dialog = QAction("Add Entity...", self)
+                add_child_dialog.triggered.connect(lambda: self._show_add_dialog(None))
+                menu.addAction(add_child_dialog)
+        else:
+            add_dialog_act = QAction("Add Entity...", self)
+            add_dialog_act.triggered.connect(lambda: self._show_add_dialog(None))
+            menu.addAction(add_dialog_act)
+            self._add_create_menu_entries(menu, None)
         menu.exec(self._tree.mapToGlobal(pos))
-    def _add_create_menu_entries(self, menu: QMenu):
-        create_empty = QAction("Create Empty", self)
-        create_empty.triggered.connect(self._create_entity)
-        menu.addAction(create_empty)
-
-        obj_3d = menu.addMenu("3D Object")
-        for name in ["Cube", "Sphere", "Plane"]:
-            act = QAction(name, self)
-            act.triggered.connect(lambda checked=False, n=name.lower(): self._create_primitive(n))
-            obj_3d.addAction(act)
-        probuilder = obj_3d.addMenu("ProBuilder Shape")
-        from core.components.mesh_editor.primitives import get_primitive_names
-        for name in get_primitive_names():
-            act = QAction(name, self)
-            act.triggered.connect(lambda checked=False, n=name: self._create_probuilder_primitive(n))
-            probuilder.addAction(act)
-
-        lights_menu = menu.addMenu("Light")
-        for ltype, label in [("sun", "Sun"), ("directional", "Directional Light"), ("point", "Point Light"), ("spot", "Spot Light")]:
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked=False, lt=ltype: self._create_light(lt))
-            lights_menu.addAction(act)
-
-        effects = menu.addMenu("Effects")
-        for label, comp_cls, setup_fn in [
-            ("Sky", "Sky", None),
-            ("Clouds", "Cloud", None),
-            ("Particle System", "ParticleSystem", None),
-        ]:
-            act = QAction(label, self)
-            act.triggered.connect(
-                lambda checked=False, n=label, cc=comp_cls, sf=setup_fn:
-                self._create_from_component(n, cc, sf)
-            )
-            effects.addAction(act)
-
-        audio_menu = menu.addMenu("Audio")
-        for label, comp_cls in [("Audio Source", "AudioSource"), ("Audio Listener", "AudioListener"), ("Reverb Zone", "ReverbZone")]:
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
-            audio_menu.addAction(act)
-
-        physics_menu = menu.addMenu("Physics")
-        for label, comp_cls in [("Rigidbody", "Rigidbody"), ("Box Collider", "BoxCollider"), ("Sphere Collider", "SphereCollider"), ("Capsule Collider", "CapsuleCollider"), ("Mesh Collider", "MeshCollider"), ("Soft Body", "SoftBody"), ("Character Controller", "CharacterController"), ("Joint", "Joint")]:
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
-            physics_menu.addAction(act)
-
-        physics2d_menu = menu.addMenu("Physics 2D")
-        for label, comp_cls in [("Rigidbody 2D", "Rigidbody2D"), ("Box Collider 2D", "BoxCollider2D"), ("Circle Collider 2D", "CircleCollider2D")]:
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
-            physics2d_menu.addAction(act)
-
-        rendering_menu = menu.addMenu("Rendering")
-        for label, comp_cls in [("Sprite Renderer", "SpriteRenderer"), ("SVG Renderer", "SvgRenderer")]:
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
-            rendering_menu.addAction(act)
-
-        anim_menu = menu.addMenu("Animation")
-        for label, comp_cls in [("Animation", "Animation"), ("Animator", "Animator")]:
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
-            anim_menu.addAction(act)
-
-        constraints_menu = menu.addMenu("Constraints")
-        for label, comp_cls in [
-            ("Aim Constraint", "AimConstraint"),
-            ("Follow Transform", "FollowTransformConstraint"),
-            ("Look At", "LookAtConstraint"),
-            ("Move Towards", "MoveTowardsConstraint"),
-            ("Parent", "ParentConstraint"),
-            ("Position", "PositionConstraint"),
-            ("Rotate Towards", "RotateTowardsConstraint"),
-            ("Rotation", "RotationConstraint"),
-            ("Scale", "ScaleConstraint"),
-            ("Scale To", "ScaleToConstraint"),
-        ]:
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
-            constraints_menu.addAction(act)
-
-        net_menu = menu.addMenu("Networking")
-        for label, comp_cls in [("Network Identity", "NetworkIdentity"), ("Remote Collaborator", "RemoteCollaborator")]:
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: self._create_from_component(n, cc, None))
-            net_menu.addAction(act)
-
-        menu.addSeparator()
-        cam_act = QAction("Camera", self)
-        cam_act.triggered.connect(self._create_camera)
-        menu.addAction(cam_act)
+    def _add_create_menu_entries(self, menu: QMenu, parent_entity=None):
+        from editor.panels.add_entity_menu import populate_add_menu
+        populate_add_menu(
+            menu,
+            on_system=lambda mp, p=parent_entity: self._create_system_prefab(mp, p),
+            on_asset=lambda ap, p=parent_entity: self._create_prefab_asset(ap, p),
+            on_search=lambda p=parent_entity: self._show_add_dialog(p),
+        )
+    def _show_add_dialog(self, parent_entity=None):
+        from editor.panels.add_entity_menu import AddEntityDialog
+        title = "Add Entity"
+        try:
+            if parent_entity is not None:
+                title = f"Add Child to '{parent_entity.name}'"
+        except Exception:
+            pass
+        dlg = AddEntityDialog(self, title)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+        if dlg.selected_menu_path:
+            self._create_system_prefab(dlg.selected_menu_path, parent_entity)
+        elif dlg.selected_asset_path:
+            self._create_prefab_asset(dlg.selected_asset_path, parent_entity)
     def _show_create_menu(self):
-        btn = self.sender()
-        menu = QMenu(self)
-        self._add_create_menu_entries(menu)
-        menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        self._show_add_dialog(None)
     def _collab_sync_create(self, entity):
         mgr = getattr(self._engine, "collab_manager", None)
         if mgr and mgr.connected:
@@ -832,158 +771,85 @@ class HierarchyPanel(QDockWidget):
         if mgr and mgr.connected:
             mgr.send_entity_delete(entity_id)
 
+    def _finish_created_entities(self, entities, edit_first: bool = False):
+        entities = [e for e in (entities or []) if e is not None]
+        self._refresh()
+        for e in entities:
+            self._collab_sync_create(e)
+        if entities:
+            first = entities[0]
+            self._selected_entity = first
+            self.entity_selected.emit(first)
+            item = self._find_item(first.id, self._tree.invisibleRootItem())
+            if item:
+                self._tree.setCurrentItem(item)
+                if edit_first:
+                    self._tree.editItem(item, 0)
+        return entities
+
+    def _create_system_prefab(self, menu_path: str, parent=None):
+        if not self._scene:
+            return []
+        from core.foundation.commands import CreateSystemPrefabCommand, get_history
+        parent_id = parent.id if parent is not None else None
+        cmd = CreateSystemPrefabCommand(self._scene, menu_path, parent_id)
+        get_history().execute(cmd)
+        entities = [self._scene.get_entity(eid) for eid in cmd._spawned_ids]
+        entities = [e for e in entities if e]
+        edit = str(menu_path).strip().lower() in ("create empty",)
+        return self._finish_created_entities(entities, edit_first=edit)
+
+    def _create_prefab_asset(self, asset_path: str, parent=None):
+        if not self._scene:
+            return []
+        from core.ecs.prefab import PrefabLibrary
+        from core.foundation.commands import InstantiatePrefabCommand, get_history
+        prefab = PrefabLibrary.load(asset_path)
+        if not prefab:
+            return []
+        parent_entity = parent
+        cmd = InstantiatePrefabCommand(self._scene, prefab, self._engine._component_registry, parent_entity)
+        get_history().execute(cmd)
+        entities = [self._scene.get_entity(eid) for eid in cmd._spawned_ids]
+        entities = [e for e in entities if e]
+        return self._finish_created_entities(entities)
+
     def _create_entity(self):
-        if not self._scene:
-            return
-        from core.foundation.commands import CreateEntityCommand, get_history
-        cmd = CreateEntityCommand(self._scene, "GameObject")
-        get_history().execute(cmd)
-        e = self._scene.get_entity(cmd._entity_id)
-        if e:
-            from core.components import Transform
-            e.add_component(Transform())
-        self._refresh()
-        if e:
-            self._collab_sync_create(e)
-            self._selected_entity = e
-            self.entity_selected.emit(e)
-            item = self._find_item(e.id, self._tree.invisibleRootItem())
-            if item:
-                self._tree.setCurrentItem(item)
-                self._tree.editItem(item, 0)
+        return self._create_system_prefab("Create Empty", None)
+
     def _create_child(self, parent: Entity):
-        if not self._scene:
-            return
-        from core.foundation.commands import CreateEntityCommand, get_history
-        cmd = CreateEntityCommand(self._scene, "GameObject")
-        get_history().execute(cmd)
-        e = self._scene.get_entity(cmd._entity_id)
-        if e:
-            from core.components import Transform
-            e.add_component(Transform())
-            e.set_parent(parent)
-        self._refresh()
-        if e:
-            self._collab_sync_create(e)
-            self._selected_entity = e
-            self.entity_selected.emit(e)
-            item = self._find_item(e.id, self._tree.invisibleRootItem())
-            if item:
-                self._tree.setCurrentItem(item)
-                self._tree.editItem(item, 0)
+        entities = self._create_system_prefab("Create Empty", parent)
+        return entities[0] if entities else None
+
     def _create_primitive(self, mesh_name: str):
-        if not self._scene:
-            return
-        from core.foundation.commands import CreateEntityCommand, get_history
-        from core.components import Transform, MeshFilter, MeshRenderer
-        cmd = CreateEntityCommand(self._scene, mesh_name.capitalize())
-        get_history().execute(cmd)
-        e = self._scene.get_entity(cmd._entity_id)
-        if e:
-            mf = MeshFilter()
-            mf.mesh_name = mesh_name
-            e.add_component(Transform())
-            e.add_component(mf)
-            e.add_component(MeshRenderer())
-        self._refresh()
-        if e:
-            self._collab_sync_create(e)
-            self._selected_entity = e
-            self.entity_selected.emit(e)
-            item = self._find_item(e.id, self._tree.invisibleRootItem())
-            if item:
-                self._tree.setCurrentItem(item)
+        lookup = {"cube": "3D Object/Cube", "sphere": "3D Object/Sphere", "plane": "3D Object/Plane"}
+        menu_path = lookup.get(str(mesh_name).lower(), f"3D Object/{str(mesh_name).capitalize()}")
+        return self._create_system_prefab(menu_path, None)
+
     def _create_probuilder_primitive(self, name: str):
-        if not self._scene:
-            return
-        from core.foundation.commands import CreateEntityCommand, get_history
-        from core.components import Transform, MeshFilter, MeshRenderer
-        from core.components.mesh_editor import ProBuilderMesh, create_primitive
-        cmd = CreateEntityCommand(self._scene, name)
-        get_history().execute(cmd)
-        e = self._scene.get_entity(cmd._entity_id)
-        if e:
-            e.add_component(Transform())
-            mf = MeshFilter()
-            e.add_component(mf)
-            e.add_component(MeshRenderer())
-            pb = ProBuilderMesh()
-            e.add_component(pb)
-            positions, indices = create_primitive(name)
-            pb.set_mesh_data(positions, indices)
-            mf.mesh_name = f"ProBuilder_{e.id[:6]}"
-        self._refresh()
-        if e:
-            self._collab_sync_create(e)
-            self._selected_entity = e
-            self.entity_selected.emit(e)
-            item = self._find_item(e.id, self._tree.invisibleRootItem())
-            if item:
-                self._tree.setCurrentItem(item)
+        return self._create_system_prefab(f"3D Object/ProBuilder/{name}", None)
 
     def _create_light(self, ltype: str):
-        if not self._scene:
-            return
-        from core.foundation.commands import CreateEntityCommand, get_history
-        from core.components import Transform, Light, LightType
-        from core.maths.math3d import Vec3
-        name_map = {"sun": "Sun", "directional": "Directional Light", "point": "Point Light", "spot": "Spot Light"}
-        cmd = CreateEntityCommand(self._scene, name_map.get(ltype, "Light"))
-        get_history().execute(cmd)
-        e = self._scene.get_entity(cmd._entity_id)
-        if e:
-            t = Transform()
-            if ltype == "sun":
-                t.local_euler_angles = Vec3(-45, 45, 0)
-            e.add_component(t)
-            l = Light()
-            type_map = {"sun": LightType.DIRECTIONAL, "directional": LightType.DIRECTIONAL, "point": LightType.POINT, "spot": LightType.SPOT}
-            l.light_type = type_map[ltype]
-            if ltype == "sun":
-                l.procedural_sky_lighting = True
-                l.cast_shadows = True
-            e.add_component(l)
-        self._refresh()
-        if e:
-            self._collab_sync_create(e)
-            self._selected_entity = e
-            self.entity_selected.emit(e)
-            item = self._find_item(e.id, self._tree.invisibleRootItem())
-            if item:
-                self._tree.setCurrentItem(item)
+        lookup = {
+            "sun": "Light/Sun",
+            "directional": "Light/Directional Light",
+            "point": "Light/Point Light",
+            "spot": "Light/Spot Light",
+            "area": "Light/Area Light",
+        }
+        return self._create_system_prefab(lookup.get(str(ltype).lower(), "Light/Point Light"), None)
+
     def _create_camera(self):
-        if not self._scene:
-            return
-        from core.foundation.commands import CreateEntityCommand, get_history
-        from core.components import Transform, Camera
-        cmd = CreateEntityCommand(self._scene, "Camera")
-        get_history().execute(cmd)
-        e = self._scene.get_entity(cmd._entity_id)
-        if e:
-            e.add_component(Transform())
-            e.add_component(Camera())
-        self._refresh()
-        if e:
-            self._collab_sync_create(e)
-            self._selected_entity = e
-            self.entity_selected.emit(e)
-            item = self._find_item(e.id, self._tree.invisibleRootItem())
-            if item:
-                self._tree.setCurrentItem(item)
-    def _duplicate_entity(self, entity: Entity):
-        if not self._scene:
-            return
-        new_e = self._scene.duplicate_entity(entity)
-        self._collab_sync_create(new_e)
-        self._refresh()
-        self._selected_entity = new_e
-        self.entity_selected.emit(new_e)
-        item = self._find_item(new_e.id, self._tree.invisibleRootItem())
-        if item:
-            self._tree.setCurrentItem(item)
+        return self._create_system_prefab("Camera", None)
+
     def _create_from_component(self, name: str, comp_cls_name: str, extra_setup=None):
         if not self._scene:
             return
+        from core.prefabs.registry import get_system_prefabs
+        for entry in get_system_prefabs():
+            build_name = getattr(entry.build, "__name__", "") if entry.build else ""
+            if build_name == "build_" + str(comp_cls_name):
+                return self._create_system_prefab(entry.menu_path, None)
         from core.foundation.commands import CreateEntityCommand, get_history
         from core.ecs.ecs import ComponentRegistry
         from core.components import Transform
@@ -1006,6 +872,17 @@ class HierarchyPanel(QDockWidget):
             item = self._find_item(e.id, self._tree.invisibleRootItem())
             if item:
                 self._tree.setCurrentItem(item)
+    def _duplicate_entity(self, entity: Entity):
+        if not self._scene:
+            return
+        new_e = self._scene.duplicate_entity(entity)
+        self._collab_sync_create(new_e)
+        self._refresh()
+        self._selected_entity = new_e
+        self.entity_selected.emit(new_e)
+        item = self._find_item(new_e.id, self._tree.invisibleRootItem())
+        if item:
+            self._tree.setCurrentItem(item)
     def _delete_entity(self, entity: Entity):
         if not self._scene:
             return

@@ -32,15 +32,33 @@ class Prefab:
     TRANSFORM_PASSTHROUGH = frozenset({"local_position", "local_rotation"})
 
     def __init__(self, name: str = "Prefab", guid: Optional[str] = None,
-                 base_guid: Optional[str] = None):
+                 base_guid: Optional[str] = None, menu_path: Optional[str] = None):
         self.name: str = name
         self.guid: str = guid or str(uuid.uuid4())
         self.roots_data: list[dict] = []
         self.base_guid: Optional[str] = base_guid
+        self.menu_path: Optional[str] = menu_path
 
     @property
     def is_variant(self) -> bool:
         return self.base_guid is not None
+
+    @classmethod
+    def create_via_code(cls, name: str, build=None, menu_path: Optional[str] = None,
+                        guid: Optional[str] = None) -> Prefab:
+        pref = cls(name, guid=guid, menu_path=menu_path)
+        if build is not None:
+            result = build(pref)
+            if isinstance(result, list):
+                pref.roots_data = result
+        return pref
+
+    def instantiate_plain(self, scene: Scene, registry: ComponentRegistry,
+                          parent: Optional[Entity] = None) -> list[Entity]:
+        spawned = self.instantiate(scene, registry, parent)
+        for root in spawned:
+            Prefab.unpack(root)
+        return spawned
 
     def capture(self, entities: list[Entity]):
         self.roots_data = []
@@ -126,6 +144,8 @@ class Prefab:
         }
         if self.base_guid:
             out["base_guid"] = self.base_guid
+        if self.menu_path:
+            out["menu_path"] = self.menu_path
         with open(path, "w", encoding="utf-8") as f:
             json.dump(out, f, indent=2)
         Logger.info(f"Prefab saved: {path}")
@@ -187,7 +207,7 @@ class Prefab:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             p = cls(data.get("name", "Prefab"), data.get("guid"),
-                    data.get("base_guid"))
+                    data.get("base_guid"), data.get("menu_path"))
             roots = data.get("roots")
             if roots is not None:
                 p.roots_data = roots

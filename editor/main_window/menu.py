@@ -83,30 +83,24 @@ def setup_menu(mw):
     create_empty.setShortcut(QKeySequence("Ctrl+Shift+N"))
     create_empty.triggered.connect(mw._hierarchy._create_entity)
     go_menu.addAction(create_empty)
-    primitives_menu = go_menu.addMenu("3D Object")
-    for name in ["cube", "sphere", "plane"]:
-        act = QAction(name.capitalize(), mw)
-        act.triggered.connect(lambda checked=False, n=name: mw._hierarchy._create_primitive(n))
-        primitives_menu.addAction(act)
-    probuilder_menu = go_menu.addMenu("ProBuilder Shape")
-    from core.components.mesh_editor.primitives import get_primitive_names
-    for name in get_primitive_names():
-        act = QAction(name, mw)
-        act.triggered.connect(lambda checked=False, n=name: mw._hierarchy._create_probuilder_primitive(n))
-        probuilder_menu.addAction(act)
-    lights_menu = go_menu.addMenu("Light")
-    for ltype in ["sun", "directional", "point", "spot"]:
-        act = QAction("Sun" if ltype == "sun" else ltype.replace("_", " ").title(), mw)
-        act.triggered.connect(lambda checked=False, lt=ltype: mw._hierarchy._create_light(lt))
-        lights_menu.addAction(act)
-    effects_menu = go_menu.addMenu("Effects")
-    for label, comp_cls in [("Sky", "Sky"), ("Clouds", "Cloud")]:
-        act = QAction(label, mw)
-        act.triggered.connect(lambda checked=False, n=label, cc=comp_cls: mw._hierarchy._create_from_component(n, cc, None))
-        effects_menu.addAction(act)
-    cam_act = QAction(_qta("fa5s.camera"), "Camera", mw)
-    cam_act.triggered.connect(mw._hierarchy._create_camera)
-    go_menu.addAction(cam_act)
+    add_dialog_act = QAction(_qta("fa5s.search"), "Add Entity...", mw)
+    add_dialog_act.triggered.connect(lambda: mw._hierarchy._show_add_dialog(None))
+    go_menu.addAction(add_dialog_act)
+    go_menu.addSeparator()
+    from editor.panels.add_entity_menu import populate_add_menu
+    def _rebuild_gameobject_menu():
+        go_menu.clear()
+        go_menu.addAction(create_empty)
+        go_menu.addAction(add_dialog_act)
+        go_menu.addSeparator()
+        populate_add_menu(
+            go_menu,
+            on_system=lambda mp: mw._hierarchy._create_system_prefab(mp, None),
+            on_asset=lambda ap: mw._hierarchy._create_prefab_asset(ap, None),
+            on_search=None,
+        )
+    go_menu.aboutToShow.connect(_rebuild_gameobject_menu)
+    _rebuild_gameobject_menu()
 
     game_menu = mb.addMenu("Game")
     play_stop_act = QAction(_qta("fa5s.play"), "Play/Stop", mw)

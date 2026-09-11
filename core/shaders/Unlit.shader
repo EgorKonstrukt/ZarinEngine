@@ -20,22 +20,41 @@ Shader "Zarin/Unlit"
         Pass
         {
             GLSLPROGRAM
-            #version 330 core
+            #version 430 core
             layout(location = 0) in vec3 in_position;
             layout(location = 1) in vec3 in_normal;
             layout(location = 2) in vec2 in_uv;
+            layout(location = 7) in vec4 in_bone_indices;
+            layout(location = 8) in vec4 in_bone_weights;
+            layout(std430, binding = 6) readonly buffer BoneMatrices { mat4 u_bone_matrices[]; };
             uniform mat4 u_model;
             uniform mat4 u_view;
             uniform mat4 u_proj;
             uniform mat3 u_normal_matrix;
+            uniform int u_use_skinning;
+            uniform int u_bone_count;
             out vec3 v_world_pos;
             out vec3 v_normal;
             out vec2 v_uv;
             out vec3 v_view_pos;
             void main() {
-                vec4 world_pos = u_model * vec4(in_position, 1.0);
+                vec3 skinned_pos = in_position;
+                vec3 skinned_nrm = in_normal;
+                if (u_use_skinning == 1) {
+                    mat4 skin = mat4(0.0);
+                    for (int i = 0; i < 4; i++) {
+                        int bi = int(in_bone_indices[i] + 0.5);
+                        float bw = in_bone_weights[i];
+                        if (bi >= 0 && bi < u_bone_count && bw > 0.0) {
+                            skin += bw * u_bone_matrices[bi];
+                        }
+                    }
+                    skinned_pos = (skin * vec4(in_position, 1.0)).xyz;
+                    skinned_nrm = mat3(skin) * in_normal;
+                }
+                vec4 world_pos = u_model * vec4(skinned_pos, 1.0);
                 v_world_pos = world_pos.xyz;
-                v_normal = normalize(u_normal_matrix * in_normal);
+                v_normal = normalize(u_normal_matrix * skinned_nrm);
                 v_uv = in_uv;
                 vec4 view_pos = u_view * world_pos;
                 v_view_pos = view_pos.xyz;

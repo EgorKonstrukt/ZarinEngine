@@ -55,9 +55,14 @@ Shader "Zarin/PBR"
             layout(location = 5) in vec4 in_model2;
             layout(location = 6) in vec4 in_model3;
             layout(location = 7) in vec4 in_color;
+            layout(location = 8) in vec4 in_bone_indices;
+            layout(location = 9) in vec4 in_bone_weights;
             layout(std430, binding = 4) readonly buffer InstanceModels { mat4 _ssbo_models[]; };
             layout(std430, binding = 5) readonly buffer InstanceIndices { int _ssbo_indices[]; };
+            layout(std430, binding = 6) readonly buffer BoneMatrices { mat4 u_bone_matrices[]; };
             uniform int u_use_instancing;
+            uniform int u_use_skinning;
+            uniform int u_bone_count;
             uniform mat4 u_model;
             uniform mat4 u_view;
             uniform mat4 u_proj;
@@ -71,9 +76,23 @@ Shader "Zarin/PBR"
                 mat4 inst_model = mat4(in_model0, in_model1, in_model2, in_model3);
                 mat4 _model = (u_use_instancing == 1) ? inst_model : ((u_use_instancing == 2 || u_use_instancing == 3) ? _ssbo_models[_ssbo_indices[gl_InstanceID]] : u_model);
                 mat3 _normal_matrix = (u_use_instancing >= 1) ? transpose(inverse(mat3(_model))) : u_normal_matrix;
-                vec4 world_pos = _model * vec4(in_position, 1.0);
+                vec3 skinned_pos = in_position;
+                vec3 skinned_nrm = in_normal;
+                if (u_use_skinning == 1) {
+                    mat4 skin = mat4(0.0);
+                    for (int i = 0; i < 4; i++) {
+                        int bi = int(in_bone_indices[i] + 0.5);
+                        float bw = in_bone_weights[i];
+                        if (bi >= 0 && bi < u_bone_count && bw > 0.0) {
+                            skin += bw * u_bone_matrices[bi];
+                        }
+                    }
+                    skinned_pos = (skin * vec4(in_position, 1.0)).xyz;
+                    skinned_nrm = mat3(skin) * in_normal;
+                }
+                vec4 world_pos = _model * vec4(skinned_pos, 1.0);
                 v_world_pos = world_pos.xyz;
-                v_normal = normalize(_normal_matrix * in_normal);
+                v_normal = normalize(_normal_matrix * skinned_nrm);
                 v_uv = in_uv;
                 v_color = in_color;
                 vec4 view_pos = u_view * world_pos;

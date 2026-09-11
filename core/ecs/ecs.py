@@ -637,10 +637,28 @@ class Entity:
 
     def get_component(self, cls: Type[T]) -> Optional[T]:
         clist = self._type_map.get(cls)
-        return clist[0] if clist else None
+        if clist:
+            return clist[0]
+        for comp_type, items in self._type_map.items():
+            try:
+                if issubclass(comp_type, cls) and items:
+                    return items[0]
+            except Exception:
+                continue
+        return None
 
     def get_components(self, cls: Type[T]) -> list[T]:
-        return list(self._type_map.get(cls, []))
+        exact = self._type_map.get(cls)
+        if exact:
+            return list(exact)
+        result: list[T] = []
+        for comp_type, items in self._type_map.items():
+            try:
+                if issubclass(comp_type, cls):
+                    result.extend(items)
+            except Exception:
+                continue
+        return result
 
     def get_component_by_name(self, name: str) -> Optional[Component]:
         t = self._type_name_map.get(name)
@@ -655,10 +673,26 @@ class Entity:
         for k, c in self._components.items():
             if k.startswith(prefix):
                 return c
+        base_cls = ComponentRegistry._registry.get(name)
+        if base_cls is not None:
+            for comp_type, items in self._type_map.items():
+                try:
+                    if issubclass(comp_type, base_cls) and items:
+                        return items[0]
+                except Exception:
+                    continue
         return None
 
     def has_component(self, cls: Type[T]) -> bool:
-        return cls in self._type_map
+        if cls in self._type_map:
+            return True
+        for comp_type in self._type_map:
+            try:
+                if issubclass(comp_type, cls):
+                    return True
+            except Exception:
+                continue
+        return False
 
     def get_all_components(self) -> list[Component]:
         result = []
@@ -1180,11 +1214,45 @@ class Scene:
         return self._roots_cache
 
     def get_entities_with_component(self, cls: Type[T]) -> list[Entity]:
-        if _HAS_FAST_QUERY:
-            return _fast_get(self._component_indices, self._entities, cls.__name__, self._render_version, self._component_entity_frame_cache)
         key = cls.__name__
+        if _HAS_FAST_QUERY:
+            exact = _fast_get(self._component_indices, self._entities, key, self._render_version, self._component_entity_frame_cache)
+            sub_names: list[str] = []
+            try:
+                for reg_name, reg_cls in ComponentRegistry._registry.items():
+                    if reg_name != key and issubclass(reg_cls, cls):
+                        sub_names.append(reg_name)
+            except Exception:
+                sub_names = []
+            if not sub_names:
+                return exact
+            seen: set[str] = set()
+            merged: list[Entity] = []
+            for e in exact:
+                if e.id not in seen:
+                    seen.add(e.id)
+                    merged.append(e)
+            for sub_key in sub_names:
+                try:
+                    sub_ents = _fast_get(self._component_indices, self._entities, sub_key, self._render_version, self._component_entity_frame_cache)
+                except Exception:
+                    continue
+                for e in sub_ents:
+                    if e.id not in seen:
+                        seen.add(e.id)
+                        merged.append(e)
+            return merged
         s = self._component_indices.get(key)
-        if not s:
+        ids: set[str] = set(s) if s else set()
+        try:
+            for reg_name, reg_cls in ComponentRegistry._registry.items():
+                if reg_name != key and issubclass(reg_cls, cls):
+                    sub = self._component_indices.get(reg_name)
+                    if sub:
+                        ids.update(sub)
+        except Exception:
+            pass
+        if not ids:
             return []
         rv = self._render_version
         cache_tag = (key, rv)
@@ -1193,7 +1261,7 @@ class Scene:
         if cached is not None:
             return cached
         ents = self._entities
-        result = [ents[eid] for eid in s if eid in ents]
+        result = [ents[eid] for eid in ids if eid in ents]
         cc[cache_tag] = result
         if len(cc) > 256:
             cc.clear()

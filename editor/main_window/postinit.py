@@ -45,7 +45,7 @@ def post_init(mw):
                 return
         SplashScreen.show_message("Creating sample scene...")
         scene = mw._engine.new_scene("SampleScene")
-        from core.components import Transform, MeshFilter, MeshRenderer, Light, LightType, Camera
+        from core.components import Transform, MeshFilter, MeshRenderer, DirectionalLight, Camera
         from core.components.rendering.environment.sky import Sky
         from core.components.rendering.environment.clouds import Cloud
         from core.maths.math3d import Vec3
@@ -53,8 +53,7 @@ def post_init(mw):
         t = Transform()
         t.local_euler_angles = Vec3(-45, 45, 0)
         dir_light.add_component(t)
-        l = Light()
-        l.light_type = LightType.DIRECTIONAL
+        l = DirectionalLight()
         l.intensity = 1.0
         dir_light.add_component(l)
         cube = scene.create_entity("Cube")
