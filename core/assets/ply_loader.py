@@ -128,23 +128,34 @@ def load_ply_gaussian_splat(path: str) -> Optional[GaussianSplatData]:
                 raw = np.frombuffer(f.read(vertex_count * dt.itemsize), dtype=dt)
                 raw = raw.astype(dt.newbyteorder("<"))
             else:
-                rows = []
-                for _ in range(vertex_count):
-                    line = f.readline().decode("ascii", errors="ignore").strip()
-                    vals = line.split()
-                    row = []
-                    for i, (_, n) in enumerate(properties):
-                        v = vals[i] if i < len(vals) else "0"
-                        t = _ply_type(properties[i][0])
-                        if t == np.uint8:
-                            row.append(int(v))
-                        elif t in (np.int16, np.int32):
-                            row.append(int(v))
-                        else:
-                            row.append(float(v))
-                    rows.append(row)
                 dt = np.dtype([(p[1], _ply_type(p[0])) for p in properties])
-                raw = np.array(rows, dtype=dt)
+                body = f.read().decode("ascii", errors="ignore")
+                n_cols = len(properties)
+                needed = vertex_count * n_cols
+                raw = None
+                try:
+                    flat = np.fromstring(body, dtype=np.float32, sep=" ")
+                    if flat.size >= needed:
+                        cols = flat[:needed].reshape(vertex_count, n_cols)
+                        raw = np.empty(vertex_count, dtype=dt)
+                        for i, (_, name) in enumerate(properties):
+                            raw[name] = cols[:, i]
+                except Exception:
+                    raw = None
+                if raw is None:
+                    lines = body.splitlines()
+                    raw = np.zeros(vertex_count, dtype=dt)
+                    for r in range(vertex_count):
+                        vals = lines[r].split() if r < len(lines) else []
+                        for i, (_, name) in enumerate(properties):
+                            v = vals[i] if i < len(vals) else "0"
+                            t = _ply_type(properties[i][0])
+                            if t == np.uint8:
+                                raw[name][r] = int(v)
+                            elif t in (np.int16, np.int32):
+                                raw[name][r] = int(v)
+                            else:
+                                raw[name][r] = float(v)
 
             positions = np.column_stack([raw["x"].astype(np.float32),
                                           raw["y"].astype(np.float32),
@@ -163,6 +174,8 @@ def load_ply_gaussian_splat(path: str) -> Optional[GaussianSplatData]:
             dc = dc * SH_C0 + 0.5
 
             rest_keys = [k for k in prop_names if k.startswith("f_rest_")]
+            if len(rest_keys) > 45:
+                rest_keys = rest_keys[:45]
             num_rest = len(rest_keys)
             if num_rest > 0:
                 rest = np.column_stack([raw[k].astype(np.float32) for k in rest_keys])
@@ -191,6 +204,23 @@ def load_ply_gaussian_splat(path: str) -> Optional[GaussianSplatData]:
             if num_rest > 0:
                 num_sh_approx = int(np.sqrt(num_rest // rest_per_sh + 1))
                 num_sh = max(1, min(num_sh_approx, 4))
+
+            valid = np.isfinite(positions).all(axis=1)
+            valid &= np.isfinite(sh_coeffs).all(axis=1)
+            valid &= np.isfinite(opacity)
+            valid &= np.isfinite(scales).all(axis=1)
+            valid &= np.isfinite(quaternions).all(axis=1)
+            valid &= scales.max(axis=1) > 0.0
+            if not bool(valid.all()):
+                if not bool(valid.any()):
+                    return None
+                positions = np.ascontiguousarray(positions[valid])
+                normals = np.ascontiguousarray(normals[valid])
+                sh_coeffs = np.ascontiguousarray(sh_coeffs[valid])
+                opacity = np.ascontiguousarray(opacity[valid])
+                scales = np.ascontiguousarray(scales[valid])
+                quaternions = np.ascontiguousarray(quaternions[valid])
+                vertex_count = positions.shape[0]
 
             return GaussianSplatData(
                 positions=positions,

@@ -4,21 +4,20 @@
 //
 // Copyright (c) 2026 Zarrakun
 
-#version 330 core
+#version 430 core
 
 in vec3 v_color;
-in vec2 v_uv;
+in vec2 v_local;
 in float v_alpha;
 
 out vec4 frag_color;
 
 void main() {
-    vec2 d = v_uv - vec2(0.5);
-    float power = -0.5 * dot(d * 2.0, d * 2.0);
-    if (power < -4.0) discard;
+    float p2 = dot(v_local, v_local);
+    if (p2 > 16.0) discard;
 
-    float alpha = v_alpha * exp(power);
-    if (alpha < 0.005) discard;
+    float alpha = v_alpha * exp(-0.5 * p2);
+    if (alpha < 0.004) discard;
 
     vec3 col = max(v_color, vec3(0.0));
     frag_color = vec4(col * alpha, alpha);

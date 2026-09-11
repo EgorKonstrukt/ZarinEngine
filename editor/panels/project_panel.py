@@ -1847,9 +1847,23 @@ class ProjectPanel(QDockWidget):
                 paths = [self._active_pane()._current_dir]
             if paths:
                 try:
+                    from PyQt6.QtGui import QCursor
+                    cursor_pos = QCursor.pos()
+                    if cursor_pos is not None and not cursor_pos.isNull():
+                        try:
+                            inside = widget.rect().contains(widget.mapFromGlobal(cursor_pos))
+                        except Exception:
+                            inside = True
+                        if inside:
+                            menu_x, menu_y = int(cursor_pos.x()), int(cursor_pos.y())
+                        else:
+                            mapped = widget.mapToGlobal(pos)
+                            menu_x, menu_y = int(mapped.x()), int(mapped.y())
+                    else:
+                        mapped = widget.mapToGlobal(pos)
+                        menu_x, menu_y = int(mapped.x()), int(mapped.y())
                     if show_shell_context_menu(
-                            paths, int(self.winId()),
-                            int(widget.mapToGlobal(pos).x()), int(widget.mapToGlobal(pos).y()),
+                            paths, int(self.winId()), menu_x, menu_y,
                             self._build_shell_extra_actions(path)):
                         return
                 except Exception:

@@ -24,10 +24,11 @@ uniform float u_opacity_threshold;
 uniform float u_max_screen_size;
 
 out vec3 v_color;
-out vec2 v_uv;
+out vec2 v_local;
 out float v_alpha;
 
 #define STRIDE 59
+#define SIGMA_COVER 3.0
 
 mat3 quat_to_mat3(float qx, float qy, float qz, float qw) {
     return mat3(
@@ -78,13 +79,6 @@ const vec2 QUAD_OFFSETS[4] = vec2[4](
     vec2( 1.0,  1.0)
 );
 
-const vec2 QUAD_UV[4] = vec2[4](
-    vec2(0.0, 0.0),
-    vec2(1.0, 0.0),
-    vec2(0.0, 1.0),
-    vec2(1.0, 1.0)
-);
-
 void main() {
     uint vid = sorted_idx[gl_InstanceID];
     int base = int(vid) * STRIDE;
@@ -97,7 +91,8 @@ void main() {
 
     vec4 world_pos = u_model * vec4(splat[base], splat[base + 1], splat[base + 2], 1.0);
     vec4 view_pos = u_view * world_pos;
-    if (-view_pos.z < 0.01) {
+    float view_depth = -view_pos.z;
+    if (view_depth < 0.05) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
     }
@@ -127,39 +122,44 @@ void main() {
 
     mat3 cov2d = transpose(J) * Vrk * J;
 
-    float a = cov2d[0][0] + 0.01;
+    float pixel_scale = max(u_viewport.x, u_viewport.y) * 0.5;
+    float aa = 0.3 / max(pixel_scale, 1.0);
+    aa *= aa;
+    float a = cov2d[0][0] + aa;
     float b = cov2d[0][1];
-    float c = cov2d[1][1] + 0.01;
+    float c = cov2d[1][1] + aa;
 
     float det = a * c - b * b;
-    if (det < 1e-6) {
+    if (det <= 0.0) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
     }
 
     float mid = 0.5 * (a + c);
-    float delta = sqrt(max(0.0, mid * mid - det));
+    float delta = sqrt(max(mid * mid - det, 0.0));
     float l1 = mid + delta;
-    if (l1 < 0.0) {
+    float l2 = mid - delta;
+    if (l1 <= 0.0 || l2 <= 0.0) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
     }
 
     float r1 = sqrt(l1);
-    float l2 = mid - delta;
-    float r2 = sqrt(max(0.0, l2));
+    float r2 = sqrt(l2);
 
-    float pixel_scale = max(u_viewport.x, u_viewport.y) * 0.5;
     float pixel_radius = r1 * pixel_scale;
-    if (pixel_radius < 1.0) {
+    if (pixel_radius < 0.35) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
     }
 
-    if (u_max_screen_size > 0.0 && pixel_radius > u_max_screen_size) {
-        float clamp_scale = u_max_screen_size / pixel_radius;
-        r1 *= clamp_scale;
-        r2 *= clamp_scale;
+    if (u_max_screen_size > 0.0) {
+        float pr = pixel_radius * SIGMA_COVER;
+        if (pr > u_max_screen_size) {
+            float s = u_max_screen_size / pr;
+            r1 *= s;
+            r2 *= s;
+        }
     }
 
     float angle = 0.5 * atan(b, a - l2);
@@ -167,13 +167,19 @@ void main() {
     vec2 v2 = vec2(-sin(angle), cos(angle));
 
     vec2 off = QUAD_OFFSETS[gl_VertexID];
-    v_uv = QUAD_UV[gl_VertexID];
-
-    vec2 d = off.x * v1 * r1 + off.y * v2 * r2;
 
     vec4 clip_pos = u_proj * view_pos;
     vec2 ndc_center = clip_pos.xy / clip_pos.w;
-    vec2 screen = ndc_center + d;
+    float bound = max(r1, r2) * SIGMA_COVER;
+    if (ndc_center.x < -1.0 - bound || ndc_center.x > 1.0 + bound ||
+        ndc_center.y < -1.0 - bound || ndc_center.y > 1.0 + bound) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        return;
+    }
 
-    gl_Position = vec4(screen, 0.0, 1.0);
+    vec2 d = (off.x * v1 * r1 + off.y * v2 * r2) * SIGMA_COVER;
+    vec2 screen = ndc_center + d;
+    v_local = off * SIGMA_COVER;
+
+    gl_Position = vec4(screen * clip_pos.w, clip_pos.z, clip_pos.w);
 }
