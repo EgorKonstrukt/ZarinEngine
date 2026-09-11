@@ -123,6 +123,7 @@ EXTENSIONS = [
     _ext("core._math_mat4", "_math_mat4.pyx"),
     _ext("core._vr_batch", "_vr_batch.pyx"),
     _ext("core._nav_batch", "_nav_batch.pyx"),
+    _ext("core._splat_sort", "_splat_sort.pyx"),
 ]
 
 def build():
