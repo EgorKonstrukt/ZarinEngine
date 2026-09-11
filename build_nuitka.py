@@ -53,6 +53,12 @@ parser.add_argument("--onefile", action="store_true", help="Single file build")
 parser.add_argument("--strip-unused", action="store_true", default=None, help="Strip unused assets (scans scenes)")
 parser.add_argument("--no-strip-unused", action="store_true", dest="no_strip", help="Include all assets")
 parser.add_argument("--no-winrt", action="store_true", help="Disable Windows Runtime DLL inclusion (smaller distributable)")
+parser.add_argument("--compiler", choices=("auto", "mingw", "msvc"), default="auto",
+                    help="C compiler for Nuitka (default: auto = MinGW-w64, auto-downloaded; "
+                         "no heavy MSVC install needed). Use 'msvc' to force Visual Studio.")
+parser.add_argument("--physics", choices=("culverin", "pybullet", "physx"), default=None,
+                    help="Physics solver baked into the build (default: from ProjectSettings.json, "
+                         "fallback: culverin (Jolt Physics))")
 
 _args, remaining = parser.parse_known_args()
 
@@ -64,22 +70,60 @@ ONEFILE = _args.onefile
 CLI_STRIP = _args.strip_unused
 CLI_NO_STRIP = _args.no_strip
 NO_WINRT = _args.no_winrt
+COMPILER_CHOICE = _args.compiler
+PHYSICS_CHOICE = _args.physics
 
 print("=== " + ("EDITOR BUILD" if BUILD_EDITOR else "PLAYER BUILD") + " ===")
 
 
 def _resolve_physics_solver() -> str:
-    """Read the active physics solver from ProjectSettings.json."""
+    """Active physics solver: CLI --physics > ProjectSettings.json > default.
+
+    Default is 'culverin' (Culverin = Jolt Physics bindings).
+    """
+    if PHYSICS_CHOICE:
+        return PHYSICS_CHOICE
+    try:
+        from physics_solvers.registry import normalize, DEFAULT_SOLVER
+    except ImportError:
+        normalize = None
+        DEFAULT_SOLVER = "culverin"
     ps_path = ROOT / "ProjectSettings.json"
     if not ps_path.exists():
-        return "culverin"
+        return DEFAULT_SOLVER
     try:
         with open(ps_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        solver = data.get("physics", {}).get("solver", "culverin")
-        return solver if solver in ("pybullet", "physx", "culverin") else "culverin"
+        solver = data.get("physics", {}).get("solver", DEFAULT_SOLVER)
+        if normalize is not None:
+            return normalize(solver)
+        return solver if solver in ("pybullet", "physx", "culverin") else DEFAULT_SOLVER
     except Exception:
-        return "culverin"
+        return DEFAULT_SOLVER
+
+
+def _setup_compiler() -> tuple[str, list[str], dict]:
+    """Ensure the C compiler is available and return (name, flags, env).
+
+    Default is a compact auto-downloaded MinGW-w64 (no MSVC needed).
+    """
+    sys.path.insert(0, str(ROOT))
+    try:
+        from tools.mingw import ensure_mingw, nuitka_flags, resolve_compiler, activate
+    except ImportError:
+        # No bootstrap module — let Nuitka auto-detect (legacy MSVC path).
+        return "unknown", ["--assume-yes-for-downloads"], dict(os.environ)
+    compiler = resolve_compiler(COMPILER_CHOICE if COMPILER_CHOICE != "auto" else None)
+    print(f"C compiler: {compiler} (MinGW-w64 is compact, MSVC would need several GB)")
+    env = dict(os.environ)
+    if sys.platform == "win32" and compiler == "mingw":
+        try:
+            bin_dir = ensure_mingw()
+            env = activate(bin_dir)
+        except Exception as e:
+            print(f"  WARNING: MinGW-w64 auto-download failed: {e}")
+            print("  Falling back to Nuitka's own toolchain download.")
+    return compiler, nuitka_flags(COMPILER_CHOICE if COMPILER_CHOICE != "auto" else None), env
 
 
 def _minify_pil():
@@ -301,6 +345,12 @@ def build():
     print(f"Auto-excluded: {len(module_nofollow)} modules, {len(package_nofollow)} packages")
     print()
 
+    # C compiler: compact auto-downloaded MinGW-w64 by default (no MSVC needed).
+    physics_solver = _resolve_physics_solver()
+    print(f"Physics solver baked into build: {physics_solver}")
+    COMPILER_NAME, COMPILER_FLAGS, BUILD_ENV = _setup_compiler()
+    print(f"Nuitka compiler flags: {COMPILER_FLAGS}")
+    print()
     if OUTPUT_DIR.exists():
         print(f"Cleaning old output: {OUTPUT_DIR}")
         _rmtree_robust(OUTPUT_DIR)
@@ -333,10 +383,12 @@ def build():
         "--output-filename=" + ("ZarinEditor" if BUILD_EDITOR else "ZarinPlayer"),
         "--enable-plugin=pyqt6",
         "--disable-ccache",
+        # C compiler: compact MinGW-w64 by default (auto-downloaded, no MSVC).
+        *COMPILER_FLAGS,
         # Core packages (runtime)
         "--include-package=core",
         *_plugin_include_options(build_plugins),
-        f"--include-package=physics_solvers.{_resolve_physics_solver()}_solver",
+        f"--include-package=physics_solvers.{physics_solver}_solver",
         # Data вЂ” use RELATIVE paths (Nuitka resolves relative to CWD which is ROOT)
         "--include-data-file=" + _ASSIMP_SRC + "=" + _ASSIMP_SRC,
         # Use auto-generated BuildSettings if build_plugins was empty (includes auto-discovered plugins)
@@ -430,7 +482,7 @@ def build():
 
     _minify_pil()
     try:
-        result = subprocess.run(NUITKA_OPTIONS, cwd=str(ROOT))
+        result = subprocess.run(NUITKA_OPTIONS, cwd=str(ROOT), env=BUILD_ENV)
     finally:
         _restore_pil()
 

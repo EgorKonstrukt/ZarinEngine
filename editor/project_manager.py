@@ -63,6 +63,14 @@ def _create_project_directory(path: str, name: str) -> bool:
             "project": {"name": name, "version": "1.0.0", "default_scene": ""},
             "input": {"horizontal": "a,d", "vertical": "w,s", "mouse_sensitivity": 1.0},
             "rendering": {"render_pipeline": "forward", "anti_aliasing": "none", "shadow_distance": 50.0},
+            "physics": {
+                "solver": "culverin",
+                "gravity_x": 0.0,
+                "gravity_y": -9.81,
+                "gravity_z": 0.0,
+                "fixed_time_step": 0.02,
+                "simulation_mode": "multi_threaded",
+            },
         }
         with open(os.path.join(path, "ProjectSettings.json"), "w") as f:
             json.dump(settings, f, indent=2)

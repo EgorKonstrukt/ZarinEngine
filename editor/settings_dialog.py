@@ -198,7 +198,7 @@ FIELD_TOOLTIPS = {
     "physics.angular_damping": "Default angular damping",
     "physics.max_contacts_per_body": "Maximum contacts per rigid body",
     "physics.simulation_mode": "How physics simulation is executed. single = main thread, multi_threaded = one separate process, per_layer_process = one process per collision layer (for extreme parallel workloads)",
-    "physics.solver": "Physics solver backend (culverin, pybullet, or physx)",
+    "physics.solver": "Physics engine backend (default: culverin = Jolt Physics)",
     "audio.enable_audio": "Enable the audio system on startup",
     "audio.device_name": "Audio output device name (leave empty for Windows system default)",
     "audio.sample_rate": "Audio sample rate in Hz (44100 or 48000 recommended)",
@@ -840,6 +840,32 @@ class SettingsDialog(QDialog):
             cb.setCurrentText(self._config.get(key, "editor"))
             cb.currentTextChanged.connect(lambda t, k=key: self._on_value_changed(k, t))
             return cb
+        if key == "physics.solver":
+            from physics_solvers.registry import SOLVERS, choices, normalize
+            container = QWidget()
+            vl = QVBoxLayout(container)
+            vl.setContentsMargins(0, 0, 0, 0)
+            vl.setSpacing(2)
+            cb = QComboBox()
+            for solver_key in choices():
+                cb.addItem(SOLVERS[solver_key]["title"], solver_key)
+            current = normalize(self._config.get(key, value))
+            idx = cb.findData(current)
+            if idx >= 0:
+                cb.setCurrentIndex(idx)
+            cb.currentIndexChanged.connect(
+                lambda i, k=key, c=cb: self._on_value_changed(k, c.itemData(i))
+            )
+            vl.addWidget(cb)
+            info = QLabel(
+                "Culverin (Jolt Physics) = default, fast and recommended\n"
+                "PyBullet (Bullet Physics) = needs 'pip install pybullet'\n"
+                "PhysX (NVIDIA) = needs 'pip install ovphysx'"
+            )
+            info.setStyleSheet("color: #888; font-size: 11px; padding-left: 4px;")
+            info.setWordWrap(True)
+            vl.addWidget(info)
+            return container
         if isinstance(value, list):
             if len(value) in (3, 4) and all(isinstance(v, (int, float)) for v in value):
                 from editor.color_picker import ColorLineEdit

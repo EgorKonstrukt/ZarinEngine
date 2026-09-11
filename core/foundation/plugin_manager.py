@@ -1413,19 +1413,37 @@ class PluginManager:
         src_dir = os.path.dirname(src)
         pyx = os.path.basename(src)
         setup_py = os.path.join(outdir, "_cython_build_setup.py")
+        try:
+            import sys as _sys
+            _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if _root not in _sys.path:
+                _sys.path.insert(0, _root)
+            from tools.mingw import env_with_mingw as _pm_env_with_mingw
+            try:
+                _pm_env = _pm_env_with_mingw()
+            except Exception:
+                _pm_env = None
+        except ImportError:
+            _pm_env = None
+        _is_win = __import__("sys").platform == "win32"
+        _use_mingw = _pm_env is not None and _is_win
+        _opt = "'-O2'" if _use_mingw else ("'/O2'" if _is_win else "'-O3'")
         script = (
             "from setuptools import setup, Extension\n"
             "from Cython.Build import cythonize\n"
             f"setup(ext_modules=cythonize([Extension('zpl_native', [r'{pyx}'], "
-            f"extra_compile_args=['/O2'] if __import__('sys').platform == 'win32' else ['-O3'])], "
+            f"extra_compile_args=[{_opt}])], "
             f"build_dir=r'{outdir}'), options={{'build_ext': {{'build_lib': r'{outdir}'}}}})\n"
         )
         with open(setup_py, "w", encoding="utf-8") as f:
             f.write(script)
         try:
+            _cmd = [sys.executable, setup_py, "build_ext", "--inplace"]
+            if _use_mingw:
+                _cmd.insert(3, "--compiler=mingw32")
             result = subprocess.run(
-                [sys.executable, setup_py, "build_ext", "--inplace"],
-                capture_output=True, text=True, cwd=src_dir,
+                _cmd,
+                capture_output=True, text=True, cwd=src_dir, env=_pm_env or None,
             )
             if result.returncode == 0:
                 for f in os.listdir(outdir):

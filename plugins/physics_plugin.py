@@ -17,6 +17,13 @@ from core.physics.physics_solver import IPhysicsSolver
 from core.maths.math3d import Vec2, Vec3
 from core.physics.shape_utils import find_shapes_info
 from core.config.config import get_project_config
+from physics_solvers.registry import (
+    DEFAULT_SOLVER,
+    get_info,
+    get_module_class,
+    is_available,
+    normalize,
+)
 
 if TYPE_CHECKING:
     from core.ecs.ecs import Entity
@@ -103,18 +110,16 @@ class PhysicsPlugin(PluginBase):
         settings = self._get_physics_settings()
         self._simulation_mode = settings.get("simulation_mode", "multi_threaded")
 
-        solver_name = settings.get("solver", "culverin")
-        solver_module = ""
-        solver_class = ""
-        if solver_name == "physx":
-            solver_module = "physics_solvers.physx_solver"
-            solver_class = "PhysXSolver"
-        elif solver_name == "culverin":
-            solver_module = "physics_solvers.culverin_solver"
-            solver_class = "CulverinSolver"
-        else:
-            solver_module = "physics_solvers.pybullet_solver"
-            solver_class = "PyBulletSolver"
+        solver_name = normalize(settings.get("solver", DEFAULT_SOLVER))
+        solver_module, solver_class = get_module_class(solver_name)
+        if not is_available(solver_name):
+            Logger.warning(
+                f"[PhysicsPlugin] solver '{solver_name}' needs 'pip install "
+                f"{get_info(solver_name).get('pip')}'. "
+                f"Falling back to '{DEFAULT_SOLVER}'."
+            )
+            solver_name = DEFAULT_SOLVER
+            solver_module, solver_class = get_module_class(solver_name)
 
         Logger.info(f"[PhysicsPlugin] using solver={solver_name} mode={self._simulation_mode}")
 
@@ -154,8 +159,8 @@ class PhysicsPlugin(PluginBase):
 
     def _solver_module_class_with_settings(self) -> tuple:
         settings = self._get_physics_settings()
-        solver_name = settings.get("solver", "culverin")
-        sm, sc = self._solver_module_class()
+        solver_name = normalize(settings.get("solver", DEFAULT_SOLVER))
+        sm, sc = get_module_class(solver_name)
         return (sm, sc, settings, solver_name)
 
     def _init_single(self, solver_module: str, solver_class: str, settings: dict, solver_name: str):
@@ -178,12 +183,7 @@ class PhysicsPlugin(PluginBase):
 
     def _solver_module_class(self) -> tuple[str, str]:
         settings = self._get_physics_settings()
-        solver_name = settings.get("solver", "culverin")
-        if solver_name == "physx":
-            return "physics_solvers.physx_solver", "PhysXSolver"
-        if solver_name == "culverin":
-            return "physics_solvers.culverin_solver", "CulverinSolver"
-        return "physics_solvers.pybullet_solver", "PyBulletSolver"
+        return get_module_class(normalize(settings.get("solver", DEFAULT_SOLVER)))
 
     def _get_layer_process(self, layer: int) -> PhysicsProcess:
         if layer not in self._layer_processes:

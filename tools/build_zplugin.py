@@ -77,6 +77,24 @@ try:
 except Exception:
     _PM_OK = False
 
+try:
+    from tools.mingw import env_with_mingw as _env_with_mingw
+    from tools.mingw import nuitka_flags as _nuitka_flags
+except Exception:
+    _env_with_mingw = None
+    _nuitka_flags = None
+
+
+def _zpl_build_env() -> dict | None:
+    """Env with auto-downloaded MinGW-w64 on PATH (None = unchanged)."""
+    if _env_with_mingw is None:
+        return None
+    try:
+        return _env_with_mingw()
+    except Exception as e:
+        print(f"WARNING: MinGW-w64 setup failed: {e}")
+        return None
+
 
 DEFAULT_EXCLUDES = ["__pycache__", "*.pyc", "*.pyo", ".pytest_cache", "*.egg-info"]
 
@@ -138,9 +156,13 @@ def _compile_tree_cython(stage_root: str, module: str, pkg_dir: str) -> bool:
             "setup(ext_modules=cythonize([\n" + ",\n".join(ext_lines) + "\n]))\n"
         )
     try:
+        cython_env = _zpl_build_env()
+        cython_cmd = [sys.executable, setup_path, "build_ext", "--inplace"]
+        if cython_env is not None and sys.platform == "win32":
+            cython_cmd.insert(3, "--compiler=mingw32")
         result = subprocess.run(
-            [sys.executable, setup_path, "build_ext", "--inplace"],
-            capture_output=True, text=True, cwd=stage_root,
+            cython_cmd,
+            capture_output=True, text=True, cwd=stage_root, env=cython_env or None,
         )
     finally:
         if os.path.isfile(setup_path):
@@ -177,9 +199,14 @@ def _compile_tree_nuitka(stage_root: str, module: str, pkg_dir: str) -> bool:
     for rel in rels:
         src = os.path.join(pkg_dir, rel)
         outdir = os.path.dirname(src)
+        nuitka_cmd = [
+            sys.executable, "-m", "nuitka", "--module",
+            *(_nuitka_flags() if _nuitka_flags else []),
+            f"--output-dir={outdir}", src,
+        ]
         result = subprocess.run(
-            [sys.executable, "-m", "nuitka", "--module", f"--output-dir={outdir}", src],
-            capture_output=True, text=True, cwd=stage_root,
+            nuitka_cmd,
+            capture_output=True, text=True, cwd=stage_root, env=_zpl_build_env() or None,
         )
         base = os.path.splitext(os.path.basename(rel))[0]
         found = [f for f in os.listdir(outdir) if f.startswith(base + ".") and f.endswith((".pyd", ".so"))]

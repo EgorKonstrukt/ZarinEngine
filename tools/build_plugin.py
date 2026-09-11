@@ -22,6 +22,25 @@ import shutil
 import subprocess
 import argparse
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from tools.mingw import env_with_mingw as _env_with_mingw
+    from tools.mingw import nuitka_flags as _nuitka_flags
+except ImportError:
+    _env_with_mingw = None
+    _nuitka_flags = None
+
+
+def _build_env() -> dict | None:
+    """Env with auto-downloaded MinGW-w64 on PATH (None = unchanged)."""
+    if _env_with_mingw is None:
+        return None
+    try:
+        return _env_with_mingw()
+    except Exception as e:
+        print(f"WARNING: MinGW-w64 setup failed: {e}")
+        return None
+
 
 def find_nuitka():
     try:
@@ -51,12 +70,13 @@ def build_with_nuitka(plugin_path: str, output_dir: str, plugin_name: str):
     cmd = [
         sys.executable, "-m", "nuitka",
         "--module",
+        *(_nuitka_flags() if _nuitka_flags else []),
         f"--output-dir={out}",
         plugin_path,
     ]
 
     print(f"Building {plugin_path} -> {out}/{plugin_name}.pyd ...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, env=_build_env() or None)
     if result.returncode != 0:
         print(f"Build failed:\n{result.stderr}")
         return False
@@ -97,9 +117,14 @@ setup(
 """)
 
     print(f"Cythonizing {plugin_path} ...")
+    cmd = [sys.executable, setup_path, "build_ext", "--inplace"]
+    build_env = _build_env()
+    if build_env is not None and sys.platform == "win32":
+        # Prefer compact MinGW-w64 over MSVC when available.
+        cmd.insert(3, "--compiler=mingw32")
     result = subprocess.run(
-        [sys.executable, setup_path, "build_ext", "--inplace"],
-        capture_output=True, text=True, cwd=out,
+        cmd,
+        capture_output=True, text=True, cwd=out, env=build_env or None,
     )
     if result.returncode != 0:
         print(f"Build failed:\n{result.stderr}")

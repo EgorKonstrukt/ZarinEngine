@@ -12,15 +12,71 @@ from Cython.Build import cythonize
 import numpy
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
 _CYTHON = os.path.join(_HERE, "pyx")
 
+# Compact auto-downloaded MinGW-w64 is the default on Windows (no heavy MSVC).
+# Override: python setup.py build_ext --inplace --compiler=msvc
+#           (or ZARIN_COMPILER=msvc).
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+try:
+    from tools.mingw import (
+        ensure_mingw,
+        activate,
+        pop_compiler_argv,
+        resolve_compiler,
+    )
+    _MINGW_HELPER = True
+except ImportError:
+    _MINGW_HELPER = False
+
+_EXPLICIT_COMPILER = pop_compiler_argv() if _MINGW_HELPER else None
+
+
+def _selected_compiler() -> str:
+    """'mingw', 'msvc' or 'system'. Default on Windows: mingw."""
+    if not _MINGW_HELPER:
+        return "msvc" if platform.system() == "Windows" else "system"
+    return resolve_compiler(_EXPLICIT_COMPILER)
+
+
+_COMPILER = _selected_compiler()
+_USING_MINGW = _COMPILER == "mingw" and platform.system() == "Windows"
+
+if _USING_MINGW and _MINGW_HELPER:
+    try:
+        print(f"[cython] C compiler: mingw (compact MinGW-w64, auto-downloaded)")
+        activate(ensure_mingw())
+        # setuptools build_ext understands --compiler=mingw32; inject it when
+        # the user did not pass an explicit --compiler already.
+        if (
+            "build_ext" in sys.argv
+            and not any(a.startswith("--compiler") for a in sys.argv)
+        ):
+            sys.argv.insert(sys.argv.index("build_ext") + 1, "--compiler=mingw32")
+    except Exception as e:
+        print(f"[cython] WARNING: MinGW-w64 setup failed: {e} — trying MSVC")
+        _COMPILER = "msvc"
+        _USING_MINGW = False
+elif platform.system() == "Windows":
+    print(f"[cython] C compiler: {_COMPILER}")
+
 def _compile_args():
+    if _USING_MINGW:
+        # GCC-style flags for MinGW-w64. OpenMP comes from the per-file
+        # `# distutils: extra_*` directives in core/pyx/*.pyx.
+        return ["-O2", "-DNDEBUG", "-march=x86-64", "-mtune=generic"]
     if platform.system() == "Windows":
         return ["/O2", "/fp:fast", "/arch:AVX2", "/GL", "/DNDEBUG"]
     else:
         return ["-O3", "-ffast-math", "-march=native", "-DNDEBUG", "-flto", "-fopenmp"]
 
 def _link_args():
+    if _USING_MINGW:
+        # Static libgcc/libstdc++ so built .pyd files don't drag MinGW
+        # runtime DLLs around (libgomp/winpthread stay shared for OpenMP).
+        return ["-static-libgcc", "-static-libstdc++"]
     if platform.system() == "Windows":
         return ["/LTCG"]
     else:

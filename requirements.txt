@@ -9,6 +9,7 @@ pynput
 msgpack
 cython
 setuptools
+nuitka
 pillow
 imageio
 qtawesome

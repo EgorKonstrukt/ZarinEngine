@@ -78,6 +78,40 @@ class BuildDialog(QDialog):
         self._winrt_cb.setToolTip("Disable to reduce distribution size. Only affects Windows builds.")
         form.addRow("WinRT:", self._winrt_cb)
 
+        self._compiler_combo = QComboBox()
+        self._compiler_combo.addItem("MinGW-w64 (auto-download, ~60 MB, recommended)", "auto")
+        self._compiler_combo.addItem("MinGW-w64 (force)", "mingw")
+        self._compiler_combo.addItem("MSVC Visual Studio (several GB)", "msvc")
+        self._compiler_combo.setToolTip(
+            "C compiler for Nuitka. MinGW-w64 is downloaded automatically "
+            "and is much smaller than MSVC."
+        )
+        form.addRow("Compiler:", self._compiler_combo)
+
+        self._physics_combo = QComboBox()
+        self._physics_combo.setToolTip("Physics engine baked into the build.")
+        try:
+            from physics_solvers.registry import SOLVERS, choices, normalize as _norm
+            import json as _json
+            _ps_path = ROOT / "ProjectSettings.json"
+            _current = "culverin"
+            if _ps_path.exists():
+                try:
+                    _current = _norm(_json.loads(_ps_path.read_text(encoding="utf-8"))
+                                     .get("physics", {}).get("solver", "culverin"))
+                except Exception:
+                    pass
+            for _key in choices():
+                self._physics_combo.addItem(SOLVERS[_key]["title"], _key)
+            _idx = self._physics_combo.findData(_current)
+            if _idx >= 0:
+                self._physics_combo.setCurrentIndex(_idx)
+        except Exception:
+            self._physics_combo.addItem("Culverin (Jolt Physics)", "culverin")
+            self._physics_combo.addItem("PyBullet (Bullet Physics)", "pybullet")
+            self._physics_combo.addItem("PhysX (NVIDIA)", "physx")
+        form.addRow("Physics:", self._physics_combo)
+
         main.addWidget(settings_group)
 
         # Output
@@ -149,6 +183,12 @@ class BuildDialog(QDialog):
             args.append("--no-strip-unused")
         if not self._winrt_cb.isChecked():
             args.append("--no-winrt")
+        compiler = self._compiler_combo.currentData()
+        if compiler and compiler != "auto":
+            args.append(f"--compiler={compiler}")
+        physics = self._physics_combo.currentData()
+        if physics:
+            args.append(f"--physics={physics}")
         return args
 
     def _start_build(self):
