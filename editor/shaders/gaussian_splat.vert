@@ -113,11 +113,9 @@ void main() {
 
     float inv_z = 1.0 / view_pos.z;
     mat3 J = mat3(
-        u_proj[0][0] * inv_z, 0.0, 0.0,
-        0.0, u_proj[1][1] * inv_z, 0.0,
-        -u_proj[0][0] * view_pos.x * inv_z * inv_z,
-        -u_proj[1][1] * view_pos.y * inv_z * inv_z,
-        inv_z
+        u_proj[0][0] * inv_z, 0.0, -u_proj[0][0] * view_pos.x * inv_z * inv_z,
+        0.0, u_proj[1][1] * inv_z, -u_proj[1][1] * view_pos.y * inv_z * inv_z,
+        0.0, 0.0, inv_z
     );
 
     mat3 cov2d = transpose(J) * Vrk * J;
@@ -154,15 +152,14 @@ void main() {
     }
 
     if (u_max_screen_size > 0.0) {
-        float pr = pixel_radius * SIGMA_COVER;
-        if (pr > u_max_screen_size) {
-            float s = u_max_screen_size / pr;
+        if (pixel_radius > u_max_screen_size) {
+            float s = u_max_screen_size / pixel_radius;
             r1 *= s;
             r2 *= s;
         }
     }
 
-    float angle = 0.5 * atan(b, a - l2);
+    float angle = 0.5 * atan(2.0 * b, a - c);
     vec2 v1 = vec2(cos(angle), sin(angle));
     vec2 v2 = vec2(-sin(angle), cos(angle));
 

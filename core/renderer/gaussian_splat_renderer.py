@@ -42,6 +42,7 @@ class GaussianSplatRenderer:
         self._center: dict[str, np.ndarray] = {}
         self._radius: dict[str, float] = {}
         self._sort_cache: dict[str, tuple[bytes, np.ndarray]] = {}
+        self._order_tick: dict[str, int] = {}
         self._idx_key: Optional[tuple[str, bytes]] = None
         self._init_shaders()
 
@@ -90,6 +91,7 @@ class GaussianSplatRenderer:
         self._radius[path] = float(np.linalg.norm((mx - mn).astype(np.float64) * 0.5))
         self._uploaded_path = None
         self._sort_cache.pop(path, None)
+        self._order_tick.pop(path, None)
         return True
 
     def _pack_for_gpu(self, data) -> np.ndarray:
@@ -117,10 +119,16 @@ class GaussianSplatRenderer:
 
     def _visible_order(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
                        proj_f32: np.ndarray, opacity_threshold: float) -> tuple[bytes, np.ndarray]:
-        key = model_f32.tobytes() + view_f32.tobytes() + proj_f32.tobytes() + np.float32(opacity_threshold).tobytes()
+        proj = proj_f32.reshape(4, 4)
+        zoom = np.array([proj[0, 0], proj[1, 1]], dtype=np.float32).tobytes()
+        key = model_f32.tobytes() + view_f32.tobytes() + np.float32(opacity_threshold).tobytes() + zoom
         cached = self._sort_cache.get(path)
         if cached is not None and cached[0] == key:
             return key, cached[1]
+        tick = self._order_tick.get(path, 0) + 1
+        self._order_tick[path] = tick
+        if cached is not None and (tick & 1):
+            return cached
         order = self._compute_order(path, model_f32, view_f32, proj_f32, opacity_threshold)
         self._sort_cache[path] = (key, order)
         return key, order
@@ -290,6 +298,7 @@ class GaussianSplatRenderer:
         self._center.clear()
         self._radius.clear()
         self._sort_cache.clear()
+        self._order_tick.clear()
         self._idx_key = None
         self._uploaded_path = None
         self._uploaded_n = 0
