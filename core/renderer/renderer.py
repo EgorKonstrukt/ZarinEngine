@@ -1666,7 +1666,7 @@ out vec4 frag_color;
         if last_prog is not None and "u_use_skinning" in last_prog:
             last_prog["u_use_skinning"].value = 0
 
-    def render_cubemap_face(self, snap, face_fbo, res, view_f32, proj_f32, cam_pos, lights, skip_entity=None):
+    def render_cubemap_face(self, snap, face_fbo, res, view_f32, proj_f32, cam_pos, lights, skip_entity=None, face_index=None):
         try:
             face_fbo.use()
             face_fbo.viewport = (0, 0, res, res)
@@ -1738,6 +1738,36 @@ out vec4 frag_color;
                         self._render_skinned_meshes(snap, view_f32, proj_f32, cam_pos, lights)
                 else:
                     self._render_skinned_meshes(snap, view_f32, proj_f32, cam_pos, lights)
+            gauss_items = getattr(snap, 'gaussian_splats', None)
+            if self._gaussians is not None and gauss_items:
+                try:
+                    face_view_m = Mat4(np.asarray(view_f32, dtype=np.float64).reshape(4, 4))
+                    face_proj_m = Mat4(np.asarray(proj_f32, dtype=np.float64).reshape(4, 4))
+                except Exception:
+                    face_view_m = None
+                    face_proj_m = None
+                if face_view_m is not None and face_proj_m is not None:
+                    try:
+                        eng = Engine.instance()
+                    except Exception:
+                        eng = None
+                    self._ctx.enable(moderngl.DEPTH_TEST)
+                    for ent, gs in gauss_items:
+                        if skip_entity is not None and ent is skip_entity:
+                            continue
+                        tr = ent.transform
+                        if tr:
+                            model = tr.world_matrix
+                        else:
+                            model = Mat4.identity()
+                        try:
+                            self._gaussians.render(
+                                self._gaussian_ply_path(gs, eng), model, face_view_m, face_proj_m,
+                                cam_pos, res, res,
+                                gs.opacity_threshold, gs.sh_degree, face_index,
+                            )
+                        except Exception as e:
+                            Logger.error(f"Gaussian Splat cubemap error: {e}")
         except Exception:
             import traceback
             traceback.print_exc()

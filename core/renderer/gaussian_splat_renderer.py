@@ -183,15 +183,16 @@ class GaussianSplatRenderer:
         return False
 
     def _visible_order(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
-                       proj_f32: np.ndarray, opacity_threshold: float) -> tuple[bytes, np.ndarray]:
+                       proj_f32: np.ndarray, opacity_threshold: float,
+                       cache_id=None) -> tuple[bytes, np.ndarray]:
         key = self._frame_key(model_f32, view_f32, proj_f32, opacity_threshold)
-        slot_id = (path, key[:64])
+        slot_id = (path, key[:64], cache_id)
         slot = self._sort_cache.get(slot_id)
         if slot is not None and slot[0] == key:
             return key, slot[1]
         reuse = slot[1] if slot is not None else None
         order = self._compute_order(path, model_f32, view_f32, proj_f32, opacity_threshold, reuse)
-        if slot is None and len(self._sort_cache) >= 4:
+        if slot is None and len(self._sort_cache) >= 12:
             self._sort_cache.pop(next(iter(self._sort_cache)))
         self._sort_cache[slot_id] = [key, order]
         return key, order
@@ -315,7 +316,7 @@ class GaussianSplatRenderer:
             prog["u_opacity_threshold"].value = float(opacity_threshold)
 
     def prepare(self, path: str, model_matrix, view_mat, proj_mat, cam_pos, viewport_w, viewport_h,
-                opacity_threshold=0.005, sh_degree=3) -> tuple[int, int]:
+                opacity_threshold=0.005, sh_degree=3, cache_id=None) -> tuple[int, int]:
         if not self._prog or not self._vao:
             return 0, 0
         if path not in self._gpu_data:
@@ -331,7 +332,7 @@ class GaussianSplatRenderer:
         view_f32 = np.ascontiguousarray(view_mat.to_f32(), dtype=np.float32)
         proj_f32 = np.ascontiguousarray(proj_mat.to_f32(), dtype=np.float32)
 
-        key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold)
+        key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold, cache_id)
         m = len(order)
         if m == 0:
             return 0, n
@@ -375,9 +376,9 @@ class GaussianSplatRenderer:
         self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 
     def render(self, path: str, model_matrix, view_mat, proj_mat, cam_pos, viewport_w, viewport_h,
-               opacity_threshold=0.005, sh_degree=3):
+               opacity_threshold=0.005, sh_degree=3, cache_id=None):
         m, _ = self.prepare(path, model_matrix, view_mat, proj_mat, cam_pos,
-                             viewport_w, viewport_h, opacity_threshold, sh_degree)
+                             viewport_w, viewport_h, opacity_threshold, sh_degree, cache_id)
         self.draw_color(m)
 
     def release(self):

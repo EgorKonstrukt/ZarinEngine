@@ -578,7 +578,7 @@ class DynamicCubemaps(Component):
 
         renderer._rendering_cubemap_face = True
         try:
-            renderer.render_cubemap_face(snap, fbo, res, view_f32, proj_f32, cam_pos, snap.lights, skip_entity=skip_entity)
+            renderer.render_cubemap_face(snap, fbo, res, view_f32, proj_f32, cam_pos, snap.lights, skip_entity=skip_entity, face_index=face)
         finally:
             renderer._rendering_cubemap_face = False
 
