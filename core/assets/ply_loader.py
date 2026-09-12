@@ -191,10 +191,10 @@ def load_ply_gaussian_splat(path: str) -> Optional[GaussianSplatData]:
                                               raw["scale_1"].astype(np.float32),
                                               raw["scale_2"].astype(np.float32)]))
 
-            quaternions = np.column_stack([raw["rot_0"].astype(np.float32),
-                                            raw["rot_1"].astype(np.float32),
+            quaternions = np.column_stack([raw["rot_1"].astype(np.float32),
                                             raw["rot_2"].astype(np.float32),
-                                            raw["rot_3"].astype(np.float32)])
+                                            raw["rot_3"].astype(np.float32),
+                                            raw["rot_0"].astype(np.float32)])
             q_len = np.linalg.norm(quaternions, axis=1, keepdims=True)
             q_len = np.maximum(q_len, 1e-8)
             quaternions = quaternions / q_len

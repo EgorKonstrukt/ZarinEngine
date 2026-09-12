@@ -69,6 +69,7 @@ class GaussianSplatRenderer:
         Logger.info(f"GaussianSplatRenderer sort backend: {self._sort_backend}")
 
     def _init_shaders(self):
+        vert_src = None
         try:
             vert_src = read_shader("gaussian_splat.vert")
             frag_src = read_shader("gaussian_splat.frag")
@@ -292,47 +293,12 @@ class GaussianSplatRenderer:
             return np.ascontiguousarray(idx[rev], dtype=np.uint32)
         return np.ascontiguousarray(rev, dtype=np.uint32)
 
-    def render(self, path: str, model_matrix, view_mat, proj_mat, cam_pos, viewport_w, viewport_h,
-               opacity_threshold=0.005, sh_degree=3):
-        if not self._prog or not self._vao:
-            return
-        if path not in self._gpu_data:
-            if not self.load_data(path):
-                return
-
-        gpu = self._gpu_data.get(path)
-        if gpu is None or len(gpu) == 0:
-            return
-
-        n = len(gpu)
-        model_f32 = np.ascontiguousarray(model_matrix.to_f32(), dtype=np.float32)
-        view_f32 = np.ascontiguousarray(view_mat.to_f32(), dtype=np.float32)
-        proj_f32 = np.ascontiguousarray(proj_mat.to_f32(), dtype=np.float32)
-
-        key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold)
-        m = len(order)
-        if m == 0:
-            return
-        self._ensure_buffers(n)
-        if self._uploaded_path != path or self._uploaded_n != n:
-            try:
-                self._ssbo.orphan(self._ssbo.size)
-            except Exception:
-                pass
-            self._ssbo.write(gpu)
-            self._uploaded_path = path
-            self._uploaded_n = n
+    def _upload_uniforms(self, model_f32: np.ndarray, view_f32: np.ndarray,
+                         proj_f32: np.ndarray, cam_pos, viewport_w, viewport_h,
+                         sh_degree: int, opacity_threshold: float):
         prog = self._prog
-        self._ssbo.bind_to_storage_buffer(0)
-        if self._idx_key is None or self._idx_key[0] != path or self._idx_key[1] != key:
-            try:
-                self._idx_ssbo.orphan(self._idx_ssbo.size)
-            except Exception:
-                pass
-            self._idx_ssbo.write(order)
-            self._idx_key = (path, key)
-        self._idx_ssbo.bind_to_storage_buffer(1)
-        instances = m
+        if prog is None:
+            return
         if "u_model" in prog:
             prog["u_model"].write(model_f32.tobytes())
         if "u_view" in prog:
@@ -348,19 +314,71 @@ class GaussianSplatRenderer:
         if "u_opacity_threshold" in prog:
             prog["u_opacity_threshold"].value = float(opacity_threshold)
 
+    def prepare(self, path: str, model_matrix, view_mat, proj_mat, cam_pos, viewport_w, viewport_h,
+                opacity_threshold=0.005, sh_degree=3) -> tuple[int, int]:
+        if not self._prog or not self._vao:
+            return 0, 0
+        if path not in self._gpu_data:
+            if not self.load_data(path):
+                return 0, 0
+
+        gpu = self._gpu_data.get(path)
+        if gpu is None or len(gpu) == 0:
+            return 0, 0
+
+        n = len(gpu)
+        model_f32 = np.ascontiguousarray(model_matrix.to_f32(), dtype=np.float32)
+        view_f32 = np.ascontiguousarray(view_mat.to_f32(), dtype=np.float32)
+        proj_f32 = np.ascontiguousarray(proj_mat.to_f32(), dtype=np.float32)
+
+        key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold)
+        m = len(order)
+        if m == 0:
+            return 0, n
+        self._ensure_buffers(n)
+        if self._uploaded_path != path or self._uploaded_n != n:
+            try:
+                self._ssbo.orphan(self._ssbo.size)
+            except Exception:
+                pass
+            self._ssbo.write(gpu)
+            self._uploaded_path = path
+            self._uploaded_n = n
+        self._ssbo.bind_to_storage_buffer(0)
+        if self._idx_key is None or self._idx_key[0] != path or self._idx_key[1] != key:
+            try:
+                self._idx_ssbo.orphan(self._idx_ssbo.size)
+            except Exception:
+                pass
+            self._idx_ssbo.write(order)
+            self._idx_key = (path, key)
+        self._idx_ssbo.bind_to_storage_buffer(1)
+        self._upload_uniforms(model_f32, view_f32, proj_f32, cam_pos,
+                              viewport_w, viewport_h, sh_degree, opacity_threshold)
+        return m, n
+
+    def draw_color(self, m: int):
+        if not self._vao or m <= 0:
+            return
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.enable(moderngl.BLEND)
         self._ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
         self._ctx.depth_mask = False
 
         try:
-            self._vao.render(moderngl.TRIANGLE_STRIP, vertices=4, instances=instances)
+            self._vao.render(moderngl.TRIANGLE_STRIP, vertices=4, instances=m)
         except Exception as e:
             Logger.error(f"Gaussian Splat render error: {e}")
 
         self._ctx.enable(moderngl.CULL_FACE)
         self._ctx.depth_mask = True
         self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+
+    def render(self, path: str, model_matrix, view_mat, proj_mat, cam_pos, viewport_w, viewport_h,
+               opacity_threshold=0.005, sh_degree=3):
+        m, _ = self.prepare(path, model_matrix, view_mat, proj_mat, cam_pos,
+                             viewport_w, viewport_h, opacity_threshold, sh_degree)
+        self.draw_color(m)
 
     def release(self):
         if self._vao:

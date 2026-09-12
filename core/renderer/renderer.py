@@ -2369,6 +2369,16 @@ out vec4 frag_color;
         tex.use(0)
         vao.render()
 
+    def _gaussian_ply_path(self, gs, eng) -> str:
+        ply_path = gs.ply_path
+        if ply_path and not os.path.isabs(ply_path):
+            root = eng.project_root if eng and getattr(eng, "project_root", None) else os.getcwd()
+            abs_ply = os.path.join(root, ply_path)
+            if not os.path.isfile(abs_ply):
+                abs_ply = os.path.join(root, "assets", os.path.basename(ply_path))
+            ply_path = abs_ply
+        return ply_path
+
     def render_scene(self, scene, view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3,
                      viewport_w: int, viewport_h: int, fbo=None,
                      selected_entities: Optional[set] = None,
@@ -2918,6 +2928,32 @@ out vec4 frag_color;
             )
             if prof:
                 prof.stop("render_underwater")
+        if self._gaussians and snap.gaussian_splats:
+            if prof:
+                prof.start("render_gaussians")
+            self._scene_fbo.use()
+            self._scene_fbo.viewport = (0, 0, rw, rh)
+            self._ctx.viewport = (0, 0, rw, rh)
+            self._ctx.enable(moderngl.DEPTH_TEST)
+            for ent, gs in snap.gaussian_splats:
+                tr = ent.transform
+                if tr:
+                    model = tr.world_matrix
+                else:
+                    model = Mat4.identity()
+                try:
+                    m, _ = self._gaussians.prepare(
+                        self._gaussian_ply_path(gs, eng), model, view_mat, proj_mat,
+                        cam_pos, viewport_w, viewport_h,
+                        gs.opacity_threshold, gs.sh_degree,
+                    )
+                    if m > 0:
+                        self._gaussians.draw_color(m)
+                except Exception as e:
+                    Logger.error(f"Gaussian Splat render error: {e}")
+            self._ctx.disable(moderngl.BLEND)
+            if prof:
+                prof.stop("render_gaussians")
         if prof:
             prof.start("render_overlay")
         dw = display_w if display_w else viewport_w
@@ -3177,32 +3213,6 @@ out vec4 frag_color;
             self._particle_count = 0
         if prof:
             prof.stop("render_particles")
-        if self._gaussians and snap.gaussian_splats:
-            if prof:
-                prof.start("render_gaussians")
-            for ent, gs in snap.gaussian_splats:
-                tr = ent.transform
-                if tr:
-                    model = tr.world_matrix
-                else:
-                    model = Mat4.identity()
-                try:
-                    ply_path = gs.ply_path
-                    if ply_path and not os.path.isabs(ply_path):
-                        root = eng.project_root if eng and getattr(eng, "project_root", None) else os.getcwd()
-                        abs_ply = os.path.join(root, ply_path)
-                        if not os.path.isfile(abs_ply):
-                            abs_ply = os.path.join(root, "assets", os.path.basename(ply_path))
-                        ply_path = abs_ply
-                    self._gaussians.render(
-                        ply_path, model, view_mat, proj_mat,
-                        cam_pos, viewport_w, viewport_h,
-                        gs.opacity_threshold, gs.sh_degree,
-                    )
-                except Exception as e:
-                    Logger.error(f"Gaussian Splat render error: {e}")
-            if prof:
-                prof.stop("render_gaussians")
         if outline_queue and self._outline_prog:
             if prof:
                 prof.start("render_outlines")

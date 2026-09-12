@@ -53,9 +53,9 @@ vec3 eval_sh(int base, vec3 dir) {
 
     r = base + 15;
     result += vec3(splat[r], splat[r + 1], splat[r + 2]) * (dir.x * dir.y * 1.09254843);
-    result += vec3(splat[r + 3], splat[r + 4], splat[r + 5]) * (dir.y * dir.z * -1.09254843);
+    result += vec3(splat[r + 3], splat[r + 4], splat[r + 5]) * (dir.y * dir.z * 1.09254843);
     result += vec3(splat[r + 6], splat[r + 7], splat[r + 8]) * ((2.0 * zz - xx - yy) * 0.31539157);
-    result += vec3(splat[r + 9], splat[r + 10], splat[r + 11]) * (dir.x * dir.z * -1.09254843);
+    result += vec3(splat[r + 9], splat[r + 10], splat[r + 11]) * (dir.x * dir.z * 1.09254843);
     result += vec3(splat[r + 12], splat[r + 13], splat[r + 14]) * ((xx - yy) * 0.54627422);
     if (u_sh_degree < 3) return max(result, vec3(0.0));
 
@@ -143,6 +143,14 @@ void main() {
 
     float r1 = sqrt(l1);
     float r2 = sqrt(l2);
+
+    float r1t = sqrt(max(l1 - aa, 0.0));
+    float r2t = sqrt(max(l2 - aa, 0.0));
+    v_alpha = opa * (r1t * r2t) / max(r1 * r2, 1e-12);
+    if (v_alpha <= u_opacity_threshold) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        return;
+    }
 
     float angle = 0.5 * atan(2.0 * b, a - c);
     vec2 v1 = vec2(cos(angle), sin(angle));
