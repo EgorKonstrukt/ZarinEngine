@@ -1,0 +1,348 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
+- menu: "Create Empty"
+  name: "GameObject"
+  order: 0
+  description: "Empty entity with a Transform"
+  components:
+    - type: Transform
+
+- menu: "3D Object/Cube"
+  name: "Cube"
+  order: 10
+  description: "Cube mesh with MeshFilter and MeshRenderer"
+  components:
+    - type: Transform
+    - type: MeshFilter
+      props:
+        mesh_name: cube
+    - type: MeshRenderer
+
+- menu: "3D Object/Sphere"
+  name: "Sphere"
+  order: 11
+  description: "Sphere mesh with MeshFilter and MeshRenderer"
+  components:
+    - type: Transform
+    - type: MeshFilter
+      props:
+        mesh_name: sphere
+    - type: MeshRenderer
+
+- menu: "3D Object/Plane"
+  name: "Plane"
+  order: 12
+  description: "Plane mesh with MeshFilter and MeshRenderer"
+  components:
+    - type: Transform
+    - type: MeshFilter
+      props:
+        mesh_name: plane
+    - type: MeshRenderer
+
+- menu: "3D Object/ProBuilder/Box"
+  name: "Box"
+  order: 20
+  description: "Editable ProBuilder Box mesh"
+  probuilder: Box
+
+- menu: "3D Object/ProBuilder/Sphere"
+  name: "Sphere"
+  order: 21
+  description: "Editable ProBuilder Sphere mesh"
+  probuilder: Sphere
+
+- menu: "3D Object/ProBuilder/Cylinder"
+  name: "Cylinder"
+  order: 22
+  description: "Editable ProBuilder Cylinder mesh"
+  probuilder: Cylinder
+
+- menu: "3D Object/ProBuilder/Plane"
+  name: "Plane"
+  order: 23
+  description: "Editable ProBuilder Plane mesh"
+  probuilder: Plane
+
+- menu: "3D Object/ProBuilder/Torus"
+  name: "Torus"
+  order: 24
+  description: "Editable ProBuilder Torus mesh"
+  probuilder: Torus
+
+- menu: "3D Object/ProBuilder/Cone"
+  name: "Cone"
+  order: 25
+  description: "Editable ProBuilder Cone mesh"
+  probuilder: Cone
+
+- menu: "3D Object/ProBuilder/Pipe"
+  name: "Pipe"
+  order: 26
+  description: "Editable ProBuilder Pipe mesh"
+  probuilder: Pipe
+
+- menu: "3D Object/ProBuilder/Stairs"
+  name: "Stairs"
+  order: 27
+  description: "Editable ProBuilder Stairs mesh"
+  probuilder: Stairs
+
+- menu: "Light/Sun"
+  name: "Sun"
+  order: 30
+  description: "Directional sun with procedural sky lighting and shadows"
+  components:
+    - type: Transform
+      props:
+        local_euler_angles: [-45, 45, 0]
+    - type: DirectionalLight
+      props:
+        procedural_sky_lighting: true
+        cast_shadows: true
+
+- menu: "Light/Directional Light"
+  name: "Directional Light"
+  order: 31
+  description: "Directional light with parallel rays"
+  components:
+    - type: Transform
+      props:
+        local_euler_angles: [-45, 45, 0]
+    - type: DirectionalLight
+
+- menu: "Light/Point Light"
+  name: "Point Light"
+  order: 32
+  description: "Omnidirectional point light with range"
+  components:
+    - type: Transform
+    - type: PointLight
+
+- menu: "Light/Spot Light"
+  name: "Spot Light"
+  order: 33
+  description: "Spot light with cone angle and range"
+  components:
+    - type: Transform
+    - type: SpotLight
+
+- menu: "Light/Area Light"
+  name: "Area Light"
+  order: 34
+  description: "Area light with width, height and shape"
+  components:
+    - type: Transform
+    - type: AreaLight
+
+- menu: "Camera"
+  name: "Camera"
+  order: 40
+  description: "Camera with Transform"
+  components:
+    - type: Transform
+    - type: Camera
+
+- menu: "Effects/Sky"
+  name: "Sky"
+  order: 50
+  description: "Procedural sky environment"
+  components:
+    - type: Transform
+    - type: Sky
+
+- menu: "Effects/Clouds"
+  name: "Clouds"
+  order: 51
+  description: "Volumetric cloud layer"
+  components:
+    - type: Transform
+    - type: Cloud
+
+- menu: "Effects/Particle System"
+  name: "Particle System"
+  order: 52
+  description: "Particle emitter with Transform"
+  components:
+    - type: Transform
+    - type: ParticleSystem
+
+- menu: "Effects/Particle Force Field"
+  name: "Particle Force Field"
+  order: 53
+  description: "Force field that pushes particles"
+  components:
+    - type: Transform
+    - type: ParticleForceField
+
+- menu: "Effects/Volumetric Light"
+  name: "Volumetric Light"
+  order: 54
+  description: "Volumetric light scattering effect"
+  components:
+    - type: Transform
+    - type: VolumetricLight
+
+- menu: "Effects/Projector"
+  name: "Projector"
+  order: 55
+  description: "Texture projector light"
+  components:
+    - type: Transform
+    - type: Projector
+
+- menu: "Environment/Terrain"
+  name: "Terrain"
+  order: 80
+  description: "Procedural terrain surface"
+  components:
+    - type: Transform
+    - type: Terrain
+
+- menu: "Environment/Water"
+  name: "Water"
+  order: 81
+  description: "Water surface"
+  components:
+    - type: Transform
+    - type: Water
+
+- menu: "Environment/Wind Zone"
+  name: "Wind Zone"
+  order: 82
+  description: "Wind zone for foliage and particles"
+  components:
+    - type: Transform
+    - type: WindZone
+
+- menu: "Environment/Atmosphere"
+  name: "Atmosphere"
+  order: 83
+  description: "Atmosphere scattering settings"
+  components:
+    - type: Transform
+    - type: Atmosphere
+
+- menu: "Audio/Audio Source"
+  name: "Audio Source"
+  order: 60
+  description: "3D audio emitter"
+  components:
+    - type: Transform
+    - type: AudioSource
+
+- menu: "Audio/Audio Listener"
+  name: "Audio Listener"
+  order: 61
+  description: "Audio listener, usually on the camera"
+  components:
+    - type: Transform
+    - type: AudioListener
+
+- menu: "Audio/Reverb Zone"
+  name: "Reverb Zone"
+  order: 62
+  description: "Reverb volume for audio effects"
+  components:
+    - type: Transform
+    - type: ReverbZone
+
+- menu: "Physics/Rigidbody"
+  name: "Rigidbody"
+  order: 70
+  description: "Dynamic rigid body"
+  components:
+    - type: Transform
+    - type: Rigidbody
+
+- menu: "Physics/Box Collider"
+  name: "Box Collider"
+  order: 71
+  description: "Box collision shape"
+  components:
+    - type: Transform
+    - type: BoxCollider
+
+- menu: "Physics/Sphere Collider"
+  name: "Sphere Collider"
+  order: 72
+  description: "Sphere collision shape"
+  components:
+    - type: Transform
+    - type: SphereCollider
+
+- menu: "Physics/Capsule Collider"
+  name: "Capsule Collider"
+  order: 73
+  description: "Capsule collision shape"
+  components:
+    - type: Transform
+    - type: CapsuleCollider
+
+- menu: "Physics/Mesh Collider"
+  name: "Mesh Collider"
+  order: 74
+  description: "Mesh-based collision shape"
+  components:
+    - type: Transform
+    - type: MeshCollider
+
+- menu: "Rendering/Sprite Renderer"
+  name: "Sprite Renderer"
+  order: 90
+  description: "2D sprite renderer"
+  components:
+    - type: Transform
+    - type: SpriteRenderer
+
+- menu: "Rendering/SVG Renderer"
+  name: "SVG Renderer"
+  order: 91
+  description: "Vector SVG renderer"
+  components:
+    - type: Transform
+    - type: SvgRenderer
+
+- menu: "Rendering/Text Renderer"
+  name: "Text Renderer"
+  order: 92
+  description: "3D text renderer"
+  components:
+    - type: Transform
+    - type: TextRenderer
+
+- menu: "Rendering/Video Renderer"
+  name: "Video Renderer"
+  order: 93
+  description: "Video playback renderer"
+  components:
+    - type: Transform
+    - type: VideoRenderer
+
+- menu: "Navigation/Nav Agent"
+  name: "Nav Agent"
+  order: 110
+  description: "Navigation mesh agent"
+  components:
+    - type: Transform
+    - type: NavAgent
+
+- menu: "Animation/Animation"
+  name: "Animation"
+  order: 100
+  description: "Legacy animation clip player"
+  components:
+    - type: Transform
+    - type: Animation
+
+- menu: "Animation/Animator"
+  name: "Animator"
+  order: 101
+  description: "Animator controller player"
+  components:
+    - type: Transform
+    - type: Animator
