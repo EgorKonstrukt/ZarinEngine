@@ -46,27 +46,27 @@ vec3 eval_sh(int base, vec3 dir) {
     float zz = dir.z * dir.z;
 
     int r = base + 6;
-    result += vec3(splat[r], splat[r + 1], splat[r + 2]) * (dir.y * 0.48860252);
+    result += vec3(splat[r], splat[r + 1], splat[r + 2]) * (dir.y * -0.48860252);
     result += vec3(splat[r + 3], splat[r + 4], splat[r + 5]) * (dir.z * 0.48860252);
-    result += vec3(splat[r + 6], splat[r + 7], splat[r + 8]) * (dir.x * 0.48860252);
+    result += vec3(splat[r + 6], splat[r + 7], splat[r + 8]) * (dir.x * -0.48860252);
     if (u_sh_degree < 2) return max(result, vec3(0.0));
 
     r = base + 15;
     result += vec3(splat[r], splat[r + 1], splat[r + 2]) * (dir.x * dir.y * 1.09254843);
-    result += vec3(splat[r + 3], splat[r + 4], splat[r + 5]) * (dir.y * dir.z * 1.09254843);
+    result += vec3(splat[r + 3], splat[r + 4], splat[r + 5]) * (dir.y * dir.z * -1.09254843);
     result += vec3(splat[r + 6], splat[r + 7], splat[r + 8]) * ((2.0 * zz - xx - yy) * 0.31539157);
-    result += vec3(splat[r + 9], splat[r + 10], splat[r + 11]) * (dir.x * dir.z * 1.09254843);
+    result += vec3(splat[r + 9], splat[r + 10], splat[r + 11]) * (dir.x * dir.z * -1.09254843);
     result += vec3(splat[r + 12], splat[r + 13], splat[r + 14]) * ((xx - yy) * 0.54627422);
     if (u_sh_degree < 3) return max(result, vec3(0.0));
 
     r = base + 30;
-    result += vec3(splat[r], splat[r + 1], splat[r + 2]) * (dir.y * (3.0 * zz - xx - yy));
-    result += vec3(splat[r + 3], splat[r + 4], splat[r + 5]) * (dir.x * dir.z * dir.y);
-    result += vec3(splat[r + 6], splat[r + 7], splat[r + 8]) * (dir.y * (xx - zz));
-    result += vec3(splat[r + 9], splat[r + 10], splat[r + 11]) * (dir.z * (xx + yy - 2.0 * zz));
-    result += vec3(splat[r + 12], splat[r + 13], splat[r + 14]) * (dir.x * (xx - 3.0 * yy));
-    result += vec3(splat[r + 15], splat[r + 16], splat[r + 17]) * (dir.x * (5.0 * zz - xx - yy));
-    result += vec3(splat[r + 18], splat[r + 19], splat[r + 20]) * (dir.z * (xx - yy));
+    result += vec3(splat[r], splat[r + 1], splat[r + 2]) * (dir.y * (3.0 * xx - yy) * -0.59004359);
+    result += vec3(splat[r + 3], splat[r + 4], splat[r + 5]) * (dir.x * dir.y * dir.z * 2.89061144);
+    result += vec3(splat[r + 6], splat[r + 7], splat[r + 8]) * (dir.y * (4.0 * zz - xx - yy) * -0.4570458);
+    result += vec3(splat[r + 9], splat[r + 10], splat[r + 11]) * (dir.z * (2.0 * zz - 3.0 * xx - 3.0 * yy) * 0.37317633);
+    result += vec3(splat[r + 12], splat[r + 13], splat[r + 14]) * (dir.x * (4.0 * zz - xx - yy) * -0.4570458);
+    result += vec3(splat[r + 15], splat[r + 16], splat[r + 17]) * (dir.z * (xx - yy) * 1.44530572);
+    result += vec3(splat[r + 18], splat[r + 19], splat[r + 20]) * (dir.x * (xx - 3.0 * yy) * -0.59004359);
 
     return max(result, vec3(0.0));
 }
@@ -110,14 +110,16 @@ void main() {
     mat3 T = W * mat3(u_model) * R * S;
     mat3 Vrk = T * transpose(T);
 
-    float inv_z = 1.0 / view_pos.z;
+    float inv_z = 1.0 / view_depth;
+    float fx = u_proj[0][0];
+    float fy = u_proj[1][1];
     mat3 J = mat3(
-        u_proj[0][0] * inv_z, 0.0, -u_proj[0][0] * view_pos.x * inv_z * inv_z,
-        0.0, u_proj[1][1] * inv_z, -u_proj[1][1] * view_pos.y * inv_z * inv_z,
-        0.0, 0.0, inv_z
+        fx * inv_z, 0.0, 0.0,
+        0.0, fy * inv_z, 0.0,
+        fx * view_pos.x * inv_z * inv_z, fy * view_pos.y * inv_z * inv_z, 0.0
     );
 
-    mat3 cov2d = transpose(J) * Vrk * J;
+    mat3 cov2d = J * Vrk * transpose(J);
 
     float pixel_scale = max(u_viewport.x, u_viewport.y) * 0.5;
     float aa = 0.3 / max(pixel_scale, 1.0);
@@ -150,6 +152,15 @@ void main() {
     if (v_alpha <= u_opacity_threshold) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
+    }
+
+    float maj_px = max(r1, r2) * pixel_scale;
+    if (maj_px > 512.0) {
+        if (r1 > 4.0 * r2) {
+            r2 = r1 / 4.0;
+        } else if (r2 > 4.0 * r1) {
+            r1 = r2 / 4.0;
+        }
     }
 
     float angle = 0.5 * atan(2.0 * b, a - c);
