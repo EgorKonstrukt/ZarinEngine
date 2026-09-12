@@ -21,7 +21,6 @@ uniform vec2 u_viewport;
 uniform vec3 u_camera_pos;
 uniform int u_sh_degree;
 uniform float u_opacity_threshold;
-uniform float u_max_screen_size;
 
 out vec3 v_color;
 out vec2 v_local;
@@ -92,7 +91,7 @@ void main() {
     vec4 world_pos = u_model * vec4(splat[base], splat[base + 1], splat[base + 2], 1.0);
     vec4 view_pos = u_view * world_pos;
     float view_depth = -view_pos.z;
-    if (view_depth < 0.05) {
+    if (view_depth < 0.2) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
     }
@@ -128,7 +127,7 @@ void main() {
     float c = cov2d[1][1] + aa;
 
     float det = a * c - b * b;
-    if (det <= 0.0) {
+    if (!(det > 0.0)) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
     }
@@ -137,7 +136,7 @@ void main() {
     float delta = sqrt(max(mid * mid - det, 0.0));
     float l1 = mid + delta;
     float l2 = mid - delta;
-    if (l1 <= 0.0 || l2 <= 0.0) {
+    if (!(l1 > 0.0) || !(l2 > 0.0)) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
     }
@@ -149,14 +148,6 @@ void main() {
     if (pixel_radius < 0.35) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
-    }
-
-    if (u_max_screen_size > 0.0) {
-        if (pixel_radius > u_max_screen_size) {
-            float s = u_max_screen_size / pixel_radius;
-            r1 *= s;
-            r2 *= s;
-        }
     }
 
     float angle = 0.5 * atan(2.0 * b, a - c);

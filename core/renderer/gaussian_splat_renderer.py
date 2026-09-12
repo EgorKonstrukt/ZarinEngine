@@ -10,6 +10,7 @@ import moderngl
 from typing import Optional
 from core.assets.ply_loader import load_ply_gaussian_splat
 from core.renderer.mesh_data import read_shader
+from core.foundation.logger import Logger
 
 
 _SPLAT_DTYPE = np.dtype([
@@ -27,8 +28,19 @@ _EMPTY_U32 = np.zeros(0, dtype=np.uint32)
 
 try:
     from core._splat_sort import splat_cull_depth as _cython_cull_depth
+    from core._splat_sort import compact_keep as _cython_compact
+    from core._splat_sort import radix_sort_into as _cython_radix
+    from core._splat_sort import remap_order as _cython_remap
 except Exception:
     _cython_cull_depth = None
+    _cython_compact = None
+    _cython_radix = None
+    _cython_remap = None
+
+
+def _cython_available() -> bool:
+    return (_cython_cull_depth is not None and _cython_compact is not None
+            and _cython_radix is not None and _cython_remap is not None)
 
 
 class GaussianSplatRenderer:
@@ -46,17 +58,15 @@ class GaussianSplatRenderer:
         self._srad: dict[str, np.ndarray] = {}
         self._center: dict[str, np.ndarray] = {}
         self._radius: dict[str, float] = {}
-        self._sort_cache: dict[str, tuple[bytes, np.ndarray]] = {}
-        self._order_tick: dict[str, int] = {}
+        self._sort_cache: dict[tuple[str, bytes], list] = {}
+        self._scratch: dict[str, dict[str, np.ndarray]] = {}
         self._idx_key: Optional[tuple[str, bytes]] = None
-        self._cs_key = None
-        self._cs_bitonic = None
-        self._cs_key_u: tuple = (None, None, None, None)
-        self._cs_bit_u: tuple = (None, None, None)
-        self._key_ssbo = None
-        self._gpu_state: Optional[tuple[str, bytes, int]] = None
         self._init_shaders()
-        self._init_compute()
+        if _cython_available():
+            self._sort_backend = "cython"
+        else:
+            self._sort_backend = "numpy"
+        Logger.info(f"GaussianSplatRenderer sort backend: {self._sort_backend}")
 
     def _init_shaders(self):
         try:
@@ -70,38 +80,6 @@ class GaussianSplatRenderer:
         except Exception:
             self._prog = None
             self._vao = None
-
-    def _resolve_compute_uniform(self, prog, name):
-        try:
-            return prog[name]
-        except Exception:
-            return None
-
-    def _init_compute(self):
-        try:
-            key_src = read_shader("gaussian_sort_key.comp")
-            bit_src = read_shader("gaussian_sort_bitonic.comp")
-            self._cs_key = self._ctx.compute_shader(key_src)
-            self._cs_bitonic = self._ctx.compute_shader(bit_src)
-            self._cs_key_u = (
-                self._resolve_compute_uniform(self._cs_key, "u_mv"),
-                self._resolve_compute_uniform(self._cs_key, "u_n"),
-                self._resolve_compute_uniform(self._cs_key, "u_np"),
-                self._resolve_compute_uniform(self._cs_key, "u_opacity_thr"),
-            )
-            self._cs_bit_u = (
-                self._resolve_compute_uniform(self._cs_bitonic, "u_n"),
-                self._resolve_compute_uniform(self._cs_bitonic, "u_span"),
-                self._resolve_compute_uniform(self._cs_bitonic, "u_dir"),
-            )
-        except Exception:
-            self._cs_key = None
-            self._cs_bitonic = None
-            self._cs_key_u = (None, None, None, None)
-            self._cs_bit_u = (None, None, None)
-
-    def _compute_ready(self) -> bool:
-        return self._cs_key is not None and self._cs_bitonic is not None
 
     def _ensure_buffers(self, num_splats: int):
         needed = max(1, num_splats) * _SPLAT_STRUCT_SIZE
@@ -117,21 +95,6 @@ class GaussianSplatRenderer:
                 self._idx_ssbo.release()
             self._idx_ssbo = self._ctx.buffer(reserve=idx_needed)
             self._idx_key = None
-            self._gpu_state = None
-
-    def _ensure_sort_buffers(self, padded: int):
-        need = max(1, padded) * 4
-        if self._key_ssbo is None or self._key_ssbo.size < need:
-            if self._key_ssbo:
-                self._key_ssbo.release()
-            self._key_ssbo = self._ctx.buffer(reserve=need)
-            self._gpu_state = None
-        if self._idx_ssbo is None or self._idx_ssbo.size < need:
-            if self._idx_ssbo:
-                self._idx_ssbo.release()
-            self._idx_ssbo = self._ctx.buffer(reserve=need)
-            self._idx_key = None
-            self._gpu_state = None
 
     def load_data(self, path: str) -> bool:
         if path in self._gpu_data:
@@ -149,8 +112,9 @@ class GaussianSplatRenderer:
         self._center[path] = np.ascontiguousarray((mn + mx) * 0.5, dtype=np.float32)
         self._radius[path] = float(np.linalg.norm((mx - mn).astype(np.float64) * 0.5))
         self._uploaded_path = None
-        self._sort_cache.pop(path, None)
-        self._order_tick.pop(path, None)
+        for k in [k for k in self._sort_cache if k[0] == path]:
+            del self._sort_cache[k]
+        self._scratch.pop(path, None)
         return True
 
     def _pack_for_gpu(self, data) -> np.ndarray:
@@ -206,7 +170,7 @@ class GaussianSplatRenderer:
         vc = center @ a + t
         w = float(-vc[2])
         rw = radius * ms
-        if w + rw < 0.05:
+        if w + rw < 0.2:
             return True
         if w > 0.0:
             nx = float(vc[0]) * p00 / w
@@ -220,16 +184,31 @@ class GaussianSplatRenderer:
     def _visible_order(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
                        proj_f32: np.ndarray, opacity_threshold: float) -> tuple[bytes, np.ndarray]:
         key = self._frame_key(model_f32, view_f32, proj_f32, opacity_threshold)
-        cached = self._sort_cache.get(path)
-        if cached is not None and cached[0] == key:
-            return key, cached[1]
-        tick = self._order_tick.get(path, 0) + 1
-        self._order_tick[path] = tick
-        if cached is not None and (tick & 1):
-            return cached
+        slot_id = (path, key[:64])
+        slot = self._sort_cache.get(slot_id)
+        if slot is not None and slot[0] == key:
+            return key, slot[1]
         order = self._compute_order(path, model_f32, view_f32, proj_f32, opacity_threshold)
-        self._sort_cache[path] = (key, order)
+        if slot is None and len(self._sort_cache) >= 4:
+            self._sort_cache.pop(next(iter(self._sort_cache)))
+        self._sort_cache[slot_id] = [key, order]
         return key, order
+
+    def _scratch_for(self, path: str, n: int) -> dict[str, np.ndarray]:
+        sc = self._scratch.get(path)
+        if sc is None or len(sc["keep"]) < n:
+            sc = {
+                "keep": np.zeros(n, dtype=np.uint8),
+                "wbuf": np.empty(n, dtype=np.float32),
+                "cidx": np.empty(n, dtype=np.uint32),
+                "cdep": np.empty(n, dtype=np.float32),
+                "order": np.empty(n, dtype=np.uint32),
+                "tmp": np.empty(n, dtype=np.uint32),
+                "k1": np.empty(n, dtype=np.uint32),
+                "k2": np.empty(n, dtype=np.uint32),
+            }
+            self._scratch[path] = sc
+        return sc
 
     def _compute_order(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
                        proj_f32: np.ndarray, opacity_threshold: float) -> np.ndarray:
@@ -244,21 +223,26 @@ class GaussianSplatRenderer:
         mv, a, t, ms, p00, p11, perspective = basis
         if self._cloud_culled(path, a, t, ms, p00, p11, perspective):
             return _EMPTY_U32
-        if _cython_cull_depth is not None:
+        if _cython_available():
             n = len(pos)
-            keep = np.zeros(n, dtype=np.uint8)
-            wbuf = np.empty(n, dtype=np.float32)
+            pos = np.ascontiguousarray(pos, dtype=np.float32)
+            opa = np.ascontiguousarray(opa, dtype=np.float32)
+            srad = np.ascontiguousarray(srad, dtype=np.float32)
+            sc = self._scratch_for(path, n)
             _cython_cull_depth(pos, opa, srad, mv, np.float32(p00), np.float32(p11),
                                np.float32(opacity_threshold), np.float32(ms),
-                               bool(perspective), keep, wbuf)
-            idx = np.flatnonzero(keep)
-            if idx.size == 0:
+                               bool(perspective), sc["keep"], sc["wbuf"])
+            count = int(_cython_compact(sc["keep"], sc["wbuf"], sc["cidx"], sc["cdep"]))
+            if count == 0:
                 return _EMPTY_U32
-            if idx.size < n:
-                w = wbuf[idx]
-            else:
-                idx = None
-                w = wbuf
+            if count < 4096:
+                rev = np.argsort(np.asarray(sc["cdep"][:count]))[::-1].astype(np.uint32)
+                _cython_remap(np.ascontiguousarray(rev), sc["cidx"], count)
+                return np.ascontiguousarray(rev)
+            _cython_radix(sc["cdep"][:count], sc["order"][:count], sc["tmp"][:count],
+                          sc["k1"][:count], sc["k2"][:count])
+            _cython_remap(sc["order"][:count], sc["cidx"], count)
+            return np.array(sc["order"][:count], dtype=np.uint32, copy=True)
         else:
             v = pos @ a + t
             w = -v[:, 2]
@@ -266,7 +250,7 @@ class GaussianSplatRenderer:
             fms = np.float32(ms)
             if perspective:
                 r = srad * fms
-                idx = np.flatnonzero((opa > thr) & ((w + r) > np.float32(0.05)))
+                idx = np.flatnonzero((opa > thr) & ((w + r) > np.float32(0.2)))
                 if idx.size == 0:
                     return _EMPTY_U32
                 if idx.size < len(pos):
@@ -303,42 +287,8 @@ class GaussianSplatRenderer:
             return np.ascontiguousarray(idx[rev], dtype=np.uint32)
         return np.ascontiguousarray(rev, dtype=np.uint32)
 
-    def _gpu_sort(self, padded: int, n: int, mv_bytes: bytes, opacity_threshold: float):
-        groups = (padded + 255) // 256
-        self._ssbo.bind_to_storage_buffer(0)
-        self._key_ssbo.bind_to_storage_buffer(2)
-        self._idx_ssbo.bind_to_storage_buffer(4)
-        mv_u, n_u, np_u, thr_u = self._cs_key_u
-        if mv_u is not None:
-            mv_u.write(mv_bytes)
-        if n_u is not None:
-            n_u.value = int(n)
-        if np_u is not None:
-            np_u.value = int(padded)
-        if thr_u is not None:
-            thr_u.value = float(opacity_threshold)
-        self._cs_key.run(groups)
-        barrier = self._ctx.memory_barrier
-        sb = moderngl.SHADER_STORAGE_BARRIER_BIT
-        barrier(sb)
-        bn_u, span_u, dir_u = self._cs_bit_u
-        size = 2
-        while size <= padded:
-            span = size // 2
-            while span >= 1:
-                if bn_u is not None:
-                    bn_u.value = int(padded)
-                if span_u is not None:
-                    span_u.value = int(span)
-                if dir_u is not None:
-                    dir_u.value = int(size)
-                self._cs_bitonic.run(groups)
-                barrier(sb)
-                span //= 2
-            size *= 2
-
     def render(self, path: str, model_matrix, view_mat, proj_mat, cam_pos, viewport_w, viewport_h,
-               opacity_threshold=0.005, sh_degree=3, max_screen_size=32.0):
+               opacity_threshold=0.005, sh_degree=3):
         if not self._prog or not self._vao:
             return
         if path not in self._gpu_data:
@@ -354,49 +304,30 @@ class GaussianSplatRenderer:
         view_f32 = np.ascontiguousarray(view_mat.to_f32(), dtype=np.float32)
         proj_f32 = np.ascontiguousarray(proj_mat.to_f32(), dtype=np.float32)
 
-        use_gpu = self._compute_ready()
-        order = None
-        padded = 0
-        if use_gpu:
-            basis = self._sort_basis(model_f32, view_f32, proj_f32)
-            if basis is None:
-                return
-            mv, a, t, ms, p00, p11, perspective = basis
-            if self._cloud_culled(path, a, t, ms, p00, p11, perspective):
-                return
-            key = self._frame_key(model_f32, view_f32, proj_f32, opacity_threshold)
-            padded = 1 << (n - 1).bit_length()
-            state = (path, key, padded)
-            self._ensure_buffers(n)
-            if self._uploaded_path != path or self._uploaded_n != n:
-                self._ssbo.write(gpu.tobytes())
-                self._uploaded_path = path
-                self._uploaded_n = n
-            self._ensure_sort_buffers(padded)
-            if self._gpu_state != state:
-                self._gpu_sort(padded, n, mv.tobytes(), opacity_threshold)
-                self._gpu_state = state
-            instances = padded
-        else:
-            key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold)
-            m = len(order)
-            if m == 0:
-                return
-            self._ensure_buffers(n)
-            if self._uploaded_path != path or self._uploaded_n != n:
-                self._ssbo.write(gpu.tobytes())
-                self._uploaded_path = path
-                self._uploaded_n = n
-            self._ssbo.bind_to_storage_buffer(0)
-            if self._idx_key is None or self._idx_key[0] != path or self._idx_key[1] != key:
-                self._idx_ssbo.write(order.tobytes())
-                self._idx_key = (path, key)
-            self._idx_ssbo.bind_to_storage_buffer(1)
-            instances = m
-
+        key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold)
+        m = len(order)
+        if m == 0:
+            return
+        self._ensure_buffers(n)
+        if self._uploaded_path != path or self._uploaded_n != n:
+            try:
+                self._ssbo.orphan(self._ssbo.size)
+            except Exception:
+                pass
+            self._ssbo.write(gpu)
+            self._uploaded_path = path
+            self._uploaded_n = n
         prog = self._prog
-        if use_gpu:
-            self._idx_ssbo.bind_to_storage_buffer(1)
+        self._ssbo.bind_to_storage_buffer(0)
+        if self._idx_key is None or self._idx_key[0] != path or self._idx_key[1] != key:
+            try:
+                self._idx_ssbo.orphan(self._idx_ssbo.size)
+            except Exception:
+                pass
+            self._idx_ssbo.write(order)
+            self._idx_key = (path, key)
+        self._idx_ssbo.bind_to_storage_buffer(1)
+        instances = m
         if "u_model" in prog:
             prog["u_model"].write(model_f32.tobytes())
         if "u_view" in prog:
@@ -411,8 +342,6 @@ class GaussianSplatRenderer:
             prog["u_sh_degree"].value = int(sh_degree)
         if "u_opacity_threshold" in prog:
             prog["u_opacity_threshold"].value = float(opacity_threshold)
-        if "u_max_screen_size" in prog:
-            prog["u_max_screen_size"].value = float(max_screen_size)
 
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.enable(moderngl.BLEND)
@@ -422,7 +351,6 @@ class GaussianSplatRenderer:
         try:
             self._vao.render(moderngl.TRIANGLE_STRIP, vertices=4, instances=instances)
         except Exception as e:
-            from core.foundation.logger import Logger
             Logger.error(f"Gaussian Splat render error: {e}")
 
         self._ctx.enable(moderngl.CULL_FACE)
@@ -436,30 +364,12 @@ class GaussianSplatRenderer:
             self._ssbo.release()
         if self._idx_ssbo:
             self._idx_ssbo.release()
-        if self._key_ssbo:
-            self._key_ssbo.release()
         if self._prog:
             self._prog.release()
-        if self._cs_key is not None:
-            try:
-                self._cs_key.release()
-            except Exception:
-                pass
-        if self._cs_bitonic is not None:
-            try:
-                self._cs_bitonic.release()
-            except Exception:
-                pass
         self._vao = None
         self._ssbo = None
         self._idx_ssbo = None
-        self._key_ssbo = None
         self._prog = None
-        self._cs_key = None
-        self._cs_bitonic = None
-        self._cs_key_u = (None, None, None, None)
-        self._cs_bit_u = (None, None, None)
-        self._gpu_state = None
         self._gpu_data.clear()
         self._pos.clear()
         self._opa.clear()
@@ -467,7 +377,7 @@ class GaussianSplatRenderer:
         self._center.clear()
         self._radius.clear()
         self._sort_cache.clear()
-        self._order_tick.clear()
+        self._scratch.clear()
         self._idx_key = None
         self._uploaded_path = None
         self._uploaded_n = 0

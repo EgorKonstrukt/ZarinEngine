@@ -3178,6 +3178,8 @@ out vec4 frag_color;
         if prof:
             prof.stop("render_particles")
         if self._gaussians and snap.gaussian_splats:
+            if prof:
+                prof.start("render_gaussians")
             for ent, gs in snap.gaussian_splats:
                 tr = ent.transform
                 if tr:
@@ -3199,6 +3201,8 @@ out vec4 frag_color;
                     )
                 except Exception as e:
                     Logger.error(f"Gaussian Splat render error: {e}")
+            if prof:
+                prof.stop("render_gaussians")
         if outline_queue and self._outline_prog:
             if prof:
                 prof.start("render_outlines")

@@ -25,8 +25,6 @@ class GaussianSplatRenderer(Component):
                            min_val=0, max_val=3, step=1),
             InspectorField("opacity_threshold", "Opacity Cutoff", FieldType.FLOAT,
                            min_val=0.0, max_val=1.0, step=0.01),
-            InspectorField("max_screen_size", "Max Screen Size", FieldType.FLOAT,
-                           min_val=0.0, max_val=64.0, step=1.0),
         ]
 
     def __init__(self):
@@ -34,7 +32,6 @@ class GaussianSplatRenderer(Component):
         self.ply_path: str = ""
         self.sh_degree: int = 3
         self.opacity_threshold: float = 0.005
-        self.max_screen_size: float = 32.0
 
     def serialize(self) -> dict:
         d = super().serialize()
@@ -42,7 +39,6 @@ class GaussianSplatRenderer(Component):
             "ply_path": self.ply_path,
             "sh_degree": self.sh_degree,
             "opacity_threshold": self.opacity_threshold,
-            "max_screen_size": self.max_screen_size,
         })
         return d
 
@@ -53,5 +49,4 @@ class GaussianSplatRenderer(Component):
         g.ply_path = data.get("ply_path", "")
         g.sh_degree = data.get("sh_degree", 3)
         g.opacity_threshold = data.get("opacity_threshold", 0.005)
-        g.max_screen_size = data.get("max_screen_size", 32.0)
         return g
