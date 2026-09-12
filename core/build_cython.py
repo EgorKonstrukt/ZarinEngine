@@ -124,6 +124,7 @@ EXTENSIONS = [
     _ext("core._vr_batch", "_vr_batch.pyx"),
     _ext("core._nav_batch", "_nav_batch.pyx"),
     _ext("core._splat_sort", "_splat_sort.pyx"),
+    _ext("core._gs_volume", "_gs_volume.pyx"),
 ]
 
 def build():

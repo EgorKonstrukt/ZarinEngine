@@ -75,6 +75,7 @@ SHAPE_TYPE_MAP = {
     "CapsuleCollider": "capsule",
     "MeshCollider": "mesh",
     "TerrainCollider": "heightfield",
+    "GSVolumeCollider": "box",
     "BoxCollider2D": "box",
     "CircleCollider2D": "sphere",
 }
@@ -149,6 +150,7 @@ SHAPE_INFO_CACHE_KEYS = {
     "SphereCollider": ("type", "radius", "center", "friction", "restitution", "is_trigger"),
     "CapsuleCollider": ("type", "radius", "height", "center", "direction", "friction", "restitution", "is_trigger"),
     "MeshCollider": ("type", "file", "collision_mode", "max_vertices", "scale", "center", "friction", "restitution", "is_trigger"),
+    "GSVolumeCollider": ("type", "size", "center", "friction", "restitution", "is_trigger"),
     "TerrainCollider": ("type", "size", "resolution", "height_scale", "center", "friction", "restitution", "is_trigger"),
     "BoxCollider2D": ("type", "size", "center", "friction", "restitution", "is_trigger"),
     "CircleCollider2D": ("type", "radius", "center", "friction", "restitution", "is_trigger"),
@@ -261,6 +263,15 @@ def find_shapes_info(entity: Entity, transform=None) -> list[dict]:
     for comp in entity.get_all_components():
         cname = type(comp).__name__
         if cname not in SHAPE_TYPE_MAP:
+            continue
+        multi = getattr(comp, "collider_shapes", None)
+        if callable(multi):
+            try:
+                infos = multi(transform)
+            except Exception:
+                infos = None
+            if infos:
+                out.extend(infos)
             continue
         info = _shape_info_for(cname, comp, transform)
         if info is not None:

@@ -88,7 +88,7 @@ def _check_extensions_missing():
         "_octree_batch", "_constraint_batch", "_curve_batch",
         "_constraint_update", "_physics_sync", "_mesh_import",
         "_skinning", "_audio_dsp_cy", "_raycast", "_shadow_batch",
-        "_splat_sort", "math_helpers",
+        "_splat_sort", "_gs_volume", "math_helpers",
     ]
     import importlib.machinery
     _suffixes = importlib.machinery.EXTENSION_SUFFIXES
@@ -123,7 +123,7 @@ def _build_extensions_with_splash(splash):
             text=True,
             bufsize=1,
         )
-        total_exts = 24
+        total_exts = 25
         built = 0
         for line in proc.stdout:
             stripped = line.rstrip()

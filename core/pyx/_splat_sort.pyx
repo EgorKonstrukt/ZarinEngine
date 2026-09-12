@@ -18,6 +18,8 @@ def splat_cull_depth(cnp.float32_t[:, :] pos,
                      cnp.float32_t[:, :] mv,
                      float p00,
                      float p11,
+                     float p20,
+                     float p21,
                      float thr,
                      float ms,
                      bint persp,
@@ -61,16 +63,16 @@ def splat_cull_depth(cnp.float32_t[:, :] pos,
             if persp:
                 if ww > 0.000001:
                     inv = 1.0 / ww
-                    nx = vx * p00 * inv
-                    ny = vy * p11 * inv
+                    nx = (vx * p00 + vz * p20) * inv
+                    ny = (vy * p11 + vz * p21) * inv
                     mx = rr * ap00 * inv + 0.02
                     my = rr * ap11 * inv + 0.02
                     if nx < -1.0 - mx or nx > 1.0 + mx or ny < -1.0 - my or ny > 1.0 + my:
                         keep[i] = 0
                         continue
                 else:
-                    nx = vx * p00
-                    ny = vy * p11
+                    nx = vx * p00 + vz * p20
+                    ny = vy * p11 + vz * p21
                     mx = rr * ap00 + 0.0000011
                     my = rr * ap11 + 0.0000011
                     if nx < -mx or nx > mx or ny < -my or ny > my:

@@ -9,6 +9,7 @@ from core.components.physics.box_collider import BoxCollider
 from core.components.physics.sphere_collider import SphereCollider
 from core.components.physics.capsule_collider import CapsuleCollider
 from core.components.physics.mesh_collider import MeshCollider, CollisionMode
+from core.components.physics.gs_volume_collider import GSVolumeCollider
 from core.components.physics.terrain_collider import TerrainCollider
 from core.components.physics.character_controller import CharacterController
 from core.components.physics.joint import Joint, JointType
@@ -17,6 +18,6 @@ from core.components.physics.soft_body import SoftBody, SoftBendMode, SoftPinMod
 
 __all__ = [
     "Rigidbody", "BoxCollider", "SphereCollider", "CapsuleCollider",
-    "MeshCollider", "CollisionMode", "TerrainCollider", "CharacterController", "Joint", "JointType",
+    "MeshCollider", "CollisionMode", "GSVolumeCollider", "TerrainCollider", "CharacterController", "Joint", "JointType",
     "Buoyancy", "SoftBody", "SoftBendMode", "SoftPinMode",
 ]

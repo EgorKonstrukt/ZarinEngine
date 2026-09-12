@@ -61,7 +61,7 @@ class GameViewport(QOpenGLWidget):
         self._physical_h: int = 0
         fmt = QSurfaceFormat()
         fmt.setDepthBufferSize(24)
-        fmt.setVersion(3, 3)
+        fmt.setVersion(4, 6)
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         fmt.setSwapInterval(1 if self._vsync_enabled else 0)
         self.setFormat(fmt)

@@ -5,12 +5,17 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import mmap
+import os
+import threading
+import time
 import numpy as np
 import moderngl
 from typing import Optional
-from core.assets.ply_loader import load_ply_gaussian_splat
+from core.assets.ply_loader import load_ply_gaussian_splat, SH_C0, _parse_header, _ply_type
 from core.renderer.mesh_data import read_shader
 from core.foundation.logger import Logger
+from core.foundation.progress import task_start, task_update, task_complete, notify_error
 
 
 _SPLAT_DTYPE = np.dtype([
@@ -43,6 +48,252 @@ def _cython_available() -> bool:
             and _cython_radix is not None and _cython_remap is not None)
 
 
+def _cython_available() -> bool:
+    return (_cython_cull_depth is not None and _cython_compact is not None
+            and _cython_radix is not None and _cython_remap is not None)
+
+
+_SPLAT_LOAD_CHUNK = 262144
+_SPLAT_FAIL_RETRY_S = 30.0
+_READY_SPLATS: dict = {}
+_READY_KEYS: list = []
+_READY_LOCK = threading.Lock()
+
+
+def _splat_task_id(path: str) -> str:
+    base = path.replace("\\", "/").split("/")[-1] or path
+    return f"splat_load:{base}"
+
+
+def _splat_cache_key(path: str) -> str:
+    try:
+        return os.path.normcase(os.path.abspath(path))
+    except Exception:
+        return path
+
+
+def try_get_splat_arrays(path: str):
+    key = _splat_cache_key(path)
+    with _READY_LOCK:
+        entry = _READY_SPLATS.get(key)
+        if entry is None:
+            return None
+        try:
+            _READY_KEYS.remove(key)
+        except ValueError:
+            pass
+        _READY_KEYS.append(key)
+        return entry
+
+
+def _publish_splat_arrays(path: str, pos: np.ndarray, scales: np.ndarray, opacity: np.ndarray):
+    key = _splat_cache_key(path)
+    with _READY_LOCK:
+        _READY_SPLATS[key] = (pos, scales, opacity)
+        try:
+            _READY_KEYS.remove(key)
+        except ValueError:
+            pass
+        _READY_KEYS.append(key)
+        while len(_READY_KEYS) > 4:
+            _READY_SPLATS.pop(_READY_KEYS.pop(0), None)
+
+
+def _pack_struct(pos, dc, rest, nk, opa, scl, quat, n):
+    gpu = np.zeros(n, dtype=_SPLAT_DTYPE)
+    gpu["pos_x"] = pos[:, 0]
+    gpu["pos_y"] = pos[:, 1]
+    gpu["pos_z"] = pos[:, 2]
+    gpu["sh_dc_0"] = dc[:, 0]
+    gpu["sh_dc_1"] = dc[:, 1]
+    gpu["sh_dc_2"] = dc[:, 2]
+    if nk > 0:
+        gpu["sh_rest"][:, :nk] = rest[:, :nk]
+    gpu["opacity"] = opa
+    gpu["scale_0"] = scl[:, 0]
+    gpu["scale_1"] = scl[:, 1]
+    gpu["scale_2"] = scl[:, 2]
+    gpu["quat_x"] = quat[:, 0]
+    gpu["quat_y"] = quat[:, 1]
+    gpu["quat_z"] = quat[:, 2]
+    gpu["quat_w"] = quat[:, 3]
+    return gpu
+
+
+def _derive_splat_arrays(pos, scl):
+    mn = pos.min(axis=0)
+    mx = pos.max(axis=0)
+    center = np.ascontiguousarray((mn + mx) * 0.5, dtype=np.float32)
+    radius = float(np.linalg.norm((mx - mn).astype(np.float64) * 0.5))
+    srad = np.ascontiguousarray(scl.max(axis=1) * 3.0, dtype=np.float32)
+    return center, radius, srad
+
+
+def _load_splat_generic(path: str, progress) -> Optional[dict]:
+    progress(0.05, "parsing")
+    data = load_ply_gaussian_splat(path)
+    if data is None or data.num_splats == 0:
+        return None
+    progress(0.55, "packing")
+    gpu = _pack_struct(data.positions, data.sh_coeffs[:, :3],
+                       data.sh_coeffs[:, 3:], max(0, data.sh_coeffs.shape[1] - 3),
+                       data.opacity, data.scales, data.quaternions, data.num_splats)
+    progress(0.85, "indexing")
+    pos = np.ascontiguousarray(data.positions, dtype=np.float32)
+    opa = np.ascontiguousarray(data.opacity.reshape(-1), dtype=np.float32)
+    scl = np.ascontiguousarray(data.scales, dtype=np.float32)
+    center, radius, srad = _derive_splat_arrays(pos, scl)
+    progress(1.0, None)
+    return {"gpu": gpu, "pos": pos, "opa": opa, "scl": scl, "srad": srad,
+            "center": center, "radius": radius}
+
+
+def _load_splat_fast(path: str, task_id: str, progress) -> Optional[dict]:
+    try:
+        total_bytes = os.path.getsize(path)
+    except OSError:
+        total_bytes = 0
+    task_update(task_id, total=float(total_bytes) if total_bytes else None, units="bytes")
+    f = open(path, "rb")
+    try:
+        header = []
+        while True:
+            line = f.readline()
+            if not line:
+                return None
+            text = line.decode("ascii", errors="ignore").strip()
+            header.append(text)
+            if text == "end_header":
+                break
+        vertex_count, properties, fmt = _parse_header(header)
+        if vertex_count <= 0:
+            return None
+        if fmt != "binary_little_endian":
+            return _load_splat_generic(path, progress)
+        names = [p[1] for p in properties]
+        need = ("x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity",
+                "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3")
+        if any(k not in names for k in need):
+            return None
+        dtypes = [_ply_type(p[0]) for p in properties]
+        if any(dt != np.float32 for dt in dtypes):
+            return _load_splat_generic(path, progress)
+        idx = {k: i for i, k in enumerate(names)}
+        rest_keys = [k for k in names if k.startswith("f_rest_")]
+        nk = min(len(rest_keys), 45)
+        n = vertex_count
+        cols = len(properties)
+        data_off = f.tell()
+        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        try:
+            raw = np.frombuffer(mm, dtype=np.float32, count=n * cols, offset=data_off).reshape(n, cols)
+            CH = _SPLAT_LOAD_CHUNK
+            pos = np.empty((n, 3), dtype=np.float32)
+            dc = np.empty((n, 3), dtype=np.float32)
+            rest = np.zeros((n, 45), dtype=np.float32)
+            opa = np.empty(n, dtype=np.float32)
+            scl = np.empty((n, 3), dtype=np.float32)
+            quat = np.empty((n, 4), dtype=np.float32)
+            ix, iy, iz = idx["x"], idx["y"], idx["z"]
+            adjacent_xyz = (iy == ix + 1 and iz == ix + 2)
+            idc = [idx["f_dc_0"], idx["f_dc_1"], idx["f_dc_2"]]
+            adjacent_dc = (idc[1] == idc[0] + 1 and idc[2] == idc[0] + 2)
+            iop = idx["opacity"]
+            isc = [idx["scale_0"], idx["scale_1"], idx["scale_2"]]
+            adjacent_sc = (isc[1] == isc[0] + 1 and isc[2] == isc[0] + 2)
+            iqx = [idx["rot_1"], idx["rot_2"], idx["rot_3"], idx["rot_0"]]
+            rk = [names.index(k) for k in rest_keys[:nk]] if nk else []
+            rest_block = (len(rk) == nk and nk > 0 and all(b - a == 1 for a, b in zip(rk, rk[1:])))
+            for s in range(0, n, CH):
+                e = min(s + CH, n)
+                if adjacent_xyz:
+                    pos[s:e] = raw[s:e, ix:ix + 3]
+                else:
+                    pos[s:e, 0] = raw[s:e, ix]
+                    pos[s:e, 1] = raw[s:e, iy]
+                    pos[s:e, 2] = raw[s:e, iz]
+                if adjacent_dc:
+                    dc[s:e] = raw[s:e, idc[0]:idc[0] + 3]
+                else:
+                    for j, c in enumerate(idc):
+                        dc[s:e, j] = raw[s:e, c]
+                if rest_block:
+                    rest[s:e, :nk] = raw[s:e, rk[0]:rk[0] + nk]
+                else:
+                    for j, c in enumerate(rk):
+                        rest[s:e, j] = raw[s:e, c]
+                opa[s:e] = raw[s:e, iop]
+                if adjacent_sc:
+                    scl[s:e] = raw[s:e, isc[0]:isc[0] + 3]
+                else:
+                    for j, c in enumerate(isc):
+                        scl[s:e, j] = raw[s:e, c]
+                for j, c in enumerate(iqx):
+                    quat[s:e, j] = raw[s:e, c]
+                progress(0.05 + 0.45 * e / n, f"{e / 1e6:.1f}M/{n / 1e6:.1f}M splats")
+            progress(0.52, "activations")
+            dc *= np.float32(SH_C0)
+            dc += np.float32(0.5)
+            np.negative(opa, out=opa)
+            np.exp(opa, out=opa)
+            opa += np.float32(1.0)
+            np.reciprocal(opa, out=opa)
+            np.exp(scl, out=scl)
+            progress(0.62, "rotations")
+            qn = np.sqrt((quat * quat).sum(axis=1))
+            np.maximum(qn, 1e-8, out=qn)
+            quat /= qn[:, None]
+            progress(0.68, "packing")
+            gpu = np.zeros(n, dtype=_SPLAT_DTYPE)
+            for s in range(0, n, CH):
+                e = min(s + CH, n)
+                g = gpu[s:e]
+                g["pos_x"] = pos[s:e, 0]
+                g["pos_y"] = pos[s:e, 1]
+                g["pos_z"] = pos[s:e, 2]
+                g["sh_dc_0"] = dc[s:e, 0]
+                g["sh_dc_1"] = dc[s:e, 1]
+                g["sh_dc_2"] = dc[s:e, 2]
+                if nk > 0:
+                    g["sh_rest"][:, :nk] = rest[s:e, :nk]
+                g["opacity"] = opa[s:e]
+                g["scale_0"] = scl[s:e, 0]
+                g["scale_1"] = scl[s:e, 1]
+                g["scale_2"] = scl[s:e, 2]
+                g["quat_x"] = quat[s:e, 0]
+                g["quat_y"] = quat[s:e, 1]
+                g["quat_z"] = quat[s:e, 2]
+                g["quat_w"] = quat[s:e, 3]
+                progress(0.68 + 0.22 * e / n, f"{e / 1e6:.1f}M/{n / 1e6:.1f}M splats")
+            progress(0.92, "indexing")
+            center, radius, srad = _derive_splat_arrays(pos, scl)
+            progress(1.0, None)
+            return {"gpu": gpu, "pos": pos, "opa": opa, "scl": scl, "srad": srad,
+                    "center": center, "radius": radius}
+        finally:
+            try:
+                mm.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            f.close()
+        except Exception:
+            pass
+
+
+def _load_splat_file(path: str, task_id: str, progress) -> Optional[dict]:
+    try:
+        with open(path, "rb") as f:
+            head = [f.readline().decode("ascii", errors="ignore").strip() for _ in range(4)]
+    except OSError:
+        return None
+    is_binary = any("binary" in h for h in head)
+    if is_binary:
+        return _load_splat_fast(path, task_id, progress)
+    return _load_splat_generic(path, progress)
+
+
 class GaussianSplatRenderer:
     def __init__(self, ctx: moderngl.Context):
         self._ctx = ctx
@@ -61,6 +312,11 @@ class GaussianSplatRenderer:
         self._sort_cache: dict[tuple[str, bytes], list] = {}
         self._scratch: dict[str, dict[str, np.ndarray]] = {}
         self._idx_key: Optional[tuple[str, bytes]] = None
+        self._load_lock = threading.Lock()
+        self._loading: set = set()
+        self._completed: list = []
+        self._failed: dict = {}
+        self._fractions: dict = {}
         self._init_shaders()
         if _cython_available():
             self._sort_backend = "cython"
@@ -78,7 +334,8 @@ class GaussianSplatRenderer:
                 fragment_shader=frag_src,
             )
             self._vao = self._ctx.vertex_array(self._prog, [])
-        except Exception:
+        except Exception as e:
+            Logger.error(f"GaussianSplatRenderer shader init failed (needs OpenGL 4.3+): {e}")
             self._prog = None
             self._vao = None
 
@@ -100,46 +357,79 @@ class GaussianSplatRenderer:
     def load_data(self, path: str) -> bool:
         if path in self._gpu_data:
             return True
-        data = load_ply_gaussian_splat(path)
-        if data is None or data.num_splats == 0:
-            return False
-        gpu = self._pack_for_gpu(data)
-        self._gpu_data[path] = gpu
-        self._pos[path] = np.ascontiguousarray(data.positions, dtype=np.float32)
-        self._opa[path] = np.ascontiguousarray(data.opacity.reshape(-1), dtype=np.float32)
-        self._srad[path] = np.ascontiguousarray(data.scales.max(axis=1) * 3.0, dtype=np.float32)
-        mn = data.positions.min(axis=0)
-        mx = data.positions.max(axis=0)
-        self._center[path] = np.ascontiguousarray((mn + mx) * 0.5, dtype=np.float32)
-        self._radius[path] = float(np.linalg.norm((mx - mn).astype(np.float64) * 0.5))
-        self._uploaded_path = None
-        for k in [k for k in self._sort_cache if k[0] == path]:
-            del self._sort_cache[k]
-        self._scratch.pop(path, None)
-        return True
+        now = time.monotonic()
+        with self._load_lock:
+            if path in self._loading:
+                return False
+            failed_at = self._failed.get(path)
+            if failed_at is not None:
+                if now - failed_at < _SPLAT_FAIL_RETRY_S:
+                    return False
+                del self._failed[path]
+            if not os.path.isfile(path):
+                return False
+            self._loading.add(path)
+            self._fractions[path] = 0.0
+        base = path.replace("\\", "/").split("/")[-1] or path
+        task_start(_splat_task_id(path), f"Loading {base}...", fraction=0.0)
+        threading.Thread(target=self._load_thread, args=(path,), daemon=True).start()
+        return False
+
+    def load_progress(self, path: str):
+        if path in self._gpu_data:
+            return 1.0
+        with self._load_lock:
+            return self._fractions.get(path)
+
+    def _load_thread(self, path: str):
+        task_id = _splat_task_id(path)
+
+        def progress(frac, detail=None):
+            f = max(0.0, min(1.0, float(frac)))
+            with self._load_lock:
+                if path in self._fractions:
+                    self._fractions[path] = f
+            task_update(task_id, fraction=f, detail=detail)
+
+        try:
+            payload = _load_splat_file(path, task_id, progress)
+        except Exception as e:
+            Logger.error(f"Splat load failed: {path}: {e}")
+            payload = None
+        with self._load_lock:
+            self._loading.discard(path)
+            self._fractions.pop(path, None)
+            if payload is None:
+                self._failed[path] = time.monotonic()
+                task_complete(task_id)
+                notify_error(f"Failed to load {path.replace(chr(92), '/').split('/')[-1]}")
+            else:
+                self._completed.append((path, payload))
+                task_complete(task_id)
+
+    def process_pending(self):
+        with self._load_lock:
+            if not self._completed:
+                return
+            done = self._completed
+            self._completed = []
+        for path, payload in done:
+            self._gpu_data[path] = payload["gpu"]
+            self._pos[path] = payload["pos"]
+            self._opa[path] = payload["opa"]
+            self._srad[path] = payload["srad"]
+            self._center[path] = payload["center"]
+            self._radius[path] = payload["radius"]
+            self._uploaded_path = None
+            for k in [k for k in self._sort_cache if k[0] == path]:
+                del self._sort_cache[k]
+            self._scratch.pop(path, None)
+            _publish_splat_arrays(path, payload["pos"], payload["scl"], payload["opa"])
 
     def _pack_for_gpu(self, data) -> np.ndarray:
-        n = data.num_splats
-        num_rest = max(0, min(data.sh_coeffs.shape[1] - 3, 45))
-
-        gpu = np.zeros(n, dtype=_SPLAT_DTYPE)
-        gpu["pos_x"] = data.positions[:, 0]
-        gpu["pos_y"] = data.positions[:, 1]
-        gpu["pos_z"] = data.positions[:, 2]
-        gpu["sh_dc_0"] = data.sh_coeffs[:, 0]
-        gpu["sh_dc_1"] = data.sh_coeffs[:, 1]
-        gpu["sh_dc_2"] = data.sh_coeffs[:, 2]
-        if num_rest > 0:
-            gpu["sh_rest"][:, :num_rest] = data.sh_coeffs[:, 3:3 + num_rest]
-        gpu["opacity"] = data.opacity
-        gpu["scale_0"] = data.scales[:, 0]
-        gpu["scale_1"] = data.scales[:, 1]
-        gpu["scale_2"] = data.scales[:, 2]
-        gpu["quat_x"] = data.quaternions[:, 0]
-        gpu["quat_y"] = data.quaternions[:, 1]
-        gpu["quat_z"] = data.quaternions[:, 2]
-        gpu["quat_w"] = data.quaternions[:, 3]
-        return gpu
+        return _pack_struct(data.positions, data.sh_coeffs[:, :3],
+                            data.sh_coeffs[:, 3:], max(0, data.sh_coeffs.shape[1] - 3),
+                            data.opacity, data.scales, data.quaternions, data.num_splats)
 
     def _frame_key(self, model_f32: np.ndarray, view_f32: np.ndarray,
                    proj_f32: np.ndarray, opacity_threshold: float) -> bytes:
@@ -148,20 +438,25 @@ class GaussianSplatRenderer:
         return model_f32.tobytes() + view_f32.tobytes() + np.float32(opacity_threshold).tobytes() + zoom
 
     def _sort_basis(self, model_f32: np.ndarray, view_f32: np.ndarray, proj_f32: np.ndarray):
-        mv = np.ascontiguousarray(model_f32.reshape(4, 4) @ view_f32.reshape(4, 4), dtype=np.float32)
+        um = np.ascontiguousarray(model_f32.reshape(4, 4).T, dtype=np.float32)
+        uv = np.ascontiguousarray(view_f32.reshape(4, 4).T, dtype=np.float32)
+        fused = uv @ um
+        mv = np.ascontiguousarray(fused.T, dtype=np.float32)
         a = mv[:3, :3]
         t = mv[3, :3]
         ms = float(np.linalg.norm(a.astype(np.float64), axis=0).max())
         if not np.isfinite(ms) or ms <= 0.0:
             return None
-        proj = proj_f32.reshape(4, 4)
-        p00 = float(proj[0, 0])
-        p11 = float(proj[1, 1])
-        perspective = abs(float(proj[2, 3]) + 1.0) < 1e-3
-        return mv, a, t, ms, p00, p11, perspective
+        up = np.ascontiguousarray(proj_f32.reshape(4, 4).T, dtype=np.float32)
+        p00 = float(up[0, 0])
+        p11 = float(up[1, 1])
+        p20 = float(up[0, 2])
+        p21 = float(up[1, 2])
+        perspective = abs(float(up[3, 2]) + 1.0) < 1e-3
+        return mv, a, t, ms, p00, p11, p20, p21, perspective
 
     def _cloud_culled(self, path: str, a: np.ndarray, t: np.ndarray, ms: float,
-                      p00: float, p11: float, perspective: bool) -> bool:
+                      p00: float, p11: float, p20: float, p21: float, perspective: bool) -> bool:
         if not perspective:
             return False
         center = self._center.get(path)
@@ -174,8 +469,8 @@ class GaussianSplatRenderer:
         if w + rw < 0.2:
             return True
         if w > 0.0:
-            nx = float(vc[0]) * p00 / w
-            ny = float(vc[1]) * p11 / w
+            nx = (float(vc[0]) * p00 + float(vc[2]) * p20) / w
+            ny = (float(vc[1]) * p11 + float(vc[2]) * p21) / w
             rx = rw * abs(p00) / w
             ry = rw * abs(p11) / w
             if nx < -1.0 - rx or nx > 1.0 + rx or ny < -1.0 - ry or ny > 1.0 + ry:
@@ -223,8 +518,8 @@ class GaussianSplatRenderer:
         basis = self._sort_basis(model_f32, view_f32, proj_f32)
         if basis is None:
             return _EMPTY_U32
-        mv, a, t, ms, p00, p11, perspective = basis
-        if self._cloud_culled(path, a, t, ms, p00, p11, perspective):
+        mv, a, t, ms, p00, p11, p20, p21, perspective = basis
+        if self._cloud_culled(path, a, t, ms, p00, p11, p20, p21, perspective):
             return _EMPTY_U32
         if _cython_available():
             n = len(pos)
@@ -233,6 +528,7 @@ class GaussianSplatRenderer:
             srad = np.ascontiguousarray(srad, dtype=np.float32)
             sc = self._scratch_for(path, n)
             _cython_cull_depth(pos, opa, srad, mv, np.float32(p00), np.float32(p11),
+                               np.float32(p20), np.float32(p21),
                                np.float32(opacity_threshold), np.float32(ms),
                                bool(perspective), sc["keep"], sc["wbuf"])
             count = int(_cython_compact(sc["keep"], sc["wbuf"], sc["cidx"], sc["cdep"]))
@@ -268,9 +564,11 @@ class GaussianSplatRenderer:
                     idx = None
                 fp00 = np.float32(p00)
                 fp11 = np.float32(p11)
+                fp20 = np.float32(p20)
+                fp21 = np.float32(p21)
                 inv = np.float32(1.0) / np.maximum(w, np.float32(1e-6))
-                nx = v[:, 0] * fp00 * inv
-                ny = v[:, 1] * fp11 * inv
+                nx = (v[:, 0] * fp00 + v[:, 2] * fp20) * inv
+                ny = (v[:, 1] * fp11 + v[:, 2] * fp21) * inv
                 mx = r * np.float32(abs(p00)) * inv + np.float32(0.02)
                 my = r * np.float32(abs(p11)) * inv + np.float32(0.02)
                 loc = np.flatnonzero((nx >= -1.0 - mx) & (nx <= 1.0 + mx) & (ny >= -1.0 - my) & (ny <= 1.0 + my))
@@ -382,6 +680,17 @@ class GaussianSplatRenderer:
         self.draw_color(m)
 
     def release(self):
+        with self._load_lock:
+            pending = list(self._loading)
+            self._loading.clear()
+            self._completed = []
+            self._failed.clear()
+            self._fractions.clear()
+        for path in pending:
+            try:
+                task_complete(_splat_task_id(path))
+            except Exception:
+                pass
         if self._vao:
             self._vao.release()
         if self._ssbo:

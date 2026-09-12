@@ -112,6 +112,31 @@ def _resolve_startup_scene(project_root: str) -> str:
     return DEFAULT_SCENE
 
 
+def _deduce_project_root(scene_path: str, fallback: str) -> str:
+    try:
+        ap = os.path.abspath(scene_path)
+        start = os.path.dirname(ap)
+        cur = start
+        for _ in range(5):
+            for marker in ("ProjectSettings.json", "BuildSettings.json"):
+                if os.path.isfile(os.path.join(cur, marker)):
+                    return cur
+            parent = os.path.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+        low = ap.replace("\\", "/").lower()
+        for token in ("/assets/", "/scenes/"):
+            idx = low.rfind(token)
+            if idx > 0:
+                return ap[:idx]
+        if start:
+            return start
+    except Exception:
+        pass
+    return fallback
+
+
 def main():
     multiprocessing.freeze_support()
     from PyQt6.QtWidgets import QApplication
@@ -189,6 +214,9 @@ def main():
 
     scene_path = _resolve_startup_scene(project_root)
     _log(f"Final scene_path: {scene_path}")
+    project_root = _deduce_project_root(scene_path, project_root)
+    _log(f"Project root: {project_root}")
+    engine.project_root = project_root
 
     window = QMainWindow()
     window.setWindowTitle("Zarin Player")

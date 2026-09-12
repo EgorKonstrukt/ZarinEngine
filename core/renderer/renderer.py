@@ -2514,6 +2514,8 @@ out vec4 frag_color;
         if prof:
             prof.start("mesh_async_load")
         self._mesh_loader.process_pending()
+        if self._gaussians is not None:
+            self._gaussians.process_pending()
         if prof:
             prof.stop("mesh_async_load")
         self._skinning_cache.clear()
