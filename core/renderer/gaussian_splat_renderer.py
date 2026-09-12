@@ -188,7 +188,8 @@ class GaussianSplatRenderer:
         slot = self._sort_cache.get(slot_id)
         if slot is not None and slot[0] == key:
             return key, slot[1]
-        order = self._compute_order(path, model_f32, view_f32, proj_f32, opacity_threshold)
+        reuse = slot[1] if slot is not None else None
+        order = self._compute_order(path, model_f32, view_f32, proj_f32, opacity_threshold, reuse)
         if slot is None and len(self._sort_cache) >= 4:
             self._sort_cache.pop(next(iter(self._sort_cache)))
         self._sort_cache[slot_id] = [key, order]
@@ -202,7 +203,6 @@ class GaussianSplatRenderer:
                 "wbuf": np.empty(n, dtype=np.float32),
                 "cidx": np.empty(n, dtype=np.uint32),
                 "cdep": np.empty(n, dtype=np.float32),
-                "order": np.empty(n, dtype=np.uint32),
                 "tmp": np.empty(n, dtype=np.uint32),
                 "k1": np.empty(n, dtype=np.uint32),
                 "k2": np.empty(n, dtype=np.uint32),
@@ -211,7 +211,8 @@ class GaussianSplatRenderer:
         return sc
 
     def _compute_order(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
-                       proj_f32: np.ndarray, opacity_threshold: float) -> np.ndarray:
+                       proj_f32: np.ndarray, opacity_threshold: float,
+                       reuse: Optional[np.ndarray] = None) -> np.ndarray:
         pos = self._pos.get(path)
         opa = self._opa.get(path)
         srad = self._srad.get(path)
@@ -239,10 +240,14 @@ class GaussianSplatRenderer:
                 rev = np.argsort(np.asarray(sc["cdep"][:count]))[::-1].astype(np.uint32)
                 _cython_remap(np.ascontiguousarray(rev), sc["cidx"], count)
                 return np.ascontiguousarray(rev)
-            _cython_radix(sc["cdep"][:count], sc["order"][:count], sc["tmp"][:count],
+            if reuse is not None and len(reuse) >= count:
+                out = reuse[:count]
+            else:
+                out = np.empty(count, dtype=np.uint32)
+            _cython_radix(sc["cdep"][:count], out, sc["tmp"][:count],
                           sc["k1"][:count], sc["k2"][:count])
-            _cython_remap(sc["order"][:count], sc["cidx"], count)
-            return np.array(sc["order"][:count], dtype=np.uint32, copy=True)
+            _cython_remap(out, sc["cidx"], count)
+            return out
         else:
             v = pos @ a + t
             w = -v[:, 2]
