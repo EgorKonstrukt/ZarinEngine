@@ -149,6 +149,42 @@ def _gather_rest(palette: np.ndarray, labels: np.ndarray, count: int) -> np.ndar
         rows = np.arange(s, e, dtype=np.int64)[m]
         out[rows] = palette[idx]
     return out
+def _z180_sh_mask(n: int) -> np.ndarray:
+    m = np.zeros(max(0, int(n)), dtype=np.bool_)
+    if int(n) == 9:
+        m[np.array([0, 2, 3, 5, 6, 8], dtype=np.int64)] = True
+        return m
+    if int(n) == 24:
+        m[np.array([0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22], dtype=np.int64)] = True
+        return m
+    if int(n) == 45:
+        m[np.array([0, 2, 4, 6, 8, 10, 12, 14, 15, 17, 19, 21, 23, 25, 27, 29, 30, 32, 34, 36, 38, 40, 42, 44], dtype=np.int64)] = True
+        return m
+    return m
+def _apply_z180(pos: np.ndarray, quat_xyzw: np.ndarray, sh: np.ndarray) -> None:
+    pos[:, 0] *= np.float32(-1.0)
+    pos[:, 1] *= np.float32(-1.0)
+    tx = quat_xyzw[:, 0].copy()
+    tz = quat_xyzw[:, 2].copy()
+    quat_xyzw[:, 0] = -quat_xyzw[:, 1]
+    quat_xyzw[:, 1] = tx
+    quat_xyzw[:, 2] = quat_xyzw[:, 3]
+    quat_xyzw[:, 3] = -tz
+    try:
+        r = int(sh.shape[1] - 3)
+    except Exception:
+        return
+    if r <= 0:
+        return
+    mk = _z180_sh_mask(r)
+    try:
+        has = bool(np.any(mk))
+    except Exception:
+        return
+    if not has:
+        return
+    rs = sh[:, 3:]
+    rs[:, mk] = -rs[:, mk]
 def _finalize(pos: np.ndarray, dc: np.ndarray, rest: np.ndarray, opa: np.ndarray, scl: np.ndarray, quat_xyzw: np.ndarray, num_sh: int) -> Optional[GaussianSplatData]:
     n = int(pos.shape[0])
     if n == 0:
@@ -175,6 +211,7 @@ def _finalize(pos: np.ndarray, dc: np.ndarray, rest: np.ndarray, opa: np.ndarray
         opa = np.ascontiguousarray(opa[valid])
         scl = np.ascontiguousarray(scl[valid])
         quat_xyzw = np.ascontiguousarray(quat_xyzw[valid])
+    _apply_z180(pos, quat_xyzw, sh)
     normals = np.zeros_like(pos)
     return GaussianSplatData(positions=np.ascontiguousarray(pos, dtype=np.float32), normals=np.ascontiguousarray(normals, dtype=np.float32), sh_coeffs=np.ascontiguousarray(sh, dtype=np.float32), opacity=np.ascontiguousarray(opa.reshape(-1).astype(np.float32)), scales=np.ascontiguousarray(scl, dtype=np.float32), quaternions=np.ascontiguousarray(quat_xyzw, dtype=np.float32), num_sh=int(num_sh))
 def _decode_v2(meta: dict, load_fn) -> Optional[GaussianSplatData]:
@@ -202,22 +239,17 @@ def _decode_v2(meta: dict, load_fn) -> Optional[GaussianSplatData]:
     try:
         lo_arr = _decode_image_bytes(load_fn(means_files[0]))
         hi_arr = _decode_image_bytes(load_fn(means_files[1]))
-        sl_arr = _decode_image_bytes(load_fn(scales_files[0]))
-        qr_arr = _decode_image_bytes(load_fn(quats_files[0]))
-        c0_arr = _decode_image_bytes(load_fn(sh0_files[0]))
     except Exception:
         return None
     try:
         lo = _flat_pixels(lo_arr, count)
         hi = _flat_pixels(hi_arr, count)
-        sl = _flat_pixels(sl_arr, count)
-        qr = _flat_pixels(qr_arr, count)
-        c0 = _flat_pixels(c0_arr, count)
     except Exception:
         return None
     xs = (lo[:, 0].astype(np.float32) + hi[:, 0].astype(np.float32) * 256.0) / 65535.0
     ys = (lo[:, 1].astype(np.float32) + hi[:, 1].astype(np.float32) * 256.0) / 65535.0
     zs = (lo[:, 2].astype(np.float32) + hi[:, 2].astype(np.float32) * 256.0) / 65535.0
+    del lo, hi, lo_arr, hi_arr
     x_min = float(means_mins[0])
     x_sc = float(means_maxs[0] - means_mins[0]) or 1.0
     y_min = float(means_mins[1])
@@ -227,27 +259,59 @@ def _decode_v2(meta: dict, load_fn) -> Optional[GaussianSplatData]:
     lx = (x_min + x_sc * xs).astype(np.float64)
     ly = (y_min + y_sc * ys).astype(np.float64)
     lz = (z_min + z_sc * zs).astype(np.float64)
+    del xs, ys, zs
     pos = np.empty((count, 3), dtype=np.float32)
     pos[:, 0] = _inv_log_transform(lx)
     pos[:, 1] = _inv_log_transform(ly)
     pos[:, 2] = _inv_log_transform(lz)
+    del lx, ly, lz
+    try:
+        qr_arr = _decode_image_bytes(load_fn(quats_files[0]))
+    except Exception:
+        return None
+    try:
+        qr = _flat_pixels(qr_arr, count)
+    except Exception:
+        return None
     wxyz = _unpack_quats(qr)
+    del qr, qr_arr
     quat = np.empty((count, 4), dtype=np.float32)
     quat[:, 0] = wxyz[:, 1]
     quat[:, 1] = wxyz[:, 2]
     quat[:, 2] = wxyz[:, 3]
     quat[:, 3] = wxyz[:, 0]
+    del wxyz
+    try:
+        sl_arr = _decode_image_bytes(load_fn(scales_files[0]))
+    except Exception:
+        return None
+    try:
+        sl = _flat_pixels(sl_arr, count)
+    except Exception:
+        return None
     s_raw = np.empty((count, 3), dtype=np.float32)
     s_raw[:, 0] = scales_code[sl[:, 0].astype(np.int64)]
     s_raw[:, 1] = scales_code[sl[:, 1].astype(np.int64)]
     s_raw[:, 2] = scales_code[sl[:, 2].astype(np.int64)]
+    del sl, sl_arr
     scl = np.exp(s_raw.astype(np.float64)).astype(np.float32)
+    del s_raw
+    try:
+        c0_arr = _decode_image_bytes(load_fn(sh0_files[0]))
+    except Exception:
+        return None
+    try:
+        c0 = _flat_pixels(c0_arr, count)
+    except Exception:
+        return None
     dc_raw = np.empty((count, 3), dtype=np.float32)
     dc_raw[:, 0] = sh0_code[c0[:, 0].astype(np.int64)]
     dc_raw[:, 1] = sh0_code[c0[:, 1].astype(np.int64)]
     dc_raw[:, 2] = sh0_code[c0[:, 2].astype(np.int64)]
     dc = dc_raw * np.float32(SH_C0) + np.float32(0.5)
+    del dc_raw
     opa = (c0[:, 3].astype(np.float32) / 255.0).astype(np.float32)
+    del c0, c0_arr
     shn = meta.get("shN")
     rest = np.zeros((count, 0), dtype=np.float32)
     num_sh = 1
@@ -267,8 +331,11 @@ def _decode_v2(meta: dict, load_fn) -> Optional[GaussianSplatData]:
                     lab_arr = _decode_image_bytes(load_fn(sh_files[1]))
                     lab = _flat_pixels(lab_arr, count)
                     labels = (lab[:, 0].astype(np.int32) | (lab[:, 1].astype(np.int32) << 8)).astype(np.int64)
+                    del lab, lab_arr
                     pal = _build_palette_v2(cent_arr, coeffs, palette_count, sh_code)
+                    del cent_arr
                     rest = _gather_rest(pal, labels, count)
+                    del pal, labels
                     num_sh = int(bands + 1)
             except Exception:
                 rest = np.zeros((count, 0), dtype=np.float32)
@@ -299,22 +366,17 @@ def _decode_v1(meta: dict, load_fn) -> Optional[GaussianSplatData]:
     try:
         lo_arr = _decode_image_bytes(load_fn(means_files[0]))
         hi_arr = _decode_image_bytes(load_fn(means_files[1]))
-        sl_arr = _decode_image_bytes(load_fn(scales_files[0]))
-        qr_arr = _decode_image_bytes(load_fn(quats_files[0]))
-        c0_arr = _decode_image_bytes(load_fn(sh0_files[0]))
     except Exception:
         return None
     try:
         lo = _flat_pixels(lo_arr, count)
         hi = _flat_pixels(hi_arr, count)
-        sl = _flat_pixels(sl_arr, count)
-        qr = _flat_pixels(qr_arr, count)
-        c0 = _flat_pixels(c0_arr, count)
     except Exception:
         return None
     xs = (lo[:, 0].astype(np.float32) + hi[:, 0].astype(np.float32) * 256.0) / 65535.0
     ys = (lo[:, 1].astype(np.float32) + hi[:, 1].astype(np.float32) * 256.0) / 65535.0
     zs = (lo[:, 2].astype(np.float32) + hi[:, 2].astype(np.float32) * 256.0) / 65535.0
+    del lo, hi, lo_arr, hi_arr
     x_min = float(means_mins[0])
     x_sc = float(means_maxs[0] - means_mins[0]) or 1.0
     y_min = float(means_mins[1])
@@ -324,28 +386,61 @@ def _decode_v1(meta: dict, load_fn) -> Optional[GaussianSplatData]:
     lx = (x_min + x_sc * xs).astype(np.float64)
     ly = (y_min + y_sc * ys).astype(np.float64)
     lz = (z_min + z_sc * zs).astype(np.float64)
+    del xs, ys, zs
     pos = np.empty((count, 3), dtype=np.float32)
     pos[:, 0] = _inv_log_transform(lx)
     pos[:, 1] = _inv_log_transform(ly)
     pos[:, 2] = _inv_log_transform(lz)
+    del lx, ly, lz
+    try:
+        qr_arr = _decode_image_bytes(load_fn(quats_files[0]))
+    except Exception:
+        return None
+    try:
+        qr = _flat_pixels(qr_arr, count)
+    except Exception:
+        return None
     wxyz = _unpack_quats(qr)
+    del qr, qr_arr
     quat = np.empty((count, 4), dtype=np.float32)
     quat[:, 0] = wxyz[:, 1]
     quat[:, 1] = wxyz[:, 2]
     quat[:, 2] = wxyz[:, 3]
     quat[:, 3] = wxyz[:, 0]
+    del wxyz
+    try:
+        sl_arr = _decode_image_bytes(load_fn(scales_files[0]))
+    except Exception:
+        return None
+    try:
+        sl = _flat_pixels(sl_arr, count)
+    except Exception:
+        return None
     s_raw = np.empty((count, 3), dtype=np.float32)
     s_raw[:, 0] = (float(s_mins[0]) + float(s_maxs[0] - s_mins[0]) * (sl[:, 0].astype(np.float32) / 255.0)).astype(np.float32)
     s_raw[:, 1] = (float(s_mins[1]) + float(s_maxs[1] - s_mins[1]) * (sl[:, 1].astype(np.float32) / 255.0)).astype(np.float32)
     s_raw[:, 2] = (float(s_mins[2]) + float(s_maxs[2] - s_mins[2]) * (sl[:, 2].astype(np.float32) / 255.0)).astype(np.float32)
+    del sl, sl_arr
     scl = np.exp(s_raw.astype(np.float64)).astype(np.float32)
+    del s_raw
+    try:
+        c0_arr = _decode_image_bytes(load_fn(sh0_files[0]))
+    except Exception:
+        return None
+    try:
+        c0 = _flat_pixels(c0_arr, count)
+    except Exception:
+        return None
     dc_raw = np.empty((count, 3), dtype=np.float32)
     dc_raw[:, 0] = (float(c_mins[0]) + float(c_maxs[0] - c_mins[0]) * (c0[:, 0].astype(np.float32) / 255.0)).astype(np.float32)
     dc_raw[:, 1] = (float(c_mins[1]) + float(c_maxs[1] - c_mins[1]) * (c0[:, 1].astype(np.float32) / 255.0)).astype(np.float32)
     dc_raw[:, 2] = (float(c_mins[2]) + float(c_maxs[2] - c_mins[2]) * (c0[:, 2].astype(np.float32) / 255.0)).astype(np.float32)
     dc = dc_raw * np.float32(SH_C0) + np.float32(0.5)
+    del dc_raw
     op_logit = (float(c_mins[3]) + float(c_maxs[3] - c_mins[3]) * (c0[:, 3].astype(np.float32) / 255.0)).astype(np.float32)
+    del c0, c0_arr
     opa = _sigmoid(op_logit)
+    del op_logit
     shn = meta.get("shN")
     rest = np.zeros((count, 0), dtype=np.float32)
     num_sh = 1
@@ -361,6 +456,7 @@ def _decode_v1(meta: dict, load_fn) -> Optional[GaussianSplatData]:
                 if coeffs > 0:
                     lab = _flat_pixels(lab_arr, count)
                     labels = (lab[:, 0].astype(np.int32) | (lab[:, 1].astype(np.int32) << 8)).astype(np.int64)
+                    del lab, lab_arr
                     per_row = int(cw // max(1, coeffs))
                     chh = int(cent_arr.shape[0])
                     palette_count = int(per_row * chh)
@@ -368,7 +464,9 @@ def _decode_v1(meta: dict, load_fn) -> Optional[GaussianSplatData]:
                     smax = float(shn.get("maxs", 1.0))
                     sspan = float(smax - smin)
                     pal = _build_palette_v1(cent_arr, coeffs, palette_count, smin, sspan)
+                    del cent_arr
                     rest = _gather_rest(pal, labels, count)
+                    del pal, labels
                     num_sh = int(bands + 1)
         except Exception:
             rest = np.zeros((count, 0), dtype=np.float32)
@@ -578,7 +676,6 @@ def _concat_datas(datas: list) -> Optional[GaussianSplatData]:
         if r > max_rest:
             max_rest = r
     poss = []
-    norms = []
     shs = []
     opas = []
     scls = []
@@ -586,7 +683,6 @@ def _concat_datas(datas: list) -> Optional[GaussianSplatData]:
     top_sh = 1
     for d in items:
         poss.append(np.ascontiguousarray(d.positions, dtype=np.float32))
-        norms.append(np.zeros_like(np.ascontiguousarray(d.positions, dtype=np.float32)))
         cur_rest = int(d.sh_coeffs.shape[1] - 3) if d.sh_coeffs.ndim == 2 else 0
         if cur_rest < 0:
             cur_rest = 0

@@ -56,6 +56,8 @@ def _cython_available() -> bool:
 
 _SPLAT_LOAD_CHUNK = 262144
 _SPLAT_FAIL_RETRY_S = 30.0
+_GC_IDLE_S = 30.0
+_GC_MAX_PATHS = 4
 _READY_SPLATS: dict = {}
 _READY_KEYS: list = []
 _READY_LOCK = threading.Lock()
@@ -71,6 +73,16 @@ def _splat_cache_key(path: str) -> str:
         return os.path.normcase(os.path.abspath(path))
     except Exception:
         return path
+
+
+def _drop_splat_arrays(path: str):
+    key = _splat_cache_key(path)
+    with _READY_LOCK:
+        _READY_SPLATS.pop(key, None)
+        try:
+            _READY_KEYS.remove(key)
+        except ValueError:
+            pass
 
 
 def try_get_splat_arrays(path: str):
@@ -246,6 +258,21 @@ def _load_splat_fast(path: str, task_id: str, progress) -> Optional[dict]:
             qn = np.sqrt((quat * quat).sum(axis=1))
             np.maximum(qn, 1e-8, out=qn)
             quat /= qn[:, None]
+            pos[:, 0] *= np.float32(-1.0)
+            pos[:, 1] *= np.float32(-1.0)
+            _tx = quat[:, 0].copy()
+            _tz = quat[:, 2].copy()
+            quat[:, 0] = -quat[:, 1]
+            quat[:, 1] = _tx
+            quat[:, 2] = quat[:, 3]
+            quat[:, 3] = -_tz
+            del _tx, _tz
+            if nk == 9:
+                rest[:, [0, 2, 3, 5, 6, 8]] *= np.float32(-1.0)
+            elif nk == 24:
+                rest[:, [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]] *= np.float32(-1.0)
+            elif nk == 45:
+                rest[:, [0, 2, 4, 6, 8, 10, 12, 14, 15, 17, 19, 21, 23, 25, 27, 29, 30, 32, 34, 36, 38, 40, 42, 44]] *= np.float32(-1.0)
             progress(0.68, "packing")
             gpu = np.zeros(n, dtype=_SPLAT_DTYPE)
             for s in range(0, n, CH):
@@ -337,6 +364,7 @@ class GaussianSplatRenderer:
         self._sort_cache: dict[tuple[str, bytes], list] = {}
         self._scratch: dict[str, dict[str, np.ndarray]] = {}
         self._idx_key: Optional[tuple[str, bytes]] = None
+        self._last_used: dict[str, float] = {}
         self._load_lock = threading.Lock()
         self._loading: set = set()
         self._completed: list = []
@@ -439,9 +467,11 @@ class GaussianSplatRenderer:
     def process_pending(self):
         with self._load_lock:
             if not self._completed:
-                return
-            done = self._completed
-            self._completed = []
+                done = []
+            else:
+                done = self._completed
+                self._completed = []
+        now = time.monotonic()
         for path, payload in done:
             self._gpu_data[path] = payload["gpu"]
             self._pos[path] = payload["pos"]
@@ -449,11 +479,76 @@ class GaussianSplatRenderer:
             self._srad[path] = payload["srad"]
             self._center[path] = payload["center"]
             self._radius[path] = payload["radius"]
+            self._last_used[path] = now
             self._uploaded_path = None
             for k in [k for k in self._sort_cache if k[0] == path]:
                 del self._sort_cache[k]
             self._scratch.pop(path, None)
             _publish_splat_arrays(path, payload["pos"], payload["scl"], payload["opa"])
+            del payload
+        if done:
+            self.collect_garbage()
+
+    def _release_locked(self, path: str):
+        self._gpu_data.pop(path, None)
+        self._pos.pop(path, None)
+        self._opa.pop(path, None)
+        self._srad.pop(path, None)
+        self._center.pop(path, None)
+        self._radius.pop(path, None)
+        self._last_used.pop(path, None)
+        self._failed.pop(path, None)
+        self._fractions.pop(path, None)
+        for k in [k for k in self._sort_cache if k[0] == path]:
+            try:
+                del self._sort_cache[k]
+            except KeyError:
+                pass
+        self._scratch.pop(path, None)
+        if self._uploaded_path == path:
+            self._uploaded_path = None
+        try:
+            if self._idx_key is not None and self._idx_key[0] == path:
+                self._idx_key = None
+        except Exception:
+            self._idx_key = None
+        _drop_splat_arrays(path)
+
+    def release_path(self, path: str):
+        with self._load_lock:
+            self._loading.discard(path)
+            self._completed = [(p, d) for (p, d) in self._completed if p != path]
+            self._release_locked(path)
+        try:
+            task_complete(_splat_task_id(path))
+        except Exception:
+            pass
+
+    def gc_keep(self, keep):
+        try:
+            keep_set = set(keep) if keep is not None else set()
+        except Exception:
+            return
+        with self._load_lock:
+            for path in [p for p in list(self._gpu_data.keys()) if p not in keep_set]:
+                self._release_locked(path)
+            for path in [p for p in list(self._failed.keys()) if p not in keep_set]:
+                self._failed.pop(path, None)
+
+    def collect_garbage(self):
+        now = time.monotonic()
+        with self._load_lock:
+            idle = [p for p, t in self._last_used.items() if (now - t) > _GC_IDLE_S and p in self._gpu_data]
+            for path in idle:
+                self._release_locked(path)
+            if len(self._gpu_data) > _GC_MAX_PATHS:
+                ordered = sorted(self._last_used.items(), key=lambda kv: kv[1])
+                over = len(self._gpu_data) - _GC_MAX_PATHS
+                for path, _ in ordered[:max(0, over)]:
+                    if path in self._gpu_data:
+                        self._release_locked(path)
+            for path in [p for p, t in list(self._failed.items()) if (now - t) > (_SPLAT_FAIL_RETRY_S * 2.0)]:
+                self._failed.pop(path, None)
 
     def _pack_for_gpu(self, data) -> np.ndarray:
         return _pack_struct(data.positions, data.sh_coeffs[:, :3],
@@ -653,6 +748,10 @@ class GaussianSplatRenderer:
         gpu = self._gpu_data.get(path)
         if gpu is None or len(gpu) == 0:
             return 0, 0
+        try:
+            self._last_used[path] = time.monotonic()
+        except Exception:
+            pass
 
         n = len(gpu)
         model_f32 = np.ascontiguousarray(model_matrix.to_f32(), dtype=np.float32)
@@ -740,6 +839,7 @@ class GaussianSplatRenderer:
         self._radius.clear()
         self._sort_cache.clear()
         self._scratch.clear()
+        self._last_used.clear()
         self._idx_key = None
         self._uploaded_path = None
         self._uploaded_n = 0
