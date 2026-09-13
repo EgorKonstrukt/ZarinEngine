@@ -32,7 +32,12 @@ class PlayViewport(QOpenGLWidget):
         self._cursor_blank: bool = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(16)
+        self._apply_timer_config()
+        try:
+            from core.config.config import get_global_config
+            get_global_config().on_changed(self._on_config_changed)
+        except Exception:
+            pass
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)
@@ -42,6 +47,35 @@ class PlayViewport(QOpenGLWidget):
         fmt.setVersion(3, 3)
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         self.setFormat(fmt)
+
+    def _apply_timer_config(self):
+        try:
+            from core.config.config import get_global_config
+            cfg = get_global_config()
+            vsync = cfg.get("rendering.vsync", True)
+            tgt = cfg.get("rendering.target_fps", 60)
+            tgt = int(tgt) if tgt else 0
+            if not vsync and (tgt <= 0 or tgt == 60):
+                self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+                self._timer.setInterval(0)
+            else:
+                if tgt <= 0:
+                    tgt = 60
+                tgt = max(1, min(360, tgt))
+                self._timer.setTimerType(Qt.TimerType.PreciseTimer if not vsync else Qt.TimerType.CoarseTimer)
+                self._timer.setInterval(max(1, int(1000.0 / tgt)))
+            if not self._timer.isActive():
+                self._timer.start()
+        except Exception:
+            try:
+                if not self._timer.isActive():
+                    self._timer.start(16)
+            except Exception:
+                pass
+
+    def _on_config_changed(self, key: str, value):
+        if key in ("rendering.vsync", "rendering.target_fps"):
+            self._apply_timer_config()
 
     def _on_play_stop(self, _=None):
         if self._mouse_captured or self._cursor_blank:

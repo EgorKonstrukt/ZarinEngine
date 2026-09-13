@@ -201,6 +201,7 @@ _vram = (0.0, 0.0)
 _vram_t = 0.0
 _vram_busy = False
 _frame_metrics_cache: dict = {"key": None, "val": None}
+_gl_info_cache = ["", "", 0.0]
 
 
 def _refresh_vram_async():
@@ -291,16 +292,26 @@ def collect_render_stats(engine, renderer) -> dict:
     scene = getattr(engine, 'scene', None)
     if scene is not None:
         try:
-            st['entities'] = len(scene.get_all_entities())
+            _ents = getattr(scene, '_entities', None)
+            if _ents is not None:
+                st['entities'] = len(_ents)
+            else:
+                st['entities'] = len(scene.get_all_entities())
         except Exception:
             pass
     ctx = getattr(renderer, '_ctx', None)
-    st['gl_renderer'] = ''
-    st['gl_version'] = ''
-    if ctx is not None:
-        info = getattr(ctx, 'info', None) or {}
-        st['gl_renderer'] = str(info.get('GL_RENDERER', ''))
-        st['gl_version'] = str(info.get('GL_VERSION', ''))
+    st['gl_renderer'] = _gl_info_cache[0]
+    st['gl_version'] = _gl_info_cache[1]
+    if ctx is not None and (_gl_info_cache[2] == 0.0 or (time.time() - _gl_info_cache[2]) > 10.0):
+        try:
+            info = getattr(ctx, 'info', None) or {}
+            _gl_info_cache[0] = str(info.get('GL_RENDERER', ''))
+            _gl_info_cache[1] = str(info.get('GL_VERSION', ''))
+            _gl_info_cache[2] = time.time()
+            st['gl_renderer'] = _gl_info_cache[0]
+            st['gl_version'] = _gl_info_cache[1]
+        except Exception:
+            pass
     st['rt_rays_per_frame'] = getattr(renderer, '_rt_rays_per_frame', 0)
     st.update(collect_expensive_stats())
     return st

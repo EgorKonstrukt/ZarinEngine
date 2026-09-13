@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import copy
-import gc
 import math
 import os
 import time
@@ -214,7 +213,6 @@ class SceneViewport(QOpenGLWidget):
         self._overlay_canvas = None
         try:
             self._im = InputManager.instance()
-            self._im.start()
         except Exception:
             self._im = None
         self._focused: bool = False
@@ -262,18 +260,8 @@ class SceneViewport(QOpenGLWidget):
         self._last_status_update: float = 0.0
         self._cached_overlay_state: Optional[bool] = None
         self._last_overlay_update: float = 0.0
-        self._gc_timer = QTimer(self)
-        self._gc_timer.setTimerType(Qt.TimerType.CoarseTimer)
-        self._gc_timer.setInterval(2000)
-        self._gc_timer.timeout.connect(self._do_gc)
-        self._gc_timer.start()
-        self._gc_gen: int = 0
         self._frame_budget: float = 1.0 / 60.0
-        self._last_gc_time: float = time.perf_counter()
-        self._pace_timer = QTimer(self)
-        self._pace_timer.setSingleShot(True)
-        self._pace_timer.setTimerType(Qt.TimerType.PreciseTimer)
-        self._pace_timer.timeout.connect(self.update)
+        self._cursor_label_cache: tuple = ("", "", "")
         from editor.viewport.toolbar import setup_toolbar
         setup_toolbar(self)
         self._refresh_no_qt_overlay()
@@ -313,27 +301,13 @@ class SceneViewport(QOpenGLWidget):
         else:
             self._render_timer.setTimerType(Qt.TimerType.PreciseTimer)
             tgt = int(self._target_fps) if self._target_fps else 0
-            if tgt <= 0:
-                tgt = 60
-            tgt = max(1, min(360, tgt))
-            self._render_timer.setInterval(max(1, int(1000.0 / tgt)))
+            if tgt <= 0 or tgt == 60:
+                self._render_timer.setInterval(0)
+            else:
+                tgt = max(1, min(360, tgt))
+                self._render_timer.setInterval(max(1, int(1000.0 / tgt)))
             if self.isVisible():
                 self._render_timer.start()
-
-
-    def _do_gc(self):
-        try:
-            if gc.isenabled():
-                return
-            self._gc_gen = (self._gc_gen + 1) % 20
-            if self._gc_gen == 0:
-                gc.collect(2)
-            elif self._gc_gen % 5 == 0:
-                gc.collect(1)
-            else:
-                gc.collect(0)
-        except Exception:
-            pass
 
     def _on_overlay_config_changed(self, key: str, value):
         if key in ("rendering.vsync", "rendering.target_fps"):
@@ -655,15 +629,6 @@ class SceneViewport(QOpenGLWidget):
 
     def initializeGL(self):
         try:
-            try:
-                gc.disable()
-                gc.set_threshold(50000, 1000, 1000)
-                try:
-                    gc.freeze()
-                except Exception:
-                    pass
-            except Exception:
-                pass
             self._ctx = moderngl.create_context(standalone=False)
             try:
                 self._ctx.gc_mode = "context_gc"
@@ -871,25 +836,27 @@ class SceneViewport(QOpenGLWidget):
                     prof.start("gizmos")
                 _sel = list(self._selected_entities)
                 _gizmo_snapshot = None
+                _play = bool(getattr(eng, "play_mode", False))
                 _acquired = eng._scene_lock.acquire(blocking=False)
                 try:
                     if _acquired:
-                        if self._gizmo_visible:
-                            render_component_gizmos(self, vp_mat)
-                        render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
-                        if not eng.play_mode:
+                        if not _play:
+                            if self._gizmo_visible:
+                                render_component_gizmos(self, vp_mat)
+                            render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
                             try:
                                 if self._gizmo_icons_visible:
                                     render_component_icons_gl(self)
                             except Exception:
                                 pass
-                        self._render_api_gizmos()
-                        if not eng.play_mode:
+                            self._render_api_gizmos()
                             try:
                                 render_remote_collaborator_gizmos(self, vp_mat, cam_pos, fw, fh)
                             except Exception:
                                 pass
-                    else:
+                        else:
+                            self._render_api_gizmos()
+                    elif not _play:
                         if self._gizmo_visible:
                             render_component_gizmos(self, vp_mat)
                         render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
@@ -898,14 +865,16 @@ class SceneViewport(QOpenGLWidget):
                         eng._scene_lock.release()
                 if in_frame:
                     prof.stop("gizmos")
-                if self._debug_lines:
+                if self._debug_lines and not _play:
                     self._renderer.render_gizmo_lines(self._debug_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
                     self._debug_lines.clear()
-                if self._show_bvh_debug and not eng.play_mode:
+                elif _play and self._debug_lines:
+                    self._debug_lines.clear()
+                if self._show_bvh_debug and not _play:
                     self._render_bvh_debug()
-                if self._pb_scale_gizmo and self._pb_scale_gizmo.active and not eng.play_mode:
+                if self._pb_scale_gizmo and self._pb_scale_gizmo.active and not _play:
                     self._pb_scale_gizmo.render()
-                if self._gizmo.entity is not None and self._gizmo.mode != GizmoMode.NONE:
+                if not _play and self._gizmo.entity is not None and self._gizmo.mode != GizmoMode.NONE:
                     gizmo_result = self._gizmo.get_gizmo_arrays(self._cam, fw, fh)
                     if gizmo_result is not None:
                         gs, ge, gcol = gizmo_result
@@ -944,24 +913,7 @@ class SceneViewport(QOpenGLWidget):
         eng.set_profiler_data("paint_gap_ms", _paint_gap * 1000.0)
         if self.isVisible():
             if self._vsync_enabled:
-                if getattr(self, '_fps', 0.0) > (1.0 / getattr(self, '_frame_budget', 1.0/60.0) + 15.0):
-                    budget = getattr(self, '_frame_budget', 1.0 / 60.0)
-                    elapsed = time.perf_counter() - _p0
-                    remain = budget - elapsed
-                    if remain > 0.003:
-                        try:
-                            self._pace_timer.start(int(remain * 1000))
-                        except Exception:
-                            QTimer.singleShot(int(remain * 1000), self.update)
-                    elif remain > 0.0005:
-                        try:
-                            self._pace_timer.start(1)
-                        except Exception:
-                            QTimer.singleShot(1, self.update)
-                    else:
-                        self.update()
-                else:
-                    self.update()
+                self.update()
             elif self._render_timer.isActive():
                 pass
             else:
@@ -971,11 +923,13 @@ class SceneViewport(QOpenGLWidget):
         self.update()
 
     def _update_editor_particles(self, dt: float, selected: list = None):
+        if not selected:
+            return
         from core.components import ParticleSystem
         scene = self._engine.scene
         if not scene:
             return
-        selected_ids = {e.id for e in (selected or [])}
+        selected_ids = {e.id for e in selected}
         for ent in scene.get_entities_with_component(ParticleSystem):
             if not ent.active:
                 continue
@@ -1007,7 +961,10 @@ class SceneViewport(QOpenGLWidget):
             return
         self._last_status_update = now
         pos = self._cam.position
-        self._cam_pos_label.setText(f"Cam: {pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}")
+        _s = f"Cam: {pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}"
+        if getattr(self, "_cam_pos_cache", "") != _s:
+            self._cam_pos_label.setText(_s)
+            self._cam_pos_cache = _s
 
     def _forward_to_overlay(self, event):
         if self._overlay_canvas and not self._overlay_canvas.edit_mode:
@@ -1165,9 +1122,15 @@ class SceneViewport(QOpenGLWidget):
         send_collab_cursor(self, lx, ly)
         from editor.viewport.projection import screen_to_world
         world_pos = screen_to_world(self, lx, ly)
-        self._cursor_x_label.setText(f"X: {world_pos.x:.2f}")
-        self._cursor_y_label.setText(f"Y: {world_pos.y:.2f}")
-        self._cursor_z_label.setText(f"Z: {world_pos.z:.2f}")
+        _tx = f"X: {world_pos.x:.2f}"
+        _ty = f"Y: {world_pos.y:.2f}"
+        _tz = f"Z: {world_pos.z:.2f}"
+        _cached = getattr(self, "_cursor_label_cache", ("", "", ""))
+        if _cached != (_tx, _ty, _tz):
+            self._cursor_x_label.setText(_tx)
+            self._cursor_y_label.setText(_ty)
+            self._cursor_z_label.setText(_tz)
+            self._cursor_label_cache = (_tx, _ty, _tz)
         if self._area_selecting:
             self._area_end = (lx, ly)
             self.update()
