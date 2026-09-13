@@ -1205,16 +1205,20 @@ class SceneViewport(QOpenGLWidget):
                                 new_entities = [scene.get_entity(eid) for eid in cmd.spawned_ids]
                                 new_entities = [e for e in new_entities if e]
                                 if new_entities:
-                                    # Select extruded entities
                                     self._selected_entities = new_entities
                                     self._set_gizmo_entity(new_entities[0])
                                     self.entities_selected.emit(self._selected_entities)
-                                    # Notify collaboration
                                     try:
                                         from editor.viewport.collaboration import send_collab_selection, send_collab_entity_create
                                         send_collab_selection(self)
-                                        for ne in new_entities:
-                                            send_collab_entity_create(self, ne.serialize())
+                                        try:
+                                            _cc = self._engine.collab_manager
+                                            _conn = bool(_cc and _cc.connected)
+                                        except Exception:
+                                            _conn = False
+                                        if _conn:
+                                            for ne in new_entities:
+                                                send_collab_entity_create(self, ne.serialize())
                                     except Exception:
                                         pass
                     except Exception:
@@ -1703,11 +1707,9 @@ class SceneViewport(QOpenGLWidget):
                     stack.append((child, False))
         self._entity_clipboard = []
         for e, is_top in to_serialize:
-            data = copy.deepcopy(e.serialize())
+            data = e.serialize()
             if is_top:
                 data["parent"] = None
-            # Preserve LOCAL transforms for the subtree (skeleton pose must survive
-            # copy/paste verbatim); only the copied root keeps its world position.
             if is_top:
                 t = e.transform
                 if t:
@@ -1736,10 +1738,16 @@ class SceneViewport(QOpenGLWidget):
         self._selected_entities = top_entities
         self._set_gizmo_entity(top_entities[0] if top_entities else None)
         from editor.viewport.collaboration import send_collab_entity_create, send_collab_selection
-        for eid in cmd.spawned_ids:
-            e = self._engine.scene.get_entity(eid)
-            if e:
-                send_collab_entity_create(self, e.serialize())
+        try:
+            collab = self._engine.collab_manager
+            connected = bool(collab and collab.connected)
+        except Exception:
+            connected = False
+        if connected:
+            for eid in cmd.spawned_ids:
+                e = self._engine.scene.get_entity(eid)
+                if e:
+                    send_collab_entity_create(self, e.serialize())
         send_collab_selection(self)
         self.scene_modified.emit()
         self.entities_selected.emit(self._selected_entities)

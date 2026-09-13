@@ -691,17 +691,29 @@ class ComponentWidget(QWidget):
         if prop_name and prop_name in self._overridden_props:
             lbl.setStyleSheet("color: #e0a93b; font-weight: 600;")
         if prop_name and len(self._selected_entities) > 1:
-            vals = []
-            for e in self._selected_entities:
-                comp = e.get_component(type(self._component))
-                if comp is not None and hasattr(comp, prop_name):
-                    vals.append(getattr(comp, prop_name))
-            if len(vals) > 1 and any(v != vals[0] for v in vals[1:]):
-                base_tip = field_meta.description if field_meta is not None and field_meta.description else ""
-                lbl.setToolTip((base_tip + "\n" if base_tip else "") + "Mixed values across selection")
-                style = lbl.styleSheet() or ""
-                if prop_name not in self._overridden_props:
-                    lbl.setStyleSheet(style + " color: #7fb0ff;")
+            try:
+                first_seen = False
+                first_val = None
+                mixed = False
+                comp_type = type(self._component)
+                for e in self._selected_entities:
+                    comp = e.get_component(comp_type)
+                    if comp is not None and hasattr(comp, prop_name):
+                        cur = getattr(comp, prop_name)
+                        if not first_seen:
+                            first_val = cur
+                            first_seen = True
+                        elif cur != first_val:
+                            mixed = True
+                            break
+                if mixed:
+                    base_tip = field_meta.description if field_meta is not None and field_meta.description else ""
+                    lbl.setToolTip((base_tip + "\n" if base_tip else "") + "Mixed values across selection")
+                    style = lbl.styleSheet() or ""
+                    if prop_name not in self._overridden_props:
+                        lbl.setStyleSheet(style + " color: #7fb0ff;")
+            except Exception:
+                pass
         cell = self._make_field_cell(widget, prop_name, field_meta) if (prop_name or field_meta is not None) else None
         if label:
             target.addRow(lbl, cell if cell is not None else widget)

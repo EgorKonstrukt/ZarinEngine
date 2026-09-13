@@ -309,8 +309,15 @@ def _collab_on_redo(cmd):
         if eid and cmd._component_key:
             collab.send_component_remove(eid, cmd._component_key)
     elif isinstance(cmd, PasteEntitiesCommand):
-        for d in cmd._entity_datas:
-            collab.send_entity_create(d)
+        datas = getattr(cmd, "_entity_datas", None) or []
+        if datas:
+            for d in datas:
+                collab.send_entity_create(d)
+        else:
+            for eid in getattr(cmd, "_spawned_ids", []):
+                e = cmd._scene.get_entity(eid)
+                if e:
+                    collab.send_entity_create(e.serialize())
     elif isinstance(cmd, InstantiatePrefabCommand):
         for eid in cmd._spawned_ids:
             e = cmd._scene.get_entity(eid)

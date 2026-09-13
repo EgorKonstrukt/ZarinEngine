@@ -953,11 +953,9 @@ class HierarchyPanel(QDockWidget):
                     stack.append((child, False))
         clipboard = []
         for e, is_top in to_serialize:
-            data = copy.deepcopy(e.serialize())
+            data = e.serialize()
             if is_top:
                 data["parent"] = None
-            # Preserve LOCAL transforms for the subtree (skeleton pose must survive
-            # copy/paste verbatim); only the copied root keeps its world position.
             if is_top:
                 t = e.transform
                 if t:
@@ -1078,11 +1076,34 @@ class HierarchyPanel(QDockWidget):
     def set_selected_entities(self, entities: list):
         self._tree.blockSignals(True)
         self._tree.clearSelection()
-        for entity in entities:
-            if entity:
-                item = self._find_item(entity.id, self._tree.invisibleRootItem())
-                if item:
-                    item.setSelected(True)
+        if entities:
+            pending = set()
+            for entity in entities:
+                if entity is not None:
+                    try:
+                        pending.add(entity.id)
+                    except Exception:
+                        pass
+            if pending:
+                stack = [self._tree.invisibleRootItem()]
+                while stack and pending:
+                    parent = stack.pop()
+                    n = parent.childCount()
+                    for i in range(n):
+                        child = parent.child(i)
+                        try:
+                            eid = child.data(0, Qt.ItemDataRole.UserRole)
+                        except Exception:
+                            eid = None
+                        if eid and eid in pending:
+                            child.setSelected(True)
+                            pending.discard(eid)
+                            if not pending:
+                                break
+                        if child.childCount() > 0:
+                            stack.append(child)
+                    if not pending:
+                        break
         self._tree.blockSignals(False)
         if entities:
             self._selected_entity = entities[0]

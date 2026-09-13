@@ -1133,48 +1133,90 @@ class Scene:
         self._spatial_dirty = True
 
     def duplicate_entity(self, entity: Entity, new_name: str = "") -> Entity:
-        """Duplicate an entity together with its whole descendant subtree.
-
-        Skinned-mesh objects keep working after duplication: every entity id is
-        remapped (all new uuids) and each copied Armature component is rebound
-        to the copied bone entities instead of pointing at the source skeleton.
-        The copied root keeps the same local transform and same parent as the
-        source.
-        """
         if entity._scene is not self:
             entity = self.get_entity(entity.id) or entity
-        import copy as _copy
-
-        def walk(e: Entity) -> list:
-            data = _copy.deepcopy(e.serialize())
-            data["id"] = str(uuid.uuid4())
+        order = []
+        stack = [entity]
+        while stack:
+            cur = stack.pop()
+            order.append(cur)
+            try:
+                chs = list(cur._children)
+            except Exception:
+                chs = []
+            for ch in reversed(chs):
+                stack.append(ch)
+        nodes = []
+        id_map = {}
+        for src in order:
+            try:
+                data = src.serialize()
+            except Exception:
+                continue
+            nid = str(uuid.uuid4())
+            data["id"] = nid
             data["parent"] = None
-            nodes = [(e, data)]
-            for ch in list(e._children):
-                nodes.extend(walk(ch))
-            return nodes
-
-        nodes = walk(entity)
-        id_map = {src.id: data["id"] for src, data in nodes}
+            id_map[src._id] = nid
+            nodes.append((src, data))
         new_entities: list[Entity] = []
         for src, data in nodes:
-            data["parent"] = None
             new_e = Entity.deserialize(data, ComponentRegistry)
-            self.add_entity(new_e)
             new_entities.append(new_e)
-        roots = [new_entities[0]]
-        new_by_id = {src.id: e for (src, _), e in zip(nodes, new_entities)}
+        if not new_entities:
+            raise ValueError("duplicate failed")
+        idx = self._component_indices
+        auc = self._active_update_components
+        afc = self._active_fixed_components
+        ents = self._entities
+        dirty_roots = self._dirty_roots
+        sde = self._spatial_dirty_entities
+        ske = self._spatial_known_entities
+        for new_e in new_entities:
+            new_e._scene = self
+            eid = new_e._id
+            ents[eid] = new_e
+            is_active = new_e._active
+            for comp_type, clist in new_e._type_map.items():
+                comp_name = comp_type.__name__
+                s = idx.get(comp_name)
+                if s is None:
+                    idx[comp_name] = {eid}
+                else:
+                    s.add(eid)
+                if is_active:
+                    for comp in clist:
+                        if comp.enabled:
+                            if comp._updates:
+                                auc.add(comp)
+                            if comp._fixed_updates:
+                                afc.add(comp)
+            t = new_e._transform
+            if t is not None and getattr(t, "_dirty", False):
+                dirty_roots.add(t)
+            sde.add(eid)
+            ske.discard(eid)
+        new_by_id = {src._id: e for (src, _), e in zip(nodes, new_entities)}
         for (src, _data), new_e in zip(nodes, new_entities):
-            if src.parent is None:
+            sp = src._parent
+            if sp is None:
                 continue
-            if src.parent.id in new_by_id:
-                new_e.set_parent(new_by_id[src.parent.id], preserve_world=False)
+            if sp._id in new_by_id:
+                np_ = new_by_id[sp._id]
+                new_e._parent = np_
+                np_._children.append(new_e)
             else:
-                new_e.set_parent(src.parent, preserve_world=False)
+                new_e._parent = sp
+                sp._children.append(new_e)
+        self._invalidate_update_cache()
+        self._dirty = True
+        self._render_version += 1
+        self._entities_cache_valid = False
+        self._roots_cache_valid = False
+        self._spatial_dirty = True
         self._rebind_armatures(new_entities, id_map)
         if new_name:
-            roots[0].name = new_name
-        return roots[0]
+            new_entities[0].name = new_name
+        return new_entities[0]
 
     def _rebind_armatures(self, entities: list, id_map: dict) -> None:
         """Point every copied Armature's bone_entity_ids at the freshly created bone entities."""
@@ -1184,34 +1226,69 @@ class Scene:
                 arm.bone_entity_ids = [id_map.get(bid, bid) for bid in arm.bone_entity_ids]
 
     def paste_entities(self, clipboard_data: list, registry) -> list:
-        """Deserialize serialized entities (a copied subtree) into this scene.
-
-        Remaps every entity id to a fresh uuid, restores inner parent links,
-        and rebinds Armature components to the pasted bone entities so skinned
-        meshes keep working instead of being tied to the source skeleton.
-        Returns the list of spawned entity objects.
-        """
-        import copy as _copy
         id_map: dict = {}
         spawned: list = []
         for data in clipboard_data:
-            d = _copy.deepcopy(data)
-            old_id = d["id"]
+            old_id = data.get("id")
+            if not old_id:
+                continue
             new_id = str(uuid.uuid4())
-            d["id"] = new_id
             id_map[old_id] = new_id
+            d = dict(data)
+            d["id"] = new_id
             e = Entity.deserialize(d, registry)
-            self.add_entity(e)
             spawned.append(e)
-        all_by_id = {e.id: e for e in spawned}
+        if not spawned:
+            return spawned
+        idx = self._component_indices
+        auc = self._active_update_components
+        afc = self._active_fixed_components
+        ents = self._entities
+        dirty_roots = self._dirty_roots
+        sde = self._spatial_dirty_entities
+        ske = self._spatial_known_entities
+        for e in spawned:
+            e._scene = self
+            eid = e._id
+            ents[eid] = e
+            is_active = e._active
+            for comp_type, clist in e._type_map.items():
+                comp_name = comp_type.__name__
+                s = idx.get(comp_name)
+                if s is None:
+                    idx[comp_name] = {eid}
+                else:
+                    s.add(eid)
+                if is_active:
+                    for comp in clist:
+                        if comp.enabled:
+                            if comp._updates:
+                                auc.add(comp)
+                            if comp._fixed_updates:
+                                afc.add(comp)
+            t = e._transform
+            if t is not None and getattr(t, "_dirty", False):
+                dirty_roots.add(t)
+            sde.add(eid)
+            ske.discard(eid)
+        all_by_id = {e._id: e for e in spawned}
+        need_roots_fix = False
         for data in clipboard_data:
             parent_id = data.get("parent")
             if not parent_id or parent_id not in id_map:
                 continue
             child = all_by_id.get(id_map[data["id"]])
             new_parent = all_by_id.get(id_map[parent_id])
-            if child and new_parent:
-                child.set_parent(new_parent, preserve_world=False)
+            if child is not None and new_parent is not None:
+                child._parent = new_parent
+                new_parent._children.append(child)
+                need_roots_fix = True
+        self._invalidate_update_cache()
+        self._dirty = True
+        self._render_version += 1
+        self._entities_cache_valid = False
+        self._roots_cache_valid = False
+        self._spatial_dirty = True
         self._rebind_armatures(spawned, id_map)
         return spawned
 

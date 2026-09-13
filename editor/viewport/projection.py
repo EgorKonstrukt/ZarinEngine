@@ -66,11 +66,18 @@ def screen_to_world(vp, screen_x: int, screen_y: int) -> Vec3:
 
 def world_to_screen(vp, world_pos: Vec3):
     w, h = vp.width(), vp.height()
-    aspect = w / max(1, h)
+    if w <= 0 or h <= 0:
+        return None
+    try:
+        fw, fh = vp._get_physical_dims()
+        rw, rh = vp._cam.compute_render_size(int(fw), int(fh))
+        aspect = float(rw) / max(1.0, float(rh))
+    except Exception:
+        aspect = w / max(1, h)
     view = vp._cam.get_view_matrix()
     proj = vp._cam.get_projection_matrix(aspect)
     vp_mat = view * proj
-    clip = vp_mat._d @ np.array([world_pos.x, world_pos.y, world_pos.z, 1.0])
+    clip = np.array([world_pos.x, world_pos.y, world_pos.z, 1.0]) @ vp_mat._d
     if abs(clip[3]) < 1e-6:
         return None
     ndc = clip[:3] / clip[3]
@@ -83,7 +90,11 @@ def world_to_screen(vp, world_pos: Vec3):
 
 def screen_to_ray(vp, sx: int, sy: int) -> tuple[Vec3, Vec3]:
     pw, ph = vp._get_physical_dims()
-    aspect = pw / max(1, ph)
+    try:
+        rw, rh = vp._cam.compute_render_size(int(pw), int(ph))
+        aspect = float(rw) / max(1.0, float(rh))
+    except Exception:
+        aspect = pw / max(1, ph)
     dpr = vp.devicePixelRatio()
     fx = sx * dpr
     fy = sy * dpr

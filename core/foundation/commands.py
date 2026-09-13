@@ -341,7 +341,6 @@ class PasteEntitiesCommand(Command):
         self._entity_id = None
         for e in self._scene.paste_entities(self._clipboard_data, self._registry):
             self._spawned_ids.append(e.id)
-            self._entity_datas.append(e.serialize())
         if self._spawned_ids:
             self._entity_id = self._spawned_ids[0]
     def undo(self):
