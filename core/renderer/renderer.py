@@ -2664,6 +2664,11 @@ out vec4 frag_color;
         if prof:
             prof.start("render_meshes")
         outline_queue: list[tuple[MeshData, Mat4]] = []
+        try:
+            if selected_entities is not None and len(selected_entities) > 256:
+                selected_entities = frozenset()
+        except Exception:
+            pass
         fx_renderable = [e for e in renderable if len(e) > 6 and e[6]]
         if fx_renderable:
             self._render_object_effects(fx_renderable, view_f32, proj_f32, cam_pos, lights, selected_entities, outline_queue)
@@ -3292,7 +3297,7 @@ out vec4 frag_color;
             self._particle_count = 0
         if prof:
             prof.stop("render_particles")
-        if outline_queue and self._outline_prog:
+        if outline_queue and self._outline_prog and len(outline_queue) <= 512:
             if prof:
                 prof.start("render_outlines")
             old_depth_mask = self._ctx.depth_mask

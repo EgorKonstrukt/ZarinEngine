@@ -311,6 +311,11 @@ class RenderBatcher:
                       selected_entities: set, outline_queue: list,
                       gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None):
         self.reset_stats()
+        try:
+            if selected_entities is not None and len(selected_entities) > 256:
+                selected_entities = frozenset()
+        except Exception:
+            pass
         scene_done = set()
         frustum_planes = self._get_frustum_planes(view_f32, proj_f32)
         for key, group in groups.items():

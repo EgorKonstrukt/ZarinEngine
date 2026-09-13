@@ -90,6 +90,257 @@ def _render_corner_spheres_np(vp, vp_mat, corners, radius, color):
     vp._renderer.render_gizmo_mesh_np(v_data, np.asarray(all_idx, dtype=np.uint32), vp_mat)
 
 
+def _fast_aggregate_bounds(vp, entities):
+    try:
+        from editor.viewport.picking import _get_mesh_for
+    except Exception:
+        _get_mesh_for = None
+    try:
+        from core import _raycast as _rc
+    except Exception:
+        _rc = None
+    n_in = len(entities)
+    if n_in == 0:
+        return None, None
+    meshes = None
+    prefix_map = None
+    cube_mesh = None
+    try:
+        from core.engine.engine import Engine
+        eng = Engine.instance()
+        renderer = getattr(eng, "_renderer", None)
+        if renderer is None:
+            vpe = getattr(eng, "viewport", None)
+            if vpe is not None:
+                renderer = getattr(vpe, "_renderer", None)
+        if renderer is not None:
+            meshes = getattr(renderer, "_meshes", None)
+    except Exception:
+        meshes = None
+    if meshes:
+        try:
+            prefix_map = {}
+            for mk in meshes.keys():
+                base = mk.split("|", 1)[0]
+                if base not in prefix_map:
+                    prefix_map[base] = mk
+            cube_mesh = meshes.get("cube")
+        except Exception:
+            prefix_map = None
+    cache = getattr(vp, "_sel_mesh_cache", None)
+    if cache is None:
+        cache = {}
+        vp._sel_mesh_cache = cache
+    if len(cache) > 30000:
+        cache.clear()
+    filt_wm = []
+    filt_scale = []
+    batch_lmin = []
+    batch_lmax = []
+    batch_wm = []
+    batch_pos = []
+    fall_idx = []
+    fall_min = []
+    fall_max = []
+    for entity in entities:
+        if entity is None:
+            continue
+        try:
+            comps = entity._components
+        except Exception:
+            continue
+        skip = False
+        try:
+            for k in comps.keys():
+                if k == "Bone" or k.startswith("Bone."):
+                    skip = True
+                    break
+        except Exception:
+            pass
+        if skip:
+            continue
+        t = getattr(entity, "_transform", None)
+        if t is None:
+            try:
+                t = entity.transform
+            except Exception:
+                continue
+            if t is None:
+                continue
+        try:
+            wm = t._world_matrix._d
+            if getattr(t, "_dirty", False):
+                wm = t.world_matrix._d
+        except Exception:
+            try:
+                wm = t.world_matrix._d
+            except Exception:
+                continue
+        eid = getattr(entity, "_id", None) or getattr(entity, "id", None)
+        lmin = None
+        lmax = None
+        resolved = False
+        try:
+            mf = comps.get("MeshFilter")
+            mr = comps.get("MeshRenderer")
+            smr = comps.get("SkinnedMeshRenderer")
+            use_mf = mf is not None and mr is not None and getattr(mr, "_enabled", True)
+            use_smr = False
+            if not use_mf:
+                if smr is not None and getattr(smr, "_enabled", True):
+                    use_smr = True
+            if use_mf or use_smr:
+                src = mf if use_mf else smr
+                try:
+                    mname = getattr(src, "mesh_name", None) or "cube"
+                except Exception:
+                    mname = "cube"
+                try:
+                    mpath = getattr(src, "mesh_path", None) or ""
+                except Exception:
+                    mpath = ""
+                cached = cache.get(eid) if eid is not None else None
+                if cached is not None and cached[0] == mname and cached[1] == mpath and cached[4]:
+                    lmin = cached[2]
+                    lmax = cached[3]
+                    resolved = True
+                elif meshes is not None:
+                    mesh_obj = meshes.get(mname)
+                    if mesh_obj is None and mpath:
+                        mesh_obj = meshes.get(mpath)
+                    if mesh_obj is None and prefix_map is not None and mname and mname != "cube":
+                        pk = prefix_map.get(mname)
+                        if pk is not None:
+                            mesh_obj = meshes.get(pk)
+                    if mesh_obj is None and mpath and prefix_map is not None:
+                        pk = prefix_map.get(mpath)
+                        if pk is not None:
+                            mesh_obj = meshes.get(pk)
+                    if mesh_obj is None:
+                        mesh_obj = cube_mesh
+                    if mesh_obj is not None:
+                        try:
+                            lmin = mesh_obj.aabb_min
+                            lmax = mesh_obj.aabb_max
+                            lmin = (float(lmin[0]), float(lmin[1]), float(lmin[2]))
+                            lmax = (float(lmax[0]), float(lmax[1]), float(lmax[2]))
+                            resolved = True
+                        except Exception:
+                            lmin = None
+                            lmax = None
+                            resolved = False
+                    if eid is not None:
+                        try:
+                            cache[eid] = (mname, mpath, lmin, lmax, bool(resolved))
+                        except Exception:
+                            pass
+            if not resolved:
+                spr = comps.get("SpriteRenderer")
+                if spr is not None and getattr(spr, "_enabled", True) and getattr(spr, "texture_path", None):
+                    lmin = (-0.5, -0.5, 0.0)
+                    lmax = (0.5, 0.5, 0.0)
+                    resolved = True
+                else:
+                    vr = comps.get("VideoRenderer")
+                    if vr is not None and getattr(vr, "_enabled", True) and getattr(vr, "video_path", None):
+                        lmin = (-0.5, -0.5, 0.0)
+                        lmax = (0.5, 0.5, 0.0)
+                        resolved = True
+        except Exception:
+            resolved = False
+            lmin = None
+        if resolved and lmin is not None and lmax is not None:
+            batch_lmin.append(lmin)
+            batch_lmax.append(lmax)
+            batch_wm.append(wm)
+            batch_pos.append(len(filt_wm) + len(fall_idx) + len(batch_lmin) - 1)
+        else:
+            try:
+                px = float(wm[3, 0])
+                py = float(wm[3, 1])
+                pz = float(wm[3, 2])
+            except Exception:
+                continue
+            try:
+                ls = t._local_scale
+                hx = abs(float(ls.x)) * 0.5
+                hy = abs(float(ls.y)) * 0.5
+                hz = abs(float(ls.z)) * 0.5
+                half = hx
+                if hy > half:
+                    half = hy
+                if hz > half:
+                    half = hz
+                if half < 0.5:
+                    half = 0.5
+            except Exception:
+                half = 0.5
+                try:
+                    px = float(wm[3, 0])
+                    py = float(wm[3, 1])
+                    pz = float(wm[3, 2])
+                except Exception:
+                    continue
+            fall_idx.append(len(filt_wm) + len(batch_lmin) + len(fall_min))
+            fall_min.append((px - half, py - half, pz - half))
+            fall_max.append((px + half, py + half, pz + half))
+    n_batch = len(batch_lmin)
+    n_fall = len(fall_min)
+    n_total = n_batch + n_fall
+    if n_total == 0:
+        return None, None
+    wmins = np.empty((n_total, 3), dtype=np.float64)
+    wmaxs = np.empty((n_total, 3), dtype=np.float64)
+    if n_fall:
+        wmins[n_batch:, 0] = [v[0] for v in fall_min]
+        wmins[n_batch:, 1] = [v[1] for v in fall_min]
+        wmins[n_batch:, 2] = [v[2] for v in fall_min]
+        wmaxs[n_batch:, 0] = [v[0] for v in fall_max]
+        wmaxs[n_batch:, 1] = [v[1] for v in fall_max]
+        wmaxs[n_batch:, 2] = [v[2] for v in fall_max]
+    if n_batch:
+        try:
+            bm = np.array(batch_lmin, dtype=np.float64)
+            bx = np.array(batch_lmax, dtype=np.float64)
+            mw = np.array(batch_wm, dtype=np.float64)
+            if _rc is not None:
+                rmn, rmx = _rc.world_aabbs(bm, bx, mw)
+                wmins[:n_batch] = rmn
+                wmaxs[:n_batch] = rmx
+            else:
+                for k in range(n_batch):
+                    corners = np.array([
+                        [bm[k, 0], bm[k, 1], bm[k, 2], 1.0],
+                        [bx[k, 0], bm[k, 1], bm[k, 2], 1.0],
+                        [bm[k, 0], bx[k, 1], bm[k, 2], 1.0],
+                        [bm[k, 0], bm[k, 1], bx[k, 2], 1.0],
+                        [bx[k, 0], bx[k, 1], bm[k, 2], 1.0],
+                        [bx[k, 0], bm[k, 1], bx[k, 2], 1.0],
+                        [bm[k, 0], bx[k, 1], bx[k, 2], 1.0],
+                        [bx[k, 0], bx[k, 1], bx[k, 2], 1.0],
+                    ], dtype=np.float64) @ mw[k]
+                    wmins[k] = corners[:, :3].min(axis=0)
+                    wmaxs[k] = corners[:, :3].max(axis=0)
+        except Exception:
+            for k in range(n_batch):
+                try:
+                    wm = batch_wm[k]
+                    px = float(wm[3, 0])
+                    py = float(wm[3, 1])
+                    pz = float(wm[3, 2])
+                    wmins[k, 0] = px - 0.5
+                    wmins[k, 1] = py - 0.5
+                    wmins[k, 2] = pz - 0.5
+                    wmaxs[k, 0] = px + 0.5
+                    wmaxs[k, 1] = py + 0.5
+                    wmaxs[k, 2] = pz + 0.5
+                except Exception:
+                    continue
+    bmin = wmins.min(axis=0)
+    bmax = wmaxs.max(axis=0)
+    return bmin, bmax
+
+
 def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state, fw: int = None, fh: int = None, cam_pos=None):
     from core.components.transform import Transform
     from core.components.rendering.renderers.mesh_filter import MeshFilter
@@ -100,6 +351,94 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state, fw: in
     from editor.viewport.picking import _get_mesh_for
     bmin_t = None
     bmax_t = None
+    try:
+        _n_sel = len(entities) if entities is not None else 0
+    except Exception:
+        _n_sel = 0
+    if _n_sel > 200:
+        try:
+            _scene = vp._engine.scene if vp._engine else None
+            _rv = getattr(_scene, "_render_version", 0) if _scene is not None else 0
+            _tv = getattr(_scene, "_transform_version", 0) if _scene is not None else 0
+            _ckey = (id(entities), _n_sel, _rv, _tv, id(_scene))
+            _cached = getattr(vp, "_sel_agg_cache", None)
+            if _cached is not None and _cached[0] == _ckey:
+                bmin_t = _cached[1]
+                bmax_t = _cached[2]
+            else:
+                bmin_t, bmax_t = _fast_aggregate_bounds(vp, entities)
+                try:
+                    vp._sel_agg_cache = (_ckey, bmin_t.copy() if bmin_t is not None else None, bmax_t.copy() if bmax_t is not None else None)
+                except Exception:
+                    pass
+        except Exception:
+            bmin_t = None
+            bmax_t = None
+        if bmin_t is None or bmax_t is None:
+            if state is None:
+                return
+            if len(state) < 3:
+                state.append(0.0)
+            cur_min, cur_max, alpha = state[0], state[1], state[2]
+            if cur_min is None:
+                return
+        else:
+            if state is None:
+                return
+            if len(state) < 3:
+                state.append(0.0)
+            cur_min, cur_max, alpha = state[0], state[1], state[2]
+            from core.config.config import get_global_config as _ggc
+            _cfg = _ggc()
+            _speed = _cfg.get("gizmo.selection_bounds_speed", 8.0)
+            _fade_speed = _cfg.get("gizmo.selection_bounds_fade_speed", 4.0)
+            _factor = 1.0 - np.exp(-_speed * dt) if dt > 0.0 else 1.0
+            _fade_factor = 1.0 - np.exp(-_fade_speed * dt) if dt > 0.0 else 1.0
+            if cur_min is None:
+                center = (bmin_t + bmax_t) * 0.5
+                cur_min = center.copy()
+                cur_max = center.copy()
+                state[0] = cur_min
+                state[1] = cur_max
+                alpha = 0.0
+            else:
+                np.add(cur_min, (bmin_t - cur_min) * _factor, out=cur_min)
+                np.add(cur_max, (bmax_t - cur_max) * _factor, out=cur_max)
+                alpha = min(1.0, alpha + _fade_factor)
+            state[0], state[1], state[2] = cur_min, cur_max, alpha
+            if cam_pos is None:
+                cam_pos = vp._cam.position if vp._cam else Vec3(0, 0, 0)
+            if fw is None or fh is None:
+                fw, fh = vp._get_physical_dims()
+            starts, ends = _box_edges_np(cur_min, cur_max)
+            n_edges = starts.shape[0]
+            colors_arr = np.empty((n_edges, 4), dtype=np.float32)
+            colors_arr[:, 0] = color[0]; colors_arr[:, 1] = color[1]
+            colors_arr[:, 2] = color[2]; colors_arr[:, 3] = color[3]
+            dash_opts = {'dash_length': 0.3, 'gap_length': 0.15, 'time': time_s * 1.5}
+            vp._renderer.render_gizmo_arrays(starts, ends, colors_arr, vp_mat, fw, fh, thickness_multiplier=1.5, dash_opts=dash_opts)
+            cx = float(cur_min[0]); cy = float(cur_min[1]); cz = float(cur_min[2])
+            dx = float(cur_max[0]); dy = float(cur_max[1]); dz = float(cur_max[2])
+            verts_3d = [
+                Vec3(cx, cy, cz), Vec3(dx, cy, cz), Vec3(dx, dy, cz), Vec3(cx, dy, cz),
+                Vec3(cx, cy, dz), Vec3(dx, cy, dz), Vec3(dx, dy, dz), Vec3(cx, dy, dz),
+            ]
+            center = Vec3((cx + dx) * 0.5, (cy + dy) * 0.5, (cz + dz) * 0.5)
+            dist = (center - cam_pos).length()
+            fov_rad = math.radians(vp._cam.fov) if vp._cam else 1.0
+            pixel_r = 6
+            world_r = pixel_r * 2.0 * dist * math.tan(fov_rad * 0.5) / fh if fh > 0 else 0.05
+            world_r = max(world_r, 0.01)
+            if alpha < 1.0:
+                faded = list(color)
+                if len(faded) > 3:
+                    faded[3] = faded[3] * alpha
+                else:
+                    faded.append(alpha)
+                _render_corner_spheres_np(vp, vp_mat, verts_3d, world_r, faded)
+            else:
+                _render_corner_spheres_np(vp, vp_mat, verts_3d, world_r, color)
+            return
     _corner_buf = np.empty((8, 4), dtype=np.float32)
     _corner_buf[:, 3] = 1.0
     for entity in entities:

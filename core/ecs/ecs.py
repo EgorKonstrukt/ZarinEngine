@@ -860,6 +860,7 @@ class Scene:
         self._update_others_cache: list[Component] = []
         self._update_partition_valid: bool = False
         self._dirty_roots: set = set()
+        self._transform_version: int = 0
         self._depth_cache: dict[str, int] = {}
         self._component_entity_frame_cache: dict = {}
         self._spatial: Octree = Octree(world_size=1000.0)

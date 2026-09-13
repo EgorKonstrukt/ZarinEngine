@@ -46,6 +46,10 @@ class Transform(Component):
                 scene._dirty_roots.add(self)
                 scene._spatial_dirty_entities.add(ent._id)
                 scene._spatial_dirty = True
+                try:
+                    scene._transform_version += 1
+                except Exception:
+                    pass
             children = ent._children
             for child in children:
                 tt = child._transform_type
@@ -192,6 +196,13 @@ class Transform(Component):
         self._world_target = Mat4(m._d.copy()) if isinstance(m, Mat4) else Mat4(m)
         self._dirty = True
         self._physics_dirty = True
+        try:
+            ent = self._entity
+            scene = ent._scene if ent is not None else None
+            if scene is not None:
+                scene._transform_version += 1
+        except Exception:
+            pass
     @property
     def forward(self) -> Vec3:
         self._update_world_matrix()
