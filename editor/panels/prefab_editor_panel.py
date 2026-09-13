@@ -29,7 +29,9 @@ class PrefabViewport(QOpenGLWidget):
         self._screen_fbo = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(16)
+        self._timer.setInterval(16)
+        if self.isVisible():
+            self._timer.start()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         fmt = QSurfaceFormat()
         fmt.setDepthBufferSize(24)
@@ -44,7 +46,19 @@ class PrefabViewport(QOpenGLWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        try:
+            if not self._timer.isActive():
+                self._timer.start(16)
+        except Exception:
+            pass
         self.update()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        try:
+            self._timer.stop()
+        except Exception:
+            pass
 
     def initializeGL(self):
         try:
@@ -105,8 +119,17 @@ class PrefabViewport(QOpenGLWidget):
             Logger.error(f"PrefabViewport render error: {e}", e)
 
     def _tick(self):
-        if self.isVisible():
-            self.update()
+        if not self.isVisible():
+            return
+        try:
+            pnl = self.parent()
+            while pnl and not hasattr(pnl, '_edit_scene'):
+                pnl = pnl.parent()
+            if not pnl or not pnl._edit_scene:
+                return
+        except Exception:
+            return
+        self.update()
 
     def keyPressEvent(self, event: QKeyEvent):
         event.ignore()

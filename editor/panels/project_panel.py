@@ -1331,6 +1331,8 @@ class ProjectPanel(QDockWidget):
         self._pane_a.populate_files(self._project_root)
 
     def _refresh_vcs_status(self):
+        if not self.isVisible():
+            return
         if self._vcs_refreshing:
             self._vcs_pending = True
             return

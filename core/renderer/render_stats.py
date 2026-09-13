@@ -529,12 +529,15 @@ def draw_frame_chart(painter, ft_list, x: int, y: int, w: int) -> int:
     painter.drawRect(chart_rect)
     n_bars = min(len(ft_list), chart_rect.width() - 4)
     if n_bars > 1:
-        bar_w = (chart_rect.width() - 4) / n_bars
+        stride = max(1, (n_bars + 119) // 120)
+        n_draw = (n_bars + stride - 1) // stride
+        bar_w = (chart_rect.width() - 4) / n_draw
         max_ft = max(max(ft_list[-n_bars:]) * 1.1, 16.0)
-        for bi in range(n_bars):
+        di = 0
+        for bi in range(0, n_bars, stride):
             ft_val = ft_list[-n_bars + bi]
             bh = max(1, int((ft_val / max_ft) * (chart_h - 4)))
-            bar_x = chart_rect.x() + 2 + int(bar_w * bi)
+            bar_x = chart_rect.x() + 2 + int(bar_w * di)
             bar_y = chart_rect.bottom() - 2 - bh
             if ft_val > 33.0:
                 color = QColor(255, 80, 80, 180)
@@ -545,6 +548,7 @@ def draw_frame_chart(painter, ft_list, x: int, y: int, w: int) -> int:
             painter.setBrush(QBrush(color))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRect(QRect(int(bar_x), bar_y, max(1, int(bar_w)), bh))
+            di += 1
         painter.setPen(QPen(QColor(255, 255, 255, 40), 1))
         ref_y = chart_rect.bottom() - 2 - int((16.0 / max_ft) * (chart_h - 4))
         if ref_y > chart_rect.y() + 2:

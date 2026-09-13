@@ -1456,7 +1456,19 @@ class VcsPanel(QDockWidget):
                   self._stash_list, self._remote_widget]:
             w.setEnabled(enabled)
 
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if not self._watch_timer.isActive():
+            self._watch_timer.start(self._watch_interval)
+        self._on_timer()
+
+    def hideEvent(self, ev):
+        super().hideEvent(ev)
+        self._watch_timer.stop()
+
     def _on_timer(self):
+        if not self.isVisible():
+            return
         eng = None
         try:
             from core.engine.engine import Engine

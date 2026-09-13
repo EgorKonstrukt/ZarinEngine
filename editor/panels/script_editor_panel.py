@@ -1592,6 +1592,10 @@ class _ScriptEditorWidget(QWidget):
 
         self._git = _Git()
         self._git_available = False
+        self._vcs_last_project = ""
+        self._vcs_last_file = ""
+        self._vcs_cached_branch = ""
+        self._vcs_branch_time = 0.0
         self._vcs_refresh_timer = QTimer(self)
         self._vcs_refresh_timer.timeout.connect(self._vcs_timer_tick)
         self._vcs_refresh_timer.start(3000)
@@ -1616,6 +1620,8 @@ class _ScriptEditorWidget(QWidget):
         self._update_vcs_statusbar()
 
     def _vcs_timer_tick(self):
+        if not self.isVisible():
+            return
         eng = None
         try:
             from core.engine.engine import Engine
@@ -1625,10 +1631,17 @@ class _ScriptEditorWidget(QWidget):
         if eng:
             project_path = getattr(eng, "_project_path", "") or ""
             if project_path:
-                self._git_available = self._git.detect(project_path)
+                if project_path != self._vcs_last_project:
+                    self._vcs_last_project = project_path
+                    self._git_available = self._git.detect(project_path)
+                    self._vcs_last_file = ""
+                    self._vcs_branch_time = 0.0
                 tab = self._current_tab()
-                if tab and tab._file_path and self._git_available:
-                    tab._editor.vcs_refresh()
+                file_path = tab._file_path if tab and tab._file_path else ""
+                if file_path != self._vcs_last_file:
+                    self._vcs_last_file = file_path
+                    if tab and file_path and self._git_available:
+                        tab._editor.vcs_refresh()
                 self._update_vcs_statusbar()
 
     def _setup_ui(self):
@@ -2306,12 +2319,14 @@ class _ScriptEditorWidget(QWidget):
             self._file_label.setText("  Untitled Script")
 
     def _update_vcs_statusbar(self):
+        import time as _time
         branch = ""
         status = ""
         if self._git_available and self._git.repo_root:
-            branch = self._git.current_branch()
-            if not branch:
-                branch = ""
+            if _time.perf_counter() - self._vcs_branch_time > 30.0 or not self._vcs_cached_branch:
+                self._vcs_cached_branch = self._git.current_branch() or ""
+                self._vcs_branch_time = _time.perf_counter()
+            branch = self._vcs_cached_branch
 
             tab = self._current_tab()
             if isinstance(tab, _ScriptTab):

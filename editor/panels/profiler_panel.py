@@ -612,19 +612,25 @@ class ProfilerPanel(QDockWidget):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
         self._timer.start(200)
-        prof = getattr(engine, '_profiler', None)
-        if prof:
-            prof.capture_frames = True
+        if self.isVisible():
+            prof = getattr(engine, '_profiler', None)
+            if prof:
+                prof.capture_frames = True
+        else:
+            self._timer.stop()
     def showEvent(self, ev):
         super().showEvent(ev)
         prof = getattr(self._engine, '_profiler', None)
         if prof:
             prof.capture_frames = True
+        if not self._timer.isActive():
+            self._timer.start()
     def hideEvent(self, ev):
         super().hideEvent(ev)
         prof = getattr(self._engine, '_profiler', None)
         if prof:
             prof.capture_frames = False
+        self._timer.stop()
     def load_config(self, config) -> None:
         refresh_interval = config.get("profiler.refresh_interval", 200)
         self._timer.setInterval(refresh_interval)
@@ -675,6 +681,8 @@ class ProfilerPanel(QDockWidget):
                     return len(recent) / (total_ms / 1000.0)
         return 0.0
     def _refresh(self):
+        if not self.isVisible():
+            return
         eng = self._engine
         fps = self._get_fps()
         prof = eng._profiler if hasattr(eng, '_profiler') else None

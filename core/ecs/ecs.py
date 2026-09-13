@@ -36,6 +36,24 @@ _GIZMO_PASS_ORDER: list[str] = ["collider", "particle", "force_field", "camera",
 
 _TRANSFORM_NAME = "Transform"
 
+_SUBCLASS_CACHE: dict = {}
+_SUBCLASS_CACHE_VERSION: int = 0
+
+
+def _subclass_names(key: str, cls) -> list:
+    cached = _SUBCLASS_CACHE.get(key)
+    if cached is not None and cached[0] == _SUBCLASS_CACHE_VERSION:
+        return cached[1]
+    found: list = []
+    try:
+        for reg_name, reg_cls in ComponentRegistry._registry.items():
+            if reg_name != key and issubclass(reg_cls, cls):
+                found.append(reg_name)
+    except Exception:
+        found = []
+    _SUBCLASS_CACHE[key] = (_SUBCLASS_CACHE_VERSION, found)
+    return found
+
 def _get_engine():
     try:
         from core.engine.engine import Engine
@@ -778,8 +796,10 @@ class ComponentRegistry:
 
     @classmethod
     def register(cls, comp_cls: Type[Component]):
+        global _SUBCLASS_CACHE_VERSION
         name = comp_cls.__name__
         cls._registry[name] = comp_cls
+        _SUBCLASS_CACHE_VERSION += 1
         category = cls._infer_category(comp_cls)
         if category:
             cls._categories[name] = [category]
@@ -1217,13 +1237,7 @@ class Scene:
         key = cls.__name__
         if _HAS_FAST_QUERY:
             exact = _fast_get(self._component_indices, self._entities, key, self._render_version, self._component_entity_frame_cache)
-            sub_names: list[str] = []
-            try:
-                for reg_name, reg_cls in ComponentRegistry._registry.items():
-                    if reg_name != key and issubclass(reg_cls, cls):
-                        sub_names.append(reg_name)
-            except Exception:
-                sub_names = []
+            sub_names = _subclass_names(key, cls)
             if not sub_names:
                 return exact
             seen: set[str] = set()
@@ -1244,14 +1258,10 @@ class Scene:
             return merged
         s = self._component_indices.get(key)
         ids: set[str] = set(s) if s else set()
-        try:
-            for reg_name, reg_cls in ComponentRegistry._registry.items():
-                if reg_name != key and issubclass(reg_cls, cls):
-                    sub = self._component_indices.get(reg_name)
-                    if sub:
-                        ids.update(sub)
-        except Exception:
-            pass
+        for sub_key in _subclass_names(key, cls):
+            sub = self._component_indices.get(sub_key)
+            if sub:
+                ids.update(sub)
         if not ids:
             return []
         rv = self._render_version

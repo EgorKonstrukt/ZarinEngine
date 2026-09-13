@@ -32,6 +32,15 @@ class PlayViewport(QOpenGLWidget):
         self._cursor_blank: bool = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
+        self._throttle_mode = "editor"
+        self._throttle_step = 2
+        try:
+            from core.config.config import get_global_config
+            _cfg = get_global_config()
+            self._throttle_mode = _cfg.get("rendering.play_viewport_throttle", "editor")
+            self._throttle_step = max(2, int(_cfg.get("rendering.play_viewport_throttle_step", 2)))
+        except Exception:
+            pass
         self._apply_timer_config()
         try:
             from core.config.config import get_global_config
@@ -42,14 +51,27 @@ class PlayViewport(QOpenGLWidget):
         self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)
         engine.on("play_stop", self._on_play_stop)
+        engine.on("play_start", self._on_play_start)
         fmt = QSurfaceFormat()
         fmt.setDepthBufferSize(24)
         fmt.setVersion(3, 3)
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         self.setFormat(fmt)
 
+    def _wants_fast(self):
+        try:
+            return bool(getattr(self._engine, "play_mode", False)) and self.isVisible()
+        except Exception:
+            return False
+
     def _apply_timer_config(self):
         try:
+            if not self._wants_fast():
+                self._timer.setTimerType(Qt.TimerType.CoarseTimer)
+                self._timer.setInterval(250)
+                if not self._timer.isActive():
+                    self._timer.start()
+                return
             from core.config.config import get_global_config
             cfg = get_global_config()
             vsync = cfg.get("rendering.vsync", True)
@@ -66,6 +88,8 @@ class PlayViewport(QOpenGLWidget):
                 self._timer.setInterval(max(1, int(1000.0 / tgt)))
             if not self._timer.isActive():
                 self._timer.start()
+            else:
+                self._timer.start()
         except Exception:
             try:
                 if not self._timer.isActive():
@@ -76,12 +100,24 @@ class PlayViewport(QOpenGLWidget):
     def _on_config_changed(self, key: str, value):
         if key in ("rendering.vsync", "rendering.target_fps"):
             self._apply_timer_config()
+        if key in ("rendering.play_viewport_throttle", "rendering.play_viewport_throttle_step"):
+            try:
+                from core.config.config import get_global_config
+                cfg = get_global_config()
+                self._throttle_mode = cfg.get("rendering.play_viewport_throttle", "editor")
+                self._throttle_step = max(2, int(cfg.get("rendering.play_viewport_throttle_step", 2)))
+            except Exception:
+                pass
+
+    def _on_play_start(self, _=None):
+        self._apply_timer_config()
 
     def _on_play_stop(self, _=None):
         if self._mouse_captured or self._cursor_blank:
             Input.set_cursor_visible(True)
             Input.set_cursor_locked(False)
             self._release_mouse()
+        self._apply_timer_config()
 
     def _bind_screen_fbo(self):
         fbo_id = self.defaultFramebufferObject()
@@ -90,7 +126,12 @@ class PlayViewport(QOpenGLWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._apply_timer_config()
         self.update()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._apply_timer_config()
 
     def initializeGL(self):
         try:
@@ -113,9 +154,8 @@ class PlayViewport(QOpenGLWidget):
         if not self._ctx or not self._renderer:
             return
         try:
-            from core.config.config import get_global_config
-            if get_global_config().get("rendering.play_viewport_throttle", "editor") == "game":
-                step = max(2, int(get_global_config().get("rendering.play_viewport_throttle_step", 2)))
+            if getattr(self, '_throttle_mode', 'editor') == "game":
+                step = getattr(self, '_throttle_step', 2)
                 self._throttle_count = getattr(self, '_throttle_count', 0) + 1
                 if self._throttle_count % step:
                     return

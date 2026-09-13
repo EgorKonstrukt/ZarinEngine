@@ -255,6 +255,16 @@ class QtQuickWorldPlugin(PluginBase):
                 return plugin._orig_render_scene(self_renderer, scene, view_mat, proj_mat, cam_pos, viewport_w, viewport_h, fbo, selected_entities, cam_near, cam_far, cam_fov, display_w, display_h, shared_cache)
             plugin._in_render = True
             try:
+                _no_views = not plugin.cached_views()
+            except Exception:
+                _no_views = False
+            if _no_views:
+                try:
+                    plugin._pending = {}
+                    return plugin._orig_render_scene(self_renderer, scene, view_mat, proj_mat, cam_pos, viewport_w, viewport_h, fbo, selected_entities, cam_near, cam_far, cam_fov, display_w, display_h, shared_cache)
+                finally:
+                    plugin._in_render = False
+            try:
                 if not getattr(self_renderer, "_rendering_cubemap_face", False):
                     plugin._prepare_views(scene)
             except Exception:

@@ -37,12 +37,8 @@ def draw_stats_overlay(vp, painter):
     painter.setFont(_STATS_FONT_O)
 
     paint_dt = getattr(vp, '_paint_dt', 0.016)
-    if not hasattr(vp, '_frame_times_ms'):
+    if getattr(vp, '_frame_times_ms', None) is None:
         vp._frame_times_ms = []
-    if paint_dt > 0:
-        vp._frame_times_ms.append(paint_dt * 1000.0)
-        if len(vp._frame_times_ms) > 300:
-            vp._frame_times_ms.pop(0)
 
     if vp._frame_times_ms and vp._frame_times_ms[-1] > 33.0:
         prof = getattr(vp._engine, '_profiler', None)

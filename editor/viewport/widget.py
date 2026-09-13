@@ -9,9 +9,12 @@ from __future__ import annotations
 import copy
 import math
 import os
+import sys
+import threading
 import time
 import traceback
 import uuid
+from collections import deque
 from typing import Any, Optional, TYPE_CHECKING
 
 import moderngl
@@ -49,6 +52,65 @@ from editor.viewport.collaboration import (
 if TYPE_CHECKING:
     from core.ecs.ecs import Entity
     from core.renderer.renderer import Renderer
+
+
+class _BlockWatch:
+    def __init__(self):
+        self._samples = deque(maxlen=6000)
+        self._gui_ident = None
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self, gui_ident):
+        self._gui_ident = gui_ident
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="block-watch", daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                fr = sys._current_frames().get(self._gui_ident)
+                if fr is not None:
+                    names = []
+                    depth = 0
+                    while fr is not None and depth < 8:
+                        code = fr.f_code
+                        fname = code.co_filename
+                        cut = fname.rfind("\\")
+                        if cut < 0:
+                            cut = fname.rfind("/")
+                        names.append(fname[cut + 1:] + ":" + code.co_name)
+                        fr = fr.f_back
+                        depth += 1
+                    self._samples.append((time.perf_counter(), tuple(names)))
+            except Exception:
+                pass
+            self._stop.wait(0.003)
+
+    def heaviest(self, window_s):
+        try:
+            snap = list(self._samples)
+        except Exception:
+            return 0, []
+        now = time.perf_counter()
+        counts = {}
+        total = 0
+        for ts, key in snap:
+            if now - ts <= window_s:
+                total += 1
+                counts[key] = counts.get(key, 0) + 1
+        ranked = sorted(counts.items(), key=lambda kv: -kv[1])[:4]
+        out = []
+        for key, cnt in ranked:
+            pct = int(round(cnt * 100.0 / max(1, total)))
+            out.append((">".join(list(key)[:4]), pct))
+        return total, out
 
 
 class _UndoFilter(QObject):
@@ -262,6 +324,10 @@ class SceneViewport(QOpenGLWidget):
         self._last_overlay_update: float = 0.0
         self._frame_budget: float = 1.0 / 60.0
         self._cursor_label_cache: tuple = ("", "", "")
+        self._throttle_mode: str = "editor"
+        self._throttle_step: int = 2
+        self._block_watch = _BlockWatch()
+        self._last_block_log: float = 0.0
         from editor.viewport.toolbar import setup_toolbar
         setup_toolbar(self)
         self._refresh_no_qt_overlay()
@@ -272,6 +338,11 @@ class SceneViewport(QOpenGLWidget):
         self._vsync_enabled = cfg.get("rendering.vsync", True)
         self._target_fps = cfg.get("rendering.target_fps", 60)
         self._frame_budget = 1.0 / max(1, int(self._target_fps)) if self._target_fps else 1.0 / 60.0
+        self._throttle_mode = cfg.get("rendering.play_viewport_throttle", "editor")
+        try:
+            self._throttle_step = max(2, int(cfg.get("rendering.play_viewport_throttle_step", 2)))
+        except Exception:
+            self._throttle_step = 2
         fmt = QSurfaceFormat()
         fmt.setDepthBufferSize(24)
         fmt.setVersion(4, 6)
@@ -309,7 +380,21 @@ class SceneViewport(QOpenGLWidget):
             if self.isVisible():
                 self._render_timer.start()
 
+    def _refresh_throttle_cache(self):
+        try:
+            from core.config.config import get_global_config
+            cfg = get_global_config()
+            self._throttle_mode = cfg.get("rendering.play_viewport_throttle", "editor")
+            try:
+                self._throttle_step = max(2, int(cfg.get("rendering.play_viewport_throttle_step", 2)))
+            except Exception:
+                self._throttle_step = 2
+        except Exception:
+            pass
+
     def _on_overlay_config_changed(self, key: str, value):
+        if key in ("rendering.vsync", "rendering.target_fps", "rendering.play_viewport_throttle", "rendering.play_viewport_throttle_step"):
+            self._refresh_throttle_cache()
         if key in ("rendering.vsync", "rendering.target_fps"):
             try:
                 from core.config.config import get_global_config
@@ -336,6 +421,23 @@ class SceneViewport(QOpenGLWidget):
     def _on_render_tick(self):
         if not self._vsync_enabled and self.isVisible():
             self.update()
+
+    def _report_block(self, gap_raw, now):
+        if gap_raw <= 0.012:
+            return
+        if now - getattr(self, "_last_block_log", 0.0) < 2.0:
+            return
+        self._last_block_log = now
+        try:
+            total, top = self._block_watch.heaviest(gap_raw)
+        except Exception:
+            return
+        if total <= 0 or not top:
+            return
+        parts = []
+        for stack, pct in top:
+            parts.append(str(pct) + "pct " + stack)
+        Logger.warning("block gap=" + str(int(round(gap_raw * 1000.0))) + "ms samples=" + str(total) + " " + " | ".join(parts))
 
     def _toggle_stats(self, checked: bool):
         self._stats_enabled = checked
@@ -473,12 +575,20 @@ class SceneViewport(QOpenGLWidget):
         super().showEvent(event)
         self._apply_config()
         self._collab_timer.start()
+        try:
+            self._block_watch.start(threading.get_ident())
+        except Exception:
+            pass
         self.update()
 
     def hideEvent(self, event):
         super().hideEvent(event)
         self._render_timer.stop()
         self._collab_timer.stop()
+        try:
+            self._block_watch.stop()
+        except Exception:
+            pass
 
     def _collab_tick(self):
         if not self._engine.play_mode:
@@ -629,6 +739,11 @@ class SceneViewport(QOpenGLWidget):
 
     def initializeGL(self):
         try:
+            try:
+                import gc as _gc
+                _gc.freeze()
+            except Exception:
+                pass
             self._ctx = moderngl.create_context(standalone=False)
             try:
                 self._ctx.gc_mode = "context_gc"
@@ -714,9 +829,18 @@ class SceneViewport(QOpenGLWidget):
         _p0 = time.perf_counter()
         _paint_gap = _p0 - getattr(self, '_last_paint_enter', _p0)
         self._last_paint_enter = _p0
+        _gap_raw = _paint_gap
         if _paint_gap > 0.05:
             _paint_gap = 0.05
         self._paint_dt = _paint_gap
+        _ft = getattr(self, "_frame_times_ms", None)
+        if _ft is None:
+            self._frame_times_ms = _ft = []
+        if _paint_gap > 0.0:
+            _ft.append(_paint_gap * 1000.0)
+            if len(_ft) > 300:
+                _ft.pop(0)
+        self._report_block(_gap_raw, _p0)
         eng = self._engine
         prof = eng._profiler
         prof.capture_frame()
@@ -732,12 +856,11 @@ class SceneViewport(QOpenGLWidget):
         if not self._ctx or not self._renderer:
             return
         if getattr(self._engine, 'play_mode', False):
-            from core.config.config import get_global_config
-            if get_global_config().get("rendering.play_viewport_throttle", "editor") == "editor":
+            if getattr(self, '_throttle_mode', 'editor') == "editor":
                 mw = getattr(self, '_mw', None)
                 pd = getattr(mw, '_play_dock', None) if mw is not None else None
                 if pd is not None and pd.isVisible():
-                    step = max(2, int(get_global_config().get("rendering.play_viewport_throttle_step", 2)))
+                    step = getattr(self, '_throttle_step', 2)
                     self._throttle_count = getattr(self, '_throttle_count', 0) + 1
                     if self._throttle_count % step:
                         if self._vsync_enabled and self.isVisible():
@@ -897,9 +1020,27 @@ class SceneViewport(QOpenGLWidget):
                 self._last_overlay_ms = (time.perf_counter() - t2) * 1000.0
                 if not self._no_qt_overlay:
                     now_overlay = time.perf_counter()
-                    if now_overlay - self._last_overlay_update >= 0.2:
-                        self._last_overlay_update = now_overlay
-                        self._overlay_widget.update()
+                    if self._stats_enabled:
+                        if now_overlay - self._last_overlay_update >= 0.5:
+                            self._last_overlay_update = now_overlay
+                            self._overlay_widget.update()
+                    elif now_overlay - self._last_overlay_update >= 0.1:
+                        _dyn = (
+                            self._audio_viz_enabled
+                            or self._area_selecting
+                            or self._overlay_canvas is not None
+                            or getattr(self._gizmo, "_dragging", False)
+                            or bool(getattr(self._gizmo, "delta_text", ""))
+                        )
+                        if not _dyn:
+                            try:
+                                _collab = getattr(self._engine, "collab_manager", None)
+                                _dyn = bool(getattr(_collab, "connected", False))
+                            except Exception:
+                                pass
+                        if _dyn or now_overlay - self._last_overlay_update >= 2.0:
+                            self._last_overlay_update = now_overlay
+                            self._overlay_widget.update()
             if self._audio_viz_enabled:
                 self._render_audio_osd(now)
             eng.set_profiler_data("paint_total_ms", (time.perf_counter() - _p0) * 1000.0)
@@ -1118,6 +1259,11 @@ class SceneViewport(QOpenGLWidget):
         self._ng_mouse_delta = (self._ng_mouse_delta[0] + dx, self._ng_mouse_delta[1] + dy)
         self._ng_last_mouse = (lx, ly)
         self._ng_mouse_down = bool(event.buttons() & Qt.MouseButton.LeftButton)
+        if not self._stats_enabled and not self._no_qt_overlay:
+            _now_hov = time.perf_counter()
+            if _now_hov - getattr(self, "_last_overlay_update", 0.0) >= 0.1:
+                self._last_overlay_update = _now_hov
+                self._overlay_widget.update()
         from editor.viewport.collaboration import send_collab_cursor
         send_collab_cursor(self, lx, ly)
         from editor.viewport.projection import screen_to_world
