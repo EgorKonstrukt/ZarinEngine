@@ -146,9 +146,36 @@ class _UndoFilter(QObject):
         except Exception:
             return False
 
+    def _project_or_text_has_focus(self) -> bool:
+        try:
+            from PyQt6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit
+            fw = QApplication.focusWidget()
+            if fw is None:
+                return False
+            if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                return True
+            cur = fw
+            while cur is not None:
+                try:
+                    if cur.__class__.__name__ == "ProjectPanel":
+                        return True
+                    if cur.__class__.__name__ in ("FileListWidget", "FileDetailWidget", "FolderTreeWidget", "_FilePane", "_AddressBreadcrumb"):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    cur = cur.parent()
+                except Exception:
+                    break
+        except Exception:
+            pass
+        return False
+
     def _poll(self):
         if not self._ctrl_held:
             self._timer.stop()
+            return
+        if self._project_or_text_has_focus():
             return
         z_down = self._is_key_down(0x5A)
         y_down = self._is_key_down(0x59)
@@ -178,11 +205,15 @@ class _UndoFilter(QObject):
                 self._timer.start()
                 return False
             if key == Qt.Key.Key_Z and self._ctrl_held:
+                if self._project_or_text_has_focus():
+                    return False
                 self._z_handled = True
                 self._get_history().undo()
                 self._schedule_sync()
                 return True
             if key == Qt.Key.Key_Y and self._ctrl_held:
+                if self._project_or_text_has_focus():
+                    return False
                 self._y_handled = True
                 self._get_history().redo()
                 self._schedule_sync()

@@ -10,7 +10,9 @@ import sys
 import shutil
 import datetime
 import subprocess
+import tempfile
 import threading
+import time
 from typing import Optional, TYPE_CHECKING
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                              QTreeWidget, QTreeWidgetItem, QPushButton,
@@ -123,9 +125,9 @@ class _NavButton(QToolButton):
         super().__init__(parent)
         if icon_name and qta is not None:
             self.setIcon(qta.icon(icon_name, color="#d4d4d4"))
-            self.setIconSize(QSize(*scale_xy(14, 14)))
+            self.setIconSize(QSize(*scale_xy(18, 18)))
         self.setToolTip(tooltip)
-        self.setFixedSize(scale(28), scale(28))
+        self.setFixedSize(scale(34), scale(32))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(f"""
             QToolButton {{
@@ -253,17 +255,30 @@ class FileListWidget(QListWidget):
             return
         super().keyPressEvent(event)
 
+    def mousePressEvent(self, event):
+        self._panel._set_active_pane_by_widget(self)
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        try:
+            pos = event.position().toPoint()
+        except Exception:
+            pos = event.pos()
+        if self.itemAt(pos) is None:
+            self._panel._go_to_parent()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat(_ENTITY_MIME) or event.mimeData().hasUrls() or event.mimeData().hasText():
-            event.setDropAction(Qt.DropAction.CopyAction)
-            event.accept()
+            event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasFormat(_ENTITY_MIME) or event.mimeData().hasUrls() or event.mimeData().hasText():
-            event.setDropAction(Qt.DropAction.CopyAction)
-            event.accept()
+            event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
 
@@ -329,17 +344,34 @@ class FileDetailWidget(QTreeWidget):
             return
         super().keyPressEvent(event)
 
+    def mousePressEvent(self, event):
+        self._panel._set_active_pane_by_widget(self)
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        try:
+            pos = event.position().toPoint()
+        except Exception:
+            pos = event.pos()
+        try:
+            hit = self.itemAt(pos)
+        except Exception:
+            hit = None
+        if hit is None:
+            self._panel._go_to_parent()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat(_ENTITY_MIME) or event.mimeData().hasUrls() or event.mimeData().hasText():
-            event.setDropAction(Qt.DropAction.CopyAction)
-            event.accept()
+            event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasFormat(_ENTITY_MIME) or event.mimeData().hasUrls() or event.mimeData().hasText():
-            event.setDropAction(Qt.DropAction.CopyAction)
-            event.accept()
+            event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
 
@@ -361,19 +393,20 @@ class FolderTreeWidget(QTreeWidget):
         self.setAcceptDrops(True)
         self.setHeaderHidden(True)
         self.setRootIsDecorated(True)
-        self.setIndentation(scale(16))
+        self.setIndentation(scale(12))
+        self.setUniformRowHeights(True)
         self.setStyleSheet(f"""
             QTreeWidget {{
                 border: none;
                 outline: none;
                 font-size: 12px;
-                padding: 4px 2px;
+                padding: 2px;
             }}
             QTreeWidget::item {{
-                padding: 3px 4px;
+                padding: 1px 4px;
                 border: 1px solid transparent;
                 border-radius: 2px;
-                min-height: 22px;
+                min-height: 19px;
             }}
             QTreeWidget::item:selected {{
             }}
@@ -401,15 +434,13 @@ class FolderTreeWidget(QTreeWidget):
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat(_ENTITY_MIME) or event.mimeData().hasUrls() or event.mimeData().hasText():
-            event.setDropAction(Qt.DropAction.CopyAction)
-            event.accept()
+            event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasFormat(_ENTITY_MIME) or event.mimeData().hasUrls() or event.mimeData().hasText():
-            event.setDropAction(Qt.DropAction.CopyAction)
-            event.accept()
+            event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
 
@@ -443,11 +474,19 @@ class _AddressBreadcrumb(QLineEdit):
         """)
 
     def mousePressEvent(self, event):
+        try:
+            self._pane._panel._set_active_pane(self._pane)
+        except Exception:
+            pass
         if not self._editing:
             self._enter_edit_mode()
         super().mousePressEvent(event)
 
     def focusInEvent(self, event):
+        try:
+            self._pane._panel._set_active_pane(self._pane)
+        except Exception:
+            pass
         if not self._editing:
             self._enter_edit_mode()
         super().focusInEvent(event)
@@ -472,7 +511,10 @@ class _AddressBreadcrumb(QLineEdit):
         self.setReadOnly(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._pane.rebuild_breadcrumb()
-        self.setStyleSheet(f"""
+        try:
+            self._pane.set_active(self._pane._active)
+        except Exception:
+            self.setStyleSheet(f"""
             QLineEdit {{
                 background: transparent;
                 border: 1px solid transparent;
@@ -490,8 +532,7 @@ class _AddressBreadcrumb(QLineEdit):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             path = self.text().strip()
             if path and os.path.isdir(path):
-                self._pane.populate_files(path)
-                self._pane._panel._push_history(path)
+                self._pane._panel._navigate_to(self._pane, path, record=True)
             self._exit_edit_mode()
             return
         if event.key() == Qt.Key.Key_Escape:
@@ -510,6 +551,9 @@ class _FilePane(QWidget):
         self._current_dir = panel._project_root
         self._active = False
         self._view_mode_cache = panel._view_mode
+        self._hist_back: list[str] = []
+        self._hist_fwd: list[str] = []
+        self._navigating = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -568,18 +612,46 @@ class _FilePane(QWidget):
     def set_active(self, active: bool):
         self._active = active
         if self._panel._dual_pane:
-            self._stack.setStyleSheet(f"border: 1px solid {self.palette().color(QPalette.ColorRole.Highlight).name()};")
+            if active:
+                self._stack.setStyleSheet("border: 1px solid #0078d7;")
+                self._breadcrumb_bar.setStyleSheet(
+                    "QLineEdit { background: rgba(0,120,215,18);"
+                    " border: 1px solid transparent; border-radius: 2px;"
+                    " padding: 2px 6px; font-size: 12px; min-height: 20px; }"
+                )
+            else:
+                self._stack.setStyleSheet("border: 1px solid #3a3a3a;")
+                self._breadcrumb_bar.setStyleSheet(
+                    "QLineEdit { background: transparent;"
+                    " border: 1px solid transparent; border-radius: 2px;"
+                    " padding: 2px 6px; font-size: 12px; min-height: 20px;"
+                    " color: #8a8a8a; }"
+                )
         else:
-            self._stack.setStyleSheet("")
+            self._stack.setStyleSheet("border: 1px solid transparent;")
+            self._breadcrumb_bar.setStyleSheet(
+                "QLineEdit { background: transparent;"
+                " border: 1px solid transparent; border-radius: 2px;"
+                " padding: 2px 6px; font-size: 12px; min-height: 20px; }"
+            )
+
+    def mousePressEvent(self, event):
+        self._panel._set_active_pane(self)
+        super().mousePressEvent(event)
 
     def rebuild_breadcrumb(self):
         if self._breadcrumb_bar._editing:
             return
-        nav_bar = self._panel._nav_bar
-        if nav_bar:
-            nav_bar._back_btn.setEnabled(len(self._panel._history[0]) > 1 if hasattr(self._panel, '_history') else False)
-            nav_bar._forward_btn.setEnabled(len(self._panel._history[1]) > 0 if hasattr(self._panel, '_history') else False)
-        display = self._current_dir.replace(self._panel._project_root, os.path.basename(self._panel._project_root))
+        if self._active:
+            nav_bar = self._panel._nav_bar
+            if nav_bar:
+                nav_bar._back_btn.setEnabled(len(self._hist_back) > 0)
+                nav_bar._forward_btn.setEnabled(len(self._hist_fwd) > 0)
+        try:
+            base = os.path.basename(self._panel._project_root)
+            display = self._current_dir.replace(self._panel._project_root, base)
+        except Exception:
+            display = self._current_dir
         display = display.replace("\\", " \u25B8 ").replace("/", " \u25B8 ")
         self._breadcrumb_bar.setText(display)
 
@@ -645,7 +717,7 @@ class _FilePane(QWidget):
             self._detail_tree.setSortingEnabled(True)
 
     def populate_files(self, dirpath: str, filter_text: str = ""):
-        self._current_dir = dirpath
+        self._current_dir = os.path.normpath(dirpath)
         self.rebuild_breadcrumb()
         try:
             entries = sorted(os.listdir(dirpath))
@@ -662,12 +734,14 @@ class _FilePane(QWidget):
             self._populate_detail_tree(dirpath, visible, filter_text)
         else:
             self._populate_list_view(dirpath, visible, filter_text)
-        if self._panel._status_bar:
-            self._panel._status_bar.update_counts(len(visible))
-        if self._panel._nav_bar:
-            self._panel._nav_bar.update_address(dirpath)
-        if self._panel._status_bar:
-            self._panel._status_bar.update_path(dirpath)
+        if self._active:
+            if self._panel._status_bar:
+                self._panel._status_bar.update_counts(len(visible))
+            if self._panel._nav_bar:
+                self._panel._nav_bar.update_address(self._current_dir)
+            if self._panel._status_bar:
+                self._panel._status_bar.update_path(self._current_dir)
+            self._panel._update_nav_buttons()
         self._panel._apply_vcs_colors()
 
     def _populate_list_view(self, dirpath: str, entries: list[str], filter_text: str):
@@ -687,18 +761,6 @@ class _FilePane(QWidget):
                 folders.append((entry, full))
             else:
                 files.append((entry, full))
-
-        if is_icon and len(folders) > 0:
-            hdr = _GroupHeader(f"Folders", len(folders))
-            item = QListWidgetItem()
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            item.setSizeHint(QSize(0, hdr.height() + 4))
-            item.setData(Qt.ItemDataRole.UserRole, None)
-            item.setData(Qt.ItemDataRole.UserRole + 1, "group_header")
-            item.setData(Qt.ItemDataRole.UserRole + 2, "Folders")
-            item.setData(Qt.ItemDataRole.UserRole + 3, len(folders))
-            widget.addItem(item)
-
         for entry, full in folders:
             item = QListWidgetItem()
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
@@ -710,63 +772,30 @@ class _FilePane(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, full)
             item.setToolTip(f"Folder: {full}")
             widget.addItem(item)
-
-        if is_icon and len(files) > 0:
-            grouped = self._group_files_by_date(files)
-            for group_name, group_files in grouped:
-                hdr = _GroupHeader(group_name, len(group_files))
-                item = QListWidgetItem()
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-                item.setSizeHint(QSize(0, hdr.height() + 4))
-                item.setData(Qt.ItemDataRole.UserRole, None)
-                item.setData(Qt.ItemDataRole.UserRole + 1, "group_header")
-                item.setData(Qt.ItemDataRole.UserRole + 2, group_name)
-                item.setData(Qt.ItemDataRole.UserRole + 3, len(group_files))
-                widget.addItem(item)
-
-                for entry, full in group_files:
-                    item = QListWidgetItem()
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-                    std_icon = self._panel._get_file_icon(full)
-                    if std_icon:
-                        item.setIcon(std_icon)
-                    else:
-                        pm = _get_thumbnail(full, _thumb_resolution())
-                        item.setIcon(QIcon(pm))
-                    item.setText(entry)
-                    item.setData(Qt.ItemDataRole.UserRole, full)
-                    try:
-                        sz = os.path.getsize(full)
-                    except OSError:
-                        sz = 0
-                    item.setToolTip(f"{entry}\n{_format_size(sz)}")
-                    widget.addItem(item)
-        else:
-            for entry, full in files:
-                item = QListWidgetItem()
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-                if is_icon:
-                    std_icon = self._panel._get_file_icon(full)
-                    if std_icon:
-                        item.setIcon(std_icon)
-                    else:
-                        pm = _get_thumbnail(full, _thumb_resolution())
-                        item.setIcon(QIcon(pm))
+        for entry, full in files:
+            item = QListWidgetItem()
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+            if is_icon:
+                std_icon = self._panel._get_file_icon(full)
+                if std_icon:
+                    item.setIcon(std_icon)
                 else:
-                    try:
-                        fi = QFileInfo(full)
-                        item.setIcon(self._panel._icon_provider.icon(fi))
-                    except Exception:
-                        item.setIcon(QIcon())
-                item.setText(entry)
-                item.setData(Qt.ItemDataRole.UserRole, full)
+                    pm = _get_thumbnail(full, _thumb_resolution())
+                    item.setIcon(QIcon(pm))
+            else:
                 try:
-                    sz = os.path.getsize(full)
-                except OSError:
-                    sz = 0
-                item.setToolTip(f"{entry}\n{_format_size(sz)}")
-                widget.addItem(item)
-
+                    fi = QFileInfo(full)
+                    item.setIcon(self._panel._icon_provider.icon(fi))
+                except Exception:
+                    item.setIcon(QIcon())
+            item.setText(entry)
+            item.setData(Qt.ItemDataRole.UserRole, full)
+            try:
+                sz = os.path.getsize(full)
+            except OSError:
+                sz = 0
+            item.setToolTip(f"{entry}\n{_format_size(sz)}")
+            widget.addItem(item)
         widget.blockSignals(False)
 
     def _group_files_by_date(self, files: list[tuple]) -> list[tuple[str, list]]:
@@ -893,14 +922,14 @@ class _NavBar(QWidget):
     def __init__(self, panel: ProjectPanel, parent=None):
         super().__init__(parent)
         self._panel = panel
-        self.setFixedHeight(scale(26))
+        self.setFixedHeight(scale(34))
         self.setStyleSheet(f"""
             QWidget {{
             }}
         """)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(scale(4), scale(1), scale(4), scale(1))
-        layout.setSpacing(scale(1))
+        layout.setContentsMargins(scale(6), scale(3), scale(6), scale(3))
+        layout.setSpacing(scale(4))
 
         self._back_btn = _NavButton("fa5s.arrow-left", "Back (Alt+Left)")
         self._back_btn.setEnabled(False)
@@ -938,7 +967,7 @@ class _NavBar(QWidget):
         self._search_bar = QLineEdit()
         self._search_bar.setPlaceholderText(" Search...")
         self._search_bar.setClearButtonEnabled(True)
-        self._search_bar.setMaximumWidth(scale(120))
+        self._search_bar.setMaximumWidth(scale(180))
         self._search_bar.textChanged.connect(self._on_search)
         self._search_bar.setStyleSheet(f"""
             QLineEdit {{
@@ -1059,6 +1088,10 @@ class ProjectPanel(QDockWidget):
         self._history_index = 0
         self._nav_bar = None
         self._status_bar = None
+        self._file_undo: list = []
+        self._file_redo: list = []
+        self._in_file_undo = False
+        self._restoring_state = False
         self._vcs_status: dict[str, str] = {}
         self._vcs_refreshing: bool = False
         self._vcs_pending: bool = False
@@ -1072,15 +1105,134 @@ class ProjectPanel(QDockWidget):
         self._push_history(self._project_root)
 
     def load_config(self, config) -> None:
-        thumb_size = config.get("project.thumb_size", self._thumb_size)
-        self._thumb_size = max(MIN_THUMB, min(thumb_size, MAX_THUMB))
-        self._dual_pane = config.get("project.dual_pane", False)
-        if self._dual_pane != self._dual_pane_btn.isChecked():
-            self._dual_pane_btn.setChecked(self._dual_pane)
+        try:
+            thumb_size = config.get("project.thumb_size", self._thumb_size)
+            self._thumb_size = max(MIN_THUMB, min(int(thumb_size), MAX_THUMB))
+        except Exception:
+            pass
+        try:
+            vm = int(config.get("project.view_mode", self._view_mode))
+            if vm in (VIEW_ICON, VIEW_LIST, VIEW_DETAILS):
+                self._view_mode = vm
+        except Exception:
+            pass
+        try:
+            self._dual_pane = bool(config.get("project.dual_pane", False))
+        except Exception:
+            pass
+        if hasattr(self, "_zoom_slider"):
+            try:
+                self._zoom_slider.blockSignals(True)
+                self._zoom_slider.setValue(self._thumb_size)
+                self._zoom_slider.blockSignals(False)
+            except Exception:
+                pass
+        if hasattr(self, "_dual_pane_btn"):
+            try:
+                self._dual_pane_btn.blockSignals(True)
+                self._dual_pane_btn.setChecked(self._dual_pane)
+                self._dual_pane_btn.blockSignals(False)
+            except Exception:
+                pass
+        self._restoring_state = True
+        try:
+            self._apply_dual_pane_state()
+            self._apply_view_mode()
+            self._update_view_mode_icon()
+            self._restore_pane_dirs(config)
+        finally:
+            self._restoring_state = False
+        try:
+            self._update_nav_buttons()
+        except Exception:
+            pass
 
     def save_config(self, config) -> None:
         config.set("project.thumb_size", self._thumb_size)
         config.set("project.dual_pane", self._dual_pane)
+        config.set("project.view_mode", self._view_mode)
+        try:
+            config.set("project.pane_a_dir", self._rel_or_abs(self._pane_a._current_dir))
+        except Exception:
+            pass
+        try:
+            if self._pane_b is not None:
+                config.set("project.pane_b_dir", self._rel_or_abs(self._pane_b._current_dir))
+            else:
+                config.set("project.pane_b_dir", self._rel_or_abs(self._pane_a._current_dir))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "_pane_splitter") and self._pane_b is not None:
+                config.set("project.splitter", list(self._pane_splitter.sizes()))
+        except Exception:
+            pass
+
+    def _rel_or_abs(self, path: str) -> str:
+        try:
+            rel = os.path.relpath(os.path.normpath(path), self._project_root)
+            if rel == ".":
+                return "."
+            if not rel.startswith(".."):
+                return rel.replace("\\", "/")
+        except Exception:
+            pass
+        return os.path.normpath(path)
+
+    def _abs_from_saved(self, saved) -> str:
+        if not saved:
+            return self._project_root
+        try:
+            s = str(saved).replace("/", os.sep)
+            cand = s
+            if not os.path.isabs(cand):
+                cand = os.path.normpath(os.path.join(self._project_root, cand))
+            else:
+                cand = os.path.normpath(cand)
+            try:
+                common = os.path.commonpath([cand, self._project_root])
+            except Exception:
+                return self._project_root
+            if common != self._project_root:
+                return self._project_root
+            if os.path.isdir(cand):
+                return cand
+        except Exception:
+            pass
+        return self._project_root
+
+    def _restore_pane_dirs(self, config):
+        try:
+            a_dir = self._abs_from_saved(config.get("project.pane_a_dir", self._project_root))
+        except Exception:
+            a_dir = self._project_root
+        try:
+            b_dir = self._abs_from_saved(config.get("project.pane_b_dir", a_dir))
+        except Exception:
+            b_dir = a_dir
+        try:
+            self._pane_a._hist_back = []
+            self._pane_a._hist_fwd = []
+            self._pane_a.populate_files(a_dir)
+        except Exception:
+            pass
+        if self._pane_b is not None:
+            try:
+                self._pane_b._hist_back = []
+                self._pane_b._hist_fwd = []
+                self._pane_b.populate_files(b_dir)
+            except Exception:
+                pass
+        try:
+            sizes = config.get("project.splitter", None)
+            if self._pane_b is not None and isinstance(sizes, (list, tuple)) and len(sizes) == 2:
+                self._pane_splitter.setSizes([int(sizes[0]), int(sizes[1])])
+        except Exception:
+            pass
+        try:
+            self._set_active_pane(self._pane_a)
+        except Exception:
+            pass
 
     def _get_file_icon(self, path: str) -> QIcon:
         ext = os.path.splitext(path)[1].lower()
@@ -1110,40 +1262,168 @@ class ProjectPanel(QDockWidget):
         return None
 
     def _active_pane(self) -> _FilePane:
-        if self._dual_pane:
-            if self._pane_b and self._pane_b._active:
+        try:
+            if self._dual_pane and self._pane_b is not None and self._pane_b._active:
                 return self._pane_b
+        except Exception:
+            pass
         return self._pane_a
 
-    def _push_history(self, path: str):
-        if self._history_index < len(self._history[0]):
-            self._history[0] = self._history[0][:self._history_index + 1]
-        if self._history[0] and self._history[0][-1] == path:
+    def _set_active_pane(self, pane) -> None:
+        if pane is None:
             return
-        self._history[0].append(path)
-        self._history[1].clear()
-        self._update_nav_buttons()
+        if pane is not self._pane_a and pane is not getattr(self, "_pane_b", None):
+            return
+        other = self._pane_b if pane is self._pane_a else self._pane_a
+        pane.set_active(True)
+        if other is not None:
+            other.set_active(False)
+        try:
+            if self._nav_bar:
+                self._nav_bar.update_address(pane._current_dir)
+                self._nav_bar._back_btn.setEnabled(len(pane._hist_back) > 0)
+                self._nav_bar._forward_btn.setEnabled(len(pane._hist_fwd) > 0)
+            if self._status_bar:
+                self._status_bar.update_path(pane._current_dir)
+                try:
+                    entries = os.listdir(pane._current_dir)
+                    visible = [e for e in entries if not e.startswith(".") and not e.endswith(".import")]
+                    self._status_bar.update_counts(len(visible))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _set_active_pane_by_widget(self, widget) -> None:
+        try:
+            for pane in (self._pane_a, getattr(self, "_pane_b", None)):
+                if pane is None:
+                    continue
+                if widget is pane._file_list or widget is pane._detail_tree or widget is pane._breadcrumb_bar or widget is pane:
+                    if not pane._active:
+                        self._set_active_pane(pane)
+                    return
+                try:
+                    if widget in pane._file_list.children() or widget in pane._detail_tree.children():
+                        if not pane._active:
+                            self._set_active_pane(pane)
+                        return
+                except Exception:
+                    pass
+            obj = widget
+            while obj is not None:
+                for pane in (self._pane_a, getattr(self, "_pane_b", None)):
+                    if pane is not None and obj is pane:
+                        if not pane._active:
+                            self._set_active_pane(pane)
+                        return
+                try:
+                    obj = obj.parent()
+                except Exception:
+                    break
+        except Exception:
+            pass
+
+    def _is_inside_root(self, path: str) -> bool:
+        try:
+            ap = os.path.normpath(os.path.abspath(path))
+            root = os.path.normpath(self._project_root)
+            return os.path.commonpath([ap, root]) == root
+        except Exception:
+            return False
+
+    def _navigate_to(self, pane, path: str, record: bool = True) -> None:
+        if pane is None or not path:
+            return
+        try:
+            target = os.path.normpath(os.path.abspath(path))
+        except Exception:
+            return
+        if not self._is_inside_root(target):
+            return
+        if not os.path.isdir(target):
+            try:
+                os.makedirs(target, exist_ok=True)
+            except Exception:
+                return
+        cur = os.path.normpath(pane._current_dir) if pane._current_dir else ""
+        if cur == target:
+            try:
+                pane.populate_files(target)
+            except Exception:
+                pass
+            return
+        if record and not pane._navigating:
+            try:
+                pane._hist_back.append(pane._current_dir)
+                if len(pane._hist_back) > 100:
+                    pane._hist_back = pane._hist_back[-100:]
+                pane._hist_fwd.clear()
+            except Exception:
+                pass
+        self._set_active_pane(pane)
+        try:
+            pane.populate_files(target)
+        except Exception:
+            pass
+        try:
+            self._sync_tree_selection(target)
+        except Exception:
+            pass
+
+    def _push_history(self, path: str, pane=None):
+        try:
+            if pane is None:
+                pane = self._active_pane()
+            target = os.path.normpath(os.path.abspath(path))
+            cur = os.path.normpath(pane._current_dir)
+            if cur == target:
+                self._update_nav_buttons()
+                return
+            self._navigate_to(pane, target, record=True)
+        except Exception:
+            pass
 
     def _go_back(self):
-        if len(self._history[0]) > 1:
-            self._history[1].append(self._history[0].pop())
-            self._history_index = len(self._history[0]) - 1
-            path = self._history[0][-1]
-            self._active_pane().populate_files(path)
+        pane = self._active_pane()
+        if pane._hist_back:
+            try:
+                pane._navigating = True
+                pane._hist_fwd.append(pane._current_dir)
+                path = pane._hist_back.pop()
+                pane.populate_files(path)
+                try:
+                    self._sync_tree_selection(path)
+                except Exception:
+                    pass
+            finally:
+                pane._navigating = False
             self._update_nav_buttons()
 
     def _go_forward(self):
-        if self._history[1]:
-            path = self._history[1].pop()
-            self._history[0].append(path)
-            self._history_index = len(self._history[0]) - 1
-            self._active_pane().populate_files(path)
+        pane = self._active_pane()
+        if pane._hist_fwd:
+            try:
+                pane._navigating = True
+                pane._hist_back.append(pane._current_dir)
+                path = pane._hist_fwd.pop()
+                pane.populate_files(path)
+                try:
+                    self._sync_tree_selection(path)
+                except Exception:
+                    pass
+            finally:
+                pane._navigating = False
             self._update_nav_buttons()
 
     def _update_nav_buttons(self):
-        if self._nav_bar:
-            self._nav_bar._back_btn.setEnabled(len(self._history[0]) > 1)
-            self._nav_bar._forward_btn.setEnabled(len(self._history[1]) > 0)
+        try:
+            pane = self._active_pane()
+            if self._nav_bar:
+                self._nav_bar._back_btn.setEnabled(len(pane._hist_back) > 0)
+                self._nav_bar._forward_btn.setEnabled(len(pane._hist_fwd) > 0)
+        except Exception:
+            pass
 
     def _setup_ui(self):
         w = QWidget()
@@ -1152,30 +1432,30 @@ class ProjectPanel(QDockWidget):
         main_layout.setSpacing(0)
 
         toolbar = QWidget()
-        toolbar.setFixedHeight(scale(24))
+        toolbar.setFixedHeight(scale(38))
         toolbar.setStyleSheet(f"""
             QWidget {{
             }}
         """)
         toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setContentsMargins(scale(4), scale(1), scale(4), scale(1))
-        toolbar_layout.setSpacing(scale(2))
+        toolbar_layout.setContentsMargins(scale(8), scale(4), scale(8), scale(4))
+        toolbar_layout.setSpacing(scale(6))
 
         create_btn = QToolButton()
         if qta is not None:
             create_btn.setIcon(qta.icon("fa5s.plus", color="#9ccc65"))
-            create_btn.setIconSize(QSize(*scale_xy(12, 12)))
+            create_btn.setIconSize(QSize(*scale_xy(18, 18)))
         create_btn.setText(" New")
         create_btn.setToolTip("Create new asset")
-        create_btn.setFixedHeight(scale(20))
+        create_btn.setFixedHeight(scale(30))
         create_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         create_btn.setStyleSheet(f"""
             QToolButton {{
                 background: transparent;
                 border: 1px solid transparent;
-                border-radius: 3px;
-                font-size: 10px;
-                padding: 0 6px;
+                border-radius: 4px;
+                font-size: 12px;
+                padding: 0 10px;
             }}
             QToolButton:hover {{
             }}
@@ -1205,7 +1485,7 @@ class ProjectPanel(QDockWidget):
         toolbar_layout.addWidget(sep1)
 
         self._view_mode_btn = QToolButton()
-        self._view_mode_btn.setFixedSize(scale(22), scale(22))
+        self._view_mode_btn.setFixedSize(scale(32), scale(30))
         self._view_mode_btn.setToolTip("View Mode")
         self._view_mode_btn.clicked.connect(self._toggle_view_mode)
         self._update_view_mode_icon()
@@ -1213,8 +1493,9 @@ class ProjectPanel(QDockWidget):
             QToolButton {{
                 background: transparent;
                 border: 1px solid transparent;
-                border-radius: 3px;
+                border-radius: 4px;
                 font-size: 13px;
+                padding: 2px;
             }}
             QToolButton:hover {{
             }}
@@ -1222,7 +1503,7 @@ class ProjectPanel(QDockWidget):
         toolbar_layout.addWidget(self._view_mode_btn)
 
         self._zoom_slider = QSlider(Qt.Orientation.Horizontal)
-        self._zoom_slider.setFixedWidth(scale(50))
+        self._zoom_slider.setFixedWidth(scale(110))
         self._zoom_slider.setRange(MIN_THUMB, MAX_THUMB)
         self._zoom_slider.setValue(self._thumb_size)
         self._zoom_slider.valueChanged.connect(self._on_zoom_changed)
@@ -1234,20 +1515,21 @@ class ProjectPanel(QDockWidget):
         toolbar_layout.addWidget(sep2)
 
         self._dual_pane_btn = QToolButton()
-        self._dual_pane_btn.setFixedSize(scale(22), scale(22))
+        self._dual_pane_btn.setFixedSize(scale(32), scale(30))
         self._dual_pane_btn.setToolTip("Dual Pane")
         self._dual_pane_btn.setCheckable(True)
         self._dual_pane_btn.setChecked(False)
         if qta is not None:
             self._dual_pane_btn.setIcon(qta.icon("fa5s.columns", color="#d4d4d4"))
-            self._dual_pane_btn.setIconSize(QSize(*scale_xy(14, 14)))
+            self._dual_pane_btn.setIconSize(QSize(*scale_xy(18, 18)))
         self._dual_pane_btn.toggled.connect(self._toggle_dual_pane)
         self._dual_pane_btn.setStyleSheet(f"""
             QToolButton {{
                 background: transparent;
                 border: 1px solid transparent;
-                border-radius: 3px;
+                border-radius: 4px;
                 font-size: 11px;
+                padding: 2px;
             }}
             QToolButton:hover {{
             }}
@@ -1257,11 +1539,11 @@ class ProjectPanel(QDockWidget):
         toolbar_layout.addWidget(self._dual_pane_btn)
 
         refresh_btn = QToolButton()
-        refresh_btn.setFixedSize(scale(22), scale(22))
+        refresh_btn.setFixedSize(scale(32), scale(30))
         refresh_btn.setToolTip("Refresh (F5)")
         if qta is not None:
             refresh_btn.setIcon(qta.icon("fa5s.sync-alt", color="#d4d4d4"))
-            refresh_btn.setIconSize(QSize(*scale_xy(14, 14)))
+            refresh_btn.setIconSize(QSize(*scale_xy(18, 18)))
         refresh_btn.clicked.connect(self._refresh)
         refresh_btn.setStyleSheet(f"""
             QToolButton {{
@@ -1478,43 +1760,130 @@ class ProjectPanel(QDockWidget):
                     if item_path == path:
                         item.setIcon(icon)
 
-    def _toggle_dual_pane(self, checked):
-        self._dual_pane = checked
-        if checked:
-            if not self._pane_b:
+    def _apply_dual_pane_state(self):
+        want = bool(self._dual_pane)
+        if want:
+            if self._pane_b is None:
                 self._pane_b = _FilePane(self)
                 self._pane_splitter.addWidget(self._pane_b)
-                self._pane_splitter.setSizes([self._pane_splitter.width() // 2] * 2)
-                self._pane_b.populate_files(self._pane_a._current_dir)
+                try:
+                    self._pane_b._current_dir = self._pane_a._current_dir
+                    self._pane_b.populate_files(self._pane_a._current_dir)
+                except Exception:
+                    pass
                 self._install_pane_focus(self._pane_b)
                 self._apply_view_mode()
-            self._pane_a.set_active(not self._pane_b._active)
-            self._pane_b.set_active(not self._pane_a._active)
+                try:
+                    self._pane_splitter.setSizes([self._pane_splitter.width() // 2] * 2)
+                except Exception:
+                    pass
+            self._set_active_pane(self._active_pane())
         else:
-            if self._pane_b:
-                self._pane_b.setParent(None)
-                self._pane_b.deleteLater()
+            if getattr(self, "_pane_b", None) is not None:
+                try:
+                    self._pane_b.setParent(None)
+                    self._pane_b.deleteLater()
+                except Exception:
+                    pass
                 self._pane_b = None
-            self._pane_a.set_active(True)
+            try:
+                self._set_active_pane(self._pane_a)
+            except Exception:
+                pass
+
+    def _toggle_dual_pane(self, checked):
+        if self._restoring_state:
+            self._dual_pane = bool(checked)
+            return
+        self._dual_pane = bool(checked)
+        self._apply_dual_pane_state()
 
     def _install_pane_focus(self, pane):
-        pane._file_list.installEventFilter(self)
-        pane._detail_tree.installEventFilter(self)
+        try:
+            pane._file_list.installEventFilter(self)
+            pane._detail_tree.installEventFilter(self)
+            pane._breadcrumb_bar.installEventFilter(self)
+            pane.installEventFilter(self)
+            pane._file_list.viewport().installEventFilter(self)
+            pane._detail_tree.viewport().installEventFilter(self)
+        except Exception:
+            pass
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.FocusIn:
-            for pane in (self._pane_a, self._pane_b):
-                if pane and (pane._file_list is obj or pane._detail_tree is obj):
-                    pane.set_active(True)
-                    other = self._pane_b if pane is self._pane_a else self._pane_a
-                    if other:
-                        other.set_active(False)
-                    if self._nav_bar:
-                        self._nav_bar.update_address(pane._current_dir)
-                    if self._status_bar:
-                        self._status_bar.update_path(pane._current_dir)
-                    break
+        try:
+            t = event.type()
+            if t == QEvent.Type.FocusIn:
+                for pane in (self._pane_a, getattr(self, "_pane_b", None)):
+                    if pane is not None and (pane._file_list is obj or pane._detail_tree is obj or pane._breadcrumb_bar is obj):
+                        self._set_active_pane(pane)
+                        break
+            elif t == QEvent.Type.MouseButtonPress:
+                for pane in (self._pane_a, getattr(self, "_pane_b", None)):
+                    if pane is None:
+                        continue
+                    match = False
+                    try:
+                        if obj is pane or obj is pane._file_list or obj is pane._detail_tree or obj is pane._breadcrumb_bar:
+                            match = True
+                        elif obj is pane._file_list.viewport() or obj is pane._detail_tree.viewport():
+                            match = True
+                    except Exception:
+                        pass
+                    if match:
+                        self._set_active_pane(pane)
+                        break
+        except Exception:
+            pass
         return super().eventFilter(obj, event)
+
+    def _is_rename_editing(self) -> bool:
+        try:
+            fw = QApplication.focusWidget()
+            if fw is None:
+                return False
+            for pane in (self._pane_a, getattr(self, "_pane_b", None)):
+                if pane is None:
+                    continue
+                try:
+                    if isinstance(fw, QLineEdit):
+                        return True
+                except Exception:
+                    pass
+            from PyQt6.QtWidgets import QAbstractItemView
+            try:
+                if isinstance(fw, QLineEdit):
+                    return True
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return False
+
+    def _project_has_focus(self) -> bool:
+        try:
+            fw = QApplication.focusWidget()
+            if fw is None:
+                return False
+            cur = fw
+            while cur is not None:
+                if cur is self:
+                    return True
+                try:
+                    cur = cur.parent()
+                except Exception:
+                    break
+            for pane in (self._pane_a, getattr(self, "_pane_b", None)):
+                if pane is None:
+                    continue
+                for w in (pane._file_list, pane._detail_tree, pane._breadcrumb_bar, pane):
+                    try:
+                        if fw is w:
+                            return True
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return False
 
     def _setup_shortcuts(self):
         sc = Qt.ShortcutContext.WidgetWithChildrenShortcut
@@ -1533,6 +1902,10 @@ class ProjectPanel(QDockWidget):
             s = QShortcut(QKeySequence(seq_str), self)
             s.activated.connect(cb)
             s.setContext(sc)
+        for seq_str, cb in [("Ctrl+Z", self._undo_file_op), ("Ctrl+Y", self._redo_file_op), ("Ctrl+Shift+Z", self._redo_file_op)]:
+            s = QShortcut(QKeySequence(seq_str), self)
+            s.setContext(sc)
+            s.activated.connect(cb)
 
     def _active_widget(self):
         return self._active_pane().active_widget()
@@ -1545,7 +1918,7 @@ class ProjectPanel(QDockWidget):
         icon_name, tip = icon_map.get(self._view_mode, ("fa5s.th", "View Mode"))
         if qta is not None:
             self._view_mode_btn.setIcon(qta.icon(icon_name, color="#d4d4d4"))
-            self._view_mode_btn.setIconSize(QSize(*scale_xy(14, 14)))
+            self._view_mode_btn.setIconSize(QSize(*scale_xy(18, 18)))
             self._view_mode_btn.setText("")
         self._view_mode_btn.setToolTip(tip)
 
@@ -1616,12 +1989,7 @@ class ProjectPanel(QDockWidget):
     def _open_path(self, path: str):
         pane = self._active_pane()
         if os.path.isdir(path):
-            pane.populate_files(path)
-            self._push_history(path)
-            if self._nav_bar:
-                self._nav_bar.update_address(path)
-            if self._status_bar:
-                self._status_bar.update_path(path)
+            self._navigate_to(pane, path, record=True)
         else:
             if self._try_plugin_opener(path):
                 return
@@ -1643,22 +2011,16 @@ class ProjectPanel(QDockWidget):
 
     def _go_to_parent(self):
         pane = self._active_pane()
-        parent = os.path.dirname(pane._current_dir)
-        if parent and os.path.commonpath([parent, self._project_root]) == self._project_root:
-            pane.populate_files(parent)
-            self._push_history(parent)
-            if self._nav_bar:
-                self._nav_bar.update_address(parent)
-            if self._status_bar:
-                self._status_bar.update_path(parent)
+        try:
+            cur = os.path.normpath(pane._current_dir)
+            parent = os.path.normpath(os.path.dirname(cur))
+        except Exception:
+            return
+        if parent and self._is_inside_root(parent) and parent != cur:
+            self._navigate_to(pane, parent, record=True)
 
     def _go_to_root(self):
-        self._active_pane().populate_files(self._project_root)
-        self._push_history(self._project_root)
-        if self._nav_bar:
-            self._nav_bar.update_address(self._project_root)
-        if self._status_bar:
-            self._status_bar.update_path(self._project_root)
+        self._navigate_to(self._active_pane(), self._project_root, record=True)
 
     def _populate_tree(self):
         self._folder_tree.clear()
@@ -1688,6 +2050,8 @@ class ProjectPanel(QDockWidget):
                 self._add_subfolders(item, full)
 
     def _on_list_item_changed(self, item: QListWidgetItem):
+        if self._in_file_undo:
+            return
         old_path = item.data(Qt.ItemDataRole.UserRole)
         if not old_path or not os.path.exists(old_path):
             return
@@ -1698,9 +2062,15 @@ class ProjectPanel(QDockWidget):
         if new_name == old_name:
             return
         new_path = os.path.join(os.path.dirname(old_path), new_name)
+        if os.path.exists(new_path):
+            item.blockSignals(True)
+            item.setText(old_name)
+            item.blockSignals(False)
+            return
         try:
             os.rename(old_path, new_path)
             item.setData(Qt.ItemDataRole.UserRole, new_path)
+            self._push_file_undo({"kind": "rename", "old": old_path, "new": new_path, "label": "Rename"})
             old_tip = item.toolTip()
             if "\n" in old_tip:
                 item.setToolTip(new_name + "\n" + old_tip.split("\n", 1)[1])
@@ -1716,6 +2086,8 @@ class ProjectPanel(QDockWidget):
     def _on_tree_item_changed(self, item: QTreeWidgetItem, col: int):
         if col != 0:
             return
+        if self._in_file_undo:
+            return
         old_path = item.data(0, Qt.ItemDataRole.UserRole)
         if not old_path or not os.path.exists(old_path):
             return
@@ -1726,9 +2098,15 @@ class ProjectPanel(QDockWidget):
         if new_name == old_name:
             return
         new_path = os.path.join(os.path.dirname(old_path), new_name)
+        if os.path.exists(new_path):
+            item.blockSignals(True)
+            item.setText(0, old_name)
+            item.blockSignals(False)
+            return
         try:
             os.rename(old_path, new_path)
             item.setData(0, Qt.ItemDataRole.UserRole, new_path)
+            self._push_file_undo({"kind": "rename", "old": old_path, "new": new_path, "label": "Rename"})
             if not os.path.isdir(new_path):
                 ext = os.path.splitext(new_name)[1].lower()
                 if ext:
@@ -1746,9 +2124,9 @@ class ProjectPanel(QDockWidget):
                     item.setText(1, type_map.get(ext, "Renaming..."))
                 else:
                     item.setText(1, "")
-            path = item.data(Qt.ItemDataRole.UserRole)
-            if path and os.path.isfile(path):
-                self.file_selected.emit(path)
+            new_p = item.data(0, Qt.ItemDataRole.UserRole)
+            if new_p and os.path.isfile(new_p):
+                self.file_selected.emit(new_p)
         except OSError:
             pass
 
@@ -1770,14 +2148,7 @@ class ProjectPanel(QDockWidget):
         if not path:
             return
         if os.path.isdir(path):
-            pane = self._active_pane()
-            pane.populate_files(path)
-            self._push_history(path)
-            self._sync_tree_selection(path)
-            if self._nav_bar:
-                self._nav_bar.update_address(path)
-            if self._status_bar:
-                self._status_bar.update_path(path)
+            self._navigate_to(self._active_pane(), path, record=True)
         else:
             if self._try_plugin_opener(path):
                 return
@@ -1827,12 +2198,7 @@ class ProjectPanel(QDockWidget):
     def _on_folder_selected(self, item, col):
         dirpath = item.data(0, Qt.ItemDataRole.UserRole)
         if dirpath and os.path.isdir(dirpath):
-            self._active_pane().populate_files(dirpath)
-            self._push_history(dirpath)
-            if self._nav_bar:
-                self._nav_bar.update_address(dirpath)
-            if self._status_bar:
-                self._status_bar.update_path(dirpath)
+            self._navigate_to(self._active_pane(), dirpath, record=True)
 
     def _show_file_context_menu(self, pos):
         widget = self.sender()
@@ -1878,7 +2244,7 @@ class ProjectPanel(QDockWidget):
                 pass
             elif os.path.isdir(path):
                 open_act = QAction("Open", self)
-                open_act.triggered.connect(lambda p=path: self._active_pane().populate_files(p))
+                open_act.triggered.connect(lambda p=path: self._navigate_to(self._active_pane(), p, record=True))
                 menu.addAction(open_act)
             else:
                 ext = os.path.splitext(path)[1].lower() if path else ""
@@ -1999,6 +2365,297 @@ class ProjectPanel(QDockWidget):
             actions.append(("Copy Path", lambda p=path: self._copy_path(p)))
         return actions
 
+    def _norm(self, p: str) -> str:
+        try:
+            return os.path.normcase(os.path.normpath(os.path.abspath(p)))
+        except Exception:
+            return os.path.normpath(p)
+
+    def _is_subpath(self, parent: str, child: str) -> bool:
+        try:
+            pn = self._norm(parent)
+            cn = self._norm(child)
+            return cn == pn or cn.startswith(pn + os.sep)
+        except Exception:
+            return False
+
+    def _unique_dst(self, dest_dir: str, name: str) -> str:
+        dst = os.path.join(dest_dir, name)
+        if not os.path.exists(dst):
+            return dst
+        base, ext = os.path.splitext(name)
+        counter = 1
+        while True:
+            cand = os.path.join(dest_dir, f"{base} ({counter}){ext}")
+            if not os.path.exists(cand):
+                return cand
+            counter += 1
+
+    def _trash_base(self) -> str:
+        try:
+            base = os.path.join(tempfile.gettempdir(), "zarin_project_trash", str(os.getpid()))
+            os.makedirs(base, exist_ok=True)
+            return base
+        except Exception:
+            base = os.path.join(self._project_root, ".trash_tmp")
+            try:
+                os.makedirs(base, exist_ok=True)
+            except Exception:
+                pass
+            return base
+
+    def _push_file_undo(self, op: dict) -> None:
+        if self._in_file_undo:
+            return
+        try:
+            self._file_undo.append(op)
+            if len(self._file_undo) > 100:
+                self._file_undo = self._file_undo[-100:]
+            self._file_redo.clear()
+        except Exception:
+            pass
+
+    def _fs_copy(self, src: str, dst: str) -> bool:
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if os.path.isdir(src):
+                if os.path.exists(dst):
+                    return False
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+            return True
+        except Exception:
+            return False
+
+    def _fs_move(self, src: str, dst: str) -> bool:
+        try:
+            if self._norm(src) == self._norm(dst):
+                return False
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.move(src, dst)
+            return True
+        except Exception:
+            return False
+
+    def _fs_remove(self, path: str) -> bool:
+        try:
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            else:
+                try:
+                    os.remove(path)
+                except FileNotFoundError:
+                    return True
+            return True
+        except Exception:
+            return False
+
+    def _decide_is_move(self, srcs: list[str], dest_dir: str) -> bool:
+        try:
+            mods = QApplication.keyboardModifiers()
+        except Exception:
+            mods = Qt.KeyboardModifier.NoModifier
+        if mods & Qt.KeyboardModifier.ControlModifier:
+            return False
+        if mods & Qt.KeyboardModifier.ShiftModifier:
+            return True
+        try:
+            root = self._norm(self._project_root)
+            for s in srcs:
+                sn = self._norm(s)
+                if not (sn == root or sn.startswith(root + os.sep)):
+                    return False
+            dn = self._norm(dest_dir)
+            if not (dn == root or dn.startswith(root + os.sep)):
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _drop_target_dir(self, event, default_dir: str) -> str:
+        try:
+            pos = event.position().toPoint()
+        except Exception:
+            try:
+                pos = event.pos()
+            except Exception:
+                return default_dir
+        try:
+            pane = self._active_pane()
+            if pane is None:
+                return default_dir
+            try:
+                it = pane._file_list.itemAt(pos)
+                if it is not None:
+                    p = it.data(Qt.ItemDataRole.UserRole)
+                    if p and os.path.isdir(p) and self._is_inside_root(p):
+                        return os.path.normpath(p)
+                    return default_dir
+            except Exception:
+                pass
+            try:
+                it = pane._detail_tree.itemAt(pos)
+                if it is not None:
+                    p = it.data(0, Qt.ItemDataRole.UserRole)
+                    if p and os.path.isdir(p) and self._is_inside_root(p):
+                        return os.path.normpath(p)
+                    return default_dir
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return default_dir
+
+    def _undo_file_op(self):
+        try:
+            fw = QApplication.focusWidget()
+            if isinstance(fw, QLineEdit) and fw.isReadOnly() is False:
+                try:
+                    if fw.isUndoAvailable():
+                        fw.undo()
+                        return
+                except Exception:
+                    return
+        except Exception:
+            pass
+        if not self._file_undo:
+            return
+        op = self._file_undo.pop()
+        self._in_file_undo = True
+        try:
+            kind = op.get("kind")
+            if kind == "rename":
+                old = op.get("old")
+                new = op.get("new")
+                if new and old and os.path.exists(new) and not os.path.exists(old):
+                    try:
+                        os.rename(new, old)
+                    except Exception:
+                        pass
+            elif kind == "move":
+                for src, dst in reversed(op.get("items", [])):
+                    if dst and os.path.exists(dst) and not os.path.exists(src):
+                        try:
+                            os.makedirs(os.path.dirname(src), exist_ok=True)
+                            shutil.move(dst, src)
+                        except Exception:
+                            pass
+            elif kind == "copy":
+                for src, dst in reversed(op.get("items", [])):
+                    if dst and os.path.exists(dst):
+                        self._fs_remove(dst)
+            elif kind == "delete":
+                for orig, backup in op.get("items", []):
+                    if backup and os.path.exists(backup) and not os.path.exists(orig):
+                        try:
+                            os.makedirs(os.path.dirname(orig), exist_ok=True)
+                            shutil.move(backup, orig)
+                        except Exception:
+                            pass
+            elif kind == "create":
+                paths = op.get("paths", [])
+                trash_items = []
+                try:
+                    trash_dir = os.path.join(self._trash_base(), f"create_{int(time.time()*1000)}")
+                    os.makedirs(trash_dir, exist_ok=True)
+                except Exception:
+                    trash_dir = self._trash_base()
+                for p in reversed(paths):
+                    if p and os.path.exists(p):
+                        b = os.path.join(trash_dir, os.path.basename(p))
+                        k = 1
+                        bb = b
+                        while os.path.exists(bb):
+                            base, ext = os.path.splitext(os.path.basename(p))
+                            bb = os.path.join(trash_dir, f"{base} ({k}){ext}")
+                            k += 1
+                        try:
+                            shutil.move(p, bb)
+                            trash_items.append((p, bb))
+                        except Exception:
+                            pass
+                op["trash_items"] = trash_items
+                op["trash_dir"] = trash_dir
+            self._file_redo.append(op)
+        finally:
+            self._in_file_undo = False
+        try:
+            self._refresh()
+        except Exception:
+            pass
+
+    def _redo_file_op(self):
+        try:
+            fw = QApplication.focusWidget()
+            if isinstance(fw, QLineEdit) and fw.isReadOnly() is False:
+                try:
+                    if fw.isRedoAvailable():
+                        fw.redo()
+                        return
+                except Exception:
+                    return
+        except Exception:
+            pass
+        if not self._file_redo:
+            return
+        op = self._file_redo.pop()
+        self._in_file_undo = True
+        try:
+            kind = op.get("kind")
+            if kind == "rename":
+                old = op.get("old")
+                new = op.get("new")
+                if old and new and os.path.exists(old) and not os.path.exists(new):
+                    try:
+                        os.rename(old, new)
+                    except Exception:
+                        pass
+            elif kind == "move":
+                for src, dst in op.get("items", []):
+                    if src and os.path.exists(src) and not os.path.exists(dst):
+                        try:
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            shutil.move(src, dst)
+                        except Exception:
+                            pass
+                    elif src and os.path.exists(src) and os.path.exists(dst):
+                        alt = self._unique_dst(os.path.dirname(dst), os.path.basename(dst))
+                        try:
+                            shutil.move(src, alt)
+                        except Exception:
+                            pass
+            elif kind == "copy":
+                for src, dst in op.get("items", []):
+                    if src and os.path.exists(src):
+                        target = dst
+                        if os.path.exists(target):
+                            target = self._unique_dst(os.path.dirname(dst), os.path.basename(dst))
+                        self._fs_copy(src, target)
+            elif kind == "delete":
+                for orig, backup in op.get("items", []):
+                    if orig and os.path.exists(orig):
+                        try:
+                            os.makedirs(os.path.dirname(backup), exist_ok=True)
+                            shutil.move(orig, backup)
+                        except Exception:
+                            pass
+            elif kind == "create":
+                for p, b in op.get("trash_items", []):
+                    if b and os.path.exists(b) and not os.path.exists(p):
+                        try:
+                            os.makedirs(os.path.dirname(p), exist_ok=True)
+                            shutil.move(b, p)
+                        except Exception:
+                            pass
+            self._file_undo.append(op)
+        finally:
+            self._in_file_undo = False
+        try:
+            self._refresh()
+        except Exception:
+            pass
+
     def _rename_item(self, widget, item):
         if isinstance(item, QTreeWidgetItem):
             widget.editItem(item, 0)
@@ -2011,13 +2668,14 @@ class ProjectPanel(QDockWidget):
         if not items:
             return
         paths = [i.data(Qt.ItemDataRole.UserRole) for i in items if i.data(Qt.ItemDataRole.UserRole)]
+        paths = [p for p in paths if p]
         if not paths:
             return
         drag = QDrag(fl)
         mime = QMimeData()
         uri_paths = ["file:///" + os.path.abspath(p).replace("\\", "/") for p in paths]
         mime.setUrls([QUrl(u) for u in uri_paths])
-        mime.setText(paths[0])
+        mime.setText("\n".join(paths))
         if len(paths) == 1:
             ext = os.path.splitext(paths[0])[1].lower()
             if ext == ".zpep":
@@ -2029,26 +2687,33 @@ class ProjectPanel(QDockWidget):
         paths = self._extract_drop_paths(event)
         if not paths:
             return
-        self._move_or_copy_files(paths, dest_dir=self._active_pane()._current_dir)
+        base = self._active_pane()._current_dir
+        target = self._drop_target_dir(event, base)
+        self._move_or_copy_files(paths, dest_dir=target)
         event.acceptProposedAction()
 
     def _on_detail_tree_drop(self, event):
         paths = self._extract_drop_paths(event)
         if not paths:
             return
-        self._move_or_copy_files(paths, dest_dir=self._active_pane()._current_dir)
+        base = self._active_pane()._current_dir
+        target = self._drop_target_dir(event, base)
+        self._move_or_copy_files(paths, dest_dir=target)
         event.acceptProposedAction()
 
     def _on_folder_tree_drop(self, event):
         paths = self._extract_drop_paths(event)
         if not paths:
             return
-        target_item = self._folder_tree.itemAt(event.position().toPoint())
+        try:
+            target_item = self._folder_tree.itemAt(event.position().toPoint())
+        except Exception:
+            target_item = None
         if target_item:
             target_path = target_item.data(0, Qt.ItemDataRole.UserRole)
         else:
             root = self._folder_tree.topLevelItem(0)
-            target_path = root.data(0, Qt.ItemDataRole.UserRole)
+            target_path = root.data(0, Qt.ItemDataRole.UserRole) if root else self._project_root
         self._move_or_copy_files(paths, dest_dir=target_path)
         event.acceptProposedAction()
 
@@ -2074,45 +2739,107 @@ class ProjectPanel(QDockWidget):
             path = os.path.join(dest_dir, f"{name}_{counter}{ext}")
             counter += 1
         prefab.save(path)
+        self._push_file_undo({"kind": "create", "paths": [path], "label": "Create prefab"})
         self._refresh()
         event.acceptProposedAction()
 
     def _extract_drop_paths(self, event):
         if event.mimeData().hasUrls():
-            return [u.toLocalFile() for u in event.mimeData().urls()]
+            out = []
+            for u in event.mimeData().urls():
+                try:
+                    lf = u.toLocalFile()
+                except Exception:
+                    continue
+                if lf:
+                    out.append(os.path.normpath(lf))
+            if out:
+                return out
         if event.mimeData().hasText():
             paths = []
             for line in event.mimeData().text().splitlines():
-                line = line.strip()
+                line = line.strip().strip('"')
                 if line:
-                    paths.append(line)
+                    paths.append(os.path.normpath(line))
             return paths
         return []
 
-    def _move_or_copy_files(self, paths, dest_dir=None):
+    def _move_or_copy_files(self, paths, dest_dir=None, force_move=None):
         if not dest_dir:
             dest_dir = self._active_pane()._current_dir
-        errors = []
-        for src in paths:
-            if not os.path.exists(src):
+        try:
+            dest_dir = os.path.normpath(os.path.abspath(dest_dir))
+        except Exception:
+            return
+        if not os.path.isdir(dest_dir):
+            try:
+                os.makedirs(dest_dir, exist_ok=True)
+            except Exception:
+                return
+        clean = []
+        for s in paths:
+            if not s:
                 continue
+            try:
+                sn = os.path.normpath(os.path.abspath(s))
+            except Exception:
+                continue
+            if not os.path.exists(sn):
+                continue
+            if sn not in clean:
+                clean.append(sn)
+        if not clean:
+            return
+        if force_move is None:
+            is_move = self._decide_is_move(clean, dest_dir)
+        else:
+            is_move = bool(force_move)
+        moved = []
+        copied = []
+        errors = []
+        for src in clean:
             name = os.path.basename(src)
+            src_n = self._norm(src)
+            dest_n = self._norm(dest_dir)
+            if src_n == dest_n:
+                continue
+            if dest_n.startswith(src_n + os.sep):
+                errors.append(f"{name}: target inside itself")
+                continue
+            same_dir = self._norm(os.path.dirname(src)) == dest_n
+            if same_dir and is_move:
+                continue
             dst = os.path.join(dest_dir, name)
-            if src == dst or src.startswith(dst + os.sep):
+            if self._norm(src) == self._norm(dst):
+                continue
+            if self._norm(dst).startswith(src_n + os.sep):
+                errors.append(f"{name}: target inside itself")
                 continue
             if os.path.exists(dst):
-                base, ext = os.path.splitext(name)
-                counter = 1
-                while os.path.exists(os.path.join(dest_dir, f"{base} ({counter}){ext}")):
-                    counter += 1
-                dst = os.path.join(dest_dir, f"{base} ({counter}){ext}")
+                if is_move:
+                    try:
+                        if os.path.samefile(src, dst):
+                            continue
+                    except Exception:
+                        pass
+                dst = self._unique_dst(dest_dir, name)
             try:
-                if os.path.isdir(src):
-                    shutil.copytree(src, dst)
+                if is_move:
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.move(src, dst)
+                    moved.append((src, dst))
                 else:
-                    shutil.copy2(src, dst)
-            except OSError as e:
+                    ok = self._fs_copy(src, dst)
+                    if ok:
+                        copied.append((src, dst))
+                    else:
+                        errors.append(f"{name}: copy failed")
+            except Exception as e:
                 errors.append(f"{name}: {e}")
+        if moved:
+            self._push_file_undo({"kind": "move", "items": moved, "label": "Move"})
+        if copied:
+            self._push_file_undo({"kind": "copy", "items": copied, "label": "Copy"})
         self._refresh()
         if errors:
             from PyQt6.QtWidgets import QMessageBox
@@ -2133,13 +2860,14 @@ class ProjectPanel(QDockWidget):
         if not items:
             return
         paths = [i.data(0, Qt.ItemDataRole.UserRole) for i in items]
+        paths = [p for p in paths if p]
         if not paths:
             return
         drag = QDrag(dt)
         mime = QMimeData()
         uri_paths = ["file:///" + os.path.abspath(p).replace("\\", "/") for p in paths]
         mime.setUrls([QUrl(u) for u in uri_paths])
-        mime.setText(paths[0])
+        mime.setText("\n".join(paths))
         ext = os.path.splitext(paths[0])[1].lower()
         if len(paths) == 1 and ext == ".zpep":
             mime.setData("application/x-zpep", QByteArray(paths[0].encode()))
@@ -2197,33 +2925,56 @@ class ProjectPanel(QDockWidget):
         if not _file_clipboard:
             return
         target = self._active_pane()._current_dir
+        try:
+            target = os.path.normpath(os.path.abspath(target))
+        except Exception:
+            return
+        moved = []
+        copied = []
         errors = []
-        for src in _file_clipboard:
-            if not os.path.exists(src):
+        for src in list(_file_clipboard):
+            if not src or not os.path.exists(src):
+                continue
+            try:
+                src_n = os.path.normpath(os.path.abspath(src))
+            except Exception:
                 continue
             name = os.path.basename(src)
             dst = os.path.join(target, name)
-            if src == dst:
+            if self._norm(src_n) == self._norm(dst):
+                if _clipboard_is_cut:
+                    continue
+                dst = self._unique_dst(target, name)
+            elif os.path.exists(dst):
+                try:
+                    if _clipboard_is_cut and os.path.samefile(src_n, dst):
+                        continue
+                except Exception:
+                    pass
+                dst = self._unique_dst(target, name)
+            if self._norm(dst).startswith(self._norm(src_n) + os.sep):
+                errors.append(f"{name}: target inside itself")
                 continue
-            if os.path.exists(dst):
-                base, ext = os.path.splitext(name)
-                counter = 1
-                while os.path.exists(os.path.join(target, f"{base} ({counter}){ext}")):
-                    counter += 1
-                dst = os.path.join(target, f"{base} ({counter}){ext}")
             try:
                 if _clipboard_is_cut:
-                    shutil.move(src, dst)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.move(src_n, dst)
+                    moved.append((src_n, dst))
                 else:
-                    if os.path.isdir(src):
-                        shutil.copytree(src, dst)
+                    ok = self._fs_copy(src_n, dst)
+                    if ok:
+                        copied.append((src_n, dst))
                     else:
-                        shutil.copy2(src, dst)
-            except OSError as e:
+                        errors.append(f"{name}: copy failed")
+            except Exception as e:
                 errors.append(f"{name}: {e}")
         if _clipboard_is_cut:
             _file_clipboard = []
             _clipboard_is_cut = False
+        if moved:
+            self._push_file_undo({"kind": "move", "items": moved, "label": "Paste move"})
+        if copied:
+            self._push_file_undo({"kind": "copy", "items": copied, "label": "Paste copy"})
         self._refresh()
         if errors:
             from PyQt6.QtWidgets import QMessageBox
@@ -2233,23 +2984,25 @@ class ProjectPanel(QDockWidget):
         paths = self._get_selected_paths()
         if not paths:
             return
+        copied = []
         errors = []
         for src in paths:
             if not os.path.exists(src):
                 continue
             name = os.path.basename(src)
-            base, ext = os.path.splitext(name)
-            counter = 1
-            while os.path.exists(os.path.join(os.path.dirname(src), f"{base} ({counter}){ext}")):
-                counter += 1
-            dst = os.path.join(os.path.dirname(src), f"{base} ({counter}){ext}")
+            dst = self._unique_dst(os.path.dirname(src), name)
+            if self._norm(dst).startswith(self._norm(src) + os.sep):
+                continue
             try:
-                if os.path.isdir(src):
-                    shutil.copytree(src, dst)
+                ok = self._fs_copy(src, dst)
+                if ok:
+                    copied.append((src, dst))
                 else:
-                    shutil.copy2(src, dst)
-            except OSError as e:
+                    errors.append(f"{name}: copy failed")
+            except Exception as e:
                 errors.append(f"{name}: {e}")
+        if copied:
+            self._push_file_undo({"kind": "copy", "items": copied, "label": "Duplicate"})
         self._refresh()
         if errors:
             from PyQt6.QtWidgets import QMessageBox
@@ -2267,15 +3020,30 @@ class ProjectPanel(QDockWidget):
             f"Delete {len(paths)} item(s)?\n{names}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
+            try:
+                trash_dir = os.path.join(self._trash_base(), f"del_{int(time.time()*1000)}")
+                os.makedirs(trash_dir, exist_ok=True)
+            except Exception:
+                trash_dir = self._trash_base()
+            items = []
             errors = []
             for p in paths:
+                if not os.path.exists(p):
+                    continue
+                b = os.path.join(trash_dir, os.path.basename(p))
+                k = 1
+                bb = b
+                while os.path.exists(bb):
+                    base, ext = os.path.splitext(os.path.basename(p))
+                    bb = os.path.join(trash_dir, f"{base} ({k}){ext}")
+                    k += 1
                 try:
-                    if os.path.isdir(p):
-                        shutil.rmtree(p)
-                    else:
-                        os.remove(p)
-                except OSError as e:
+                    shutil.move(p, bb)
+                    items.append((p, bb))
+                except Exception as e:
                     errors.append(f"{os.path.basename(p)}: {e}")
+            if items:
+                self._push_file_undo({"kind": "delete", "items": items, "label": "Delete"})
             self._refresh()
             if errors:
                 QMessageBox.warning(self, "Delete Errors", "\n".join(errors))
@@ -2288,7 +3056,9 @@ class ProjectPanel(QDockWidget):
         name, ok = QInputDialog.getText(self, "Create Folder", "Folder name:")
         if ok and name:
             try:
-                os.makedirs(os.path.join(self._current_dir(), name), exist_ok=True)
+                target = os.path.join(self._current_dir(), name)
+                os.makedirs(target, exist_ok=True)
+                self._push_file_undo({"kind": "create", "paths": [target], "label": "Create folder"})
                 self._refresh()
             except OSError as e:
                 from PyQt6.QtWidgets import QMessageBox
@@ -2304,6 +3074,7 @@ class ProjectPanel(QDockWidget):
         data = {"name": os.path.splitext(os.path.basename(path))[0], "entities": {}}
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
+        self._push_file_undo({"kind": "create", "paths": [path], "label": "Create scene"})
         self._refresh()
 
     def _create_new_material(self):
@@ -2316,6 +3087,7 @@ class ProjectPanel(QDockWidget):
         from core.assets.material import Material
         mat = Material(os.path.splitext(os.path.basename(path))[0])
         mat.save(path, self._engine.project_root)
+        self._push_file_undo({"kind": "create", "paths": [path], "label": "Create material"})
         self._refresh()
 
     def _create_new_physic_material(self):
@@ -2327,6 +3099,7 @@ class ProjectPanel(QDockWidget):
         from core.assets.physics_material import PhysicsMaterial
         mat = PhysicsMaterial(os.path.splitext(os.path.basename(path))[0])
         mat.save(path)
+        self._push_file_undo({"kind": "create", "paths": [path], "label": "Create material"})
         self._refresh()
 
     def _create_new_animclip(self):
@@ -2338,6 +3111,7 @@ class ProjectPanel(QDockWidget):
         from core.components.animation.animation_clip import AnimationClip
         clip = AnimationClip(os.path.splitext(os.path.basename(path))[0])
         clip.save(path)
+        self._push_file_undo({"kind": "create", "paths": [path], "label": "Create clip"})
         self._refresh()
 
     def _create_new_animcontroller(self):
@@ -2349,6 +3123,7 @@ class ProjectPanel(QDockWidget):
         from core.components.animation.animator_controller import AnimatorController
         ctrl = AnimatorController(os.path.splitext(os.path.basename(path))[0])
         ctrl.save(path)
+        self._push_file_undo({"kind": "create", "paths": [path], "label": "Create controller"})
         self._refresh()
 
     def _create_new_script(self):
@@ -2369,6 +3144,7 @@ class NewScript(Component):
 '''
         with open(path, "w") as f:
             f.write(template)
+        self._push_file_undo({"kind": "create", "paths": [path], "label": "Create script"})
         self._refresh()
 
     def _resolve_resource_path(self, path: str) -> str:
@@ -2407,9 +3183,11 @@ class NewScript(Component):
         norm = os.path.normpath(self._resolve_resource_path(path))
         if not os.path.exists(norm):
             return
-        self._sync_tree_selection(os.path.dirname(norm))
+        target = os.path.dirname(norm) if os.path.isfile(norm) else norm
+        if not self._is_inside_root(target):
+            return
         pane = self._active_pane()
-        pane.populate_files(os.path.dirname(norm))
+        self._navigate_to(pane, target, record=True)
         item = self._find_item_by_path(norm)
         if item:
             pane.active_widget().setCurrentItem(item)
@@ -2420,9 +3198,13 @@ class NewScript(Component):
         norm = os.path.normpath(self._resolve_resource_path(path))
         if not os.path.exists(norm):
             return
-        self._sync_tree_selection(os.path.dirname(norm))
+        target = os.path.dirname(norm) if os.path.isfile(norm) else norm
+        if not self._is_inside_root(target):
+            return
         pane = self._active_pane()
-        pane.populate_files(os.path.dirname(norm))
+        cur = os.path.normpath(pane._current_dir)
+        if cur != os.path.normpath(target):
+            self._navigate_to(pane, target, record=True)
         item = self._find_item_by_path(norm)
         if item:
             pane.active_widget().scrollToItem(item)
@@ -2462,8 +3244,28 @@ class NewScript(Component):
 
     def set_project_root(self, path: str):
         self._project_root = os.path.abspath(path)
-        self._pane_a._current_dir = self._project_root
-        if self._pane_b:
-            self._pane_b._current_dir = self._project_root
+        try:
+            self._pane_a._hist_back = []
+            self._pane_a._hist_fwd = []
+            self._pane_a._current_dir = self._project_root
+            self._pane_a.populate_files(self._project_root)
+        except Exception:
+            pass
+        if getattr(self, "_pane_b", None):
+            try:
+                self._pane_b._hist_back = []
+                self._pane_b._hist_fwd = []
+                self._pane_b._current_dir = self._project_root
+                self._pane_b.populate_files(self._project_root)
+            except Exception:
+                pass
+        try:
+            self._set_active_pane(self._pane_a)
+        except Exception:
+            pass
         self._refresh_vcs_status()
         self._populate_tree()
+        try:
+            self._update_nav_buttons()
+        except Exception:
+            pass
