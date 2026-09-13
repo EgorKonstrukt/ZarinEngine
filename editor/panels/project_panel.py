@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 import os
+import queue
 import sys
 import shutil
 import datetime
@@ -48,6 +49,53 @@ def _qta_icon(name: str, color: str | None = None) -> QIcon:
         return QIcon()
     c = color if color else _QTA_COLORS.get(name.split(".")[-1] if "." in name else name, "#d4d4d4")
     return qta.icon(name, color=c)
+
+
+def _system_accent() -> QColor:
+    try:
+        app = QApplication.instance()
+        if app is not None:
+            c = app.palette().color(QPalette.ColorRole.Highlight)
+            if c.isValid():
+                return c
+    except Exception:
+        pass
+    try:
+        if sys.platform == "win32":
+            import winreg
+            for sub in ("Software\\Microsoft\\Windows\\DWM", "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent"):
+                try:
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub) as k:
+                        for val in ("AccentColor", "AccentColorMenu"):
+                            try:
+                                v, _ = winreg.QueryValueEx(k, val)
+                                b = v & 0xFF
+                                g = (v >> 8) & 0xFF
+                                r = (v >> 16) & 0xFF
+                                if r + g + b > 30:
+                                    return QColor(r, g, b)
+                            except Exception:
+                                continue
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return QColor("#0078d7")
+
+
+def _accent_hex() -> str:
+    try:
+        return _system_accent().name()
+    except Exception:
+        return "#0078d7"
+
+
+def _accent_rgba(alpha: int) -> str:
+    try:
+        c = _system_accent()
+        return f"rgba({c.red()},{c.green()},{c.blue()},{alpha})"
+    except Exception:
+        return f"rgba(0,120,215,{alpha})"
 
 if TYPE_CHECKING:
     from core.engine.engine import Engine
@@ -581,29 +629,41 @@ class _FilePane(QWidget):
         self._detail_tree = FileDetailWidget(panel)
         self._detail_tree.setHeaderHidden(False)
         self._detail_tree.setColumnCount(4)
-        self._detail_tree.setHeaderLabels(["Name", "Size", "Type", "Date Modified"])
+        self._detail_tree.setHeaderLabels(["Name", "Type", "Date Modified", "Size"])
         self._detail_tree.setRootIsDecorated(False)
         self._detail_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._detail_tree.setDragEnabled(True)
+        self._detail_tree.setAlternatingRowColors(True)
+        self._detail_tree.setUniformRowHeights(True)
+        self._detail_tree.setAllColumnsShowFocus(True)
         self._detail_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._detail_tree.customContextMenuRequested.connect(panel._show_file_context_menu)
         self._detail_tree.itemClicked.connect(panel._on_file_single_click)
         self._detail_tree.itemDoubleClicked.connect(panel._on_file_double_click)
         self._detail_tree.itemChanged.connect(panel._on_tree_item_changed)
-        self._detail_tree.setSortingEnabled(True)
+        self._detail_tree.setSortingEnabled(False)
         self._detail_tree.setIndentation(0)
         header = self._detail_tree.header()
-        header.setStretchLastSection(True)
+        header.setStretchLastSection(False)
         header.setSectionsClickable(True)
         header.setSectionsMovable(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setHighlightSections(False)
+        header.setSortIndicatorShown(True)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(0, scale(280))
-        header.resizeSection(1, scale(80))
-        header.resizeSection(2, scale(140))
-        header.resizeSection(3, scale(120))
+        header.resizeSection(1, scale(110))
+        header.resizeSection(2, scale(130))
+        header.resizeSection(3, scale(90))
+        try:
+            header.setSortIndicator(panel._sort_col, panel._sort_order)
+        except Exception:
+            pass
+        try:
+            header.sectionClicked.connect(lambda idx, p=self._detail_tree: panel._on_sort_changed(self, idx))
+        except Exception:
+            pass
         self._detail_tree.setIconSize(QSize(scale(16), scale(16)))
         self._stack.addWidget(self._detail_tree)
 
@@ -611,11 +671,17 @@ class _FilePane(QWidget):
 
     def set_active(self, active: bool):
         self._active = active
+        try:
+            accent = _accent_hex()
+            soft = _accent_rgba(22)
+        except Exception:
+            accent = "#0078d7"
+            soft = "rgba(0,120,215,22)"
         if self._panel._dual_pane:
             if active:
-                self._stack.setStyleSheet("border: 1px solid #0078d7;")
+                self._stack.setStyleSheet(f"border: 1px solid {accent};")
                 self._breadcrumb_bar.setStyleSheet(
-                    "QLineEdit { background: rgba(0,120,215,18);"
+                    f"QLineEdit {{ background: {soft};"
                     " border: 1px solid transparent; border-radius: 2px;"
                     " padding: 2px 6px; font-size: 12px; min-height: 20px; }"
                 )
@@ -628,12 +694,16 @@ class _FilePane(QWidget):
                     " color: #8a8a8a; }"
                 )
         else:
-            self._stack.setStyleSheet("border: 1px solid transparent;")
+            self._stack.setStyleSheet(f"border: 1px solid {accent};")
             self._breadcrumb_bar.setStyleSheet(
-                "QLineEdit { background: transparent;"
+                f"QLineEdit {{ background: {soft};"
                 " border: 1px solid transparent; border-radius: 2px;"
                 " padding: 2px 6px; font-size: 12px; min-height: 20px; }"
             )
+        try:
+            self._panel._update_pane_selection_style(self)
+        except Exception:
+            pass
 
     def mousePressEvent(self, event):
         self._panel._set_active_pane(self)
@@ -664,11 +734,10 @@ class _FilePane(QWidget):
     def _search_all(self, text: str):
         self._file_list.clear()
         if self._panel._view_mode == VIEW_DETAILS:
-            self._detail_tree.setSortingEnabled(False)
             self._detail_tree.clear()
         for root, dirs, files in os.walk(self._panel._project_root):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
-            for f in sorted(files):
+            for f in sorted(files, key=lambda s: s.lower()):
                 if text.lower() in f.lower() and not f.startswith("."):
                     full = os.path.join(root, f)
                     if self._panel._view_mode == VIEW_DETAILS:
@@ -682,23 +751,21 @@ class _FilePane(QWidget):
                         except Exception:
                             pass
                         item.setText(0, f)
+                        item.setText(1, self._type_label(f, False))
                         try:
-                            item.setText(1, _format_size(os.path.getsize(full)))
+                            mt = os.path.getmtime(full)
+                            dt = datetime.datetime.fromtimestamp(mt)
+                            item.setText(2, dt.strftime("%Y-%m-%d %H:%M"))
+                        except Exception:
+                            item.setText(2, "")
+                        try:
+                            item.setText(3, _format_size(os.path.getsize(full)))
                         except OSError:
-                            item.setText(1, "")
-                        ext = os.path.splitext(f)[1].lower()
-                        type_map = {
-                            ".py": "Python Script", ".zpes": "Zarin Scene",
-                            ".zpep": "Zarin Prefab",
-                            ".mat": "Material", ".obj": "OBJ Model", ".fbx": "FBX Model",
-                            ".stl": "3D Model", ".gltf": "3D Model", ".glb": "3D Model", ".usdz": "3D Model",
-                            ".png": "PNG Image", ".jpg": "JPEG Image", ".jpeg": "JPEG Image",
-                            ".wav": "WAV Audio", ".mp3": "MP3 Audio", ".ogg": "OGG Audio", ".flac": "FLAC Audio",
-                            ".txt": "Text Document", ".json": "JSON File",
-                            ".animclip": "Animation Clip", ".animcontroller": "Animator Controller",
-                            ".zterr": "Terrain Graph",
-                        }
-                        item.setText(2, type_map.get(ext, f"{ext.upper()} File" if ext else "File"))
+                            item.setText(3, "")
+                        try:
+                            item.setTextAlignment(3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                        except Exception:
+                            pass
                         item.setData(0, Qt.ItemDataRole.UserRole, full)
                         self._detail_tree.addTopLevelItem(item)
                     else:
@@ -713,14 +780,38 @@ class _FilePane(QWidget):
                         item.setText(f)
                         item.setData(Qt.ItemDataRole.UserRole, full)
                         self._file_list.addItem(item)
-        if self._panel._view_mode == VIEW_DETAILS:
-            self._detail_tree.setSortingEnabled(True)
+
+    def _type_label(self, entry: str, is_dir: bool) -> str:
+        if is_dir:
+            return "[DIR]"
+        ext = os.path.splitext(entry)[1].lower()
+        if ext.startswith("."):
+            ext = ext[1:]
+        if ext:
+            return ext
+        return "File"
+
+    def _size_brush(self, size: int) -> QBrush:
+        try:
+            if size < 0:
+                return QBrush()
+            if size < 1024 * 100:
+                return QBrush(QColor("#7fb3d5"))
+            if size < 1024 * 1024 * 10:
+                return QBrush(QColor("#82c46a"))
+            if size < 1024 * 1024 * 100:
+                return QBrush(QColor("#d9c84a"))
+            if size < 1024 * 1024 * 500:
+                return QBrush(QColor("#e09a3c"))
+            return QBrush(QColor("#d95f4b"))
+        except Exception:
+            return QBrush()
 
     def populate_files(self, dirpath: str, filter_text: str = ""):
         self._current_dir = os.path.normpath(dirpath)
         self.rebuild_breadcrumb()
         try:
-            entries = sorted(os.listdir(dirpath))
+            entries = sorted(os.listdir(dirpath), key=lambda s: s.lower())
         except (PermissionError, FileNotFoundError) as e:
             if isinstance(e, FileNotFoundError):
                 os.makedirs(dirpath, exist_ok=True)
@@ -730,37 +821,103 @@ class _FilePane(QWidget):
         visible = [e for e in entries if not e.startswith(".") and not e.endswith(".import")]
         if filter_text:
             visible = [e for e in visible if filter_text.lower() in e.lower()]
+        try:
+            self._panel._dir_size_gen += 1
+        except Exception:
+            pass
         if self._panel._view_mode == VIEW_DETAILS:
             self._populate_detail_tree(dirpath, visible, filter_text)
         else:
             self._populate_list_view(dirpath, visible, filter_text)
         if self._active:
             if self._panel._status_bar:
-                self._panel._status_bar.update_counts(len(visible))
+                try:
+                    extra = 1
+                    try:
+                        if os.path.normpath(dirpath) != os.path.normpath(self._panel._project_root):
+                            extra = 0
+                    except Exception:
+                        pass
+                    self._panel._status_bar.update_counts(len(visible) + (0 if extra else 0))
+                except Exception:
+                    self._panel._status_bar.update_counts(len(visible))
             if self._panel._nav_bar:
                 self._panel._nav_bar.update_address(self._current_dir)
             if self._panel._status_bar:
                 self._panel._status_bar.update_path(self._current_dir)
             self._panel._update_nav_buttons()
+            try:
+                self._panel._refresh_status_sizes()
+            except Exception:
+                pass
         self._panel._apply_vcs_colors()
+
+    def _add_up_row_detail(self, widget, dirpath: str) -> None:
+        try:
+            if os.path.normpath(dirpath) == os.path.normpath(self._panel._project_root):
+                return
+            parent = os.path.normpath(os.path.dirname(os.path.normpath(dirpath)))
+        except Exception:
+            return
+        try:
+            item = QTreeWidgetItem()
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            try:
+                item.setIcon(0, self._panel._icon_provider.icon(QFileIconProvider.IconType.Folder))
+            except Exception:
+                pass
+            item.setText(0, "..")
+            item.setText(1, "Parent Folder")
+            item.setText(2, "")
+            item.setText(3, "")
+            item.setData(0, Qt.ItemDataRole.UserRole, parent)
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, "up")
+            item.setToolTip(0, parent)
+            widget.addTopLevelItem(item)
+        except Exception:
+            pass
+
+    def _add_up_row_list(self, widget, dirpath: str) -> None:
+        try:
+            if os.path.normpath(dirpath) == os.path.normpath(self._panel._project_root):
+                return
+            parent = os.path.normpath(os.path.dirname(os.path.normpath(dirpath)))
+        except Exception:
+            return
+        try:
+            item = QListWidgetItem()
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            try:
+                item.setIcon(self._panel._icon_provider.icon(QFileIconProvider.IconType.Folder))
+            except Exception:
+                item.setIcon(QIcon())
+            item.setText("..")
+            item.setData(Qt.ItemDataRole.UserRole, parent)
+            item.setData(Qt.ItemDataRole.UserRole + 1, "up")
+            item.setToolTip(f"Up: {parent}")
+            widget.addItem(item)
+        except Exception:
+            pass
 
     def _populate_list_view(self, dirpath: str, entries: list[str], filter_text: str):
         widget = self._file_list
         widget.blockSignals(True)
         widget.clear()
         is_icon = self._panel._view_mode == VIEW_ICON
-        folders = []
-        files = []
-        for entry in entries:
-            full = os.path.join(dirpath, entry)
-            if entry.startswith("."):
-                continue
-            if filter_text and filter_text.lower() not in entry.lower():
-                continue
-            if os.path.isdir(full):
-                folders.append((entry, full))
-            else:
-                files.append((entry, full))
+        self._add_up_row_list(widget, dirpath)
+        try:
+            ordered = self._panel._sorted_entries(dirpath, entries)
+        except Exception:
+            ordered = []
+            for entry in entries:
+                full = os.path.join(dirpath, entry)
+                try:
+                    is_dir = os.path.isdir(full)
+                except Exception:
+                    is_dir = False
+                ordered.append((entry, full, is_dir, 0, 0, ""))
+        folders = [(e, f) for e, f, d, s, m, x in ordered if d]
+        files = [(e, f) for e, f, d, s, m, x in ordered if not d]
         for entry, full in folders:
             item = QListWidgetItem()
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
@@ -836,28 +993,64 @@ class _FilePane(QWidget):
 
     def _populate_detail_tree(self, dirpath: str, entries: list[str], filter_text: str):
         widget = self._detail_tree
-        widget.setSortingEnabled(False)
         widget.blockSignals(True)
         widget.clear()
+        self._add_up_row_detail(widget, dirpath)
         use_thumbs = self._panel._thumb_size >= 20
-        for entry in entries:
-            full = os.path.join(dirpath, entry)
+        try:
+            ordered = self._panel._sorted_entries(dirpath, entries)
+        except Exception:
+            ordered = []
+            for entry in entries:
+                full = os.path.join(dirpath, entry)
+                try:
+                    is_dir = os.path.isdir(full)
+                except Exception:
+                    is_dir = False
+                ordered.append((entry, full, is_dir, 0, 0, ""))
+        need_sizes = []
+        for entry, full, is_dir, _sz, _mt, _ex in ordered:
             if entry.startswith("."):
                 continue
             if filter_text and filter_text.lower() not in entry.lower():
                 continue
             item = QTreeWidgetItem()
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-            if os.path.isdir(full):
+            if is_dir:
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 try:
                     item.setIcon(0, self._panel._icon_provider.icon(QFileIconProvider.IconType.Folder))
                 except Exception:
                     pass
                 item.setText(0, entry)
-                item.setText(1, "")
-                item.setText(2, "File folder")
+                item.setText(1, "[DIR]")
+                try:
+                    mt = os.path.getmtime(full)
+                    dt = datetime.datetime.fromtimestamp(mt)
+                    item.setText(2, dt.strftime("%Y-%m-%d %H:%M"))
+                except Exception:
+                    item.setText(2, "")
+                try:
+                    norm = os.path.normpath(full)
+                    cached = self._panel._dir_size_cache.get(norm)
+                    if cached is not None:
+                        item.setText(3, _format_size(int(cached)))
+                        item.setData(0, Qt.ItemDataRole.UserRole + 2, int(cached))
+                        try:
+                            item.setForeground(3, self._panel._size_brush(int(cached)))
+                        except Exception:
+                            pass
+                    else:
+                        item.setText(3, "…")
+                        need_sizes.append(full)
+                except Exception:
+                    item.setText(3, "…")
+                    try:
+                        need_sizes.append(full)
+                    except Exception:
+                        pass
                 item.setToolTip(0, f"Folder: {full}")
             else:
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 if use_thumbs:
                     pm = _get_thumbnail(full, _thumb_resolution())
                     if pm and not pm.isNull():
@@ -879,38 +1072,43 @@ class _FilePane(QWidget):
                     except Exception:
                         pass
                 item.setText(0, entry)
-                try:
-                    sz = os.path.getsize(full)
-                    item.setText(1, _format_size(sz))
-                except OSError:
-                    item.setText(1, "")
-                ext = os.path.splitext(entry)[1].lower()
-                type_map = {
-                    ".py": "Python Script", ".zpes": "Zarin Scene",
-                    ".zpep": "Zarin Prefab",
-                    ".mat": "Material", ".obj": "OBJ Model", ".fbx": "FBX Model",
-                    ".stl": "3D Model", ".gltf": "3D Model", ".glb": "3D Model", ".usdz": "3D Model",
-                    ".png": "PNG Image", ".jpg": "JPEG Image", ".jpeg": "JPEG Image",
-                    ".wav": "WAV Audio", ".mp3": "MP3 Audio", ".ogg": "OGG Audio", ".flac": "FLAC Audio",
-                    ".txt": "Text Document", ".json": "JSON File",
-                    ".xml": "XML File", ".csv": "CSV File",
-                    ".toml": "TOML File", ".yaml": "YAML File", ".yml": "YAML File",
-                    ".ini": "INI File", ".cfg": "Configuration",
-                    ".vert": "Vertex Shader", ".frag": "Fragment Shader",
-                    ".animclip": "Animation Clip", ".animcontroller": "Animator Controller",
-                    ".zterr": "Terrain Graph",
-                }
-                item.setText(2, type_map.get(ext, f"{ext.upper()} File" if ext else "File"))
+                item.setText(1, self._type_label(entry, False))
                 try:
                     mtime = os.path.getmtime(full)
                     dt = datetime.datetime.fromtimestamp(mtime)
-                    item.setText(3, dt.strftime("%d.%m.%Y %H:%M"))
+                    item.setText(2, dt.strftime("%Y-%m-%d %H:%M"))
+                except OSError:
+                    item.setText(2, "")
+                try:
+                    sz = os.path.getsize(full)
+                    item.setText(3, _format_size(sz))
+                    item.setData(0, Qt.ItemDataRole.UserRole + 2, int(sz))
+                    try:
+                        item.setForeground(3, self._panel._size_brush(int(sz)))
+                    except Exception:
+                        pass
                 except OSError:
                     item.setText(3, "")
             item.setData(0, Qt.ItemDataRole.UserRole, full)
+            try:
+                item.setTextAlignment(3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            except Exception:
+                pass
             widget.addTopLevelItem(item)
         widget.blockSignals(False)
-        widget.setSortingEnabled(True)
+        try:
+            self._panel._apply_sort_indicators()
+        except Exception:
+            pass
+        try:
+            self._panel._apply_vcs_colors()
+        except Exception:
+            pass
+        if need_sizes:
+            try:
+                self._panel._request_dir_sizes(need_sizes)
+            except Exception:
+                pass
 
     def active_widget(self):
         return self._detail_tree if self._panel._view_mode == VIEW_DETAILS else self._file_list
@@ -1015,6 +1213,9 @@ class _StatusBar(QWidget):
 
         layout.addStretch()
 
+        self._total_label = QLabel("")
+        layout.addWidget(self._total_label)
+
         self._path_label = QLabel("")
         layout.addWidget(self._path_label)
 
@@ -1024,6 +1225,12 @@ class _StatusBar(QWidget):
             self._selected_label.setText(f"{selected} selected")
         else:
             self._selected_label.setText("")
+
+    def update_total(self, text: str):
+        try:
+            self._total_label.setText(text)
+        except Exception:
+            pass
 
     def update_path(self, path: str):
         short = path
@@ -1075,6 +1282,7 @@ class ProjectPanel(QDockWidget):
     import_model_requested = pyqtSignal(str)
     file_selected = pyqtSignal(str)
     _vcs_result_ready = pyqtSignal(dict)
+    _dir_size_ready = pyqtSignal(str, int, int)
 
     def __init__(self, engine: Engine, project_root: str = "assets", parent=None):
         super().__init__("Project", parent)
@@ -1092,6 +1300,17 @@ class ProjectPanel(QDockWidget):
         self._file_redo: list = []
         self._in_file_undo = False
         self._restoring_state = False
+        self._sort_col = 0
+        self._sort_order = Qt.SortOrder.AscendingOrder
+        self._sort_guard = False
+        self._dir_size_cache: dict[str, int] = {}
+        self._dir_size_gen = 0
+        self._dir_size_queue: queue.Queue = queue.Queue()
+        self._dir_size_thread: threading.Thread | None = None
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(600)
+        self._save_timer.timeout.connect(self._save_state_now)
         self._vcs_status: dict[str, str] = {}
         self._vcs_refreshing: bool = False
         self._vcs_pending: bool = False
@@ -1099,10 +1318,18 @@ class ProjectPanel(QDockWidget):
         self._vcs_timer.timeout.connect(self._refresh_vcs_status)
         self._vcs_timer.start(10000)
         self._vcs_result_ready.connect(self._on_vcs_result)
+        try:
+            self._dir_size_ready.connect(self._on_dir_size_ready, Qt.ConnectionType.QueuedConnection)
+        except Exception:
+            pass
         self._refresh_vcs_status()
         self._setup_ui()
         self._populate_tree()
         self._push_history(self._project_root)
+        try:
+            self._pane_splitter.splitterMoved.connect(lambda *a: self._schedule_save())
+        except Exception:
+            pass
 
     def load_config(self, config) -> None:
         try:
@@ -1118,6 +1345,17 @@ class ProjectPanel(QDockWidget):
             pass
         try:
             self._dual_pane = bool(config.get("project.dual_pane", False))
+        except Exception:
+            pass
+        try:
+            sc = int(config.get("project.sort_column", 0))
+            if sc in (0, 1, 2, 3):
+                self._sort_col = sc
+        except Exception:
+            pass
+        try:
+            so = int(config.get("project.sort_order", 0))
+            self._sort_order = Qt.SortOrder.DescendingOrder if so == 1 else Qt.SortOrder.AscendingOrder
         except Exception:
             pass
         if hasattr(self, "_zoom_slider"):
@@ -1151,6 +1389,14 @@ class ProjectPanel(QDockWidget):
         config.set("project.thumb_size", self._thumb_size)
         config.set("project.dual_pane", self._dual_pane)
         config.set("project.view_mode", self._view_mode)
+        try:
+            config.set("project.sort_column", int(self._sort_col))
+        except Exception:
+            pass
+        try:
+            config.set("project.sort_order", 1 if self._sort_order == Qt.SortOrder.DescendingOrder else 0)
+        except Exception:
+            pass
         try:
             config.set("project.pane_a_dir", self._rel_or_abs(self._pane_a._current_dir))
         except Exception:
@@ -1370,6 +1616,10 @@ class ProjectPanel(QDockWidget):
             self._sync_tree_selection(target)
         except Exception:
             pass
+        try:
+            self._schedule_save()
+        except Exception:
+            pass
 
     def _push_history(self, path: str, pane=None):
         try:
@@ -1399,6 +1649,10 @@ class ProjectPanel(QDockWidget):
             finally:
                 pane._navigating = False
             self._update_nav_buttons()
+            try:
+                self._schedule_save()
+            except Exception:
+                pass
 
     def _go_forward(self):
         pane = self._active_pane()
@@ -1415,6 +1669,10 @@ class ProjectPanel(QDockWidget):
             finally:
                 pane._navigating = False
             self._update_nav_buttons()
+            try:
+                self._schedule_save()
+            except Exception:
+                pass
 
     def _update_nav_buttons(self):
         try:
@@ -1422,6 +1680,308 @@ class ProjectPanel(QDockWidget):
             if self._nav_bar:
                 self._nav_bar._back_btn.setEnabled(len(pane._hist_back) > 0)
                 self._nav_bar._forward_btn.setEnabled(len(pane._hist_fwd) > 0)
+        except Exception:
+            pass
+
+    def _update_pane_selection_style(self, pane) -> None:
+        try:
+            accent = _accent_hex()
+        except Exception:
+            accent = "#0078d7"
+        try:
+            is_active = bool(pane._active)
+        except Exception:
+            is_active = True
+        try:
+            if is_active:
+                sel = f"QTreeWidget::item:selected {{ background: {accent}; color: white; }} QTreeWidget::item:selected:!active {{ background: {accent}; color: white; }} QListWidget::item:selected {{ background: {accent}; color: white; }}"
+            else:
+                sel = "QTreeWidget::item:selected { background: #4a4a4a; color: white; } QTreeWidget::item:selected:!active { background: #3d3d3d; color: #d4d4d4; } QListWidget::item:selected { background: #4a4a4a; color: white; }"
+            base_tree = f"QTreeWidget {{ border: none; outline: none; show-decoration-selected: 1; background: #252526; alternate-background-color: #2a2a2d; }} QTreeWidget::item {{ padding: 1px 2px; min-height: 20px; }} QTreeWidget::item:alternate {{ background: #2a2a2d; }} {sel}"
+            base_list = f"QListWidget {{ border: none; outline: none; }} {sel}"
+            try:
+                pane._detail_tree.setStyleSheet(base_tree)
+            except Exception:
+                pass
+            try:
+                pane._file_list.setStyleSheet(base_list)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _schedule_save(self) -> None:
+        try:
+            if self._restoring_state:
+                return
+            if not self._save_timer.isActive():
+                self._save_timer.start()
+        except Exception:
+            pass
+
+    def _save_state_now(self) -> None:
+        try:
+            if self._restoring_state:
+                return
+            from core.config.config import get_global_config
+            cfg = get_global_config()
+            self.save_config(cfg)
+            try:
+                cfg.save()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_sort_changed(self, pane, logical: int) -> None:
+        try:
+            if self._sort_guard:
+                return
+            order = pane._detail_tree.header().sortIndicatorOrder()
+            self._sort_col = int(logical)
+            self._sort_order = order
+            self._apply_sort_indicators()
+            pane.refresh()
+            if getattr(self, "_pane_b", None) is not None:
+                try:
+                    self._pane_b.refresh()
+                except Exception:
+                    pass
+            self._schedule_save()
+        except Exception:
+            pass
+
+    def _apply_sort_indicators(self) -> None:
+        try:
+            self._sort_guard = True
+            for pane in (getattr(self, "_pane_a", None), getattr(self, "_pane_b", None)):
+                if pane is None:
+                    continue
+                try:
+                    h = pane._detail_tree.header()
+                    h.blockSignals(True)
+                    h.setSortIndicator(self._sort_col, self._sort_order)
+                    h.blockSignals(False)
+                except Exception:
+                    pass
+        finally:
+            try:
+                self._sort_guard = False
+            except Exception:
+                pass
+
+    def _sorted_entries(self, dirpath: str, entries: list[str]):
+        try:
+            reverse = self._sort_order == Qt.SortOrder.DescendingOrder
+        except Exception:
+            reverse = False
+        col = getattr(self, "_sort_col", 0)
+        rows = []
+        for e in entries:
+            full = os.path.join(dirpath, e)
+            try:
+                is_dir = os.path.isdir(full)
+            except Exception:
+                is_dir = False
+            try:
+                sz = os.path.getsize(full) if not is_dir else int(self._dir_size_cache.get(os.path.normpath(full), -1))
+            except Exception:
+                sz = -1
+            try:
+                mt = os.path.getmtime(full)
+            except Exception:
+                mt = 0
+            ext = os.path.splitext(e)[1].lower() if not is_dir else ""
+            rows.append((e, full, is_dir, sz, mt, ext))
+        try:
+            if col == 3:
+                rows.sort(key=lambda r: (r[3] < 0, r[3], r[0].lower()), reverse=reverse)
+            elif col == 2:
+                rows.sort(key=lambda r: (r[4], r[0].lower()), reverse=reverse)
+            elif col == 1:
+                rows.sort(key=lambda r: (r[5] if not r[2] else "", r[0].lower()), reverse=reverse)
+            else:
+                rows.sort(key=lambda r: r[0].lower(), reverse=reverse)
+        except Exception:
+            pass
+        dirs = [r for r in rows if r[2]]
+        files = [r for r in rows if not r[2]]
+        return dirs + files
+
+    def _ensure_size_thread(self) -> None:
+        try:
+            if self._dir_size_thread is not None and self._dir_size_thread.is_alive():
+                return
+            t = threading.Thread(target=self._dir_size_loop, daemon=True)
+            self._dir_size_thread = t
+            t.start()
+        except Exception:
+            pass
+
+    def _dir_size_loop(self) -> None:
+        while True:
+            try:
+                gen, path = self._dir_size_queue.get()
+            except Exception:
+                continue
+            try:
+                if gen != self._dir_size_gen:
+                    continue
+                norm = os.path.normpath(path)
+                if norm in self._dir_size_cache:
+                    continue
+                total = self._compute_dir_size_fast(path, gen)
+                if total is None:
+                    continue
+                if gen != self._dir_size_gen:
+                    continue
+                self._dir_size_cache[norm] = int(total)
+                try:
+                    self._dir_size_ready.emit(path, int(total), int(gen))
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+    def _compute_dir_size_fast(self, root: str, gen: int):
+        total = 0
+        try:
+            stack = [root]
+            steps = 0
+            while stack:
+                if gen != self._dir_size_gen:
+                    return None
+                cur = stack.pop()
+                try:
+                    with os.scandir(cur) as it:
+                        for entry in it:
+                            steps += 1
+                            if steps % 2000 == 0 and gen != self._dir_size_gen:
+                                return None
+                            try:
+                                if entry.is_symlink():
+                                    continue
+                                if entry.is_dir(follow_symlinks=False):
+                                    stack.append(entry.path)
+                                elif entry.is_file(follow_symlinks=False):
+                                    try:
+                                        total += entry.stat(follow_symlinks=False).st_size
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                continue
+                except Exception:
+                    continue
+            return total
+        except Exception:
+            return total
+
+    def _request_dir_sizes(self, folder_paths: list[str]) -> None:
+        try:
+            self._ensure_size_thread()
+            gen = int(self._dir_size_gen)
+            for p in folder_paths:
+                try:
+                    norm = os.path.normpath(p)
+                    if norm in self._dir_size_cache:
+                        continue
+                    self._dir_size_queue.put((gen, p))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    def _on_dir_size_ready(self, path: str, size: int, gen: int) -> None:
+        try:
+            norm = os.path.normpath(path)
+            self._dir_size_cache[norm] = int(size)
+            for pane in (getattr(self, "_pane_a", None), getattr(self, "_pane_b", None)):
+                if pane is None:
+                    continue
+                try:
+                    if os.path.normpath(pane._current_dir) != os.path.normpath(os.path.dirname(path)):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    tree = pane._detail_tree
+                    for i in range(tree.topLevelItemCount()):
+                        it = tree.topLevelItem(i)
+                        try:
+                            if it.data(0, Qt.ItemDataRole.UserRole) == path:
+                                it.setText(3, _format_size(int(size)))
+                                it.setData(0, Qt.ItemDataRole.UserRole + 2, int(size))
+                                it.setTextAlignment(3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                                try:
+                                    it.setForeground(3, self._size_brush(int(size)))
+                                except Exception:
+                                    pass
+                                break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+            try:
+                self._refresh_status_sizes()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _refresh_status_sizes(self) -> None:
+        try:
+            pane = self._active_pane()
+            if pane is None or self._status_bar is None:
+                return
+            total = 0
+            has_total = False
+            try:
+                for i in range(pane._detail_tree.topLevelItemCount()):
+                    it = pane._detail_tree.topLevelItem(i)
+                    try:
+                        p = it.data(0, Qt.ItemDataRole.UserRole)
+                        if not p or os.path.basename(p) == "..":
+                            continue
+                        if os.path.isdir(p):
+                            v = self._dir_size_cache.get(os.path.normpath(p))
+                            if v is not None:
+                                total += int(v)
+                                has_total = True
+                        else:
+                            try:
+                                total += os.path.getsize(p)
+                                has_total = True
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            try:
+                if has_total:
+                    self._status_bar.update_total(_format_size(total))
+                else:
+                    self._status_bar.update_total("")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _invalidate_dir_size(self, path: str) -> None:
+        try:
+            cur = os.path.normpath(os.path.abspath(path))
+            root = os.path.normpath(self._project_root)
+            for _ in range(32):
+                try:
+                    self._dir_size_cache.pop(cur, None)
+                except Exception:
+                    pass
+                if cur == root:
+                    break
+                nxt = os.path.normpath(os.path.dirname(cur))
+                if nxt == cur:
+                    break
+                cur = nxt
         except Exception:
             pass
 
@@ -1797,6 +2357,10 @@ class ProjectPanel(QDockWidget):
             return
         self._dual_pane = bool(checked)
         self._apply_dual_pane_state()
+        try:
+            self._schedule_save()
+        except Exception:
+            pass
 
     def _install_pane_focus(self, pane):
         try:
@@ -1932,6 +2496,10 @@ class ProjectPanel(QDockWidget):
         self._pane_a.refresh()
         if self._pane_b:
             self._pane_b.refresh()
+        try:
+            self._schedule_save()
+        except Exception:
+            pass
 
     def _apply_view_mode(self):
         is_detail = self._view_mode == VIEW_DETAILS
@@ -1972,12 +2540,15 @@ class ProjectPanel(QDockWidget):
                 pane._file_list.setIconSize(QSize(val, val))
                 pane._file_list.setGridSize(QSize(val + scale(20), val + scale(36)))
         else:
-            pt = max(7, min(20, int(val / 6)))
             icon_sz = max(16, min(64, int(val * 0.5)))
             for pane in (self._pane_a, self._pane_b):
                 if not pane:
                     continue
                 pane._detail_tree.setIconSize(QSize(icon_sz, icon_sz))
+        try:
+            self._schedule_save()
+        except Exception:
+            pass
 
     def _try_plugin_opener(self, path: str) -> bool:
         try:
@@ -2052,6 +2623,11 @@ class ProjectPanel(QDockWidget):
     def _on_list_item_changed(self, item: QListWidgetItem):
         if self._in_file_undo:
             return
+        try:
+            if self._is_up_item(item):
+                return
+        except Exception:
+            pass
         old_path = item.data(Qt.ItemDataRole.UserRole)
         if not old_path or not os.path.exists(old_path):
             return
@@ -2088,6 +2664,11 @@ class ProjectPanel(QDockWidget):
             return
         if self._in_file_undo:
             return
+        try:
+            if self._is_up_item(item):
+                return
+        except Exception:
+            pass
         old_path = item.data(0, Qt.ItemDataRole.UserRole)
         if not old_path or not os.path.exists(old_path):
             return
@@ -2108,22 +2689,10 @@ class ProjectPanel(QDockWidget):
             item.setData(0, Qt.ItemDataRole.UserRole, new_path)
             self._push_file_undo({"kind": "rename", "old": old_path, "new": new_path, "label": "Rename"})
             if not os.path.isdir(new_path):
-                ext = os.path.splitext(new_name)[1].lower()
-                if ext:
-                    type_map = {
-                        ".py": "Python Script", ".zpes": "Zarin Scene",
-                        ".zpep": "Zarin Prefab",
-                        ".mat": "Material", ".obj": "OBJ Model", ".fbx": "FBX Model",
-                        ".stl": "3D Model", ".gltf": "3D Model", ".glb": "3D Model", ".usdz": "3D Model",
-                        ".png": "PNG Image", ".jpg": "JPEG Image", ".jpeg": "JPEG Image",
-                        ".wav": "WAV Audio", ".mp3": "MP3 Audio", ".ogg": "OGG Audio", ".flac": "FLAC Audio",
-                        ".txt": "Text Document", ".json": "JSON File",
-                        ".animclip": "Animation Clip", ".animcontroller": "Animator Controller",
-                        ".zterr": "Terrain Graph",
-                    }
-                    item.setText(1, type_map.get(ext, "Renaming..."))
-                else:
-                    item.setText(1, "")
+                try:
+                    item.setText(1, self._active_pane()._type_label(new_name, False))
+                except Exception:
+                    pass
             new_p = item.data(0, Qt.ItemDataRole.UserRole)
             if new_p and os.path.isfile(new_p):
                 self.file_selected.emit(new_p)
@@ -2414,6 +2983,41 @@ class ProjectPanel(QDockWidget):
             self._file_redo.clear()
         except Exception:
             pass
+        try:
+            kind = op.get("kind")
+            if kind == "rename":
+                try:
+                    self._invalidate_dir_size(op.get("old", ""))
+                except Exception:
+                    pass
+                try:
+                    self._invalidate_dir_size(op.get("new", ""))
+                except Exception:
+                    pass
+            elif kind in ("move", "copy"):
+                for s, d in op.get("items", []):
+                    try:
+                        self._invalidate_dir_size(s)
+                    except Exception:
+                        pass
+                    try:
+                        self._invalidate_dir_size(d)
+                    except Exception:
+                        pass
+            elif kind == "delete":
+                for o, _b in op.get("items", []):
+                    try:
+                        self._invalidate_dir_size(o)
+                    except Exception:
+                        pass
+            elif kind == "create":
+                for p in op.get("paths", []):
+                    try:
+                        self._invalidate_dir_size(p)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     def _fs_copy(self, src: str, dst: str) -> bool:
         try:
@@ -2581,6 +3185,23 @@ class ProjectPanel(QDockWidget):
         finally:
             self._in_file_undo = False
         try:
+            try:
+                k = op.get("kind")
+                if k == "rename":
+                    self._invalidate_dir_size(op.get("old", ""))
+                    self._invalidate_dir_size(op.get("new", ""))
+                elif k in ("move", "copy"):
+                    for s, d in op.get("items", []):
+                        self._invalidate_dir_size(s)
+                        self._invalidate_dir_size(d)
+                elif k == "delete":
+                    for o, _b in op.get("items", []):
+                        self._invalidate_dir_size(o)
+                elif k == "create":
+                    for p in op.get("paths", []):
+                        self._invalidate_dir_size(p)
+            except Exception:
+                pass
             self._refresh()
         except Exception:
             pass
@@ -2652,6 +3273,23 @@ class ProjectPanel(QDockWidget):
         finally:
             self._in_file_undo = False
         try:
+            try:
+                k = op.get("kind")
+                if k == "rename":
+                    self._invalidate_dir_size(op.get("old", ""))
+                    self._invalidate_dir_size(op.get("new", ""))
+                elif k in ("move", "copy"):
+                    for s, d in op.get("items", []):
+                        self._invalidate_dir_size(s)
+                        self._invalidate_dir_size(d)
+                elif k == "delete":
+                    for o, _b in op.get("items", []):
+                        self._invalidate_dir_size(o)
+                elif k == "create":
+                    for p, _b in op.get("trash_items", []):
+                        self._invalidate_dir_size(p)
+            except Exception:
+                pass
             self._refresh()
         except Exception:
             pass
@@ -2664,7 +3302,7 @@ class ProjectPanel(QDockWidget):
 
     def _start_drag_list(self, supported_actions):
         fl = self._active_pane()._file_list
-        items = fl.selectedItems()
+        items = [i for i in fl.selectedItems() if not self._is_up_item(i)]
         if not items:
             return
         paths = [i.data(Qt.ItemDataRole.UserRole) for i in items if i.data(Qt.ItemDataRole.UserRole)]
@@ -2840,6 +3478,22 @@ class ProjectPanel(QDockWidget):
             self._push_file_undo({"kind": "move", "items": moved, "label": "Move"})
         if copied:
             self._push_file_undo({"kind": "copy", "items": copied, "label": "Copy"})
+        try:
+            for s, d in moved + copied:
+                try:
+                    self._invalidate_dir_size(s)
+                except Exception:
+                    pass
+                try:
+                    self._invalidate_dir_size(d)
+                except Exception:
+                    pass
+            try:
+                self._invalidate_dir_size(dest_dir)
+            except Exception:
+                pass
+        except Exception:
+            pass
         self._refresh()
         if errors:
             from PyQt6.QtWidgets import QMessageBox
@@ -2856,7 +3510,7 @@ class ProjectPanel(QDockWidget):
 
     def _start_drag_detail(self, supported_actions):
         dt = self._active_pane()._detail_tree
-        items = dt.selectedItems()
+        items = [i for i in dt.selectedItems() if not self._is_up_item(i)]
         if not items:
             return
         paths = [i.data(0, Qt.ItemDataRole.UserRole) for i in items]
@@ -2897,10 +3551,31 @@ class ProjectPanel(QDockWidget):
     def _copy_path(self, path: str):
         QGuiApplication.clipboard().setText(path)
 
+    def _is_up_item(self, item) -> bool:
+        try:
+            if isinstance(item, QTreeWidgetItem):
+                if item.data(0, Qt.ItemDataRole.UserRole + 1) == "up":
+                    return True
+                if item.text(0) == "..":
+                    return True
+            else:
+                if item.data(Qt.ItemDataRole.UserRole + 1) == "up":
+                    return True
+                if item.text() == "..":
+                    return True
+        except Exception:
+            pass
+        return False
+
     def _get_selected_paths(self):
         widget = self._active_widget()
         paths = []
         for item in widget.selectedItems():
+            try:
+                if self._is_up_item(item):
+                    continue
+            except Exception:
+                pass
             d = item.data(0, Qt.ItemDataRole.UserRole) if isinstance(item, QTreeWidgetItem) else item.data(Qt.ItemDataRole.UserRole)
             if d:
                 paths.append(d)
@@ -3245,18 +3920,38 @@ class NewScript(Component):
     def set_project_root(self, path: str):
         self._project_root = os.path.abspath(path)
         try:
+            self._dir_size_cache.clear()
+            self._dir_size_gen += 1
+        except Exception:
+            pass
+        a_dir = self._project_root
+        b_dir = self._project_root
+        try:
+            from core.config.config import get_global_config
+            cfg = get_global_config()
+            try:
+                a_dir = self._abs_from_saved(cfg.get("project.pane_a_dir", self._project_root))
+            except Exception:
+                pass
+            try:
+                b_dir = self._abs_from_saved(cfg.get("project.pane_b_dir", a_dir))
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
             self._pane_a._hist_back = []
             self._pane_a._hist_fwd = []
-            self._pane_a._current_dir = self._project_root
-            self._pane_a.populate_files(self._project_root)
+            self._pane_a._current_dir = a_dir
+            self._pane_a.populate_files(a_dir)
         except Exception:
             pass
         if getattr(self, "_pane_b", None):
             try:
                 self._pane_b._hist_back = []
                 self._pane_b._hist_fwd = []
-                self._pane_b._current_dir = self._project_root
-                self._pane_b.populate_files(self._project_root)
+                self._pane_b._current_dir = b_dir
+                self._pane_b.populate_files(b_dir)
             except Exception:
                 pass
         try:
@@ -3267,5 +3962,9 @@ class NewScript(Component):
         self._populate_tree()
         try:
             self._update_nav_buttons()
+        except Exception:
+            pass
+        try:
+            self._apply_sort_indicators()
         except Exception:
             pass
