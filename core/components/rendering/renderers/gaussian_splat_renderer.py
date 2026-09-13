@@ -19,8 +19,8 @@ class GaussianSplatRenderer(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
-            InspectorField("ply_path", "PLY Path", FieldType.RESOURCE_PATH,
-                           file_filter="PLY (*.ply)"),
+            InspectorField("ply_path", "Splat Path", FieldType.RESOURCE_PATH,
+                           file_filter="Splats (*.ply *.sog *.ssog)"),
             InspectorField("sh_degree", "SH Degree", FieldType.INT_SLIDER,
                            min_val=0, max_val=3, step=1),
             InspectorField("opacity_threshold", "Opacity Cutoff", FieldType.FLOAT,

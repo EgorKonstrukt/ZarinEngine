@@ -2404,8 +2404,14 @@ out vec4 frag_color;
         if ply_path and not os.path.isabs(ply_path):
             root = eng.project_root if eng and getattr(eng, "project_root", None) else os.getcwd()
             abs_ply = os.path.join(root, ply_path)
-            if not os.path.isfile(abs_ply):
-                abs_ply = os.path.join(root, "assets", os.path.basename(ply_path))
+            if not os.path.exists(abs_ply):
+                alt = os.path.join(root, "assets", os.path.basename(ply_path))
+                if os.path.exists(alt):
+                    abs_ply = alt
+                else:
+                    alt2 = os.path.join(root, "assets", ply_path)
+                    if os.path.exists(alt2):
+                        abs_ply = alt2
             ply_path = abs_ply
         return ply_path
 

@@ -222,8 +222,7 @@ def _get_included_scenes(bs: dict) -> list[str]:
 
 
 def _scan_scene_assets(scene_path: str) -> set[str]:
-    """Scan a scene file for referenced assets (textures, materials, meshes)."""
-    PATH_FIELDS = {"mesh_path", "material_path", "clip_path", "script_path", "texture_path"}
+    PATH_FIELDS = {"mesh_path", "material_path", "clip_path", "script_path", "texture_path", "ply_path", "shader_path", "env_path", "svg_path", "font_path", "video_path", "graph_path"}
     assets = set()
     try:
         with open(scene_path, "r", encoding="utf-8") as f:
@@ -240,22 +239,34 @@ def _scan_scene_assets(scene_path: str) -> set[str]:
 
 
 def _resolve_assets(assets: set[str], project_root: Path) -> set[Path]:
-    """Resolve asset paths to absolute paths."""
     resolved = set()
     assets_dir = project_root / "assets"
     for a in assets:
         if os.path.isabs(a):
             p = Path(a)
             if p.exists():
-                resolved.add(p)
+                if p.is_dir():
+                    for root, dirs, files in os.walk(p):
+                        for fn in files:
+                            resolved.add(Path(root) / fn)
+                    resolved.add(p)
+                else:
+                    resolved.add(p)
         else:
             candidates = [
                 project_root / a,
                 assets_dir / a,
+                assets_dir / Path(a).name,
             ]
             for c in candidates:
                 if c.exists():
-                    resolved.add(c)
+                    if c.is_dir():
+                        for root, dirs, files in os.walk(c):
+                            for fn in files:
+                                resolved.add(Path(root) / fn)
+                        resolved.add(c)
+                    else:
+                        resolved.add(c)
                     break
     return resolved
 
@@ -434,12 +445,21 @@ def build():
         _rmtree_robust(temp_assets)
 
     if strip_unused:
-        # Copy only referenced assets to temp directory (even if empty)
         temp_assets.mkdir(parents=True, exist_ok=True)
         assets_dir = ROOT / "assets"
         copied = 0
         for asset_path in resolved_assets:
             try:
+                if asset_path.is_dir():
+                    try:
+                        rel = asset_path.relative_to(assets_dir)
+                        dest = temp_assets / rel
+                    except ValueError:
+                        dest = temp_assets / asset_path.name
+                    shutil.copytree(asset_path, dest, dirs_exist_ok=True)
+                    copied += 1
+                    print(f"  Asset dir copied: {asset_path}")
+                    continue
                 rel = asset_path.relative_to(assets_dir)
                 dest = temp_assets / rel
                 dest.parent.mkdir(parents=True, exist_ok=True)
@@ -447,10 +467,20 @@ def build():
                 copied += 1
                 print(f"  Asset copied: {rel}")
             except ValueError:
-                dest = temp_assets / asset_path.name
-                shutil.copy2(asset_path, dest)
-                copied += 1
-                print(f"  Asset copied (flat): {asset_path.name}")
+                try:
+                    if asset_path.is_dir():
+                        dest = temp_assets / asset_path.name
+                        shutil.copytree(asset_path, dest, dirs_exist_ok=True)
+                    else:
+                        dest = temp_assets / asset_path.name
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(asset_path, dest)
+                    copied += 1
+                    print(f"  Asset copied (flat): {asset_path.name}")
+                except Exception:
+                    continue
+            except Exception:
+                continue
         NUITKA_OPTIONS.append(f"--include-data-dir=_build_assets=assets")
         print(f"Assets: {copied} referenced files copied (of {len(resolved_assets)} refs)")
         print(f"  _build_assets contents: {[str(p.relative_to(temp_assets)) for p in temp_assets.rglob('*') if p.is_file()]}")

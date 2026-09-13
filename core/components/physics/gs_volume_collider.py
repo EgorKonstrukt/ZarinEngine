@@ -49,7 +49,7 @@ def _volume_cache_set(key, value):
 def _resolve_ply_path(path: str) -> Optional[str]:
     if not path:
         return None
-    if os.path.isfile(path):
+    if os.path.isfile(path) or os.path.isdir(path):
         return os.path.abspath(path)
     try:
         from core.engine.engine import Engine
@@ -58,8 +58,8 @@ def _resolve_ply_path(path: str) -> Optional[str]:
     except Exception:
         root = os.getcwd()
     base = os.path.basename(path)
-    for cand in (os.path.join(root, path), os.path.join(root, "assets", base)):
-        if os.path.isfile(cand):
+    for cand in (os.path.join(root, path), os.path.join(root, "assets", base), os.path.join(root, "assets", path)):
+        if os.path.isfile(cand) or os.path.isdir(cand):
             return os.path.abspath(cand)
     return None
 
@@ -86,8 +86,17 @@ def _build_volume_boxes(resolved: str, voxel: float, thr: float, dilation: int, 
             return _boxes_from_arrays(pos, scl, opa, voxel, thr, dilation, max_boxes)
         except Exception:
             pass
-    from core.assets.ply_loader import load_ply_gaussian_splat
-    data = load_ply_gaussian_splat(resolved)
+    try:
+        from core.assets.sog_loader import load_gaussian_splat as _load_any
+        data = _load_any(resolved)
+    except Exception:
+        data = None
+    if data is None:
+        try:
+            from core.assets.ply_loader import load_ply_gaussian_splat
+            data = load_ply_gaussian_splat(resolved)
+        except Exception:
+            data = None
     if data is None or data.num_splats == 0:
         return np.zeros((0, 6), dtype=np.float32)
     try:
@@ -217,8 +226,8 @@ class GSVolumeCollider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
-            InspectorField("ply_path", "PLY Path", FieldType.RESOURCE_PATH,
-                           file_filter="PLY (*.ply)"),
+            InspectorField("ply_path", "Splat Path", FieldType.RESOURCE_PATH,
+                           file_filter="Splats (*.ply *.sog *.ssog)"),
             InspectorField("voxel_size", "Voxel Size", FieldType.FLOAT,
                            min_val=0.02, max_val=4.0, step=0.05, decimals=3),
             InspectorField("opacity_threshold", "Opacity Cutoff", FieldType.FLOAT,

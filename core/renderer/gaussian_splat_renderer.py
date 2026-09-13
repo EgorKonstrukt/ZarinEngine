@@ -13,6 +13,7 @@ import numpy as np
 import moderngl
 from typing import Optional
 from core.assets.ply_loader import load_ply_gaussian_splat, SH_C0, _parse_header, _ply_type
+from core.assets.sog_loader import load_gaussian_splat, splat_exists
 from core.renderer.mesh_data import read_shader
 from core.foundation.logger import Logger
 from core.foundation.progress import task_start, task_update, task_complete, notify_error
@@ -131,7 +132,9 @@ def _derive_splat_arrays(pos, scl):
 
 def _load_splat_generic(path: str, progress) -> Optional[dict]:
     progress(0.05, "parsing")
-    data = load_ply_gaussian_splat(path)
+    data = load_gaussian_splat(path)
+    if data is None:
+        data = load_ply_gaussian_splat(path)
     if data is None or data.num_splats == 0:
         return None
     progress(0.55, "packing")
@@ -282,12 +285,34 @@ def _load_splat_fast(path: str, task_id: str, progress) -> Optional[dict]:
             pass
 
 
+def _is_sog_style(path: str) -> bool:
+    try:
+        lp = str(path).lower().replace("\\", "/")
+    except Exception:
+        return False
+    try:
+        if os.path.isdir(path):
+            return True
+    except Exception:
+        pass
+    if lp.endswith(".sog") or lp.endswith(".ssog") or lp.endswith(".zip"):
+        return True
+    if lp.endswith("/meta.json") or lp.endswith("/lod-meta.json"):
+        return True
+    base = lp.split("/")[-1]
+    if base == "meta.json" or base == "lod-meta.json":
+        return True
+    return False
+
+
 def _load_splat_file(path: str, task_id: str, progress) -> Optional[dict]:
+    if _is_sog_style(path):
+        return _load_splat_generic(path, progress)
     try:
         with open(path, "rb") as f:
             head = [f.readline().decode("ascii", errors="ignore").strip() for _ in range(4)]
     except OSError:
-        return None
+        return _load_splat_generic(path, progress)
     is_binary = any("binary" in h for h in head)
     if is_binary:
         return _load_splat_fast(path, task_id, progress)
@@ -366,7 +391,11 @@ class GaussianSplatRenderer:
                 if now - failed_at < _SPLAT_FAIL_RETRY_S:
                     return False
                 del self._failed[path]
-            if not os.path.isfile(path):
+            try:
+                exists = splat_exists(path) or os.path.exists(path)
+            except Exception:
+                exists = False
+            if not exists:
                 return False
             self._loading.add(path)
             self._fractions[path] = 0.0

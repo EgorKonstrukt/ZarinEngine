@@ -190,7 +190,6 @@ class BuildSettings:
         return referenced
 
     def _collect_assets_from_scene(self, data: dict, project_root: str, result: set[str]):
-        """Extract all asset paths from a scene's serialized data."""
         PATH_FIELDS = {"mesh_path", "material_path", "clip_path", "script_path", "texture_path",
                        "ply_path", "shader_path", "env_path", "svg_path", "font_path",
                        "video_path", "graph_path"}
@@ -202,17 +201,23 @@ class BuildSettings:
                     if key in PATH_FIELDS and isinstance(value, str) and value:
                         abs_path = self._resolve_asset_path(value, project_root)
                         if abs_path:
-                            result.add(abs_path)
-                        # Also check for material references in mesh renderer
+                            if os.path.isdir(abs_path):
+                                result.add(abs_path)
+                                try:
+                                    for root, dirs, files in os.walk(abs_path):
+                                        for fn in files:
+                                            result.add(os.path.join(root, fn))
+                                except Exception:
+                                    pass
+                            else:
+                                result.add(abs_path)
                         if key == "material_path":
                             mat_abs = self._resolve_asset_path(value, project_root)
                             if mat_abs and os.path.exists(mat_abs):
                                 result.add(mat_abs)
-                                # Scan material for texture references
                                 self._scan_material(mat_abs, project_root, result)
 
     def _scan_material(self, mat_path: str, project_root: str, result: set[str]):
-        """Scan a material file for texture references."""
         try:
             with open(mat_path, "r", encoding="utf-8") as f:
                 mat_data = json.load(f)
@@ -226,16 +231,14 @@ class BuildSettings:
 
     @staticmethod
     def _resolve_asset_path(path: str, project_root: str) -> Optional[str]:
-        """Resolve a potentially relative asset path to absolute."""
         if not path:
             return None
-        # Already absolute
         if os.path.isabs(path) and os.path.exists(path):
             return path
-        # Try relative to project root
         candidates = [
             os.path.join(project_root, path),
             os.path.join(project_root, "assets", path),
+            os.path.join(project_root, "assets", os.path.basename(path)),
         ]
         for c in candidates:
             if os.path.exists(c):
