@@ -176,6 +176,7 @@ class _SkeletonCtx:
     __slots__ = (
         "bone_names", "bone_index", "bone_offsets_zup", "influences",
         "mesh_node_world_zup", "has_skeleton", "root_bone_name",
+        "ref_world_zup", "ref_world_inv_zup",
     )
 
     def __init__(self):
@@ -186,6 +187,8 @@ class _SkeletonCtx:
         self.mesh_node_world_zup: Optional[np.ndarray] = None
         self.has_skeleton: bool = False
         self.root_bone_name: str = ""
+        self.ref_world_zup: Optional[np.ndarray] = None
+        self.ref_world_inv_zup: Optional[np.ndarray] = None
 
 
 _dll = None
@@ -311,11 +314,18 @@ def _collect_meshes(node_ptr, scene, mesh_parts, skeleton_ctx, node_map, vert_of
             uvs = uvs_raw.reshape(-1, 3)[:, :2].copy().flatten()
         else:
             uvs = np.zeros(nv * 2, dtype=np.float32)
-        if not np.allclose(node_world_zup, np.eye(4)) and (mesh.mNumBones == 0 or not mesh.mBones):
+        if skeleton_ctx.ref_world_zup is None:
+            skeleton_ctx.ref_world_zup = node_world_zup.copy()
+            try:
+                skeleton_ctx.ref_world_inv_zup = np.linalg.inv(node_world_zup)
+            except Exception:
+                skeleton_ctx.ref_world_inv_zup = np.linalg.pinv(node_world_zup)
+        rel_zup = node_world_zup @ skeleton_ctx.ref_world_inv_zup
+        if not np.allclose(rel_zup, np.eye(4, dtype=np.float32)):
             v3 = verts.reshape(-1, 3)
             v4 = np.concatenate([v3, np.ones((v3.shape[0], 1), dtype=np.float32)], axis=1)
-            verts = (v4 @ node_world_zup)[:, :3].astype(np.float32).ravel()
-            n3 = norms.reshape(-1, 3) @ node_world_zup[:3, :3]
+            verts = (v4 @ rel_zup)[:, :3].astype(np.float32).ravel()
+            n3 = norms.reshape(-1, 3) @ rel_zup[:3, :3]
             n_len = np.linalg.norm(n3, axis=1, keepdims=True)
             n_len[n_len == 0] = 1.0
             norms = (n3 / n_len).astype(np.float32).ravel()
@@ -372,6 +382,17 @@ def _read_bones(mesh, vert_offset, skeleton_ctx, node_map, mesh_node_world_zup):
         return
     if skeleton_ctx.mesh_node_world_zup is None:
         skeleton_ctx.mesh_node_world_zup = mesh_node_world_zup
+    if skeleton_ctx.ref_world_zup is None:
+        skeleton_ctx.ref_world_zup = mesh_node_world_zup.copy()
+        try:
+            skeleton_ctx.ref_world_inv_zup = np.linalg.inv(mesh_node_world_zup)
+        except Exception:
+            skeleton_ctx.ref_world_inv_zup = np.linalg.pinv(mesh_node_world_zup)
+    try:
+        inv_w = np.linalg.inv(mesh_node_world_zup)
+    except Exception:
+        inv_w = np.linalg.pinv(mesh_node_world_zup)
+    ref_w = skeleton_ctx.ref_world_zup
     bones_ptr = ctypes.cast(mesh.mBones, ctypes.POINTER(ctypes.POINTER(aiBone)))
     for b in range(mesh.mNumBones):
         bone = bones_ptr[b].contents
@@ -383,6 +404,7 @@ def _read_bones(mesh, vert_offset, skeleton_ctx, node_map, mesh_node_world_zup):
             skeleton_ctx.bone_index[bname] = gidx
             skeleton_ctx.bone_names.append(bname)
             off = _ai_matrix_to_np_full(bone.mOffsetMatrix)
+            off = (ref_w @ inv_w @ off).astype(np.float32)
             skeleton_ctx.bone_offsets_zup.append(off)
             skeleton_ctx.has_skeleton = True
         gidx = skeleton_ctx.bone_index[bname]
