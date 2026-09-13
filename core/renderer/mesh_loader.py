@@ -126,6 +126,8 @@ class MeshLoader:
             verts = m.vertices.reshape(-1, 3)
             verts = verts * scale
             m.vertices = verts.flatten()
+            for i in range(len(m.blendshape_pos_deltas)):
+                m.blendshape_pos_deltas[i] = np.ascontiguousarray(m.blendshape_pos_deltas[i] * scale, dtype=np.float32)
         if center_pivot:
             verts = m.vertices.reshape(-1, 3)
             center = verts.mean(axis=0)
@@ -223,6 +225,13 @@ class MeshLoader:
             m.bone_bind_local = [np.array(x, dtype=np.float32) for x in import_data.bone_bind_local]
             m.bone_indices = np.array(import_data.bone_indices, dtype=np.int32).copy()
             m.bone_weights = np.array(import_data.bone_weights, dtype=np.float32).copy()
+        blend_names = list(getattr(import_data, 'blendshape_names', []) or [])
+        if blend_names:
+            m.blendshape_names = blend_names
+            m.blendshape_index = {n: i for i, n in enumerate(blend_names)}
+            m.blendshape_vert_indices = [np.array(x, dtype=np.int32, copy=True) for x in getattr(import_data, 'blendshape_indices', [])]
+            m.blendshape_pos_deltas = [np.array(x, dtype=np.float32, copy=True).reshape(-1, 3) for x in getattr(import_data, 'blendshape_positions', [])]
+            m.blendshape_nrm_deltas = [np.array(x, dtype=np.float32, copy=True).reshape(-1, 3) for x in getattr(import_data, 'blendshape_normals', [])]
         return m
 
     def _load_async(self, key: str, file_path: str, cache_key: str,

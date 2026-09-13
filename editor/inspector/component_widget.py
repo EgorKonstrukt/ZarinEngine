@@ -1306,6 +1306,16 @@ class ComponentWidget(QWidget):
                 names = self._get_submesh_names()
             if names and len(names) > 1:
                 return names[index] if (index < len(names) and names[index]) else f"Submesh {index}"
+        if type(self._component).__name__ == "BlendShapes" and prop_name == "shapes":
+            try:
+                items = getattr(self._component, "shapes", [])
+                if 0 <= index < len(items):
+                    label = str(items[index].get("name", ""))
+                    if label:
+                        return label
+            except Exception:
+                pass
+            return f"Shape {index}"
         return ""
 
     def _list_min_length(self, prop_name):

@@ -447,6 +447,41 @@ def _drop_model_asset(mw, path: str, world_pos):
     )
 
 
+def _attach_blendshapes_if_needed(mw, ent, asset_path: str):
+    try:
+        from core.assets.asset_importer import load_mesh_future
+        fut = load_mesh_future(asset_path)
+
+        def _poll():
+            try:
+                if not fut.done():
+                    QTimer.singleShot(50, _poll)
+                    return
+                import_data = fut.result()
+            except Exception:
+                return
+            try:
+                if not list(getattr(import_data, "blendshape_names", []) or []):
+                    return
+                scene = mw._engine.scene
+                live = scene.get_entity(ent.id) if scene is not None else None
+                if live is None:
+                    return
+                from core.components.rendering.deform.blendshapes import BlendShapes
+                if live.get_component(BlendShapes) is not None:
+                    return
+                bs = BlendShapes()
+                bs.sync_with_mesh(import_data)
+                live.add_component(bs)
+                mw._hierarchy.refresh()
+            except Exception:
+                pass
+
+        QTimer.singleShot(0, _poll)
+    except Exception:
+        pass
+
+
 def _on_model_loaded(mw, name, mesh_path, asset_path, world_pos, ent, is_skinned):
     if not is_skinned:
         from core.components import Transform, MeshFilter, MeshRenderer
@@ -462,6 +497,8 @@ def _on_model_loaded(mw, name, mesh_path, asset_path, world_pos, ent, is_skinned
         e.add_component(MeshRenderer())
         ent = e
     _apply_import_materials(ent, asset_path)
+    if ent is not None and not is_skinned:
+        _attach_blendshapes_if_needed(mw, ent, asset_path)
     mw._hierarchy.refresh()
     if ent:
         on_entity_selected(mw, ent)
@@ -918,6 +955,8 @@ def _on_import_model_loaded(mw, name, mesh_path, asset_path, ent, is_skinned):
         ent.add_component(mf)
         ent.add_component(MeshRenderer())
     _apply_import_materials(ent, asset_path)
+    if ent is not None and not is_skinned:
+        _attach_blendshapes_if_needed(mw, ent, asset_path)
     mw._hierarchy.refresh()
     if ent:
         on_entity_selected(mw, ent)

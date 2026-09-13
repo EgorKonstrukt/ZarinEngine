@@ -25,6 +25,7 @@ from core.components.rendering.renderers.mesh_renderer import MeshRenderer
 from core.components.rendering.renderers.skinned_mesh_renderer import SkinnedMeshRenderer
 from core.components.rendering.renderers.gaussian_splat_renderer import GaussianSplatRenderer as GaussianSplatComponent
 from core.components.rendering.skeleton.armature import Armature
+from core.components.rendering.deform.blendshapes import BlendShapes
 from core.components.rendering.renderers.sprite_renderer import SpriteRenderer
 from core.components.rendering.renderers.svg_renderer import SvgRenderer
 from core.components.rendering.particles.particle_system import ParticleSystem
@@ -286,6 +287,9 @@ class Renderer:
         self._prog_member_cache: dict[int, frozenset] = {}
         self._skinning_cache: dict[tuple, tuple] = {}
         self._skinning_frame: int = -1
+        self._morph_cache: dict[str, object] = {}
+        self._morph_sig: dict[str, tuple] = {}
+        self._snap_morph_sig: tuple = ()
         self._rendering_cubemap_face: bool = False
         self._vec3_buf_a = np.zeros(3, dtype=np.float32)
         self._vec3_buf_b = np.zeros(3, dtype=np.float32)
@@ -1936,14 +1940,42 @@ out vec4 frag_color;
                 result.append(comp)
         return result
 
+    def _blend_snapshot_sig(self, scene) -> tuple:
+        try:
+            ents = scene.get_entities_with_component(BlendShapes)
+        except Exception:
+            return ()
+        if not ents:
+            return ()
+        out = []
+        for ent in ents:
+            try:
+                if not ent.active:
+                    continue
+                bs = ent.get_component(BlendShapes)
+                if bs is None or not getattr(bs, "enabled", True):
+                    continue
+                items = []
+                for s in bs.shapes:
+                    try:
+                        items.append((str(s.get("name", "")), float(s.get("weight", 0.0))))
+                    except (TypeError, ValueError):
+                        continue
+                out.append((ent.id, tuple(sorted(items))))
+            except Exception:
+                continue
+        return tuple(out)
+
     def _collect_snapshot(self, scene, cam_near, cam_far, cam_fov, view_mat, proj_mat, cam_pos) -> _RenderSnapshot:
         n_updated = scene.flush_transforms()
         struct_version = scene._render_version
         mesh_gen = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+        morph_sig = self._blend_snapshot_sig(scene)
         if (self._snap_cache is not None
                 and self._snap_scene is scene
                 and self._snap_struct_version == struct_version
-                and self._snap_mesh_gen == mesh_gen):
+                and self._snap_mesh_gen == mesh_gen
+                and self._snap_morph_sig == morph_sig):
             self._refresh_snapshot_world_matrices(scene)
             self._collect_interactors(self._snap_cache, scene)
             return self._snap_cache
@@ -2054,6 +2086,10 @@ out vec4 frag_color;
                         mesh = ov
                 except Exception:
                     pass
+                try:
+                    mesh = self._morphed_mesh(ent, mesh)
+                except Exception:
+                    pass
             if mesh is not None:
                 wm = tr.world_matrix
                 sub_ranges = mesh.sub_mesh_ranges
@@ -2093,6 +2129,10 @@ out vec4 frag_color;
             mesh = self.get_or_create_mesh(mesh_name, mesh_path, 1.0, False, fuvs)
             if not mesh or not getattr(mesh, 'has_skeleton', False):
                 continue
+            try:
+                mesh = self._morphed_mesh(ent, mesh)
+            except Exception:
+                pass
             wm = tr.world_matrix
             sub_ranges = mesh.sub_mesh_ranges
             if sub_ranges:
@@ -2187,6 +2227,7 @@ out vec4 frag_color;
         self._snap_version = struct_version
         self._snap_struct_version = struct_version
         self._snap_mesh_gen = mesh_gen
+        self._snap_morph_sig = morph_sig
         self._snap_scene = scene
         return snap
 
@@ -3424,6 +3465,78 @@ out vec4 frag_color;
         except Exception:
             pass
 
+    def _release_morph_cache(self, ent_id=None):
+        try:
+            if ent_id is None:
+                for clone in self._morph_cache.values():
+                    try:
+                        clone.release()
+                    except Exception:
+                        pass
+                self._morph_cache.clear()
+                self._morph_sig.clear()
+                return
+            clone = self._morph_cache.pop(ent_id, None)
+            self._morph_sig.pop(ent_id, None)
+            if clone is not None:
+                try:
+                    clone.release()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _morphed_mesh(self, ent, mesh):
+        try:
+            bs = ent.get_component(BlendShapes)
+        except Exception:
+            return mesh
+        if bs is None or not getattr(bs, "enabled", True):
+            return mesh
+        if mesh is None or not getattr(mesh, "has_blendshapes", False):
+            return mesh
+        try:
+            if len(getattr(bs, "shapes", [])) != int(getattr(mesh, "blendshape_count", 0)):
+                bs.sync_with_mesh(mesh)
+            else:
+                want = list(getattr(mesh, "blendshape_names", []) or [])
+                got = [str(s.get("name", "")) for s in bs.shapes]
+                if want != got:
+                    bs.sync_with_mesh(mesh)
+        except Exception:
+            pass
+        try:
+            w = bs.weights_vector(mesh)
+        except Exception:
+            return mesh
+        if not any(v != 0.0 for v in w):
+            self._release_morph_cache(getattr(ent, "id", None))
+            return mesh
+        try:
+            sig = (id(mesh), int(getattr(mesh, "_gpu_version", 0)), tuple(float(v) for v in w))
+        except Exception:
+            return mesh
+        eid = getattr(ent, "id", None)
+        if eid is not None:
+            if self._morph_sig.get(eid) == sig:
+                cached = self._morph_cache.get(eid)
+                if cached is not None:
+                    return cached
+        try:
+            clone = mesh.make_morphed_clone(w, self._ctx, self._default_prog, self._outline_prog)
+        except Exception:
+            return mesh
+        if eid is not None:
+            old = self._morph_cache.get(eid)
+            if old is not None and old is not clone:
+                try:
+                    old.release()
+                except Exception:
+                    pass
+            self._morph_cache[eid] = clone
+            self._morph_sig[eid] = sig
+        return clone
+
     def _soft_override_mesh(self, ent, mesh):
         from core.components.physics.soft_body import SoftBody
         soft = ent.get_component(SoftBody)
@@ -3874,6 +3987,8 @@ out vec4 frag_color;
         self._snap_cache = None
         self._snap_version = -1
         self._snap_scene = None
+        self._release_morph_cache()
+        self._snap_morph_sig = ()
 
     def release_all_caches(self):
         """Clear mesh, material and texture caches. Called when loading a
@@ -3890,6 +4005,8 @@ out vec4 frag_color;
         release_env_cache()
         if self._mesh_loader:
             self._mesh_loader.clear_scene_data()
+        self._release_morph_cache()
+        self._snap_morph_sig = ()
 
     _effects_disabled: bool = False
 

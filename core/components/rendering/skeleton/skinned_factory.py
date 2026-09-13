@@ -74,5 +74,14 @@ def _build_skinned_entity(scene, path, name, mesh_path, world_pos, import_data):
     arm.setup(import_data)
     ent.add_component(arm)
 
+    try:
+        if list(getattr(import_data, "blendshape_names", []) or []):
+            from core.components.rendering.deform.blendshapes import BlendShapes
+            bs = BlendShapes()
+            bs.sync_with_mesh(import_data)
+            ent.add_component(bs)
+    except Exception:
+        pass
+
     arm.create_bone_entities(scene, ent)
     return ent

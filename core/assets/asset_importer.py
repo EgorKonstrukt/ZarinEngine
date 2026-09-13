@@ -146,6 +146,52 @@ class aiBone(ctypes.Structure):
     ]
 
 
+class aiAABB(ctypes.Structure):
+    _fields_ = [("mMin", aiVector3D), ("mMax", aiVector3D)]
+
+
+class aiAnimMesh(ctypes.Structure):
+    _fields_ = [
+        ("mName", aiString),
+        ("mVertices", ctypes.POINTER(aiVector3D)),
+        ("mNormals", ctypes.POINTER(aiVector3D)),
+        ("mTangents", ctypes.POINTER(aiVector3D)),
+        ("mBitangents", ctypes.POINTER(aiVector3D)),
+        ("mColors", ctypes.POINTER(aiColor4D) * 8),
+        ("mTextureCoords", ctypes.POINTER(aiVector3D) * 8),
+        ("mNumVertices", ctypes.c_uint),
+        ("mWeight", ctypes.c_float),
+    ]
+
+
+class aiMeshFull(ctypes.Structure):
+    _fields_ = [
+        ("mPrimitiveTypes", ctypes.c_uint),
+        ("mNumVertices", ctypes.c_uint),
+        ("mNumFaces", ctypes.c_uint),
+        ("mVertices", ctypes.POINTER(aiVector3D)),
+        ("mNormals", ctypes.POINTER(aiVector3D)),
+        ("mTangents", ctypes.POINTER(aiVector3D)),
+        ("mBitangents", ctypes.POINTER(aiVector3D)),
+        ("mColors", ctypes.POINTER(aiColor4D) * 8),
+        ("mTextureCoords", ctypes.POINTER(aiVector3D) * 8),
+        ("mNumUVComponents", ctypes.c_uint * 8),
+        ("mFaces", ctypes.POINTER(aiFace)),
+        ("mNumBones", ctypes.c_uint),
+        ("mBones", ctypes.c_void_p),
+        ("mMaterialIndex", ctypes.c_uint),
+        ("mName", aiString),
+        ("mNumAnimMeshes", ctypes.c_uint),
+        ("mAnimMeshes", ctypes.POINTER(ctypes.c_void_p)),
+        ("mMethod", ctypes.c_int),
+        ("mAABB", aiAABB),
+        ("mTextureCoordsNames", ctypes.c_void_p),
+    ]
+
+
+_BLEND_DELTA_EPS = 1e-7
+
+
 _Y_UP_ROTATION = np.array([
     [1.0, 0.0, 0.0, 0.0],
     [0.0, 0.0, 1.0, 0.0],
@@ -177,6 +223,8 @@ class _SkeletonCtx:
         "bone_names", "bone_index", "bone_offsets_zup", "influences",
         "mesh_node_world_zup", "has_skeleton", "root_bone_name",
         "ref_world_zup", "ref_world_inv_zup",
+        "blend_names", "blend_index", "blend_idx_chunks",
+        "blend_pos_chunks", "blend_nrm_chunks", "want_blend",
     )
 
     def __init__(self):
@@ -189,6 +237,12 @@ class _SkeletonCtx:
         self.root_bone_name: str = ""
         self.ref_world_zup: Optional[np.ndarray] = None
         self.ref_world_inv_zup: Optional[np.ndarray] = None
+        self.blend_names: list[str] = []
+        self.blend_index: dict[str, int] = {}
+        self.blend_idx_chunks: list[list[np.ndarray]] = []
+        self.blend_pos_chunks: list[list[np.ndarray]] = []
+        self.blend_nrm_chunks: list[list[np.ndarray]] = []
+        self.want_blend: bool = True
 
 
 _dll = None
@@ -314,6 +368,8 @@ def _collect_meshes(node_ptr, scene, mesh_parts, skeleton_ctx, node_map, vert_of
             uvs = uvs_raw.reshape(-1, 3)[:, :2].copy().flatten()
         else:
             uvs = np.zeros(nv * 2, dtype=np.float32)
+        base_lv = verts.reshape(-1, 3).copy()
+        base_ln = norms.reshape(-1, 3).copy()
         if skeleton_ctx.ref_world_zup is None:
             skeleton_ctx.ref_world_zup = node_world_zup.copy()
             try:
@@ -352,6 +408,12 @@ def _collect_meshes(node_ptr, scene, mesh_parts, skeleton_ctx, node_map, vert_of
             indices = np.array([], dtype=np.uint32)
         vert_offset = vert_offset_ref[0]
         _read_bones(mesh, vert_offset, skeleton_ctx, node_map, node_world_zup)
+        if getattr(skeleton_ctx, "want_blend", True):
+            try:
+                rel33 = rel_zup[:3, :3].astype(np.float32)
+            except Exception:
+                rel33 = np.eye(3, dtype=np.float32)
+            _read_anim_meshes(mesh_ptr, nv, base_lv, base_ln, vert_offset, rel33, skeleton_ctx)
         mesh_parts.append((verts, norms, uvs, indices, nv, name))
         vert_offset_ref[0] += nv
     children_ptr = ctypes.cast(node.mChildren, ctypes.POINTER(ctypes.c_void_p * node.mNumChildren))
@@ -417,6 +479,71 @@ def _read_bones(mesh, vert_offset, skeleton_ctx, node_map, mesh_node_world_zup):
                 lst = []
                 skeleton_ctx.influences[gid] = lst
             lst.append((gidx, float(vw.mWeight)))
+
+
+def _read_anim_meshes(mesh_ptr, nv: int, base_verts: np.ndarray, base_norms: np.ndarray,
+                      vert_offset: int, rel_3x3: np.ndarray, skeleton_ctx) -> None:
+    try:
+        full = ctypes.cast(mesh_ptr, ctypes.POINTER(aiMeshFull)).contents
+        n_anim = int(full.mNumAnimMeshes)
+    except Exception:
+        return
+    if n_anim <= 0 or n_anim > 10000 or not full.mAnimMeshes:
+        return
+    try:
+        arr = ctypes.cast(full.mAnimMeshes, ctypes.POINTER(ctypes.c_void_p * n_anim)).contents
+    except Exception:
+        return
+    for a in range(n_anim):
+        addr = arr[a]
+        if not addr:
+            continue
+        try:
+            am = ctypes.cast(addr, ctypes.POINTER(aiAnimMesh)).contents
+            anv = int(am.mNumVertices)
+            if anv != nv or not am.mVertices:
+                continue
+            aname = _decode_assimp_name(am.mName)
+            if not aname:
+                aname = f"blend_{a}"
+            av_ptr = ctypes.cast(am.mVertices, ctypes.POINTER(aiVector3D * anv)).contents
+            av = np.frombuffer(av_ptr, dtype=np.float32).reshape(-1, 3)
+            dp = (av - base_verts) @ rel_3x3
+            if am.mNormals:
+                an_ptr = ctypes.cast(am.mNormals, ctypes.POINTER(aiVector3D * anv)).contents
+                anm = np.frombuffer(an_ptr, dtype=np.float32).reshape(-1, 3)
+                dn = (anm - base_norms) @ rel_3x3
+            else:
+                dn = np.zeros_like(dp)
+            mag = np.abs(dp).max(axis=1) + np.abs(dn).max(axis=1)
+            mask = mag > _BLEND_DELTA_EPS
+            if not bool(mask.any()):
+                idx = skeleton_ctx.blend_index.get(aname)
+                if idx is None:
+                    idx = len(skeleton_ctx.blend_names)
+                    skeleton_ctx.blend_index[aname] = idx
+                    skeleton_ctx.blend_names.append(aname)
+                    skeleton_ctx.blend_idx_chunks.append([])
+                    skeleton_ctx.blend_pos_chunks.append([])
+                    skeleton_ctx.blend_nrm_chunks.append([])
+                continue
+            local_ids = np.nonzero(mask)[0].astype(np.int32)
+            gids = (local_ids.astype(np.int64) + vert_offset).astype(np.int32)
+            pos = dp[mask].astype(np.float32)
+            nrm = dn[mask].astype(np.float32)
+            idx = skeleton_ctx.blend_index.get(aname)
+            if idx is None:
+                idx = len(skeleton_ctx.blend_names)
+                skeleton_ctx.blend_index[aname] = idx
+                skeleton_ctx.blend_names.append(aname)
+                skeleton_ctx.blend_idx_chunks.append([])
+                skeleton_ctx.blend_pos_chunks.append([])
+                skeleton_ctx.blend_nrm_chunks.append([])
+            skeleton_ctx.blend_idx_chunks[idx].append(gids)
+            skeleton_ctx.blend_pos_chunks[idx].append(pos)
+            skeleton_ctx.blend_nrm_chunks[idx].append(nrm)
+        except Exception:
+            continue
 
 
 def _bone_parent_name(node_map, name, bone_set):
@@ -489,6 +616,55 @@ def _finalize_skeleton(skeleton_ctx, node_map, total_verts):
         "bone_bind_local": bind_local,
         "bone_indices": bone_indices,
         "bone_weights": bone_weights,
+    }
+
+
+def _finalize_blendshapes(skeleton_ctx, total_verts):
+    if len(skeleton_ctx.blend_names) == 0:
+        return None
+    c3 = np.array([
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 1.0, 0.0],
+    ], dtype=np.float32)
+    names: list[str] = []
+    all_idx: list[np.ndarray] = []
+    all_pos: list[np.ndarray] = []
+    all_nrm: list[np.ndarray] = []
+    for s in range(len(skeleton_ctx.blend_names)):
+        chunks_i = skeleton_ctx.blend_idx_chunks[s]
+        chunks_p = skeleton_ctx.blend_pos_chunks[s]
+        chunks_n = skeleton_ctx.blend_nrm_chunks[s]
+        if not chunks_i:
+            names.append(skeleton_ctx.blend_names[s])
+            all_idx.append(np.zeros((0,), dtype=np.int32))
+            all_pos.append(np.zeros((0, 3), dtype=np.float32))
+            all_nrm.append(np.zeros((0, 3), dtype=np.float32))
+            continue
+        try:
+            gi = np.concatenate(chunks_i).astype(np.int32)
+            gp = np.concatenate(chunks_p).astype(np.float32)
+            gn = np.concatenate(chunks_n).astype(np.float32)
+        except Exception:
+            continue
+        valid = (gi >= 0) & (gi < total_verts)
+        if not bool(valid.any()):
+            continue
+        gi = gi[valid]
+        gp = gp[valid] @ c3
+        gn = gn[valid] @ c3
+        order = np.argsort(gi, kind="stable")
+        names.append(skeleton_ctx.blend_names[s])
+        all_idx.append(np.ascontiguousarray(gi[order], dtype=np.int32))
+        all_pos.append(np.ascontiguousarray(gp[order], dtype=np.float32))
+        all_nrm.append(np.ascontiguousarray(gn[order], dtype=np.float32))
+    if not names:
+        return None
+    return {
+        "blendshape_names": names,
+        "blendshape_indices": all_idx,
+        "blendshape_positions": all_pos,
+        "blendshape_normals": all_nrm,
     }
 
 
@@ -575,6 +751,7 @@ def _read_mesh_import(path: str) -> dict:
         "smooth_angle": 30.0,
         "gen_normals": True,
         "gen_uvs": True,
+        "blendshapes": True,
     }
     if os.path.exists(import_path):
         try:
@@ -656,6 +833,10 @@ def load_mesh(path: str, import_settings: Optional[dict] = None) -> Optional[Mes
         scene = scene_ptr.contents
         mesh_parts = []
         skeleton_ctx = _SkeletonCtx()
+        try:
+            skeleton_ctx.want_blend = bool(_settings.get("blendshapes", True))
+        except Exception:
+            skeleton_ctx.want_blend = True
         node_map: dict = {}
         if scene.mRootNode:
             _build_node_map(scene.mRootNode, None, node_map)
@@ -706,6 +887,12 @@ def load_mesh(path: str, import_settings: Optional[dict] = None) -> Optional[Mes
                 data.sub_mesh_ranges = ranges
                 data.sub_mesh_names = names
             total_verts = len(data.vertices) // 3
+            blend = _finalize_blendshapes(skeleton_ctx, total_verts)
+            if blend is not None:
+                data.blendshape_names = blend["blendshape_names"]
+                data.blendshape_indices = blend["blendshape_indices"]
+                data.blendshape_positions = blend["blendshape_positions"]
+                data.blendshape_normals = blend["blendshape_normals"]
             skel = _finalize_skeleton(skeleton_ctx, node_map, total_verts)
             if skel is not None:
                 _align_skeleton_to_mesh(skel, verts_out)
@@ -745,6 +932,10 @@ class MeshImportData:
         self.bone_bind_local: list[np.ndarray] = []
         self.bone_indices: np.ndarray = np.zeros((0, 4), dtype=np.int32)
         self.bone_weights: np.ndarray = np.zeros((0, 4), dtype=np.float32)
+        self.blendshape_names: list[str] = []
+        self.blendshape_indices: list[np.ndarray] = []
+        self.blendshape_positions: list[np.ndarray] = []
+        self.blendshape_normals: list[np.ndarray] = []
 
 
 def load_obj(path: str, import_settings: Optional[dict] = None) -> Optional[MeshImportData]:
