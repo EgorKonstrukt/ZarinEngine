@@ -103,6 +103,11 @@ void main() {
     float sx = splat[base + 52];
     float sy = splat[base + 53];
     float sz = splat[base + 54];
+    float max_s = max(sx, max(sy, sz));
+    if (view_depth < 3.0 * max_s + 0.2) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        return;
+    }
 
     mat3 R = quat_to_mat3(splat[base + 55], splat[base + 56], splat[base + 57], splat[base + 58]);
     mat3 S = mat3(sx, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, sz);
@@ -152,15 +157,6 @@ void main() {
     if (v_alpha <= u_opacity_threshold) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
-    }
-
-    float maj_px = max(r1, r2) * pixel_scale;
-    if (maj_px > 512.0) {
-        if (r1 > 4.0 * r2) {
-            r2 = r1 / 4.0;
-        } else if (r2 > 4.0 * r1) {
-            r1 = r2 / 4.0;
-        }
     }
 
     float angle = 0.5 * atan(2.0 * b, a - c);
