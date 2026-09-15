@@ -264,9 +264,11 @@ vec3 calc_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo, float shad
 }
 void main() {
     vec3 albedo = u_albedo_color.rgb;
+    float salpha = u_albedo_color.a;
     if (u_use_albedo_tex == 1) {
         vec4 texColor = texture(u_albedo_tex, v_uv);
         albedo *= texColor.rgb;
+        salpha *= texColor.a;
     }
     vec3 normal = normalize(v_normal);
     if (u_use_normal_tex == 1) {
@@ -301,5 +303,5 @@ void main() {
     }
     result += ibl_contribution(normal, view_dir, albedo, 1.0 - roughness, u_metallic);
     result += u_emission;
-    frag_color = vec4(result, u_albedo_color.a);
+    frag_color = vec4(result, salpha);
 }

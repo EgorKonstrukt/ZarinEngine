@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 from core.ecs.ecs import Component, ComponentRegistry
+from core.maths.math3d import Vec2
 from core.components.inspector_meta import FieldType, InspectorField, ListElementField
 @ComponentRegistry.register
 class MeshRenderer(Component):
@@ -20,6 +21,10 @@ class MeshRenderer(Component):
             InspectorField("materials", "Materials", FieldType.LIST, element_fields=[
                 ListElementField("path", "Material", FieldType.RESOURCE_PATH, file_filter="Material (*.mat)"),
             ]),
+            InspectorField("sprite_texture", "Sprite Texture", FieldType.RESOURCE_PATH, file_filter="Textures (*.png *.jpg *.jpeg *.bmp *.tga)"),
+            InspectorField("uv_scale", "UV Scale", FieldType.VEC2),
+            InspectorField("uv_offset", "UV Offset", FieldType.VEC2),
+            InspectorField("uv_scale_by_transform", "UV Scale by Transform", FieldType.BOOL),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
             InspectorField("receive_shadows", "Receive Shadows", FieldType.BOOL),
             InspectorField("dynamic_reflections", "Dynamic Reflections", FieldType.BOOL),
@@ -27,7 +32,11 @@ class MeshRenderer(Component):
 
     def __init__(self):
         super().__init__()
-        self.materials: list[dict] = [{"path": ""}]
+        self.materials: list[dict] = [{"path": "assets/materials/ProBuilderPrototype.mat"}]
+        self.sprite_texture: str = ""
+        self.uv_scale: Vec2 = Vec2.one()
+        self.uv_offset: Vec2 = Vec2.zero()
+        self.uv_scale_by_transform: bool = False
         self.cast_shadows: bool = True
         self.receive_shadows: bool = True
         self.dynamic_reflections: bool = False
@@ -42,6 +51,10 @@ class MeshRenderer(Component):
     def serialize(self) -> dict:
         d = super().serialize()
         d.update({"materials": [dict(m) if isinstance(m, dict) else m for m in self.materials],
+                  "sprite_texture": self.sprite_texture,
+                  "uv_scale": self.uv_scale.to_list(),
+                  "uv_offset": self.uv_offset.to_list(),
+                  "uv_scale_by_transform": self.uv_scale_by_transform,
                   "cast_shadows": self.cast_shadows, "receive_shadows": self.receive_shadows,
                   "dynamic_reflections": self.dynamic_reflections})
         return d
@@ -57,6 +70,10 @@ class MeshRenderer(Component):
             mr.materials = [{"path": data.get("material_path", "")}]
         else:
             mr.materials = [{"path": ""}]
+        mr.sprite_texture = data.get("sprite_texture", "") or ""
+        mr.uv_scale = Vec2(*data.get("uv_scale", [1, 1]))
+        mr.uv_offset = Vec2(*data.get("uv_offset", [0, 0]))
+        mr.uv_scale_by_transform = data.get("uv_scale_by_transform", False)
         mr.cast_shadows = data.get("cast_shadows", True)
         mr.receive_shadows = data.get("receive_shadows", True)
         mr.dynamic_reflections = data.get("dynamic_reflections", False)

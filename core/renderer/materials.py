@@ -41,6 +41,9 @@ class MaterialManager:
         self._prog_uniform_names: dict[int, frozenset] = {}
         self._prog_tex_active_names: dict[int, dict] = {}
         self._texture_cache: dict[str, Any] = {}
+        self._tex_alpha_cache: dict[str, tuple] = {}
+        self._tex_wrap_cache: dict[str, bool] = {}
+        self._transparency_cache: dict[tuple, bool] = {}
         self._pending_texture_queue: list = []
         self._async_lock = None
         self._default_white = ctx.texture((1, 1), 4, b'\xff\xff\xff\xff')
@@ -58,6 +61,10 @@ class MaterialManager:
         root = eng.project_root if eng and eng.project_root else os.getcwd()
         abs_path = self._resolve_material_path(path, root)
         if not os.path.exists(abs_path):
+            if os.path.splitext(os.path.basename(path))[0] == "ProBuilderPrototype":
+                synth = self._synth_prototype_material(path)
+                if synth is not None:
+                    return synth
             if abs_path not in self._missing_warned:
                 self._missing_warned.add(abs_path)
                 Logger.warning(f"Material file not found: '{path}', using default")
@@ -71,6 +78,28 @@ class MaterialManager:
         if m:
             self._material_cache[path] = m
         return m
+
+    def _synth_prototype_material(self, path: str) -> Optional[Material]:
+        try:
+            eng_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            tex = os.path.join(eng_root, "assets", "textures", "prototype_texture.png")
+            if not os.path.exists(tex):
+                tex = os.path.join(eng_root, "prototype_texture.png")
+            m = Material("ProBuilderPrototype")
+            m.shader_path = "default"
+            m.properties = {
+                "_BaseColor": [1.0, 1.0, 1.0, 1.0],
+                "_Metallic": 0.0,
+                "_Smoothness": 0.5,
+                "_EmissionColor": [0.0, 0.0, 0.0, 0.0],
+                "_EmissionIntensity": 0.0,
+            }
+            if os.path.exists(tex):
+                m.properties["albedo_texture"] = tex
+            self._material_cache[path] = m
+            return m
+        except Exception:
+            return None
 
     def _resolve_material_path(self, path: str, root: str) -> str:
         if os.path.isabs(path):
@@ -126,6 +155,12 @@ class MaterialManager:
                 task_set_detail("tex_load:" + abs_path, f"{w}×{h}")
                 tex = self._ctx.texture(img.size, 4, img.tobytes())
                 import_settings.apply_to_texture(tex)
+                if os.path.basename(abs_path) == "prototype_texture.png":
+                    try:
+                        tex.repeat_x = True
+                        tex.repeat_y = True
+                    except Exception:
+                        pass
                 self._texture_cache[abs_path] = (import_mtime, tex)
                 return tex
             finally:
@@ -215,6 +250,12 @@ class MaterialManager:
                     img = img.resize((w, h), Image.LANCZOS)
                 tex = self._ctx.texture(img.size, 4, img.tobytes())
                 import_settings.apply_to_texture(tex)
+                if os.path.basename(abs_path) == "prototype_texture.png":
+                    try:
+                        tex.repeat_x = True
+                        tex.repeat_y = True
+                    except Exception:
+                        pass
                 import_mtime = TextureImportSettings.import_mtime(abs_path)
                 self._texture_cache[abs_path] = (import_mtime, tex)
                 callback(tex)
@@ -235,7 +276,7 @@ class MaterialManager:
         "_IOR": None,
     }
 
-    def apply_material(self, mat: Optional[Material], prog: moderngl.Program):
+    def apply_material(self, mat: Optional[Material], prog: moderngl.Program, mr=None):
         pid = id(prog)
         names = self._prog_uniform_names.get(pid)
         if names is None:
@@ -244,6 +285,10 @@ class MaterialManager:
             except Exception:
                 names = frozenset()
             self._prog_uniform_names[pid] = names
+        try:
+            tiling = self._mesh_wants_tiling(mr)
+        except Exception:
+            tiling = False
         self._default_white.use(0)
         white4 = self._WHITE4
         zero3 = self._ZERO3
@@ -301,7 +346,9 @@ class MaterialManager:
             prog["_DetailAlbedoMap_Active"].value = 0
         if "_DetailNormalMap_Active" in names:
             prog["_DetailNormalMap_Active"].value = 0
+        self._apply_mesh_uv(prog, names, mr)
         if mat is None:
+            self._apply_mesh_sprite(prog, names, mr)
             return
         props = mat.properties
         tex_unit = 1
@@ -333,6 +380,7 @@ class MaterialManager:
                 tex = self.load_texture(value)
                 if tex is not None:
                     tex.use(tex_unit)
+                    self._ensure_tiling_wrap(tex, value, tiling)
                     prog[tex_name].value = tex_unit
                     tex_unit += 1
                     tex_active = 1
@@ -364,6 +412,257 @@ class MaterialManager:
                     alias = self._UNIFORM_ALIASES.get(key)
                     if alias is not None and alias in names:
                         self._set_uniform_value(prog, alias, value)
+        self._apply_mesh_sprite(prog, names, mr)
+
+    def _mesh_uv_sprite_state(self, mr):
+        sx, sy = 1.0, 1.0
+        ox, oy = 0.0, 0.0
+        world = False
+        sprite = ""
+        if mr is None:
+            return sx, sy, ox, oy, world, sprite
+        try:
+            v = getattr(mr, "uv_scale", None)
+            if v is not None:
+                try:
+                    sx = float(v.x)
+                    sy = float(v.y)
+                except Exception:
+                    sx = float(v[0])
+                    sy = float(v[1])
+        except Exception:
+            pass
+        try:
+            v = getattr(mr, "uv_offset", None)
+            if v is not None:
+                try:
+                    ox = float(v.x)
+                    oy = float(v.y)
+                except Exception:
+                    ox = float(v[0])
+                    oy = float(v[1])
+        except Exception:
+            pass
+        try:
+            world = bool(getattr(mr, "uv_scale_by_transform", False))
+        except Exception:
+            pass
+        try:
+            sprite = getattr(mr, "sprite_texture", "") or ""
+        except Exception:
+            pass
+        return sx, sy, ox, oy, world, sprite
+
+    def _apply_mesh_uv(self, prog, names, mr):
+        try:
+            sx, sy, ox, oy, world, _sprite = self._mesh_uv_sprite_state(mr)
+            if "u_uv_scale" in names:
+                prog["u_uv_scale"].write(np.array([sx, sy], dtype=np.float32).tobytes())
+            if "u_uv_offset" in names:
+                prog["u_uv_offset"].write(np.array([ox, oy], dtype=np.float32).tobytes())
+            if "u_uv_world_scale" in names:
+                prog["u_uv_world_scale"].value = 1.0 if world else 0.0
+        except Exception:
+            pass
+
+    def _apply_mesh_sprite(self, prog, names, mr):
+        try:
+            _sx, _sy, _ox, _oy, _world, sprite = self._mesh_uv_sprite_state(mr)
+        except Exception:
+            sprite = ""
+        if not sprite:
+            return
+        slot = None
+        for tex_name, active_name in (("u_albedo_tex", "u_use_albedo_tex"), ("_BaseMap", "_BaseMap_Active")):
+            if tex_name in names:
+                slot = (tex_name, active_name)
+                break
+        if slot is None:
+            return
+        try:
+            tex = self.load_texture(sprite)
+        except Exception:
+            tex = None
+        if tex is None:
+            return
+        try:
+            tex.use(1)
+            try:
+                self._ensure_tiling_wrap(tex, sprite, self._mesh_wants_tiling(mr))
+            except Exception:
+                pass
+            prog[slot[0]].value = 1
+            if slot[1] in names:
+                prog[slot[1]].value = 1
+        except Exception:
+            pass
+
+    def texture_has_alpha(self, path: str) -> bool:
+        if not path:
+            return False
+        try:
+            abs_path = self._resolve_tex_path(path)
+        except Exception:
+            return False
+        if not abs_path or not os.path.exists(abs_path):
+            return False
+        try:
+            mtime = os.path.getmtime(abs_path)
+        except OSError:
+            return False
+        try:
+            cached = self._tex_alpha_cache.get(abs_path)
+            if cached is not None and abs(cached[0] - mtime) < 0.001:
+                return cached[1]
+        except Exception:
+            pass
+        result = False
+        try:
+            from PIL import Image
+            with Image.open(abs_path) as img:
+                bands = img.getbands()
+                if "A" in bands:
+                    try:
+                        ext = img.split()[bands.index("A")].getextrema()
+                        result = ext[0] < 255
+                    except Exception:
+                        result = True
+                else:
+                    try:
+                        result = img.info.get("transparency", None) is not None
+                    except Exception:
+                        result = False
+        except Exception:
+            result = False
+        try:
+            self._tex_alpha_cache[abs_path] = (mtime, result)
+            if len(self._tex_alpha_cache) > 1024:
+                self._tex_alpha_cache.clear()
+                self._tex_alpha_cache[abs_path] = (mtime, result)
+        except Exception:
+            pass
+        return result
+
+    def mesh_transparency(self, mr, mat) -> bool:
+        alpha = 1.0
+        alb = ""
+        try:
+            if mat is not None:
+                props = mat.properties
+                for k in ("_BaseColor", "albedo_color"):
+                    v = props.get(k)
+                    if isinstance(v, (list, tuple)) and len(v) > 3:
+                        alpha = float(v[3])
+                        break
+                for k in ("albedo_texture", "_BaseMap"):
+                    v = props.get(k)
+                    if isinstance(v, str) and v:
+                        alb = v
+                        break
+        except Exception:
+            pass
+        sprite = ""
+        try:
+            if mr is not None:
+                sprite = getattr(mr, "sprite_texture", "") or ""
+        except Exception:
+            pass
+        try:
+            akey = round(float(alpha), 3)
+        except Exception:
+            akey = 1.0
+        try:
+            ckey = (id(mat) if mat is not None else 0, akey, alb, sprite)
+            cached = self._transparency_cache.get(ckey)
+            if cached is not None:
+                return cached
+        except Exception:
+            ckey = None
+        result = False
+        try:
+            if akey < 0.999:
+                result = True
+            elif alb and self.texture_has_alpha(alb):
+                result = True
+            elif sprite and self.texture_has_alpha(sprite):
+                result = True
+        except Exception:
+            result = False
+        try:
+            if ckey is not None:
+                self._transparency_cache[ckey] = result
+                if len(self._transparency_cache) > 1024:
+                    self._transparency_cache.clear()
+                    self._transparency_cache[ckey] = result
+        except Exception:
+            pass
+        return result
+
+    def _mesh_wants_tiling(self, mr) -> bool:
+        if mr is None:
+            return False
+        try:
+            v = getattr(mr, "uv_scale", None)
+            if v is not None:
+                try:
+                    sx = float(v.x)
+                    sy = float(v.y)
+                except Exception:
+                    sx = float(v[0])
+                    sy = float(v[1])
+                if abs(sx - 1.0) > 1e-6 or abs(sy - 1.0) > 1e-6:
+                    return True
+        except Exception:
+            pass
+        try:
+            v = getattr(mr, "uv_offset", None)
+            if v is not None:
+                try:
+                    ox = float(v.x)
+                    oy = float(v.y)
+                except Exception:
+                    ox = float(v[0])
+                    oy = float(v[1])
+                if abs(ox) > 1e-9 or abs(oy) > 1e-9:
+                    return True
+        except Exception:
+            pass
+        try:
+            if bool(getattr(mr, "uv_scale_by_transform", False)):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _texture_import_repeat(self, path_value: str) -> bool:
+        try:
+            cached = self._tex_wrap_cache.get(path_value)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+        rep = False
+        try:
+            abs_path = self._resolve_tex_path(path_value)
+            if abs_path and os.path.exists(abs_path):
+                rep = TextureImportSettings.for_file(abs_path).wrap_mode != "clamp"
+        except Exception:
+            pass
+        try:
+            self._tex_wrap_cache[path_value] = rep
+            if len(self._tex_wrap_cache) > 1024:
+                self._tex_wrap_cache.clear()
+        except Exception:
+            pass
+        return rep
+
+    def _ensure_tiling_wrap(self, tex, path_value: str, tiling: bool):
+        try:
+            if tiling or self._texture_import_repeat(path_value):
+                tex.repeat_x = True
+                tex.repeat_y = True
+        except Exception:
+            pass
 
     def _has_uniform(self, prog, name: str) -> bool:
         names = self._prog_uniform_names.get(id(prog))
@@ -409,6 +708,9 @@ class MaterialManager:
                 pass
         self._texture_cache.clear()
         self._material_cache.clear()
+        self._tex_alpha_cache.clear()
+        self._tex_wrap_cache.clear()
+        self._transparency_cache.clear()
 
     def release(self):
         for _mtime, tex in self._texture_cache.values():

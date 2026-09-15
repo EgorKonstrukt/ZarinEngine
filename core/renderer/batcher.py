@@ -220,7 +220,35 @@ class RenderBatcher:
             else:
                 mat, prog = cached
             mat_key = id(mat) if mat is not None else none_id
-            key = (id(prog), mat_key, id(mesh), mr.receive_shadows, sub_idx, getattr(mr, 'dynamic_reflections', False))
+            try:
+                _uv = getattr(mr, "uv_scale", None)
+                _usx = float(_uv.x) if _uv is not None else 1.0
+                _usy = float(_uv.y) if _uv is not None else 1.0
+            except Exception:
+                try:
+                    _usx = float(_uv[0])
+                    _usy = float(_uv[1])
+                except Exception:
+                    _usx, _usy = 1.0, 1.0
+            try:
+                _uo = getattr(mr, "uv_offset", None)
+                _uox = float(_uo.x) if _uo is not None else 0.0
+                _uoy = float(_uo.y) if _uo is not None else 0.0
+            except Exception:
+                try:
+                    _uox = float(_uo[0])
+                    _uoy = float(_uo[1])
+                except Exception:
+                    _uox, _uoy = 0.0, 0.0
+            try:
+                _uw = bool(getattr(mr, "uv_scale_by_transform", False))
+            except Exception:
+                _uw = False
+            try:
+                _sp = getattr(mr, "sprite_texture", "") or ""
+            except Exception:
+                _sp = ""
+            key = (id(prog), mat_key, id(mesh), mr.receive_shadows, sub_idx, getattr(mr, 'dynamic_reflections', False), (_usx, _usy, _uox, _uoy, _uw, _sp))
             lst = groups.get(key)
             if lst is None:
                 groups[key] = [(ent, tr, mesh, mr, mat, prog, wm, sub_idx)]
@@ -449,7 +477,7 @@ class RenderBatcher:
             if "u_albedo_color" in names:
                 prog["u_albedo_color"].write(np.array([r, 0.0, 0.0, 0.8], dtype=np.float32).tobytes())
         else:
-            apply_material_fn(mat, prog)
+            apply_material_fn(mat, prog, group[0][3])
 
         sub_idx = group[0][7]
         ranges = mesh.sub_mesh_ranges
@@ -544,7 +572,7 @@ class RenderBatcher:
                 if set_scene:
                     set_scene_uniforms_fn(prog, view_f32, proj_f32, cam_pos,
                                           lights, disable_shadows=disable_shadows)
-                apply_material_fn(mat, prog)
+                apply_material_fn(mat, prog, group[0][3])
 
                 ranges = mesh.sub_mesh_ranges
                 sub_idx = group[0][7]
@@ -574,7 +602,7 @@ class RenderBatcher:
                         apply_material_fn, normal_cache,
                         selected_entities, outline_queue, set_scene=True):
         self._stats_draw_calls += 1
-        ent, tr, _, _, _, _, wm, sub_idx = item
+        ent, tr, _, mr, _, _, wm, sub_idx = item
         names = self._uniform_names(prog)
         if "u_use_instancing" in names:
             prog["u_use_instancing"].value = 0
@@ -596,7 +624,7 @@ class RenderBatcher:
             if "u_albedo_color" in names:
                 prog["u_albedo_color"].write(np.array([r, 0.0, 0.0, 0.8], dtype=np.float32).tobytes())
         else:
-            apply_material_fn(mat, prog)
+            apply_material_fn(mat, prog, mr)
         ranges = mesh.sub_mesh_ranges
         ds = bool(mat.properties.get("double_sided") or mat.properties.get("_double_sided")) if mat else False
         cull_on = bool(self._ctx.cull_face)

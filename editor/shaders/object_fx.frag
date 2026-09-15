@@ -313,9 +313,11 @@ vec3 calc_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo, float shad
 }
 void main() {
     vec3 albedo = u_albedo_color.rgb;
+    float tex_a = 1.0;
     if (u_use_albedo_tex == 1) {
         vec4 texColor = texture(u_albedo_tex, v_uv);
         albedo *= texColor.rgb;
+        tex_a = texColor.a;
     }
     vec3 normal = normalize(v_normal);
     if (u_use_normal_tex == 1) {
@@ -350,7 +352,7 @@ void main() {
     }
     result += u_emission;
 
-    float fx_alpha = u_albedo_color.a;
+    float fx_alpha = u_albedo_color.a * tex_a;
     if (u_dissolve_amount > 0.0) {
         vec3 d = normalize(u_dissolve_dir + vec3(1e-5));
         float grad = dot(d, v_local_pos) * 0.5 + 0.5;

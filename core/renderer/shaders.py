@@ -139,6 +139,7 @@ class ShaderManager:
             with open(frag_file, "r") as f:
                 frag_src = f.read()
             vert_src = self._inject_instancing_vertex(vert_src)
+            vert_src = self._inject_uv_override(vert_src)
             frag_src = self._inject_area_shadows(frag_src)
             frag_src = self._inject_caustics(frag_src)
             prog = program_with_fallback(self._ctx, vert_src, frag_src,
@@ -186,6 +187,7 @@ class ShaderManager:
                 return None
             for vert_src, frag_src in subshaders:
                 vert_src = self._inject_instancing_vertex(vert_src)
+                vert_src = self._inject_uv_override(vert_src)
                 frag_src = self._inject_area_shadows(frag_src)
                 frag_src = self._inject_caustics(frag_src)
                 try:
@@ -208,6 +210,7 @@ class ShaderManager:
                         return fallback_prog
             vert_src, frag_src = subshaders[0]
             vert_src = self._inject_instancing_vertex(vert_src)
+            vert_src = self._inject_uv_override(vert_src)
             frag_src = self._inject_area_shadows(frag_src)
             frag_src = self._inject_caustics(frag_src)
             prog = program_with_fallback(self._ctx, vert_src, frag_src,
@@ -277,6 +280,48 @@ mat3 _resolve_normal_matrix() {
         if idx >= 0:
             return src[:idx+1] + injection + src[idx+1:]
         return injection + src
+
+    @staticmethod
+    def _inject_uv_override(src: str) -> str:
+        if "u_uv_scale" in src:
+            return src
+        if "in_uv" not in src:
+            return src
+        m = re.search(r'void\s+main\s*\([^)]*\)\s*\{', src)
+        if not m:
+            return src
+        model_expr = None
+        if "_resolve_model()" in src:
+            model_expr = "_resolve_model()"
+        elif re.search(r'\bu_model\b', src):
+            model_expr = "u_model"
+        use_world = model_expr is not None and re.search(r'\bin_normal\b', src) is not None
+        decl = "uniform vec2 u_uv_scale;\nuniform vec2 u_uv_offset;\nuniform float u_uv_world_scale;\n"
+        ver_match = re.search(r'^[ \t]*#[ \t]*version[ \t]+\d+\w*[^\n]*\n', src, re.MULTILINE)
+        if ver_match:
+            pos = ver_match.end()
+            src = src[:pos] + decl + src[pos:]
+            m = re.search(r'void\s+main\s*\([^)]*\)\s*\{', src)
+            if not m:
+                return src
+        else:
+            src = decl + src
+            m = re.search(r'void\s+main\s*\([^)]*\)\s*\{', src)
+            if not m:
+                return src
+        head = src[:m.end()]
+        tail = src[m.end():]
+        block = "\nvec2 _uv_ov = in_uv * u_uv_scale + u_uv_offset;\n"
+        if use_world:
+            block += "if (u_uv_world_scale > 0.5) {\n"
+            block += "vec3 _uv_an = abs(in_normal);\n"
+            block += "vec3 _uv_msc = vec3(length(" + model_expr + "[0].xyz), length(" + model_expr + "[1].xyz), length(" + model_expr + "[2].xyz));\n"
+            block += "vec2 _uv_fs = vec2(_uv_msc.x, _uv_msc.y);\n"
+            block += "if (_uv_an.y > _uv_an.x && _uv_an.y > _uv_an.z) { _uv_fs = vec2(_uv_msc.x, _uv_msc.z); }\n"
+            block += "else if (_uv_an.x > _uv_an.z) { _uv_fs = vec2(_uv_msc.z, _uv_msc.y); }\n"
+            block += "_uv_ov *= _uv_fs;\n}\n"
+        tail = re.sub(r'\bin_uv\b', '_uv_ov', tail)
+        return head + block + tail
 
     @staticmethod
     def _inject_area_shadows(src: str) -> str:

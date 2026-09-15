@@ -67,6 +67,9 @@ Shader "Zarin/PBR"
             uniform mat4 u_view;
             uniform mat4 u_proj;
             uniform mat3 u_normal_matrix;
+            uniform vec2 u_uv_scale;
+            uniform vec2 u_uv_offset;
+            uniform float u_uv_world_scale;
             out vec3 v_world_pos;
             out vec3 v_normal;
             out vec2 v_uv;
@@ -93,7 +96,16 @@ Shader "Zarin/PBR"
                 vec4 world_pos = _model * vec4(skinned_pos, 1.0);
                 v_world_pos = world_pos.xyz;
                 v_normal = normalize(_normal_matrix * skinned_nrm);
-                v_uv = in_uv;
+                vec2 _uv_ov = in_uv * u_uv_scale + u_uv_offset;
+                if (u_uv_world_scale > 0.5) {
+                    vec3 _uv_an = abs(skinned_nrm);
+                    vec3 _uv_msc = vec3(length(_model[0].xyz), length(_model[1].xyz), length(_model[2].xyz));
+                    vec2 _uv_fs = vec2(_uv_msc.x, _uv_msc.y);
+                    if (_uv_an.y > _uv_an.x && _uv_an.y > _uv_an.z) { _uv_fs = vec2(_uv_msc.x, _uv_msc.z); }
+                    else if (_uv_an.x > _uv_an.z) { _uv_fs = vec2(_uv_msc.z, _uv_msc.y); }
+                    _uv_ov *= _uv_fs;
+                }
+                v_uv = _uv_ov;
                 v_color = in_color;
                 vec4 view_pos = u_view * world_pos;
                 v_view_pos = view_pos.xyz;
@@ -752,6 +764,9 @@ uniform sampler2D u_shadow_map_3;
             uniform mat4 u_view;
             uniform mat4 u_proj;
             uniform mat3 u_normal_matrix;
+            uniform vec2 u_uv_scale;
+            uniform vec2 u_uv_offset;
+            uniform float u_uv_world_scale;
             out vec3 v_world_pos;
             out vec3 v_normal;
             out vec2 v_uv;
@@ -764,7 +779,16 @@ uniform sampler2D u_shadow_map_3;
                 vec4 world_pos = _model * vec4(in_position, 1.0);
                 v_world_pos = world_pos.xyz;
                 v_normal = normalize(_normal_matrix * in_normal);
-                v_uv = in_uv;
+                vec2 _uv_ov = in_uv * u_uv_scale + u_uv_offset;
+                if (u_uv_world_scale > 0.5) {
+                    vec3 _uv_an = abs(in_normal);
+                    vec3 _uv_msc = vec3(length(_model[0].xyz), length(_model[1].xyz), length(_model[2].xyz));
+                    vec2 _uv_fs = vec2(_uv_msc.x, _uv_msc.y);
+                    if (_uv_an.y > _uv_an.x && _uv_an.y > _uv_an.z) { _uv_fs = vec2(_uv_msc.x, _uv_msc.z); }
+                    else if (_uv_an.x > _uv_an.z) { _uv_fs = vec2(_uv_msc.z, _uv_msc.y); }
+                    _uv_ov *= _uv_fs;
+                }
+                v_uv = _uv_ov;
                 v_color = in_color;
                 vec4 view_pos = u_view * world_pos;
                 v_view_pos = view_pos.xyz;

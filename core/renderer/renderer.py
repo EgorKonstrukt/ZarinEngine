@@ -1621,7 +1621,48 @@ out vec4 frag_color;
         last_prog = None
         skinning_set = False
         skinning_cache = self._skinning_cache
-        for entry in snap.skinned_renderables:
+        try:
+            _sk_opaque = []
+            _sk_trans = []
+            for _e in snap.skinned_renderables:
+                try:
+                    _smr = _e[3]
+                    _sub = _e[6] if len(_e) > 6 else 0
+                    _mat = self._materials.load_material(_smr.get_material_path(_sub if _sub >= 0 else 0) if _smr else "")
+                    if self._materials.mesh_transparency(_smr, _mat):
+                        _sk_trans.append(_e)
+                    else:
+                        _sk_opaque.append(_e)
+                except Exception:
+                    _sk_opaque.append(_e)
+            try:
+                _cx = float(cam_pos.x)
+                _cy = float(cam_pos.y)
+                _cz = float(cam_pos.z)
+                _sk_trans.sort(key=lambda e: -(((float(e[4]._d[3, 0]) - _cx) ** 2) + ((float(e[4]._d[3, 1]) - _cy) ** 2) + ((float(e[4]._d[3, 2]) - _cz) ** 2)))
+            except Exception:
+                pass
+            _sk_ordered = _sk_opaque + _sk_trans
+            _sk_split = len(_sk_opaque)
+        except Exception:
+            _sk_ordered = list(snap.skinned_renderables)
+            _sk_split = len(_sk_ordered)
+        _sk_blend = False
+        for _sk_idx, entry in enumerate(_sk_ordered):
+            try:
+                _want = _sk_idx >= _sk_split and _sk_split < len(_sk_ordered)
+            except Exception:
+                _want = False
+            if _want != _sk_blend:
+                _sk_blend = _want
+                if _sk_blend:
+                    self._scene_fbo.use()
+                    self._ctx.enable(moderngl.BLEND)
+                    self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+                    self._ctx.depth_mask = False
+                else:
+                    self._ctx.depth_mask = True
+                    self._ctx.disable(moderngl.BLEND)
             ent, tr, mesh, smr, wm, armature, sub_idx = entry[:7]
             if armature is None or len(armature.bone_offset_matrices) == 0:
                 continue
@@ -1659,7 +1700,7 @@ out vec4 frag_color;
             if "u_bone_count" in names:
                 prog["u_bone_count"].value = int(n_bones)
             self._bind_bone_ssbo(flat)
-            self._materials.apply_material(mat, prog)
+            self._materials.apply_material(mat, prog, smr)
             if "u_use_instancing" in names:
                 prog["u_use_instancing"].value = 0
             if sub_idx >= 0 and mesh.sub_mesh_ranges:
@@ -1667,6 +1708,9 @@ out vec4 frag_color;
                 mesh.render_range(prog, start, count)
             else:
                 mesh.render(prog)
+        if _sk_blend:
+            self._ctx.depth_mask = True
+            self._ctx.disable(moderngl.BLEND)
         if last_prog is not None and "u_use_skinning" in last_prog:
             last_prog["u_use_skinning"].value = 0
 
@@ -1723,7 +1767,7 @@ out vec4 frag_color;
                             nm = np.eye(3, dtype=np.float32).T
                             if "u_normal_matrix" in names:
                                 p["u_normal_matrix"].write(nm.tobytes())
-                            self._materials.apply_material(mat, p)
+                            self._materials.apply_material(mat, p, mr)
                             ds = self._mat_double_sided(mat)
                             self._render_mesh_double_sided(p, mesh, ds)
                         except Exception:
@@ -2345,6 +2389,40 @@ out vec4 frag_color;
             if double_sided and cull_on:
                 ctx.enable(moderngl.CULL_FACE)
 
+    def _partition_transparent(self, renderable):
+        opaque = []
+        transparent = []
+        try:
+            mm = self._materials
+            ism = mm.mesh_transparency
+            lm = mm.load_material
+        except Exception:
+            return list(renderable), transparent
+        for e in renderable:
+            try:
+                mr = e[3]
+                sub = e[5] if len(e) > 5 else 0
+                mat = lm(mr.get_material_path(sub) if mr else "")
+                if ism(mr, mat):
+                    transparent.append(e)
+                else:
+                    opaque.append(e)
+            except Exception:
+                opaque.append(e)
+        return opaque, transparent
+
+    def _sort_transparent_far_first(self, entries, cam_pos):
+        try:
+            cx = float(cam_pos.x)
+            cy = float(cam_pos.y)
+            cz = float(cam_pos.z)
+        except Exception:
+            return
+        try:
+            entries.sort(key=lambda e: -(((float(e[4]._d[3, 0]) - cx) ** 2) + ((float(e[4]._d[3, 1]) - cy) ** 2) + ((float(e[4]._d[3, 2]) - cz) ** 2)))
+        except Exception:
+            pass
+
     def _render_object_effects(self, entries, view_f32, proj_f32, cam_pos, lights,
                                  selected_entities, outline_queue):
         if not entries:
@@ -2397,7 +2475,7 @@ out vec4 frag_color;
                         prog["u_use_instancing"].value = 0
                     if "u_use_skinning" in prog:
                         prog["u_use_skinning"].value = 0
-                    self._materials.apply_material(mat, prog)
+                    self._materials.apply_material(mat, prog, mr)
                     ObjectEffect.reset_all_defaults(prog)
                     for fx in fx_list:
                         fx.bind(prog, t)
@@ -2669,80 +2747,91 @@ out vec4 frag_color;
                 selected_entities = frozenset()
         except Exception:
             pass
-        fx_renderable = [e for e in renderable if len(e) > 6 and e[6]]
-        if fx_renderable:
-            self._render_object_effects(fx_renderable, view_f32, proj_f32, cam_pos, lights, selected_entities, outline_queue)
-            renderable = [e for e in renderable if not (len(e) > 6 and e[6])]
-        if self._batcher:
-            groups = self._batcher.collect_groups(
-                renderable, self._materials, self._shaders)
-            self._batcher.render_groups(
-                groups, view_f32, proj_f32, cam_pos, lights, False,
-                self._set_scene_uniforms, self._materials.apply_material,
-                self._normal_cache,
-                selected_entities or set(), outline_queue,
-                gpu_storage=self._gpu_storage,
-                dynamic_cubemaps=dynamic_cubemaps,
-                sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None)
-        else:
-            for entry in renderable:
-                ent, tr, mesh, mr = entry[:4]
-                wm = entry[4]
-                try:
-                    mat = self._materials.load_material(mr.get_material_path(0))
-                    shader_path = mat.shader_path if mat else ""
-                    prog = self._shaders.get_or_compile(shader_path if shader_path else "") or self._default_prog
-                    self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=not mr.receive_shadows)
-                    names = self._uniform_names(prog)
-                    if getattr(mr, 'dynamic_reflections', False) and dynamic_cubemaps is not None:
-                        dynamic_cubemaps.bind_ibl(prog)
-                    elif getattr(sky_component, '_sky_ibl', None) is not None and sky_component._sky_ibl.ready:
-                        sky_component._sky_ibl.bind(prog)
-                    elif not getattr(mr, 'dynamic_reflections', False):
-                        try:
-                            if "u_irradiance_map_Active" in names:
-                                prog["u_irradiance_map_Active"].value = 0
-                            if "u_prefilter_map_Active" in names:
-                                prog["u_prefilter_map_Active"].value = 0
-                            if "u_brdf_lut_Active" in names:
-                                prog["u_brdf_lut_Active"].value = 0
-                            # Keep the IBL samplers off unit 0: unit 0 may hold
-                            # a cubemap left by dynamic-cubemap generation, which
-                            # makes the driver reject draws referencing unit 0.
-                            if "u_irradiance_map" in names:
-                                prog["u_irradiance_map"].value = 14
-                            if "u_prefilter_map" in names:
-                                prog["u_prefilter_map"].value = 15
-                            if "u_brdf_lut" in names:
-                                prog["u_brdf_lut"].value = 16
-                        except Exception:
-                            pass
-                    model = wm
-                    model_f32 = model.to_f32()
-                    if "u_model" in names:
-                        prog["u_model"].write(model_f32.tobytes())
-                    nm = resolve_normal_matrix(self._normal_cache, ent._id, model._d)
-                    if "u_normal_matrix" in names:
-                        prog["u_normal_matrix"].write(nm.tobytes())
-                    self._materials.apply_material(mat, prog)
-                    ds = self._mat_double_sided(mat)
-                    self._render_mesh_double_sided(prog, mesh, ds)
-                    if selected_entities and ent in selected_entities:
-                        outline_queue.append((mesh, wm))
-                except Exception:
-                    prog = self._default_prog
-                    self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=not mr.receive_shadows)
-                    names = self._uniform_names(prog)
-                    model = wm
-                    model_f32 = model.to_f32()
-                    if "u_model" in names:
-                        prog["u_model"].write(model_f32.tobytes())
-                    if "u_normal_matrix" in names:
-                        prog["u_normal_matrix"].write(np.eye(3, dtype=np.float32).tobytes())
-                    self._materials.apply_material(None, prog)
-                    mesh.render(prog)
-                    if selected_entities and ent in selected_entities:
-                        outline_queue.append((mesh, wm))
+        opaque_entries, transparent_entries = self._partition_transparent(renderable)
+        self._sort_transparent_far_first(transparent_entries, cam_pos)
+        for _is_trans_phase, _phase_entries in ((False, opaque_entries), (True, transparent_entries)):
+            if not _phase_entries:
+                continue
+            if _is_trans_phase:
+                self._scene_fbo.use()
+                self._ctx.viewport = (0, 0, rw, rh)
+                self._ctx.enable(moderngl.BLEND)
+                self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+                self._ctx.depth_mask = False
+            fx_renderable = [e for e in _phase_entries if len(e) > 6 and e[6]]
+            if fx_renderable:
+                self._render_object_effects(fx_renderable, view_f32, proj_f32, cam_pos, lights, selected_entities, outline_queue)
+                _phase_entries = [e for e in _phase_entries if not (len(e) > 6 and e[6])]
+            if self._batcher:
+                groups = self._batcher.collect_groups(
+                    _phase_entries, self._materials, self._shaders)
+                self._batcher.render_groups(
+                    groups, view_f32, proj_f32, cam_pos, lights, False,
+                    self._set_scene_uniforms, self._materials.apply_material,
+                    self._normal_cache,
+                    selected_entities or set(), outline_queue,
+                    gpu_storage=self._gpu_storage,
+                    dynamic_cubemaps=dynamic_cubemaps,
+                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None)
+            else:
+                for entry in _phase_entries:
+                    ent, tr, mesh, mr = entry[:4]
+                    wm = entry[4]
+                    try:
+                        mat = self._materials.load_material(mr.get_material_path(0))
+                        shader_path = mat.shader_path if mat else ""
+                        prog = self._shaders.get_or_compile(shader_path if shader_path else "") or self._default_prog
+                        self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=not mr.receive_shadows)
+                        names = self._uniform_names(prog)
+                        if getattr(mr, 'dynamic_reflections', False) and dynamic_cubemaps is not None:
+                            dynamic_cubemaps.bind_ibl(prog)
+                        elif getattr(sky_component, '_sky_ibl', None) is not None and sky_component._sky_ibl.ready:
+                            sky_component._sky_ibl.bind(prog)
+                        elif not getattr(mr, 'dynamic_reflections', False):
+                            try:
+                                if "u_irradiance_map_Active" in names:
+                                    prog["u_irradiance_map_Active"].value = 0
+                                if "u_prefilter_map_Active" in names:
+                                    prog["u_prefilter_map_Active"].value = 0
+                                if "u_brdf_lut_Active" in names:
+                                    prog["u_brdf_lut_Active"].value = 0
+                                if "u_irradiance_map" in names:
+                                    prog["u_irradiance_map"].value = 14
+                                if "u_prefilter_map" in names:
+                                    prog["u_prefilter_map"].value = 15
+                                if "u_brdf_lut" in names:
+                                    prog["u_brdf_lut"].value = 16
+                            except Exception:
+                                pass
+                        model = wm
+                        model_f32 = model.to_f32()
+                        if "u_model" in names:
+                            prog["u_model"].write(model_f32.tobytes())
+                        nm = resolve_normal_matrix(self._normal_cache, ent._id, model._d)
+                        if "u_normal_matrix" in names:
+                            prog["u_normal_matrix"].write(nm.tobytes())
+                        self._materials.apply_material(mat, prog, mr)
+                        ds = self._mat_double_sided(mat)
+                        self._render_mesh_double_sided(prog, mesh, ds)
+                        if selected_entities and ent in selected_entities:
+                            outline_queue.append((mesh, wm))
+                    except Exception:
+                        prog = self._default_prog
+                        self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=not mr.receive_shadows)
+                        names = self._uniform_names(prog)
+                        model = wm
+                        model_f32 = model.to_f32()
+                        if "u_model" in names:
+                            prog["u_model"].write(model_f32.tobytes())
+                        if "u_normal_matrix" in names:
+                            prog["u_normal_matrix"].write(np.eye(3, dtype=np.float32).tobytes())
+                        self._materials.apply_material(None, prog, mr)
+                        mesh.render(prog)
+                        if selected_entities and ent in selected_entities:
+                            outline_queue.append((mesh, wm))
+        if transparent_entries:
+            self._ctx.depth_mask = True
+            self._ctx.disable(moderngl.BLEND)
         if prof:
             prof.stop("render_meshes")
         if use_polygon_mode:

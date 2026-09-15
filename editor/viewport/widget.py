@@ -30,6 +30,7 @@ from editor.scene_camera import SceneCamera
 from core.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
 from core.gizmo.api import GizmosManager, set_gizmos
 from editor.gizmo.pb_scale_gizmo import PbScaleGizmo
+from editor.gizmo.phys_bone_grab import PhysBoneGrabGizmo
 from core.input.input_system import Input, KeyCode
 from core.input.input_manager import InputManager
 from core.input.constants import (KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT,
@@ -349,6 +350,7 @@ class SceneViewport(QOpenGLWidget):
         self._collab_timer.setInterval(500)
         self._collab_timer.timeout.connect(self._collab_tick)
         self._pb_scale_gizmo: "PbScaleGizmo | None" = None
+        self._pb_grab: "PhysBoneGrabGizmo | None" = None
         self._in_update: bool = False
         self._last_status_update: float = 0.0
         self._cached_overlay_state: Optional[bool] = None
@@ -810,6 +812,7 @@ class SceneViewport(QOpenGLWidget):
                 self._audio_viz = None
                 print(f"[Zarin Engine] AudioViz init error: {e}", flush=True)
             self._pb_scale_gizmo = PbScaleGizmo(self)
+            self._pb_grab = PhysBoneGrabGizmo(self)
             self._engine.on("scene_loaded", self._on_scene_loaded)
             self._engine.on("play_stop", self._on_play_stop)
             self._engine.on("play_start", self._on_play_start)
@@ -1183,6 +1186,14 @@ class SceneViewport(QOpenGLWidget):
                 return
             if self._pb_scale_gizmo and self._pb_scale_gizmo.active and self._pb_scale_gizmo.on_mouse_press(lx, ly):
                 return
+            if self._pb_grab and self._pb_grab.on_mouse_press(lx, ly):
+                ge = self._pb_grab.grab_entity
+                if ge is not None:
+                    self._selected_entities = [ge]
+                    self._set_gizmo_entity(ge)
+                    self.entity_selected.emit(ge)
+                    from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
+                return
             if self._gizmo.on_mouse_press(x, y, self._cam, *self._get_physical_dims()):
                 # Vertex Tools: Hold Ctrl (Windows) / Option (macOS) to extrude while Move/Scale
                 if self._gizmo.ctrl_down and getattr(self._gizmo, '_active_op', 'translate') in ('translate', 'scale') and self._selected_entities:
@@ -1316,6 +1327,10 @@ class SceneViewport(QOpenGLWidget):
             self._area_end = (lx, ly)
             self.update()
         else:
+            if self._pb_grab and self._pb_grab.dragging:
+                self._pb_grab.on_mouse_move(lx, ly)
+                self.update()
+                return
             if self._pb_scale_gizmo and self._pb_scale_gizmo._dragging:
                 self._pb_scale_gizmo.on_mouse_move(lx, ly)
                 self.update()
@@ -1449,6 +1464,9 @@ class SceneViewport(QOpenGLWidget):
         self._gizmo._multi_undo_active = False
         if self._pb_scale_gizmo and self._pb_scale_gizmo._dragging:
             self._pb_scale_gizmo.on_mouse_release()
+            self.update()
+        if self._pb_grab and self._pb_grab.dragging:
+            self._pb_grab.on_mouse_release()
             self.update()
         if self._multi_entity_initial_transforms:
             from core.foundation.commands import SetComponentCommand, CompoundCommand, get_history

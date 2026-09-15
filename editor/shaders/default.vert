@@ -24,6 +24,9 @@ uniform mat3 u_normal_matrix;
 uniform int u_use_instancing;
 uniform int u_use_skinning;
 uniform int u_bone_count;
+uniform vec2 u_uv_scale;
+uniform vec2 u_uv_offset;
+uniform float u_uv_world_scale;
 out vec3 v_world_pos;
 out vec3 v_normal;
 out vec2 v_uv;
@@ -57,7 +60,19 @@ void main() {
     vec4 world_pos = model * vec4(local_pos, 1.0);
     v_world_pos = world_pos.xyz;
     v_normal = normalize(nm * local_nrm);
-    v_uv = in_uv;
+    vec2 tuv = in_uv * u_uv_scale + u_uv_offset;
+    if (u_uv_world_scale > 0.5) {
+        vec3 an = abs(local_nrm);
+        vec3 msc = vec3(length(model[0].xyz), length(model[1].xyz), length(model[2].xyz));
+        vec2 fs = vec2(msc.x, msc.y);
+        if (an.y > an.x && an.y > an.z) {
+            fs = vec2(msc.x, msc.z);
+        } else if (an.x > an.z) {
+            fs = vec2(msc.z, msc.y);
+        }
+        tuv *= fs;
+    }
+    v_uv = tuv;
     vec4 view_pos = u_view * world_pos;
     v_view_pos = view_pos.xyz;
     gl_Position = u_proj * u_view * world_pos;
