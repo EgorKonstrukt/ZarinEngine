@@ -542,7 +542,6 @@ class AboutDialog(QDialog):
         unbuf_cfg = bool(eng_cfg.get("python_unbuffered", False))
         nobc_cfg = bool(eng_cfg.get("python_no_bytecode", False))
         info = QLabel(
-            f"<b>Tech Stack:</b> Python 3, ModernGL, PyQt6, NumPy, Bullet3 / PhysX<br>"
             f"<b>Plugins:</b> {self._count_plugins()} loaded<br>"
             f"<b>System:</b> {platform.system()} {platform.machine()}<br>"
             f"<b>Python:</b> {sys.version.split()[0]}<br>"
