@@ -150,6 +150,7 @@ def get_global_config() -> Config:
                 "auto_save_interval": 300,
                 "thumb_cache_mode": "metadata",
                 "thumb_resolution": 512,
+                "hover_delay": 450,
             },
             "camera": {
                 "fov": 70.0,

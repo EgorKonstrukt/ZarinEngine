@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0.."
 set "OUTFILE=profile_flamegraph_%DATE:~-4,4%%DATE:~-7,2%%DATE:~-10,2%_%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%.svg"
 set "OUTFILE=%OUTFILE: =0%"
 echo Recording to %OUTFILE% ...

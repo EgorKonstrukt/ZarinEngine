@@ -11,6 +11,12 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Compiled Cython extensions (rebuilt via setup.py)
+*.pyd
+*.prev
+*.bak
+core/pyx/*.c
+
 # IDE
 .vscode/
 .idea/
@@ -22,5 +28,20 @@ Thumbs.db
 /assets/
 /build/
 /_build_assets_11904/
-/_build_scenes_11904/
+_build_scenes_11904/
 /config/
+
+# Runtime artifacts (regenerated on run/build)
+player_diag.txt
+_build_BuildSettings.json
+crash_logs/
+cache/
+dist/
+
+# Profiling output
+profile_flamegraph*.svg
+
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

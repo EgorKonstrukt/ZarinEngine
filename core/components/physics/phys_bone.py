@@ -17,23 +17,19 @@ class PhysBoneIntegration(enum.Enum):
     SIMPLIFIED = "simplified"
     ADVANCED = "advanced"
 
-
 class PhysBoneMultiChild(enum.Enum):
     IGNORE = "ignore"
     FIRST_CHILD = "first"
     AVERAGE = "average"
 
-
 class PhysBoneImmobileType(enum.Enum):
     ALL_MOTION = "all"
     WORLD_TRANSLATION = "translation"
-
 
 class PhysBoneLimitType(enum.Enum):
     NONE = "none"
     ANGLE = "angle"
     HINGE = "hinge"
-
 
 def _clamp(v, lo, hi):
     try:

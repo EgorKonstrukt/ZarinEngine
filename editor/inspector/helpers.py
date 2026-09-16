@@ -16,6 +16,7 @@ from core.config.editor_scale import scale, scale_xy
 from editor.inspector.constants import _XYZ_COLORS, _accent
 from editor.inspector.widgets import _FocusSpinBox, _DragLabel, _ResourceDropLabel, _EntityDropLabel, EntityPickerDialog
 from core.maths.math3d import Vec2, Vec3, Vec4
+from editor.hover_preview import attach_resource_hover, attach_entity_hover
 
 _PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -242,7 +243,9 @@ def make_resource_picker(path: str, filter_str: str, callback: Callable[[str], N
     name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
     name_lbl.installEventFilter(_NavFilter(lambda: _flash_resource(name_lbl), lambda: _navigate_resource(name_lbl), name_lbl))
     layout.addWidget(name_lbl, 1)
+    _hover_state = {"path": path}
     def _apply_state(p: str):
+        _hover_state["path"] = p
         name_lbl.setText(os.path.basename(p) if p else "None")
         name_lbl.setToolTip(p if p else "No resource selected")
         if _is_path_valid(p):
@@ -278,6 +281,11 @@ def make_resource_picker(path: str, filter_str: str, callback: Callable[[str], N
     clear_btn.clicked.connect(_clear)
     layout.addWidget(clear_btn)
     clear_btn.setVisible(bool(path))
+    try:
+        attach_resource_hover(name_lbl, lambda: _hover_state.get("path") or None)
+        attach_resource_hover(icon_lbl, lambda: _hover_state.get("path") or None)
+    except Exception:
+        pass
     return w
 
 def make_gameobject_picker(entity_id: str, scene, callback: Callable[[str], None]) -> QWidget:
@@ -305,8 +313,10 @@ def make_gameobject_picker(entity_id: str, scene, callback: Callable[[str], None
     name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
     name_lbl.installEventFilter(_NavFilter(lambda: _flash_entity(name_lbl), lambda: _navigate_entity(name_lbl), name_lbl))
     layout.addWidget(name_lbl, 1)
+    _hover_holder = {"eid": entity_id}
     def _update_entity_display(eid: str):
         nonlocal target_entity
+        _hover_holder["eid"] = eid
         target_entity = scene.get_entity(eid) if scene and eid else None
         new_name = target_entity.name if target_entity else ""
         name_lbl.setText(new_name if new_name else "None")
@@ -363,6 +373,19 @@ def make_gameobject_picker(entity_id: str, scene, callback: Callable[[str], None
     clear_btn.clicked.connect(_clear)
     layout.addWidget(clear_btn)
     clear_btn.setVisible(bool(entity_id))
+    try:
+        def _resolve_entity():
+            try:
+                eid = _hover_holder.get("eid") or ""
+                if scene is not None and eid:
+                    return scene.get_entity(eid)
+            except Exception:
+                return None
+            return None
+        attach_entity_hover(name_lbl, _resolve_entity)
+        attach_entity_hover(icon_lbl, _resolve_entity)
+    except Exception:
+        pass
     return w
 
 def make_resource_type_picker(path: str, resource_type: str, callback: Callable[[str], None]) -> QWidget:
@@ -386,7 +409,9 @@ def make_resource_type_picker(path: str, resource_type: str, callback: Callable[
     name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
     name_lbl.installEventFilter(_NavFilter(lambda: _flash_resource(name_lbl), lambda: _navigate_resource(name_lbl), name_lbl))
     layout.addWidget(name_lbl, 1)
+    _hover_state_rt = {"path": path}
     def _update_display(p: str):
+        _hover_state_rt["path"] = p
         new_name = os.path.basename(p) if p else ""
         name_lbl.setText(new_name if new_name else f"None ({resource_type})")
         name_lbl.setToolTip(p if p else f"No {resource_type} selected")
@@ -420,6 +445,11 @@ def make_resource_type_picker(path: str, resource_type: str, callback: Callable[
     clear_btn.clicked.connect(_clear)
     layout.addWidget(clear_btn)
     clear_btn.setVisible(bool(path))
+    try:
+        attach_resource_hover(name_lbl, lambda: _hover_state_rt.get("path") or None)
+        attach_resource_hover(icon_lbl, lambda: _hover_state_rt.get("path") or None)
+    except Exception:
+        pass
     return w
 
 def make_asset_picker(path: str, asset_type: str, callback: Callable[[str], None]) -> QWidget:
@@ -443,7 +473,9 @@ def make_asset_picker(path: str, asset_type: str, callback: Callable[[str], None
     name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
     name_lbl.installEventFilter(_NavFilter(lambda: _flash_resource(name_lbl), lambda: _navigate_resource(name_lbl), name_lbl))
     layout.addWidget(name_lbl, 1)
+    _hover_state_ap = {"path": path}
     def _update_display(p: str):
+        _hover_state_ap["path"] = p
         new_name = os.path.basename(p) if p else ""
         name_lbl.setText(new_name if new_name else f"None ({asset_type})")
         name_lbl.setToolTip(p if p else f"No {asset_type} selected")
@@ -485,6 +517,11 @@ def make_asset_picker(path: str, asset_type: str, callback: Callable[[str], None
     clear_btn.clicked.connect(_clear)
     layout.addWidget(clear_btn)
     clear_btn.setVisible(bool(path))
+    try:
+        attach_resource_hover(name_lbl, lambda: _hover_state_ap.get("path") or None)
+        attach_resource_hover(icon_lbl, lambda: _hover_state_ap.get("path") or None)
+    except Exception:
+        pass
     return w
 
 def _create_asset_dialog(parent, asset_type: str, callback: Callable[[str], None]):

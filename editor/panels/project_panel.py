@@ -100,6 +100,7 @@ def _accent_rgba(alpha: int) -> str:
 if TYPE_CHECKING:
     from core.engine.engine import Engine
 from editor.resource_picker import _get_thumbnail, _format_size, _thumb_resolution
+from editor.hover_preview import attach_project_list_hover, attach_project_tree_hover
 
 try:
     from editor.shell_context_menu import show_shell_context_menu
@@ -263,6 +264,10 @@ class FileListWidget(QListWidget):
         self.setAcceptDrops(True)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        try:
+            attach_project_list_hover(self)
+        except Exception:
+            pass
 
     def wheelEvent(self, event: QWheelEvent):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -352,6 +357,10 @@ class FileDetailWidget(QTreeWidget):
         self._panel = panel
         self.setAcceptDrops(True)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        try:
+            attach_project_tree_hover(self)
+        except Exception:
+            pass
 
     def wheelEvent(self, event: QWheelEvent):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -479,6 +488,10 @@ class FolderTreeWidget(QTreeWidget):
                 height: 0px;
             }}
         """)
+        try:
+            attach_project_tree_hover(self)
+        except Exception:
+            pass
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat(_ENTITY_MIME) or event.mimeData().hasUrls() or event.mimeData().hasText():

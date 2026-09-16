@@ -80,6 +80,7 @@ FIELD_TOOLTIPS = {
     "editor.auto_save_interval": "Auto-save interval in seconds",
     "editor.thumb_cache_mode": "Thumbnail cache key: metadata (fast, uses mtime/size) or content (full file hash, slower but exact)",
     "editor.thumb_resolution": "Thumbnail render resolution in pixels (higher = sharper but slower)",
+    "editor.hover_delay": "Delay in milliseconds before the resource hover preview appears near the cursor",
 
     "mesh_preview.camera_rot_x": "Camera X rotation angle in degrees for mesh thumbnails",
     "mesh_preview.camera_rot_y": "Camera Y rotation angle in degrees for mesh thumbnails",
@@ -232,6 +233,7 @@ _FIELD_RANGES = {
     "editor.ui_scale": (50, 200),
     "editor.auto_save_interval": (10, 600),
     "editor.thumb_resolution": (64, 2048),
+    "editor.hover_delay": (0, 2000),
     "camera.fov": (1, 179),
     "camera.near": (0.001, 10.0),
     "camera.far": (10.0, 50000.0),
