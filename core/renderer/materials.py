@@ -19,6 +19,10 @@ from core.foundation.logger import Logger
 from core.foundation.progress import task_complete, task_set_detail, task_start
 
 
+_TEX_MAX_PER_FRAME = 2
+_TEX_MAX_PIXELS_PER_FRAME = 8 * 1024 * 1024
+
+
 class MaterialManager:
     """Loads, caches and applies materials and textures to shader programs."""
 
@@ -227,27 +231,42 @@ class MaterialManager:
                 task_complete("tex_load:" + abs_path)
                 callback(None)
                 return
-            task_set_detail("tex_load:" + abs_path, f"{img.size[0]}×{img.size[1]}")
-            with self._async_lock:
-                self._pending_texture_queue.append((abs_path, callback, img))
-        _get_asset_pool().submit(_task)
-
-    def process_texture_pending(self) -> None:
-        if not self._pending_texture_queue:
-            return
-        with self._async_lock:
-            items = list(self._pending_texture_queue)
-            self._pending_texture_queue.clear()
-        for abs_path, callback, img in items:
             try:
                 import_settings = TextureImportSettings.for_file(abs_path)
                 w, h = img.size
                 longest = max(w, h)
                 if longest > import_settings.max_size:
                     scale = import_settings.max_size / longest
-                    w = max(1, int(w * scale))
-                    h = max(1, int(h * scale))
-                    img = img.resize((w, h), Image.LANCZOS)
+                    img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+            except Exception:
+                pass
+            task_set_detail("tex_load:" + abs_path, f"{img.size[0]}×{img.size[1]}")
+            with self._async_lock:
+                self._pending_texture_queue.append((abs_path, callback, img))
+        _get_asset_pool().submit(_task)
+
+    def process_texture_pending(self, max_textures: int | None = None, max_pixels: int | None = None) -> None:
+        if not self._pending_texture_queue:
+            return
+        if max_textures is None:
+            max_textures = _TEX_MAX_PER_FRAME
+        if max_pixels is None:
+            max_pixels = _TEX_MAX_PIXELS_PER_FRAME
+        with self._async_lock:
+            items = self._pending_texture_queue
+            self._pending_texture_queue = []
+        done = 0
+        pixels = 0
+        idx = 0
+        for abs_path, callback, img in items:
+            try:
+                w, h = img.size
+            except Exception:
+                w, h = 0, 0
+            if done >= max_textures or pixels + w * h > max_pixels:
+                break
+            try:
+                import_settings = TextureImportSettings.for_file(abs_path)
                 tex = self._ctx.texture(img.size, 4, img.tobytes())
                 import_settings.apply_to_texture(tex)
                 if os.path.basename(abs_path) == "prototype_texture.png":
@@ -263,6 +282,12 @@ class MaterialManager:
             except Exception:
                 task_complete("tex_load:" + abs_path)
                 callback(None)
+            done += 1
+            pixels += w * h
+            idx += 1
+        if idx < len(items):
+            with self._async_lock:
+                self._pending_texture_queue = items[idx:] + self._pending_texture_queue
 
     # Maps URP-style/PBR property names to default shader uniform names
     _UNIFORM_ALIASES = {

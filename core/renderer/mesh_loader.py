@@ -29,7 +29,9 @@ from core.renderer.meshes import (
     make_sphere_mesh,
 )
 
-_MAX_PENDING_PER_FRAME = 16
+_MESH_UPLOAD_BUDGET_BYTES = 6 * 1024 * 1024
+_MESH_MAX_COMPLETIONS_PER_FRAME = 4
+_MESH_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024
 
 
 def _display_name(path: str) -> str:
@@ -72,6 +74,7 @@ class MeshLoader:
         self._loaded_generation: int = 0
         self._batch_active: bool = False
         self._built_count: int = 0
+        self._upload_sessions: dict = {}
 
     def register_primitives(self):
         self._meshes["cube"] = make_cube_mesh()
@@ -120,7 +123,7 @@ class MeshLoader:
         self._do_render_request()
         return m
 
-    def _apply_transforms(self, m: MeshData, cache_key: str, scale: float,
+    def _prepare_mesh_cpu(self, m: MeshData, scale: float,
                           center_pivot: bool, flip_uvs: bool):
         if scale != 1.0:
             verts = m.vertices.reshape(-1, 3)
@@ -141,6 +144,11 @@ class MeshLoader:
         if len(m.indices) > 0:
             m.indices = np.ascontiguousarray(m.indices, dtype=np.uint32)
         m.compute_aabb()
+        m.prepare_upload_bytes()
+
+    def _apply_transforms(self, m: MeshData, cache_key: str, scale: float,
+                          center_pivot: bool, flip_uvs: bool):
+        self._prepare_mesh_cpu(m, scale, center_pivot, flip_uvs)
         m.build_gl(self._ctx, self._default_prog)
         if self._outline_prog:
             m.build_outline_vao(self._ctx, self._outline_prog)
@@ -149,6 +157,17 @@ class MeshLoader:
         mesh_name = _display_name(cache_key.split("|")[0])
         prebuild_mesh_bvh(m.vertices, m.indices, title=f"Building BVH {mesh_name}...")
         self._record_mesh_built(cache_key)
+
+    def _finish_mesh_ready(self, m: MeshData, cache_key: str):
+        m.build_gl(self._ctx, self._default_prog)
+        if self._outline_prog:
+            m.build_outline_vao(self._ctx, self._outline_prog)
+        self._meshes[cache_key] = m
+        self._record_mesh_built(cache_key)
+        self._pending_cache_keys.discard(cache_key)
+        task_complete(_mesh_load_task(cache_key))
+        self._loaded_generation += 1
+        self._do_render_request()
 
     def _record_mesh_built(self, cache_key: str):
         if cache_key not in self._pending_cache_keys:
@@ -281,10 +300,23 @@ class MeshLoader:
                         f"Imported {_fmt_count(len(import_data.vertices) / 3)} verts · "
                         f"{_fmt_count(len(import_data.indices) / 3)} tris",
                     )
+                    m = self._build_mesh_data(import_data)
+                    if m is not None:
+                        self._prepare_mesh_cpu(m, scale, cp, fuvs)
+                        try:
+                            from core.spatial.bvh import prebuild_mesh_bvh
+                            mesh_name = _display_name(cache_key.split("|")[0])
+                            prebuild_mesh_bvh(m.vertices, m.indices, title=f"Building BVH {mesh_name}...")
+                        except Exception:
+                            pass
+                        with self._async_lock:
+                            self._pending_mesh_queue.append((cache_key, m))
+                        self._on_async_load_complete()
+                        queued = True
+                        return
                 with self._async_lock:
-                    self._pending_mesh_queue.append((cache_key, import_data, scale, cp, fuvs))
+                    self._pending_cache_keys.discard(cache_key)
                 self._on_async_load_complete()
-                queued = True
             finally:
                 if not queued:
                     task_complete(_mesh_load_task(cache_key))
@@ -307,39 +339,168 @@ class MeshLoader:
         if self._render_callback:
             self._render_callback()
 
-    def process_pending(self):
-        if not self._pending_mesh_queue:
-            return
-        with self._async_lock:
-            if not self._pending_mesh_queue:
-                return
-            pending = list(self._pending_mesh_queue)
-            self._pending_mesh_queue.clear()
-        processed = 0
-        for cache_key, import_data, scale, cp, fuvs in pending:
-            if processed >= _MAX_PENDING_PER_FRAME:
-                with self._async_lock:
-                    self._pending_mesh_queue.insert(0, (cache_key, import_data, scale, cp, fuvs))
+    def _new_upload_session(self, m: MeshData):
+        streams = []
+        if m._up_vbo:
+            streams.append(["vbo", m._up_vbo, None, 0])
+        if m._up_ibo:
+            streams.append(["ibo", m._up_ibo, None, 0])
+        if m._up_bone:
+            streams.append(["bone", m._up_bone, None, 0])
+        if m._up_color:
+            streams.append(["color", m._up_color, None, 0])
+        if m._up_outline:
+            streams.append(["outline", m._up_outline, None, 0])
+        return {"mesh": m, "streams": streams, "si": 0, "done": not streams}
+
+    def _pump_upload_session(self, cache_key: str, budget: int) -> int:
+        s = self._upload_sessions[cache_key]
+        spent = 0
+        streams = s["streams"]
+        while budget > 0 and s["si"] < len(streams):
+            st = streams[s["si"]]
+            data = st[1]
+            if st[2] is None:
+                try:
+                    st[2] = self._ctx.buffer(reserve=len(data))
+                except Exception:
+                    break
+            off = st[3]
+            if off >= len(data):
+                s["si"] += 1
+                continue
+            n = min(len(data) - off, budget, _MESH_UPLOAD_CHUNK_BYTES)
+            try:
+                st[2].write(data[off:off + n], offset=off)
+            except Exception:
                 break
+            st[3] = off + n
+            spent += n
+            budget -= n
+            if st[3] >= len(data):
+                s["si"] += 1
+        if s["si"] >= len(streams):
+            s["done"] = True
+        return spent
+
+    def _cancel_upload_session(self, cache_key: str):
+        s = self._upload_sessions.pop(cache_key, None)
+        if s is None:
+            return
+        for _kind, _data, buf, _off in s["streams"]:
+            if buf is not None:
+                try:
+                    buf.release()
+                except Exception:
+                    pass
+
+    def _complete_upload_session(self, cache_key: str):
+        s = self._upload_sessions.pop(cache_key, None)
+        if s is None:
+            return
+        if cache_key not in self._pending_cache_keys:
+            self._cancel_upload_session(cache_key)
+            return
+        m = s["mesh"]
+        bufs: dict = {}
+        for kind, _data, buf, _off in s["streams"]:
+            if buf is not None:
+                bufs[kind] = buf
+        if "vbo" not in bufs and m.vertices.size > 0:
+            self._finish_mesh_ready(m, cache_key)
+            return
+        try:
+            m._ctx = self._ctx
+            m._invalidate_vaos()
+            m._gpu_version += 1
+            if "vbo" in bufs:
+                m._vbo = bufs["vbo"]
+            if "ibo" in bufs:
+                m._ibo = bufs["ibo"]
+            elif m.indices.size == 0 and m._ibo is not None:
+                try:
+                    m._ibo.release()
+                except Exception:
+                    pass
+                m._ibo = None
+            if "bone" in bufs:
+                m._bone_vbo = bufs["bone"]
+                m.bone_count = len(m.bone_offset_matrices)
+            if "color" in bufs:
+                m._color_vbo = bufs["color"]
+            if "outline" in bufs:
+                m._outline_vbo = bufs["outline"]
+            m._consume_upload_bytes()
+            m._build_vao_for_program(self._default_prog)
+            m._vao = m._vao_cache.get(id(self._default_prog))
+            if m._outline_vbo is not None and self._outline_prog:
+                m._create_outline_vao(self._outline_prog)
+        except Exception:
+            self._cancel_upload_session(cache_key)
+            try:
+                self._finish_mesh_ready(m, cache_key)
+            except Exception:
+                self._pending_cache_keys.discard(cache_key)
+                task_complete(_mesh_load_task(cache_key))
+            return
+        self._meshes[cache_key] = m
+        self._record_mesh_built(cache_key)
+        self._pending_cache_keys.discard(cache_key)
+        task_complete(_mesh_load_task(cache_key))
+        self._loaded_generation += 1
+        self._do_render_request()
+
+    def cancel_prefix(self, prefix: str):
+        for key in [k for k in list(self._upload_sessions.keys()) if k.startswith(prefix)]:
+            self._cancel_upload_session(key)
+            self._pending_cache_keys.discard(key)
+            task_complete(_mesh_load_task(key))
+
+    def process_pending(self, budget_bytes: int | None = None, max_completions: int | None = None):
+        if budget_bytes is None:
+            budget_bytes = _MESH_UPLOAD_BUDGET_BYTES
+        if max_completions is None:
+            max_completions = _MESH_MAX_COMPLETIONS_PER_FRAME
+        with self._async_lock:
+            queued = list(self._pending_mesh_queue) if self._pending_mesh_queue else []
+            self._pending_mesh_queue.clear()
+        for cache_key, m in queued:
             if cache_key not in self._pending_cache_keys:
                 continue
-            processed += 1
-            m = self._build_mesh_data(import_data)
-            if not m:
+            if cache_key in self._meshes or cache_key in self._upload_sessions:
+                continue
+            if m is None or m.vertices.size == 0:
                 self._pending_cache_keys.discard(cache_key)
                 task_complete(_mesh_load_task(cache_key))
                 continue
-            task_set_title(_mesh_load_task(cache_key), f"Building {_display_name(cache_key.split('|')[0])}...")
-            self._apply_transforms(m, cache_key, scale, cp, fuvs)
-            task_complete(_mesh_load_task(cache_key))
-            self._loaded_generation += 1
+            task_set_title(_mesh_load_task(cache_key), f"Uploading {_display_name(cache_key.split('|')[0])}...")
+            self._upload_sessions[cache_key] = self._new_upload_session(m)
+        if not self._upload_sessions:
+            self._finish_batch_if_drained()
+            return
+        budget = max(0, int(budget_bytes))
+        completed = 0
+        for cache_key in list(self._upload_sessions.keys()):
+            if completed >= max_completions:
+                break
+            if cache_key not in self._pending_cache_keys:
+                self._cancel_upload_session(cache_key)
+                continue
+            if budget <= 0:
+                break
+            budget -= self._pump_upload_session(cache_key, budget)
+            s = self._upload_sessions.get(cache_key)
+            if s is not None and s["done"]:
+                self._complete_upload_session(cache_key)
+                completed += 1
         self._finish_batch_if_drained()
 
     def _finish_batch_if_drained(self):
         if not self._batch_active:
             return
         with self._async_lock:
-            drained = not self._pending_mesh_queue and self._pending_async_loads <= 0
+            drained = (not self._pending_mesh_queue and not self._upload_sessions
+                       and self._pending_async_loads <= 0)
         if drained:
             task_complete("mesh_batch")
             self._batch_active = False
@@ -356,6 +517,8 @@ class MeshLoader:
             self._pending_mesh_queue.clear()
             self._pending_async_loads = 0
             self._pending_cache_keys.clear()
+        for key in list(self._upload_sessions.keys()):
+            self._cancel_upload_session(key)
         for key in pending_keys:
             task_complete(_mesh_load_task(key))
         self._built_count = 0
@@ -366,5 +529,7 @@ class MeshLoader:
         self._loaded_generation += 1
 
     def release(self):
+        for key in list(self._upload_sessions.keys()):
+            self._cancel_upload_session(key)
         for m in self._meshes.values():
             m.release()

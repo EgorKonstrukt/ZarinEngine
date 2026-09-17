@@ -58,6 +58,8 @@ _SPLAT_LOAD_CHUNK = 262144
 _SPLAT_FAIL_RETRY_S = 30.0
 _GC_IDLE_S = 30.0
 _GC_MAX_PATHS = 4
+_SPLAT_UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024
+_SPLAT_MAX_SORTS_PER_FRAME = 2
 _READY_SPLATS: dict = {}
 _READY_KEYS: list = []
 _READY_LOCK = threading.Lock()
@@ -370,6 +372,9 @@ class GaussianSplatRenderer:
         self._completed: list = []
         self._failed: dict = {}
         self._fractions: dict = {}
+        self._upload_progress: dict[str, int] = {}
+        self._last_order: dict[str, np.ndarray] = {}
+        self._sorts_this_frame: int = 0
         self._init_shaders()
         if _cython_available():
             self._sort_backend = "cython"
@@ -465,6 +470,7 @@ class GaussianSplatRenderer:
                 task_complete(task_id)
 
     def process_pending(self):
+        self._sorts_this_frame = 0
         with self._load_lock:
             if not self._completed:
                 done = []
@@ -499,6 +505,8 @@ class GaussianSplatRenderer:
         self._last_used.pop(path, None)
         self._failed.pop(path, None)
         self._fractions.pop(path, None)
+        self._upload_progress.pop(path, None)
+        self._last_order.pop(path, None)
         for k in [k for k in self._sort_cache if k[0] == path]:
             try:
                 del self._sort_cache[k]
@@ -608,12 +616,22 @@ class GaussianSplatRenderer:
         slot_id = (path, key[:64], cache_id)
         slot = self._sort_cache.get(slot_id)
         if slot is not None and slot[0] == key:
+            if slot[1] is not None and len(slot[1]) > 0:
+                self._last_order[path] = slot[1]
             return key, slot[1]
+        if self._sorts_this_frame >= _SPLAT_MAX_SORTS_PER_FRAME:
+            prev = self._last_order.get(path)
+            if prev is not None and len(prev) > 0:
+                return key, prev
+            return key, _EMPTY_U32
+        self._sorts_this_frame += 1
         reuse = slot[1] if slot is not None else None
         order = self._compute_order(path, model_f32, view_f32, proj_f32, opacity_threshold, reuse)
         if slot is None and len(self._sort_cache) >= 12:
             self._sort_cache.pop(next(iter(self._sort_cache)))
         self._sort_cache[slot_id] = [key, order]
+        if len(order) > 0:
+            self._last_order[path] = order
         return key, order
 
     def _scratch_for(self, path: str, n: int) -> dict[str, np.ndarray]:
@@ -758,19 +776,37 @@ class GaussianSplatRenderer:
         view_f32 = np.ascontiguousarray(view_mat.to_f32(), dtype=np.float32)
         proj_f32 = np.ascontiguousarray(proj_mat.to_f32(), dtype=np.float32)
 
+        self._ensure_buffers(n)
+        total = int(gpu.nbytes)
+        if self._uploaded_path != path or self._uploaded_n != n:
+            done = int(self._upload_progress.get(path, 0))
+            if done <= 0:
+                try:
+                    self._ssbo.orphan(self._ssbo.size)
+                except Exception:
+                    pass
+                done = 0
+            if done < total:
+                row = int(_SPLAT_STRUCT_SIZE)
+                r0 = done // row
+                r1 = min(n, r0 + max(1, _SPLAT_UPLOAD_CHUNK_BYTES // row))
+                self._ssbo.write(gpu[r0:r1], offset=r0 * row)
+                done = r1 * row
+                if done >= total:
+                    self._uploaded_path = path
+                    self._uploaded_n = n
+                    self._upload_progress.pop(path, None)
+                else:
+                    self._upload_progress[path] = done
+                    return 0, n
+            else:
+                self._uploaded_path = path
+                self._uploaded_n = n
+                self._upload_progress.pop(path, None)
         key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold, cache_id)
         m = len(order)
         if m == 0:
             return 0, n
-        self._ensure_buffers(n)
-        if self._uploaded_path != path or self._uploaded_n != n:
-            try:
-                self._ssbo.orphan(self._ssbo.size)
-            except Exception:
-                pass
-            self._ssbo.write(gpu)
-            self._uploaded_path = path
-            self._uploaded_n = n
         self._ssbo.bind_to_storage_buffer(0)
         if self._idx_key is None or self._idx_key[0] != path or self._idx_key[1] != key:
             try:
@@ -840,6 +876,9 @@ class GaussianSplatRenderer:
         self._sort_cache.clear()
         self._scratch.clear()
         self._last_used.clear()
+        self._upload_progress.clear()
+        self._last_order.clear()
+        self._sorts_this_frame = 0
         self._idx_key = None
         self._uploaded_path = None
         self._uploaded_n = 0

@@ -91,6 +91,10 @@ class GeometryCacheMixin:
             prefix = mesh_path + "|"
             for k in [k for k in list(self._mesh_loader._meshes.keys()) if k.startswith(prefix)]:
                 self._mesh_loader._meshes.pop(k, None)
+            try:
+                self._mesh_loader.cancel_prefix(prefix)
+            except Exception:
+                pass
         return meta
 
 

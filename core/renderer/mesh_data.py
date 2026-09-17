@@ -68,6 +68,11 @@ class MeshData:
         self._bone_vbo: Optional[Any] = None
         self._color_vbo: Optional[Any] = None
         self._gpu_version: int = 0
+        self._up_vbo: Optional[bytes] = None
+        self._up_ibo: Optional[bytes] = None
+        self._up_bone: Optional[bytes] = None
+        self._up_color: Optional[bytes] = None
+        self._up_outline: Optional[bytes] = None
 
     def compute_aabb(self):
         verts = self.vertices
@@ -197,11 +202,8 @@ class MeshData:
                 pass
             self._outline_vbo = None
 
-    def build_gl(self, ctx: moderngl.Context, program: moderngl.Program):
-        self._ctx = ctx
+    def _interleaved_vbo_bytes(self) -> bytes:
         verts = self.vertices
-        if verts.size == 0:
-            return
         n_verts = verts.size // 3
         data = np.empty((n_verts, 8), dtype=np.float32)
         data[:, 0:3] = verts.reshape(-1, 3)
@@ -217,7 +219,60 @@ class MeshData:
             data[:, 6:8] = uvs.reshape(-1, 2)
         else:
             data[:, 6:8] = 0.0
-        b = data.tobytes()
+        return data.tobytes()
+
+    def _bone_payload_bytes(self) -> Optional[bytes]:
+        if not (self.has_skeleton and self.bone_indices.size > 0):
+            return None
+        nb = self.bone_indices.shape[0]
+        bone_data = np.empty((nb, 8), dtype=np.float32)
+        bone_data[:, 0:4] = self.bone_indices.reshape(-1, 4).astype(np.float32, copy=False)
+        bone_data[:, 4:8] = self.bone_weights.reshape(-1, 4)
+        return bone_data.tobytes()
+
+    def estimate_upload_bytes(self) -> int:
+        n_verts = self.vertices.size // 3 if self.vertices.size else 0
+        total = n_verts * 32 + n_verts * 12
+        if self.indices.size > 0:
+            total += int(self.indices.size) * 4
+        if self.has_skeleton and self.bone_indices.size > 0:
+            total += int(self.bone_indices.shape[0]) * 32
+        if self.colors.size == n_verts * 4:
+            total += int(self.colors.size) * 4
+        return total
+
+    def prepare_upload_bytes(self) -> None:
+        if self.vertices.size == 0:
+            self._up_vbo = b""
+            self._up_ibo = b""
+            self._up_outline = b""
+            self._up_bone = None
+            self._up_color = None
+            return
+        self._up_vbo = self._interleaved_vbo_bytes()
+        idx = self.indices
+        self._up_ibo = idx.astype(np.uint32, copy=False).tobytes() if idx.size > 0 else b""
+        self._up_bone = self._bone_payload_bytes()
+        cols = self.colors
+        n_verts = self.vertices.size // 3
+        self._up_color = cols.astype(np.float32, copy=False).tobytes() if cols.size == n_verts * 4 else None
+        self._up_outline = self.vertices.astype(np.float32, copy=False).tobytes()
+
+    def _consume_upload_bytes(self) -> None:
+        self._up_vbo = None
+        self._up_ibo = None
+        self._up_bone = None
+        self._up_color = None
+        self._up_outline = None
+
+    def build_gl(self, ctx: moderngl.Context, program: moderngl.Program):
+        self._ctx = ctx
+        verts = self.vertices
+        if verts.size == 0:
+            return
+        n_verts = verts.size // 3
+        prebuilt = self._up_vbo if self._vbo is None else None
+        b = prebuilt if prebuilt is not None else self._interleaved_vbo_bytes()
         _buffers_recreated = False
         if self._vbo is None:
             self._vbo = ctx.buffer(b)
@@ -234,7 +289,7 @@ class MeshData:
                 self._vbo.write(b)
         idx = self.indices
         if idx.size > 0:
-            ib = idx.astype(np.uint32, copy=False).tobytes()
+            ib = self._up_ibo if (self._ibo is None and self._up_ibo) else idx.astype(np.uint32, copy=False).tobytes()
             if self._ibo is None:
                 self._ibo = ctx.buffer(ib)
                 _buffers_recreated = True
@@ -256,11 +311,13 @@ class MeshData:
             self._ibo = None
             _buffers_recreated = True
         if self.has_skeleton and self.bone_indices.size > 0:
-            nb = self.bone_indices.shape[0]
-            bone_data = np.empty((nb, 8), dtype=np.float32)
-            bone_data[:, 0:4] = self.bone_indices.reshape(-1, 4).astype(np.float32, copy=False)
-            bone_data[:, 4:8] = self.bone_weights.reshape(-1, 4)
-            bb = bone_data.tobytes()
+            bb = self._up_bone if (self._bone_vbo is None and self._up_bone) else None
+            if bb is None:
+                nb = self.bone_indices.shape[0]
+                bone_data = np.empty((nb, 8), dtype=np.float32)
+                bone_data[:, 0:4] = self.bone_indices.reshape(-1, 4).astype(np.float32, copy=False)
+                bone_data[:, 4:8] = self.bone_weights.reshape(-1, 4)
+                bb = bone_data.tobytes()
             if self._bone_vbo is None:
                 self._bone_vbo = ctx.buffer(bb)
             else:
@@ -275,7 +332,7 @@ class MeshData:
             self.bone_count = len(self.bone_offset_matrices)
         cols = self.colors
         if cols.size == n_verts * 4:
-            cb = cols.astype(np.float32, copy=False).tobytes()
+            cb = self._up_color if (self._color_vbo is None and self._up_color) else cols.astype(np.float32, copy=False).tobytes()
             if self._color_vbo is None:
                 self._color_vbo = ctx.buffer(cb)
                 _buffers_recreated = True
@@ -292,6 +349,8 @@ class MeshData:
         if _buffers_recreated:
             self._invalidate_vaos()
             self._gpu_version += 1
+        if prebuilt is not None:
+            self._consume_upload_bytes()
         self._build_vao_for_program(program)
         self._vao = self._vao_cache.get(id(program))
 
@@ -362,8 +421,10 @@ class MeshData:
     def build_outline_vao(self, ctx: moderngl.Context, program: moderngl.Program):
         if len(self.vertices) == 0:
             return
-        pos_data = self.vertices.copy()
-        raw = pos_data.tobytes()
+        if self._outline_vbo is None and self._up_outline:
+            raw = self._up_outline
+        else:
+            raw = self.vertices.astype(np.float32, copy=False).tobytes()
         if self._outline_vbo is None:
             self._outline_vbo = ctx.buffer(raw)
         else:
@@ -382,6 +443,11 @@ class MeshData:
                 except Exception:
                     pass
                 self._outline_vbo = ctx.buffer(raw)
+        self._create_outline_vao(program)
+
+    def _create_outline_vao(self, program: moderngl.Program):
+        if self._outline_vbo is None or self._ctx is None:
+            return
         try:
             if self._outline_vao is not None:
                 try:
@@ -389,7 +455,7 @@ class MeshData:
                 except Exception:
                     pass
                 self._outline_vao = None
-            self._outline_vao = ctx.vertex_array(
+            self._outline_vao = self._ctx.vertex_array(
                 program,
                 [(self._outline_vbo, "3f", "in_position")],
                 self._ibo
