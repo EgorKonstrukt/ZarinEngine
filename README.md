@@ -118,7 +118,7 @@ Separate 2D physics with its own components:
 Entity behaviors are plain `.py` files with a class that implements lifecycle methods:
 
 ```python
-from core.math3d import Vec3
+from core.maths.math3d import Vec3
 
 class Rotator:
     def __init__(self):
@@ -131,10 +131,12 @@ class Rotator:
             t.rotate(Vec3(0, self.speed * dt, 0))
 ```
 
-- Script fields (`float`, `int`, `bool`, `str`, `Vec2`, `Vec3`) auto-expose in the Inspector via Python type hints
-- Supports reloading at runtime
-- Full access to `Input`, `KeyCode`, `Vec2`, `Vec3`, and any engine API
+- Script fields (`float`, `int`, `bool`, `str`, `Vec2`, `Vec3`, `Vec4`, `Enum`, `Curve`, `Entity` reference, sliders via `Annotated[..., Range(...)]`) auto-expose in the Inspector via Python type hints
+- Hot-reload during Play: edit the file, the instance is recreated next frame (inspector values kept, `on_awake`/`on_start` run again)
+- Full access to `Input`, `KeyCode`, `Vec2`, `Vec3`, and any engine API (auto-injected, no imports needed)
 - Multiple ScriptComponents on one entity (`_allow_multiple = True`)
+- Short lifecycle aliases supported (`update` = `on_update`, `start` = `on_start`, ...), collision callbacks accept optional `force`
+- See `docs/scripting.md` for the full contract
 
 ### GUI System
 

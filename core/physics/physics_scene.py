@@ -1276,15 +1276,24 @@ class PhysicsScene:
                 e1 = self._body_to_entity.get(bodies[1], "")
                 if not e0 or not e1:
                     continue
+                force = forces.get(pair, 0.0)
                 for sc in self._get_entity(e0).get_components(ScriptComponent):
                     inst = sc._py_instance
                     if inst and hasattr(inst, callback_name):
-                        try: getattr(inst, callback_name)(e1)
+                        try:
+                            if getattr(sc, "_py_collision_arity", {}).get(callback_name, 1) >= 2:
+                                getattr(inst, callback_name)(e1, force)
+                            else:
+                                getattr(inst, callback_name)(e1)
                         except Exception as ex: Logger.error(f"Script {callback_name} error: {ex}")
                 for sc in self._get_entity(e1).get_components(ScriptComponent):
                     inst = sc._py_instance
                     if inst and hasattr(inst, callback_name):
-                        try: getattr(inst, callback_name)(e0)
+                        try:
+                            if getattr(sc, "_py_collision_arity", {}).get(callback_name, 1) >= 2:
+                                getattr(inst, callback_name)(e0, force)
+                            else:
+                                getattr(inst, callback_name)(e0)
                         except Exception as ex: Logger.error(f"Script {callback_name} error: {ex}")
 
         def _dispatch_components(pairs, callback_name):

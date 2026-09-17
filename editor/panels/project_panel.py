@@ -2932,7 +2932,7 @@ class ProjectPanel(QDockWidget):
             elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
                 actions.append(("Add to Scene", lambda p=path: self.import_model_requested.emit(p)))
             elif ext == ".py":
-                actions.append(("Run Script", lambda: self.file_double_clicked.emit(path)))
+                actions.append(("Open Script", lambda: self.file_double_clicked.emit(path)))
             elif ext in (".wav", ".mp3", ".ogg", ".flac"):
                 actions.append(("Play", lambda: self.file_double_clicked.emit(path)))
             elif ext in (".png", ".jpg", ".jpeg"):
@@ -3820,20 +3820,33 @@ class ProjectPanel(QDockWidget):
             return
         if not path.endswith(".py"):
             path += ".py"
-        template = '''from __future__ import annotations
-from core.ecs.ecs import Component, ComponentRegistry
-@ComponentRegistry.register
-class NewScript(Component):
-    def __init__(self):
-        super().__init__()
-        self.my_var: float = 0.0
-    def update(self, dt: float):
+        base = os.path.splitext(os.path.basename(path))[0]
+        class_name = "".join(ch if ch.isalnum() else "_" for ch in base).strip("_") or "NewScript"
+        if class_name[0].isdigit():
+            class_name = "Script_" + class_name
+        class_name = class_name[0].upper() + class_name[1:]
+        template = '''from core.maths.math3d import Vec3
+
+
+class CLASSNAME:
+    speed: float = 90.0
+
+    def on_awake(self):
         pass
-'''
-        with open(path, "w") as f:
+
+    def on_start(self):
+        pass
+
+    def on_update(self, dt: float):
+        t = self._entity.transform
+        if t:
+            t.rotate(Vec3(0.0, self.speed * dt, 0.0))
+'''.replace("CLASSNAME", class_name)
+        with open(path, "w", encoding="utf-8") as f:
             f.write(template)
         self._push_file_undo({"kind": "create", "paths": [path], "label": "Create script"})
         self._refresh()
+        self.file_double_clicked.emit(path)
 
     def _resolve_resource_path(self, path: str) -> str:
         if not path:

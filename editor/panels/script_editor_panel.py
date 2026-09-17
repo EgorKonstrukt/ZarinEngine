@@ -49,6 +49,38 @@ except ImportError:
 from editor.panels.vcs_panel import _Git
 
 
+def _engine_api_words() -> set[str]:
+    words = {
+        "on_awake", "awake", "on_start", "start", "on_update", "update",
+        "on_fixed_update", "fixed_update", "on_destroy", "destroy",
+        "on_enable", "enable", "on_disable", "disable",
+        "on_collision_enter", "on_collision_stay", "on_collision_exit",
+        "gizmo_lines", "gizmo_meshes", "_entity", "_inspector_buttons",
+        "Input", "KeyCode", "GetKey", "GetKeyDown", "GetKeyUp",
+        "GetMouseButton", "GetMouseButtonDown", "GetMouseButtonUp",
+        "GetButton", "GetButtonDown", "GetButtonUp", "GetAxis", "GetAxisRaw",
+        "DefineAxis", "DefineButton", "mousePosition", "anyKey", "anyKeyDown",
+        "cursorLocked", "cursorVisible", "deltaTime",
+        "Vec2", "Vec3", "Vec4", "Quat", "Mat4", "Curve", "Range", "Logger",
+        "get_component", "get_components", "get_component_by_name",
+        "get_all_components", "transform", "position", "local_position",
+        "local_euler_angles", "local_scale", "rotate", "translate", "look_at",
+        "active", "enabled", "add_component", "get_entity",
+    }
+    try:
+        from core.input.input_system import KeyCode as _KC
+        try:
+            words.update(m.name for m in _KC)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return words
+
+
+_ENGINE_API_WORDS = _engine_api_words()
+
+
 _QTA_COLORS = {
     "new": "#d4d4d4",
     "open": "#d4d4d4",
@@ -1064,7 +1096,7 @@ class _CodeEditor(QPlainTextEdit):
         self._apply_font()
 
     def refresh_completions(self):
-        words = set(KEYWORDS) | set(BUILTINS) | set(CONSTANTS) | set(EXCEPTIONS)
+        words = set(KEYWORDS) | set(BUILTINS) | set(CONSTANTS) | set(EXCEPTIONS) | set(_ENGINE_API_WORDS)
         text = self.toPlainText()
         for match in re.finditer(r"[A-Za-z_]\w*", text):
             words.add(match.group(0))
@@ -1808,9 +1840,9 @@ class _ScriptEditorWidget(QWidget):
         self._act_zoom_in.setToolTip("Zoom In")
         self._act_zoom_in.triggered.connect(lambda: self._apply_zoom(1))
 
-        self._act_run = QAction(_qta_icon("run"), "Run", self)
-        self._act_run.setToolTip("Run Script")
-        self._act_run.triggered.connect(self._run_current)
+        self._act_run = QAction(_qta_icon("run"), "Check", self)
+        self._act_run.setToolTip("Check script for errors")
+        self._act_run.triggered.connect(self._check_current)
 
         self._act_blame = QAction("Annotate with Git Blame", self)
         self._act_blame.setToolTip("Toggle git blame annotations")
@@ -1888,8 +1920,8 @@ class _ScriptEditorWidget(QWidget):
         vcs_menu.addAction(self._act_vcs_revert)
 
         run_menu = menubar.addMenu("Run")
-        self._act_run_m = QAction("Run Script", self)
-        self._act_run_m.triggered.connect(self._run_current)
+        self._act_run_m = QAction("Check Script", self)
+        self._act_run_m.triggered.connect(self._check_current)
         run_menu.addAction(self._act_run_m)
 
     def _current_tab(self) -> Optional[_ScriptTab]:
@@ -2031,7 +2063,7 @@ class _ScriptEditorWidget(QWidget):
         for i in range(self._tabs.count()):
             self._tabs.widget(i).set_font_size(self._zoom)
 
-    def _run_current(self):
+    def _check_current(self):
         tab = self._current_tab()
         if tab is None:
             return
@@ -2039,12 +2071,23 @@ class _ScriptEditorWidget(QWidget):
         if tab._dirty or not tab._file_path:
             tab.save()
 
-        if tab._file_path and not tab._dirty:
-            try:
-                cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-                subprocess.Popen([sys.executable, tab._file_path], cwd=cwd)
-            except Exception as e:
-                QMessageBox.critical(self, "Run Error", f"Failed to run:\n{e}")
+        if not tab._file_path or tab._dirty:
+            return
+        try:
+            from core.components.scripting.script_component import ScriptComponent
+            checker = ScriptComponent()
+            checker.script_path = tab._file_path
+            errors = checker._collect_script_errors(tab._file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Check Error", f"Failed to check:\n{e}")
+            return
+        if errors:
+            QMessageBox.critical(self, "Check Script", "Found %d error(s):\n\n%s" % (len(errors), "\n".join(errors[:20])))
+        else:
+            QMessageBox.information(self, "Check Script", "No errors found.")
+
+    def _run_current(self):
+        self._check_current()
 
     def _vcs_commit(self):
         tab = self._current_tab()

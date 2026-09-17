@@ -5,8 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import inspect
 from enum import Enum
-from typing import Optional, Any, get_type_hints
+from typing import Optional, Any, get_type_hints, get_origin, get_args
 from core.ecs.ecs import Component, ComponentRegistry
 from core.foundation.logger import Logger
 from core.components.inspector_meta import FieldType, InspectorField
@@ -15,6 +16,34 @@ from core.foundation.curve import Curve
 from core.input.input_system import Input, KeyCode
 import importlib.util
 import os
+
+
+class Range:
+    def __init__(self, min_value: float = 0.0, max_value: float = 1.0, step: float | None = None):
+        self.min_value = float(min_value)
+        self.max_value = float(max_value)
+        self.step = step
+
+
+_METHOD_ALIASES: dict[str, tuple[str, ...]] = {
+    "on_awake": ("on_awake", "awake"),
+    "on_start": ("on_start", "start"),
+    "on_update": ("on_update", "update"),
+    "on_fixed_update": ("on_fixed_update", "fixed_update"),
+    "on_destroy": ("on_destroy", "destroy"),
+    "on_enable": ("on_enable", "enable"),
+    "on_disable": ("on_disable", "disable"),
+}
+
+_COLLISION_CALLBACKS: tuple[str, ...] = (
+    "on_collision_enter",
+    "on_collision_stay",
+    "on_collision_exit",
+)
+
+_SCRIPT_DETECT_NAMES: tuple[str, ...] = tuple(
+    n for names in _METHOD_ALIASES.values() for n in names
+) + _COLLISION_CALLBACKS + ("gizmo_lines", "gizmo_meshes")
 
 RESOURCE_TYPE_FILTERS = {
     "mesh": "Models (*.obj *.fbx *.stl *.gltf *.glb *.usdz *.dae *.3ds *.blend)",
@@ -55,9 +84,12 @@ class ScriptComponent(Component):
     def __init__(self):
         super().__init__()
         self.script_path: str = ""
+        self.hot_reload: bool = True
         self._py_instance: Optional[Any] = None
         self._py_module: Optional[Any] = None
         self._py_class: Optional[type] = None
+        self._py_methods: dict[str, Any] = {}
+        self._py_collision_arity: dict[str, int] = {}
         self._field_values: dict[str, Any] = {}
         self._cached_fields: list[InspectorField] = []
         self._cached_hints: dict[str, Any] | None = None
@@ -66,7 +98,66 @@ class ScriptComponent(Component):
         self._py_has_awake: bool = False
         self._py_has_start: bool = False
         self._py_has_destroy: bool = False
-        self._script_mtime: Optional[float] = None
+        self._py_has_enable: bool = False
+        self._py_has_disable: bool = False
+        self._py_mtime: Optional[float] = None
+        self._last_failed_mtime: Optional[float] = None
+
+    @staticmethod
+    def _find_method(obj: Any, canonical: str):
+        for name in _METHOD_ALIASES.get(canonical, (canonical,)):
+            meth = getattr(obj, name, None)
+            if callable(meth):
+                return meth
+        return None
+
+    @staticmethod
+    def _inject_script_api(mod):
+        mod.Input = Input
+        mod.KeyCode = KeyCode
+        mod.Vec2 = Vec2
+        mod.Vec3 = Vec3
+        mod.Vec4 = Vec4
+        mod.Curve = Curve
+        mod.Range = Range
+        try:
+            from core.foundation.logger import Logger as _Logger
+            mod.Logger = _Logger
+        except Exception:
+            pass
+
+    def _resolve_script_path(self) -> str:
+        script_path = self.script_path
+        if script_path and not os.path.isabs(script_path) and not os.path.exists(script_path):
+            try:
+                from core.engine.engine import Engine
+                eng = Engine.instance()
+            except Exception:
+                eng = None
+            if eng is not None:
+                try:
+                    candidate = os.path.normpath(os.path.join(eng.project_root, script_path))
+                except Exception:
+                    candidate = ""
+                if candidate and os.path.exists(candidate):
+                    script_path = candidate
+        return script_path
+
+    def get_script_abs_path(self) -> str:
+        resolved = self._resolve_script_path()
+        if resolved and not os.path.isabs(resolved):
+            try:
+                return os.path.abspath(resolved)
+            except Exception:
+                pass
+        return resolved
+
+    def get_script_display_name(self) -> str:
+        p = self.script_path or ""
+        try:
+            return os.path.splitext(os.path.basename(p))[0] or p
+        except Exception:
+            return p
 
     def get_script_public_fields(self) -> list[InspectorField]:
         if not self.script_path:
@@ -131,8 +222,7 @@ class ScriptComponent(Component):
                 spec = importlib.util.spec_from_file_location("_user_script_check", script_path)
                 if spec and spec.loader:
                     mod = importlib.util.module_from_spec(spec)
-                    mod.Input = Input
-                    mod.KeyCode = KeyCode
+                    ScriptComponent._inject_script_api(mod)
                     spec.loader.exec_module(mod)
             except Exception as ex:
                 # Extract line number if available
@@ -145,20 +235,13 @@ class ScriptComponent(Component):
     def _load_script_class(self):
         if not self.script_path:
             return
-        script_path = self.script_path
-        if not os.path.isabs(script_path) and not os.path.exists(script_path):
-            from core.engine.engine import Engine
-            eng = Engine.instance()
-            if eng is not None:
-                candidate = os.path.normpath(os.path.join(eng.project_root, script_path))
-                if os.path.exists(candidate):
-                    script_path = candidate
+        script_path = self._resolve_script_path()
         try:
             mtime = os.path.getmtime(script_path)
         except Exception:
             mtime = None
         if (self._py_class is not None and mtime is not None
-                and self._script_mtime == mtime):
+                and self._py_mtime == mtime):
             return
         # Smart Unity-like: collect ALL errors, show once per file change
         errors = self._collect_script_errors(script_path)
@@ -189,14 +272,13 @@ class ScriptComponent(Component):
                 Logger.warning(f"Script inspect spec is None for '{self.script_path}'")
                 return
             mod = importlib.util.module_from_spec(spec)
-            mod.Input = Input
-            mod.KeyCode = KeyCode
+            ScriptComponent._inject_script_api(mod)
             spec.loader.exec_module(mod)
             self._py_module = mod
-            self._script_mtime = mtime
+            self._py_mtime = mtime
             for attr in dir(mod):
                 obj = getattr(mod, attr)
-                if isinstance(obj, type) and (hasattr(obj, "on_update") or hasattr(obj, "_inspector_buttons")):
+                if isinstance(obj, type) and (any(hasattr(obj, n) for n in _SCRIPT_DETECT_NAMES) or hasattr(obj, "_inspector_buttons")):
                     if getattr(obj, "__module__", None) == mod.__name__:
                         self._py_class = obj
                         return
@@ -208,21 +290,65 @@ class ScriptComponent(Component):
                 self._inspect_error_cache[key] = str(e)
             pass
 
+    @staticmethod
+    def _split_annotated(ann):
+        try:
+            if get_origin(ann) is not None and str(get_origin(ann)).endswith("Annotated"):
+                args = get_args(ann)
+                if args:
+                    return args[0], args[1:]
+        except Exception:
+            pass
+        origin = getattr(ann, "__origin__", None)
+        if origin is not None and getattr(origin, "__name__", "") == "Annotated":
+            args = getattr(ann, "__args__", ()) or ()
+            if args:
+                return args[0], args[1:]
+        return ann, ()
+
+    @staticmethod
+    def _range_from_meta(meta) -> Range | None:
+        for m in meta:
+            if isinstance(m, Range):
+                return m
+            if isinstance(m, (list, tuple)) and len(m) >= 2:
+                try:
+                    return Range(float(m[0]), float(m[1]), float(m[2]) if len(m) >= 3 else None)
+                except Exception:
+                    continue
+        return None
+
     def _build_fields_from_class(self, cls) -> list[InspectorField]:
         fields = []
         try:
-            hints = get_type_hints(cls)
+            hints = get_type_hints(cls, include_extras=True)
         except Exception:
-            hints = getattr(cls, '__annotations__', {})
-        for name, ann_type in hints.items():
+            try:
+                hints = get_type_hints(cls)
+            except Exception:
+                hints = getattr(cls, '__annotations__', {})
+        for name, ann in hints.items():
             if name.startswith('_'):
                 continue
+            base_ann, meta = self._split_annotated(ann)
             default = getattr(cls, name, None)
             if name not in self._field_values:
                 self._field_values[name] = default
-            ft = self._py_type_to_field_type(ann_type)
+            slider = self._range_from_meta(meta)
+            if slider is not None and base_ann is float:
+                fields.append(InspectorField(name, name.replace('_', ' ').title(), FieldType.SLIDER,
+                                             min_val=slider.min_value, max_val=slider.max_value,
+                                             step=slider.step if slider.step else 0.01))
+                continue
+            if slider is not None and base_ann is int:
+                fields.append(InspectorField(name, name.replace('_', ' ').title(), FieldType.INT_SLIDER,
+                                             min_val=int(slider.min_value), max_val=int(slider.max_value),
+                                             step=int(slider.step) if slider.step else 1))
+                continue
+            ft = self._py_type_to_field_type(base_ann)
             if ft == FieldType.ENUM:
-                fields.append(InspectorField(name, name.replace('_', ' ').title(), ft, enum_class=ann_type))
+                enum_cls = base_ann if isinstance(base_ann, type) else ann
+                fields.append(InspectorField(name, name.replace('_', ' ').title(), ft, enum_class=enum_cls))
             else:
                 fields.append(InspectorField(name, name.replace('_', ' ').title(), ft))
         for attr_name in dir(cls):
@@ -244,6 +370,7 @@ class ScriptComponent(Component):
         return fields
 
     def _py_type_to_field_type(self, t) -> FieldType:
+        t, _meta = self._split_annotated(t)
         origin = getattr(t, '__origin__', None)
         if origin is not None:
             t = origin
@@ -332,52 +459,98 @@ class ScriptComponent(Component):
                 except Exception:
                     self._cached_hints = getattr(self._py_class, '__annotations__', {})
                 inst = self._py_instance
-                self._py_has_update = hasattr(inst, "on_update")
-                self._py_has_fixed_update = hasattr(inst, "on_fixed_update")
-                self._py_has_awake = hasattr(inst, "on_awake")
-                self._py_has_start = hasattr(inst, "on_start")
-                self._py_has_destroy = hasattr(inst, "on_destroy")
+                self._py_methods = {}
+                for canonical in _METHOD_ALIASES:
+                    meth = self._find_method(inst, canonical)
+                    if meth is not None:
+                        self._py_methods[canonical] = meth
+                self._py_has_update = "on_update" in self._py_methods
+                self._py_has_fixed_update = "on_fixed_update" in self._py_methods
+                self._py_has_awake = "on_awake" in self._py_methods
+                self._py_has_start = "on_start" in self._py_methods
+                self._py_has_destroy = "on_destroy" in self._py_methods
+                self._py_has_enable = "on_enable" in self._py_methods
+                self._py_has_disable = "on_disable" in self._py_methods
+                self._py_collision_arity = {}
+                for cb in _COLLISION_CALLBACKS:
+                    meth = getattr(inst, cb, None)
+                    if callable(meth):
+                        try:
+                            nargs = len(inspect.signature(meth).parameters)
+                        except Exception:
+                            nargs = 1
+                        self._py_collision_arity[cb] = 2 if nargs >= 2 else 1
                 self._apply_fields_to_instance()
         except Exception as e:
             Logger.error(f"Script load error '{self.script_path}': {e}")
+
+    def _call_py(self, canonical: str, *args):
+        meth = self._py_methods.get(canonical)
+        if self._py_instance is None or meth is None:
+            return
+        try:
+            meth(*args)
+        except Exception as e:
+            Logger.error(f"Script {canonical} error '{self.script_path}': {e}")
+
+    def _check_hot_reload(self):
+        if not self.hot_reload or not self.script_path:
+            return
+        try:
+            mtime = os.path.getmtime(self._resolve_script_path())
+        except Exception:
+            return
+        if self._py_instance is not None and mtime == self._py_mtime:
+            return
+        if self._py_instance is None and mtime == self._last_failed_mtime:
+            return
+        old_class, old_instance = self._py_class, self._py_instance
+        old_methods, old_arity = self._py_methods, self._py_collision_arity
+        old_mtime = self._py_mtime
+        self._py_class = None
+        self._py_instance = None
+        self._py_methods = {}
+        self._cached_fields = []
+        self._cached_hints = None
+        self._load_script()
+        if self._py_instance is not None:
+            self._last_failed_mtime = None
+            Logger.info(f"Script hot-reloaded '{self.script_path}'")
+            self._call_py("on_awake")
+            self._call_py("on_start")
+        else:
+            self._py_class, self._py_instance = old_class, old_instance
+            self._py_methods, self._py_collision_arity = old_methods, old_arity
+            self._py_mtime = old_mtime
+            self._last_failed_mtime = mtime
 
     def on_start(self):
         if self.script_path:
             self._load_script()
         self._apply_fields_to_instance()
-        if self._py_instance and self._py_has_awake:
-            try:
-                self._py_instance.on_awake()
-            except Exception as e:
-                Logger.error(f"Script awake error '{self.script_path}': {e}")
-        if self._py_instance and self._py_has_start:
-            try:
-                self._py_instance.on_start()
-            except Exception as e:
-                Logger.error(f"Script start error '{self.script_path}': {e}")
+        self._call_py("on_awake")
+        self._call_py("on_start")
 
     def on_update(self, dt: float):
+        self._check_hot_reload()
         if self._py_instance and self._py_has_update:
             self._apply_fields_to_instance()
-            try:
-                self._py_instance.on_update(dt)
-            except Exception as e:
-                Logger.error(f"Script update error '{self.script_path}': {e}")
+            self._call_py("on_update", dt)
 
     def on_fixed_update(self, dt: float):
+        self._check_hot_reload()
         if self._py_instance and self._py_has_fixed_update:
             self._apply_fields_to_instance()
-            try:
-                self._py_instance.on_fixed_update(dt)
-            except Exception as e:
-                Logger.error(f"Script fixed_update error '{self.script_path}': {e}")
+            self._call_py("on_fixed_update", dt)
+
+    def on_enable(self):
+        self._call_py("on_enable")
+
+    def on_disable(self):
+        self._call_py("on_disable")
 
     def on_destroy(self):
-        if self._py_instance and self._py_has_destroy:
-            try:
-                self._py_instance.on_destroy()
-            except Exception as e:
-                Logger.error(f"Script destroy error '{self.script_path}': {e}")
+        self._call_py("on_destroy")
 
     def gizmo_lines(self):
         if not self._py_instance and self.script_path:

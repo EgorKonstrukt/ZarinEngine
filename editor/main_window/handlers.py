@@ -97,6 +97,24 @@ def on_project_file_double_clicked(mw, path: str):
             mw._terrain_editor.load_graph(path)
             mw._terrain_editor.show()
             mw._terrain_editor.raise_()
+    elif ext == ".py":
+        se = getattr(mw, "_script_editor", None)
+        opened = False
+        if se is not None:
+            widget = getattr(se, "_script_widget", se)
+            opener = getattr(widget, "open_script", None)
+            if callable(opener):
+                try:
+                    opener(path)
+                    opened = True
+                except Exception:
+                    opened = False
+            if opened:
+                try:
+                    se.show()
+                    se.raise_()
+                except Exception:
+                    pass
 
 
 def on_open_prefab_editor(mw, path: str):

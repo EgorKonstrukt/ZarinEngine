@@ -1527,7 +1527,10 @@ class PhysicsPlugin(PluginBase):
             inst = sc._py_instance
             if inst and hasattr(inst, callback):
                 try:
-                    getattr(inst, callback)(other_eid)
+                    if getattr(sc, "_py_collision_arity", {}).get(callback, 1) >= 2:
+                        getattr(inst, callback)(other_eid, force)
+                    else:
+                        getattr(inst, callback)(other_eid)
                 except Exception as e:
                     Logger.error(f"Script {callback} error: {e}")
         for comp in entity.get_all_components():
