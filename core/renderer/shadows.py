@@ -883,7 +883,12 @@ class ShadowRenderer:
         for mid, group in shadow_groups.items():
             near = []
             for mesh, tr in group:
-                p = tr.world_matrix._d
+                try:
+                    if tr._dirty:
+                        tr._update_world_matrix()
+                    p = tr._world_matrix._d
+                except Exception:
+                    continue
                 dx = p[3][0] - light_x
                 dy = p[3][1] - light_y
                 dz = p[3][2] - light_z
@@ -893,7 +898,7 @@ class ShadowRenderer:
                 except Exception:
                     br = 1.0
                 try:
-                    wm = tr.world_matrix._d
+                    wm = p
                     sx = math.sqrt(wm[0, 0] * wm[0, 0] + wm[1, 0] * wm[1, 0] + wm[2, 0] * wm[2, 0])
                     sy = math.sqrt(wm[0, 1] * wm[0, 1] + wm[1, 1] * wm[1, 1] + wm[2, 1] * wm[2, 1])
                     sz = math.sqrt(wm[0, 2] * wm[0, 2] + wm[1, 2] * wm[1, 2] + wm[2, 2] * wm[2, 2])
@@ -936,7 +941,9 @@ class ShadowRenderer:
                 if n == 1:
                     tr = group[0][1]
                     try:
-                        wm = tr.world_matrix
+                        if tr._dirty:
+                            tr._update_world_matrix()
+                        wm = tr._world_matrix
                     except Exception:
                         continue
                     key = (mesh_id, prog_id)
@@ -946,7 +953,11 @@ class ShadowRenderer:
                     continue
                 key = (mesh_id, prog_id)
                 try:
-                    model_mats = [tr.world_matrix for _, tr in group]
+                    model_mats = []
+                    for _, tr in group:
+                        if tr._dirty:
+                            tr._update_world_matrix()
+                        model_mats.append(tr._world_matrix)
                 except Exception:
                     continue
                 vbo = self._build_shadow_instance_vbo(key, model_mats)
@@ -960,7 +971,9 @@ class ShadowRenderer:
                 if umodel:
                     for _, tr in group:
                         try:
-                            prog["u_model"].write(tr.world_matrix.to_f32().tobytes())
+                            if tr._dirty:
+                                tr._update_world_matrix()
+                            prog["u_model"].write(tr._world_matrix.to_f32().tobytes())
                         except Exception:
                             continue
                         mesh.render(prog)

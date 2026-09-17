@@ -231,14 +231,84 @@ class Octree:
         self._root = OctreeNode(Vec3(0, 0, 0), Vec3(half, half, half),
                                 0, max_depth, max_objects)
         self._object_count = 0
+        self._index: dict = {}
 
     def insert(self, entity_id: str, aabb: AABB) -> bool:
-        r = self._root.insert(entity_id, aabb)
-        if r:
-            self._object_count += 1
-        return r
+        old_node = self._index.get(entity_id)
+        if old_node is not None:
+            try:
+                del old_node.objects[entity_id]
+            except KeyError:
+                pass
+            else:
+                self._object_count -= 1
+            del self._index[entity_id]
+        node = self._root
+        while True:
+            c = node.center
+            h = node.half
+            nmin = aabb.min
+            nmax = aabb.max
+            if (nmin._x < c._x - h._x or nmin._y < c._y - h._y or nmin._z < c._z - h._z or
+                    nmax._x > c._x + h._x or nmax._y > c._y + h._y or nmax._z > c._z + h._z):
+                ex = 0.001
+                if (nmin._x < c._x - h._x - ex or nmin._y < c._y - h._y - ex or nmin._z < c._z - h._z - ex or
+                        nmax._x > c._x + h._x + ex or nmax._y > c._y + h._y + ex or nmax._z > c._z + h._z + ex):
+                    return False
+            if node._is_leaf:
+                node.objects[entity_id] = aabb
+                self._index[entity_id] = node
+                self._object_count += 1
+                if len(node.objects) > node.max_objects and node.depth < node.max_depth:
+                    moved = list(node.objects.items())
+                    node.objects.clear()
+                    h2 = Vec3(h._x * 0.5, h._y * 0.5, h._z * 0.5)
+                    for ox, oy, oz in ((-1, -1, -1), (1, -1, -1), (-1, 1, -1), (1, 1, -1),
+                                       (-1, -1, 1), (1, -1, 1), (-1, 1, 1), (1, 1, 1)):
+                        node.children.append(OctreeNode(Vec3(c._x + ox * h2._x, c._y + oy * h2._y, c._z + oz * h2._z),
+                                                        h2, node.depth + 1, node.max_depth, node.max_objects))
+                    node._is_leaf = False
+                    for eid, ea in moved:
+                        mx = (ea.min._x + ea.max._x) * 0.5
+                        my = (ea.min._y + ea.max._y) * 0.5
+                        mz = (ea.min._z + ea.max._z) * 0.5
+                        ci = 0
+                        if mx >= c._x: ci |= 1
+                        if my >= c._y: ci |= 2
+                        if mz >= c._z: ci |= 4
+                        ch = node.children[ci]
+                        ch.objects[eid] = ea
+                        self._index[eid] = ch
+                return True
+            mx = (nmin._x + nmax._x) * 0.5
+            my = (nmin._y + nmax._y) * 0.5
+            mz = (nmin._z + nmax._z) * 0.5
+            ci = 0
+            if mx >= c._x: ci |= 1
+            if my >= c._y: ci |= 2
+            if mz >= c._z: ci |= 4
+            if ci < len(node.children):
+                node = node.children[ci]
+            else:
+                node.objects[entity_id] = aabb
+                self._index[entity_id] = node
+                self._object_count += 1
+                return True
 
     def remove(self, entity_id: str) -> bool:
+        node = self._index.pop(entity_id, None)
+        if node is not None:
+            try:
+                del node.objects[entity_id]
+            except KeyError:
+                pass
+            else:
+                self._object_count -= 1
+                return True
+            r = self._root.remove(entity_id)
+            if r:
+                self._object_count -= 1
+            return r
         r = self._root.remove(entity_id)
         if r:
             self._object_count -= 1
@@ -263,6 +333,10 @@ class Octree:
     def clear(self):
         self._root.clear()
         self._object_count = 0
+        try:
+            self._index.clear()
+        except AttributeError:
+            self._index = {}
 
     def batch_query_aabb(
         self,

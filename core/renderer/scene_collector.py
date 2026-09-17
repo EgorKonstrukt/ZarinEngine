@@ -384,28 +384,40 @@ class SceneCollectorMixin:
         for entry in renderable:
             tr = entry[1]
             if tr is not None:
-                entry[4] = tr.world_matrix
+                if tr._dirty:
+                    tr._update_world_matrix()
+                entry[4] = tr._world_matrix
         for entry in snap.skinned_renderables:
             tr = entry[1]
             if tr is not None:
-                entry[4] = tr.world_matrix
+                if tr._dirty:
+                    tr._update_world_matrix()
+                entry[4] = tr._world_matrix
         for entry in snap.skinned_shadow_renderables:
             ent = entry[1]
-            tr = ent.transform if ent is not None else None
+            tr = ent._transform if ent is not None and ent._transform is not None else (ent.transform if ent is not None else None)
             if tr is not None:
-                entry[3] = tr.world_matrix
+                if tr._dirty:
+                    tr._update_world_matrix()
+                entry[3] = tr._world_matrix
         for item in snap.sprite_items:
             tr = item._tr
             if tr is not None:
-                item.world_matrix = tr.world_matrix
+                if tr._dirty:
+                    tr._update_world_matrix()
+                item.world_matrix = tr._world_matrix
         for item in snap.video_items:
             tr = item._tr
             if tr is not None:
-                item.world_matrix = tr.world_matrix
+                if tr._dirty:
+                    tr._update_world_matrix()
+                item.world_matrix = tr._world_matrix
         for item in snap.svg_items:
             tr = item._tr
             if tr is not None:
-                item.world_matrix = tr.world_matrix
+                if tr._dirty:
+                    tr._update_world_matrix()
+                item.world_matrix = tr._world_matrix
         for item in snap.projectors:
             item.refresh_vp()
         try:

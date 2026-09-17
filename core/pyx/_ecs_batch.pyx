@@ -169,17 +169,16 @@ def batch_update_from_transforms(list transforms):
 
     cdef dict id_to_idx = {}
     cdef int i, pi, j, k
-    cdef object t, e, parent_e, pt, wm, wm_arr
+    cdef object t, e, parent_e, pt, wm
+    cdef np.ndarray[DTYPE_t, ndim=2] wm_arr
+    cdef np.ndarray[DTYPE_t, ndim=2] wmd
     cdef Vec3 p, s
     cdef Quat q
-    cdef str parent_id
     cdef DTYPE_t local[4][4], result[4][4]
 
     for i in range(n):
         t = transforms[i]
-        e = t._entity
-        if e is not None:
-            id_to_idx[e.id] = i
+        id_to_idx[id(t)] = i
 
     for i in range(n):
         t = transforms[i]
@@ -194,21 +193,23 @@ def batch_update_from_transforms(list transforms):
         t = transforms[i]
         e = t._entity
         if e is not None:
-            parent_e = e.parent
+            parent_e = e._parent
             if parent_e is not None:
+                pt = parent_e._transform
+                if pt is None:
+                    continue
                 has_parent[i] = 1
-                parent_id = parent_e.id
-                if parent_id in id_to_idx:
-                    parent_idx[i] = id_to_idx[parent_id]
+                pi = id_to_idx.get(id(pt), -1)
+                parent_idx[i] = pi
 
     for i in range(n):
         if has_parent[i] == 1 and parent_idx[i] < 0:
             t = transforms[i]
             e = t._entity
             if e is not None:
-                parent_e = e.parent
+                parent_e = e._parent
                 if parent_e is not None:
-                    pt = parent_e.transform
+                    pt = parent_e._transform
                     if pt is not None:
                         wm = pt._world_matrix
                         wm_arr = wm._d
@@ -241,18 +242,27 @@ def batch_update_from_transforms(list transforms):
 
     for i in range(n):
         t = transforms[i]
-        t._world_matrix = t._world_matrix.__class__(world_mats[i])
+        if t._world_target is not None:
+            continue
+        wmd = t._world_matrix._d
+        for j in range(4):
+            for k in range(4):
+                wmd[j, k] = world_mats[i, j, k]
         t._world_target = None
         t._dirty = False
 
 def write_world_matrices(list transforms, np.ndarray[DTYPE_t, ndim=3] world_mats):
     cdef int n = len(transforms)
-    cdef int i
-    cdef object t, wm_class
+    cdef int i, j, k
+    cdef object t
+    cdef np.ndarray[DTYPE_t, ndim=2] wmd
 
     for i in range(n):
         t = transforms[i]
-        t._world_matrix = t._world_matrix.__class__(world_mats[i])
+        wmd = t._world_matrix._d
+        for j in range(4):
+            for k in range(4):
+                wmd[j, k] = world_mats[i, j, k]
         t._world_target = None
         t._dirty = False
 
@@ -268,6 +278,8 @@ def batch_update_flat(list transforms):
     cdef np.ndarray[DTYPE_t, ndim=2] wmd
     for i in range(n):
         t = transforms[i]
+        if t._world_target is not None:
+            continue
         p = t._local_pos
         q = t._local_rot
         s = t._local_scale
@@ -300,14 +312,16 @@ def collect_dirty_transforms(list all_dirty):
 cdef inline int _get_depth(object transform, dict cache):
     cdef int d = 0
     cdef object t = transform
-    cdef str tid
+    cdef object tid
     while t is not None:
         tid = id(t)
         if tid in cache:
             return d + cache[tid]
         d += 1
-        if t._entity is not None and t._entity.parent is not None:
-            t = t._entity.parent.transform
+        if t._entity is not None and t._entity._parent is not None:
+            t = t._entity._parent._transform
+            if t is None:
+                break
         else:
             break
     cache[id(transform)] = d

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 import uuid
-from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Type, TypeVar, Optional
 import numpy as np
@@ -26,6 +25,12 @@ try:
 except ImportError:
     _fast_get = None
     _HAS_FAST_QUERY = False
+try:
+    from core._ecs_batch import batch_update_flat as _batch_flat
+    from core._ecs_batch import batch_update_from_transforms as _batch_from_transforms
+except ImportError:
+    _batch_flat = None
+    _batch_from_transforms = None
 
 T = TypeVar("T", bound="Component")
 
@@ -481,6 +486,7 @@ class Entity:
         sc = self._scene
         if sc:
             sc._roots_cache_valid = False
+            sc._depth_cache.clear()
 
     def _invalidate_transform_cache(self):
         comps = self._components
@@ -861,6 +867,7 @@ class Scene:
         self._update_partition_valid: bool = False
         self._dirty_roots: set = set()
         self._transform_version: int = 0
+        self._transform_version_pending: bool = False
         self._depth_cache: dict[str, int] = {}
         self._component_entity_frame_cache: dict = {}
         self._spatial: Octree = Octree(world_size=1000.0)
@@ -988,61 +995,52 @@ class Scene:
     def flush_transforms(self):
         dr = self._dirty_roots
         if not dr:
+            if self._transform_version_pending:
+                self._transform_version += 1
+                self._transform_version_pending = False
             return 0
-        needs_bfs = False
-        for root in dr:
-            ent = root._entity
-            if ent is None:
+        if self._transform_version_pending:
+            self._transform_version += 1
+            self._transform_version_pending = False
+        roots = list(dr)
+        dr.clear()
+        flat = []
+        hier = []
+        flat_tgt = []
+        flat_append = flat.append
+        hier_append = hier.append
+        flat_tgt_append = flat_tgt.append
+        for t in roots:
+            if not t._dirty:
                 continue
-            if ent._parent is not None or ent._children:
-                needs_bfs = True
-                break
-        if not needs_bfs:
-            collected = [r for r in dr if r._dirty and r._entity is not None]
-            if not collected:
-                dr.clear()
-                return 0
-            try:
-                from core._ecs_batch import batch_update_flat
-                batch_update_flat(collected)
-            except ImportError:
-                from core.components.transform import Transform
-                Transform.batch_update_world_matrices(collected)
-            dr.clear()
-            self._depth_cache.clear()
-            return len(collected)
-        collected = []
-        visited = set()
-        q = deque()
-        add_q = q.append
-        popleft = q.popleft
-        for root in list(dr):
-            if root._dirty and root._entity is not None and id(root) not in visited:
-                visited.add(id(root))
-                add_q(root)
-        append_c = collected.append
-        while q:
-            t = popleft()
-            append_c(t)
             ent = t._entity
             if ent is None:
                 continue
-            for child in ent._children:
-                ct = child._transform_type
-                if ct is not None:
-                    lst = child._type_map.get(ct)
-                    c = lst[0] if lst else None
-                else:
-                    c = child.transform
-                if c is not None and c._dirty and id(c) not in visited:
-                    visited.add(id(c))
-                    add_q(c)
-        if not collected:
-            dr.clear()
-            return 0
+            if ent._parent is not None or ent._children:
+                hier_append(t)
+            elif t._world_target is not None:
+                flat_tgt_append(t)
+            else:
+                flat_append(t)
+        count = 0
+        if flat:
+            if _batch_flat is not None:
+                _batch_flat(flat)
+            else:
+                for t in flat:
+                    t._update_world_matrix()
+            count += len(flat)
+        if flat_tgt:
+            for t in flat_tgt:
+                t._update_world_matrix()
+            count += len(flat_tgt)
+        if not hier:
+            return count
         dc = self._depth_cache
         def _depth_key(t):
             e = t._entity
+            if e is None:
+                return 0
             eid = e._id
             d = dc.get(eid)
             if d is not None:
@@ -1054,12 +1052,22 @@ class Scene:
                 p = p._parent
             dc[eid] = depth
             return depth
-        collected.sort(key=_depth_key)
-        from core.components.transform import Transform
-        Transform.batch_update_world_matrices(collected)
-        dr.clear()
-        dc.clear()
-        return len(collected)
+        if len(hier) > 1:
+            hier.sort(key=_depth_key)
+        has_target = False
+        for t in hier:
+            if t._world_target is not None:
+                has_target = True
+                break
+        if has_target:
+            for t in hier:
+                t._update_world_matrix()
+        elif _batch_from_transforms is not None:
+            _batch_from_transforms(hier)
+        else:
+            for t in hier:
+                t._update_world_matrix()
+        return count + len(hier)
 
     def create_entity(self, name: str = "Entity",
                       prefab_guid: Optional[str] = None) -> Entity:
@@ -1111,6 +1119,7 @@ class Scene:
         self._spatial.remove(eid)
         self._spatial_dirty_entities.discard(eid)
         self._spatial_known_entities.discard(eid)
+        self._depth_cache.pop(eid, None)
         for child in list(e._children):
             self.remove_entity(child._id)
         auc = self._active_update_components
@@ -1358,74 +1367,148 @@ class Scene:
 
     def _insert_spatial_single(self, e):
         from core.maths.math3d import Vec3
-        import numpy as np
-        from core.components.rendering.renderers.mesh_filter import MeshFilter
-        from core.components.rendering.renderers.mesh_renderer import MeshRenderer
-        tr = e.transform
-        if not tr:
-            return
-        mf = e.get_component(MeshFilter)
-        mr = e.get_component(MeshRenderer)
-        if mf and mr and mr.enabled:
-            try:
-                from core.engine.engine import Engine
-                eng = Engine.instance()
-                if eng:
-                    r = getattr(eng, '_renderer', None)
-                    if r is None:
-                        vp = getattr(eng, 'viewport', None)
-                        if vp:
-                            r = getattr(vp, '_renderer', None)
-                    if r:
-                        name = mf.mesh_name or "cube"
-                        mesh = r._meshes.get(name)
-                        if mesh is None and mf.mesh_path:
-                            mesh = r._meshes.get(mf.mesh_path)
-                        if mesh is not None and len(mesh.vertices) > 0:
-                            ax, ay, az = mesh.aabb_min
-                            bx, by, bz = mesh.aabb_max
-                            corners = np.array([
-                                [ax, ay, az, 1], [bx, ay, az, 1],
-                                [bx, by, az, 1], [ax, by, az, 1],
-                                [ax, ay, bz, 1], [bx, ay, bz, 1],
-                                [bx, by, bz, 1], [ax, by, bz, 1],
-                            ], dtype=np.float32)
-                            pts = corners @ tr.world_matrix._d
-                            bmin = pts[:, :3].min(axis=0)
-                            bmax = pts[:, :3].max(axis=0)
-                            aabb = AABB(Vec3(float(bmin[0]), float(bmin[1]), float(bmin[2])),
-                                        Vec3(float(bmax[0]), float(bmax[1]), float(bmax[2])))
-                            self._spatial.insert(e.id, aabb)
-                            return
-            except Exception:
-                pass
-        pos = tr.position
-        self._spatial.insert(e.id, AABB.from_center_size(pos, Vec3(5.0, 5.0, 5.0)))
+        tr = e._transform
+        if tr is None:
+            tr = e.transform
+            if tr is None:
+                return
+        if tr._dirty:
+            tr._update_world_matrix()
+        d = tr._world_matrix._d
+        cx = float(d[3, 0])
+        cy = float(d[3, 1])
+        cz = float(d[3, 2])
+        self._spatial.insert(e._id, AABB(Vec3(cx - 2.5, cy - 2.5, cz - 2.5), Vec3(cx + 2.5, cy + 2.5, cz + 2.5)))
 
     def rebuild_spatial(self):
         if not self._spatial_dirty:
             return
+        self.flush_transforms()
+        from core.maths.math3d import Vec3
+        try:
+            from core.components.rendering.renderers.mesh_filter import MeshFilter as _MF
+            from core.components.rendering.renderers.mesh_renderer import MeshRenderer as _MR
+        except ImportError:
+            _MF = None
+            _MR = None
+        meshes = None
+        try:
+            from core.engine.engine import Engine as _Eng
+            _eng = _Eng.instance()
+            _r = getattr(_eng, "_renderer", None) if _eng else None
+            if _r is None and _eng is not None:
+                _vp = getattr(_eng, "viewport", None)
+                if _vp is not None:
+                    _r = getattr(_vp, "_renderer", None)
+            if _r is not None:
+                meshes = getattr(_r, "_meshes", None)
+        except Exception:
+            meshes = None
+        radius_cache: dict = {}
+        spatial = self._spatial
         dirty = self._spatial_dirty_entities
         if dirty and len(dirty) < len(self._entities) * 0.6:
+            get_e = self._entities.get
             for eid in list(dirty):
-                self._spatial.remove(eid)
-                e = self._entities.get(eid)
-                if e is None or not e.active:
+                spatial.remove(eid)
+                e = get_e(eid)
+                if e is None or not e._active:
                     continue
-                self._insert_spatial_single(e)
+                tr = e._transform
+                if tr is None:
+                    tr = e.transform
+                    if tr is None:
+                        continue
+                d = tr._world_matrix._d
+                cx = float(d[3, 0])
+                cy = float(d[3, 1])
+                cz = float(d[3, 2])
+                rad = 2.5
+                if _MF is not None and meshes is not None:
+                    ml = e._type_map.get(_MF)
+                    if ml:
+                        mf = ml[0]
+                        rl = e._type_map.get(_MR)
+                        mr = rl[0] if rl else None
+                        if mr is not None and mr.enabled:
+                            name = mf.mesh_name or "cube"
+                            r0 = radius_cache.get(name)
+                            if r0 is None:
+                                m = meshes.get(name)
+                                if m is None and mf.mesh_path:
+                                    m = meshes.get(mf.mesh_path)
+                                try:
+                                    r0 = float(getattr(m, "bounding_radius", 2.5)) if m is not None else 2.5
+                                except Exception:
+                                    r0 = 2.5
+                                radius_cache[name] = r0
+                            try:
+                                sx = d[0, 0] * d[0, 0] + d[1, 0] * d[1, 0] + d[2, 0] * d[2, 0]
+                                sy = d[0, 1] * d[0, 1] + d[1, 1] * d[1, 1] + d[2, 1] * d[2, 1]
+                                sz = d[0, 2] * d[0, 2] + d[1, 2] * d[1, 2] + d[2, 2] * d[2, 2]
+                                ms = sx
+                                if sy > ms:
+                                    ms = sy
+                                if sz > ms:
+                                    ms = sz
+                                ms = ms ** 0.5
+                            except Exception:
+                                ms = 1.0
+                            rad = r0 * ms + 0.5
+                spatial.insert(eid, AABB(Vec3(cx - rad, cy - rad, cz - rad), Vec3(cx + rad, cy + rad, cz + rad)))
             dirty.clear()
             if not dirty:
                 self._spatial_dirty = False
             return
-        from core.maths.math3d import Vec3
-        import numpy as np
         self._spatial.clear()
         self._spatial_known_entities.clear()
+        known_add = self._spatial_known_entities.add
         for e in self._ensure_entities_cache():
-            if not e.active:
+            if not e._active:
                 continue
-            self._insert_spatial_single(e)
-            self._spatial_known_entities.add(e.id)
+            tr = e._transform
+            if tr is None:
+                tr = e.transform
+                if tr is None:
+                    continue
+            d = tr._world_matrix._d
+            cx = float(d[3, 0])
+            cy = float(d[3, 1])
+            cz = float(d[3, 2])
+            rad = 2.5
+            if _MF is not None and meshes is not None:
+                ml = e._type_map.get(_MF)
+                if ml:
+                    mf = ml[0]
+                    rl = e._type_map.get(_MR)
+                    mr = rl[0] if rl else None
+                    if mr is not None and mr.enabled:
+                        name = mf.mesh_name or "cube"
+                        r0 = radius_cache.get(name)
+                        if r0 is None:
+                            m = meshes.get(name)
+                            if m is None and mf.mesh_path:
+                                m = meshes.get(mf.mesh_path)
+                            try:
+                                r0 = float(getattr(m, "bounding_radius", 2.5)) if m is not None else 2.5
+                            except Exception:
+                                r0 = 2.5
+                            radius_cache[name] = r0
+                        try:
+                            sx = d[0, 0] * d[0, 0] + d[1, 0] * d[1, 0] + d[2, 0] * d[2, 0]
+                            sy = d[0, 1] * d[0, 1] + d[1, 1] * d[1, 1] + d[2, 1] * d[2, 1]
+                            sz = d[0, 2] * d[0, 2] + d[1, 2] * d[1, 2] + d[2, 2] * d[2, 2]
+                            ms = sx
+                            if sy > ms:
+                                ms = sy
+                            if sz > ms:
+                                ms = sz
+                            ms = ms ** 0.5
+                        except Exception:
+                            ms = 1.0
+                        rad = r0 * ms + 0.5
+            spatial.insert(e._id, AABB(Vec3(cx - rad, cy - rad, cz - rad), Vec3(cx + rad, cy + rad, cz + rad)))
+            known_add(e._id)
         dirty.clear()
         self._spatial_dirty = False
 

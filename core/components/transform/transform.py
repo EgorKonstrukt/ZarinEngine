@@ -10,6 +10,12 @@ from core.ecs.ecs import Component, ComponentRegistry
 from core.maths.math3d import Vec3, Quat, Mat4, FLOAT_TYPE
 from core.math_helpers import mat4_mul_fast, mat4_from_quaternion, mat4_translation, mat4_scale_mat, mat4_inv_fast
 from core.components.inspector_meta import FieldType, InspectorField, ComponentInspectorMeta
+try:
+    from core._ecs_batch import batch_update_from_transforms as _batch_from_transforms
+    from core._ecs_batch import batch_update_flat as _batch_flat
+except ImportError:
+    _batch_from_transforms = None
+    _batch_flat = None
 @ComponentRegistry.register
 class Transform(Component):
     _icon = "Transform.png"
@@ -38,52 +44,82 @@ class Transform(Component):
     def _mark_dirty(self):
         if self._dirty:
             return
-        self._dirty = True
         ent = self._entity
-        if ent is not None:
+        if ent is None:
+            self._dirty = True
+            return
+        if not ent._children:
+            self._dirty = True
             scene = ent._scene
             if scene is not None:
                 scene._dirty_roots.add(self)
                 scene._spatial_dirty_entities.add(ent._id)
                 scene._spatial_dirty = True
-                try:
-                    scene._transform_version += 1
-                except Exception:
-                    pass
-            children = ent._children
-            for child in children:
-                tt = child._transform_type
-                if tt is not None:
-                    lst = child._type_map.get(tt)
-                    ct = lst[0] if lst else None
-                else:
-                    ct = child.transform
+                scene._transform_version_pending = True
+            return
+        stack = [self]
+        while stack:
+            t = stack.pop()
+            if t._dirty:
+                continue
+            t._dirty = True
+            ent = t._entity
+            if ent is None:
+                continue
+            scene = ent._scene
+            if scene is not None:
+                scene._dirty_roots.add(t)
+                scene._spatial_dirty_entities.add(ent._id)
+                scene._spatial_dirty = True
+                scene._transform_version_pending = True
+            for child in ent._children:
+                ct = child._transform
                 if ct is not None and not ct._dirty:
-                    ct._mark_dirty()
+                    stack.append(ct)
     def _update_world_matrix(self):
-        if not self._dirty and self._world_matrix is not None:
+        if not self._dirty:
             return
         if self._world_target is not None:
             self._resolve_world_target()
             return
-        local = self._build_local_matrix()
-        parent_entity = self._entity.parent if self._entity else None
-        if parent_entity:
-            pt = parent_entity.transform
-            if pt:
-                pt._update_world_matrix()
-                self._world_matrix = local * pt._world_matrix
-            else:
-                self._world_matrix = local
-        else:
-            self._world_matrix = local
-        self._dirty = False
+        chain = [self]
+        ent = self._entity
+        p = ent._parent if ent is not None else None
+        while p is not None:
+            pt = p._transform
+            if pt is None:
+                break
+            if not pt._dirty and pt._world_target is None:
+                break
+            chain.append(pt)
+            pe = pt._entity
+            p = pe._parent if pe is not None else None
+        for node in reversed(chain):
+            if node._world_target is not None:
+                node._resolve_world_target()
+                continue
+            local = node._build_local_matrix()
+            ne = node._entity
+            parent_entity = ne._parent if ne is not None else None
+            if parent_entity is not None:
+                pt = parent_entity._transform
+                if pt is not None:
+                    m = Mat4.__new__(Mat4)
+                    m._d = local._d @ pt._world_matrix._d
+                    node._world_matrix = m
+                    node._dirty = False
+                    continue
+            node._world_matrix = local
+            node._dirty = False
 
     def _resolve_world_target(self):
-        parent_entity = self._entity.parent if self._entity else None
-        if parent_entity:
-            pt = parent_entity.transform
-            if pt:
+        ent = self._entity
+        parent_entity = ent._parent if ent is not None else None
+        if parent_entity is not None:
+            pt = parent_entity._transform
+            if pt is None:
+                pt = parent_entity.transform
+            if pt is not None:
                 pt._update_world_matrix()
                 inv = mat4_inv_fast(pt._world_matrix._d)
                 local = Mat4(mat4_mul_fast(self._world_target._d, inv))
@@ -105,7 +141,7 @@ class Transform(Component):
         ls = self._local_scale
         sx = ls._x; sy = ls._y; sz = ls._z
         lp = self._local_pos
-        m = np.array(r, dtype=FLOAT_TYPE, copy=False)
+        m = r
         if m.base is not None:
             m = m.copy()
         m[0, 0] *= sx; m[0, 1] *= sx; m[0, 2] *= sx
@@ -115,24 +151,42 @@ class Transform(Component):
         m[3, 1] = lp._y
         m[3, 2] = lp._z
         m[3, 3] = 1.0
-        return Mat4(m)
+        out = Mat4.__new__(Mat4)
+        out._d = m
+        return out
     @property
     def local_position(self) -> Vec3: return self._local_pos
     @local_position.setter
     def local_position(self, v: Vec3):
         if isinstance(v, Vec3):
             self._local_pos = v
-        elif isinstance(v, (tuple, list, np.ndarray)):
+        elif isinstance(v, np.ndarray):
+            self._local_pos = Vec3(float(v[0]), float(v[1]), float(v[2]))
+        elif isinstance(v, (tuple, list)):
             self._local_pos = Vec3(float(v[0]), float(v[1]), float(v[2]))
         else:
             self._local_pos = v
+        self._mark_dirty()
+        self._physics_dirty = True
+    def set_local_position_xyz(self, x: float, y: float, z: float):
+        lp = self._local_pos
+        lp._x = x
+        lp._y = y
+        lp._z = z
         self._mark_dirty()
         self._physics_dirty = True
     @property
     def local_rotation(self) -> Quat: return self._local_rot
     @local_rotation.setter
     def local_rotation(self, v: Quat):
-        self._local_rot = v.normalized() if isinstance(v, Quat) else v
+        if isinstance(v, Quat):
+            self._local_rot = v.normalized()
+        else:
+            self._local_rot = v
+        self._mark_dirty()
+        self._physics_dirty = True
+    def set_local_rotation_raw(self, v: Quat):
+        self._local_rot = v
         self._mark_dirty()
         self._physics_dirty = True
     @property
@@ -141,10 +195,19 @@ class Transform(Component):
     def local_scale(self, v: Vec3):
         if isinstance(v, Vec3):
             self._local_scale = v
-        elif isinstance(v, (tuple, list, np.ndarray)):
+        elif isinstance(v, np.ndarray):
+            self._local_scale = Vec3(float(v[0]), float(v[1]), float(v[2]))
+        elif isinstance(v, (tuple, list)):
             self._local_scale = Vec3(float(v[0]), float(v[1]), float(v[2]))
         else:
             self._local_scale = v
+        self._mark_dirty()
+        self._physics_dirty = True
+    def set_local_scale_xyz(self, x: float, y: float, z: float):
+        ls = self._local_scale
+        ls._x = x
+        ls._y = y
+        ls._z = z
         self._mark_dirty()
         self._physics_dirty = True
     @property
@@ -159,77 +222,133 @@ class Transform(Component):
         self._physics_dirty = True
     @property
     def position(self) -> Vec3:
-        wm = self._world_matrix
         if self._dirty:
             self._update_world_matrix()
-            wm = self._world_matrix
-        d = wm._d
+        d = self._world_matrix._d
         return Vec3(float(d[3, 0]), float(d[3, 1]), float(d[3, 2]))
     @position.setter
     def position(self, world_pos: Vec3):
-        if isinstance(world_pos, (tuple, list, np.ndarray)):
-            world_pos = Vec3(float(world_pos[0]), float(world_pos[1]), float(world_pos[2]))
+        if isinstance(world_pos, Vec3):
+            wp = world_pos
+        elif isinstance(world_pos, np.ndarray):
+            wp = Vec3(float(world_pos[0]), float(world_pos[1]), float(world_pos[2]))
+        elif isinstance(world_pos, (tuple, list)):
+            wp = Vec3(float(world_pos[0]), float(world_pos[1]), float(world_pos[2]))
+        else:
+            wp = world_pos
         ent = self._entity
         parent_entity = ent._parent if ent is not None else None
         if parent_entity is not None:
-            pt = parent_entity.transform
+            pt = parent_entity._transform
+            if pt is None:
+                pt = parent_entity.transform
             if pt is not None:
                 pt._update_world_matrix()
                 inv = mat4_inv_fast(pt._world_matrix._d)
-                wp = world_pos
                 world_arr = np.array([wp._x, wp._y, wp._z, 1.0], dtype=FLOAT_TYPE)
                 local_arr = world_arr @ inv
                 self._local_pos = Vec3(float(local_arr[0]), float(local_arr[1]), float(local_arr[2]))
                 self._mark_dirty()
                 self._physics_dirty = True
                 return
-        self._local_pos = world_pos
+        self._local_pos = wp
         self._mark_dirty()
         self._physics_dirty = True
     @property
     def world_matrix(self) -> Mat4:
-        self._update_world_matrix()
+        if self._dirty:
+            self._update_world_matrix()
         return self._world_matrix
 
     @world_matrix.setter
     def world_matrix(self, m: Mat4):
-        self._world_target = Mat4(m._d.copy()) if isinstance(m, Mat4) else Mat4(m)
+        if isinstance(m, Mat4):
+            self._world_target = Mat4.__new__(Mat4)
+            self._world_target._d = m._d.copy()
+        else:
+            self._world_target = Mat4(m)
         self._dirty = True
         self._physics_dirty = True
-        try:
-            ent = self._entity
-            scene = ent._scene if ent is not None else None
+        ent = self._entity
+        if ent is not None:
+            scene = ent._scene
             if scene is not None:
-                scene._transform_version += 1
-        except Exception:
-            pass
+                scene._dirty_roots.add(self)
+                scene._spatial_dirty_entities.add(ent._id)
+                scene._spatial_dirty = True
+                scene._transform_version_pending = True
     @property
     def forward(self) -> Vec3:
-        self._update_world_matrix()
+        if self._dirty:
+            self._update_world_matrix()
         m = self._world_matrix._d
         return Vec3(-float(m[2,0]), -float(m[2,1]), -float(m[2,2])).normalized()
     @property
     def right(self) -> Vec3:
-        self._update_world_matrix()
+        if self._dirty:
+            self._update_world_matrix()
         m = self._world_matrix._d
         return Vec3(float(m[0,0]), float(m[0,1]), float(m[0,2])).normalized()
     @property
     def up(self) -> Vec3:
-        self._update_world_matrix()
+        if self._dirty:
+            self._update_world_matrix()
         m = self._world_matrix._d
         return Vec3(float(m[1,0]), float(m[1,1]), float(m[1,2])).normalized()
     def translate(self, delta: Vec3, world_space: bool = False):
         if world_space:
-            self.position = self.position + delta
+            p = self.position
+            if isinstance(delta, Vec3):
+                self.position = Vec3(p._x + delta._x, p._y + delta._y, p._z + delta._z)
+            else:
+                self.position = Vec3(p._x + float(delta[0]), p._y + float(delta[1]), p._z + float(delta[2]))
         else:
-            self.local_position = self._local_pos + delta
+            lp = self._local_pos
+            if isinstance(delta, Vec3):
+                lp._x += delta._x
+                lp._y += delta._y
+                lp._z += delta._z
+            elif isinstance(delta, np.ndarray):
+                lp._x += float(delta[0])
+                lp._y += float(delta[1])
+                lp._z += float(delta[2])
+            else:
+                try:
+                    lp._x += float(delta[0])
+                    lp._y += float(delta[1])
+                    lp._z += float(delta[2])
+                except Exception:
+                    lp2 = self._local_pos + delta
+                    self._local_pos = lp2
+                    self._mark_dirty()
+                    self._physics_dirty = True
+                    return
+            self._mark_dirty()
+            self._physics_dirty = True
     def rotate(self, euler: Vec3):
-        dq = Quat.from_euler(euler.x, euler.y, euler.z)
-        self.local_rotation = (self._local_rot * dq).normalized()
+        if isinstance(euler, Vec3):
+            dq = Quat.from_euler(euler._x, euler._y, euler._z)
+        else:
+            dq = Quat.from_euler(float(euler[0]), float(euler[1]), float(euler[2]))
+        lr = self._local_rot
+        nx = lr._w * dq._x + lr._x * dq._w + lr._y * dq._z - lr._z * dq._y
+        ny = lr._w * dq._y - lr._x * dq._z + lr._y * dq._w + lr._z * dq._x
+        nz = lr._w * dq._z + lr._x * dq._y - lr._y * dq._x + lr._z * dq._w
+        nw = lr._w * dq._w - lr._x * dq._x - lr._y * dq._y - lr._z * dq._z
+        n = (nx * nx + ny * ny + nz * nz + nw * nw) ** 0.5
+        if n > 1e-10:
+            inv = 1.0 / n
+            self._local_rot = Quat(nx * inv, ny * inv, nz * inv, nw * inv)
+        else:
+            self._local_rot = Quat(0.0, 0.0, 0.0, 1.0)
+        self._mark_dirty()
+        self._physics_dirty = True
     def look_at(self, target: Vec3, up: Vec3 = None):
         if up is None: up = Vec3.up()
         fwd = (target - self.position).normalized()
-        self.local_rotation = Quat.look_rotation(fwd, up)
+        self._local_rot = Quat.look_rotation(fwd, up)
+        self._mark_dirty()
+        self._physics_dirty = True
     def serialize(self) -> dict:
         d = super().serialize()
         d.update({
@@ -252,5 +371,48 @@ class Transform(Component):
 
     @staticmethod
     def batch_update_world_matrices(transforms: list):
-        from core._ecs_batch import batch_update_from_transforms
-        batch_update_from_transforms(transforms)
+        n = len(transforms)
+        if n == 0:
+            return
+        if _batch_from_transforms is not None:
+            need_py = False
+            for t in transforms:
+                if t._world_target is not None:
+                    need_py = True
+                    break
+            if need_py:
+                for t in transforms:
+                    t._update_world_matrix()
+            else:
+                _batch_from_transforms(transforms)
+            return
+        for t in transforms:
+            t._update_world_matrix()
+
+    @staticmethod
+    def mark_many_dirty(transforms: list):
+        n = len(transforms)
+        if n == 0:
+            return
+        stack = []
+        for t in transforms:
+            if not t._dirty:
+                stack.append(t)
+        while stack:
+            t = stack.pop()
+            if t._dirty:
+                continue
+            t._dirty = True
+            ent = t._entity
+            if ent is None:
+                continue
+            sc = ent._scene
+            if sc is not None:
+                sc._dirty_roots.add(t)
+                sc._spatial_dirty_entities.add(ent._id)
+                sc._spatial_dirty = True
+                sc._transform_version_pending = True
+            for child in ent._children:
+                ct = child._transform
+                if ct is not None and not ct._dirty:
+                    stack.append(ct)
