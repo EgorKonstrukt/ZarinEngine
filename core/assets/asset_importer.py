@@ -26,6 +26,11 @@ try:
 except ImportError:
     _HAS_CYTHON = False
 
+try:
+    from core._mesh_import import parse_obj_chunk as _cy_parse_obj_chunk
+except ImportError:
+    _cy_parse_obj_chunk = None
+
 _inflight_lock = threading.Lock()
 _inflight: dict[str, Future] = {}
 _mem_cache_lock = threading.Lock()
@@ -742,6 +747,10 @@ def _import_meta_signature(path: str):
     return None
 
 
+_settings_cache_lock = threading.Lock()
+_settings_cache: dict = {}
+
+
 def _read_mesh_import(path: str) -> dict:
     import_path = _resolve_mesh_import_path(path)
     settings = {
@@ -753,6 +762,18 @@ def _read_mesh_import(path: str) -> dict:
         "gen_uvs": True,
         "blendshapes": True,
     }
+    try:
+        st = os.stat(import_path)
+        stat_sig = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return settings
+    with _settings_cache_lock:
+        cached = _settings_cache.get(import_path)
+        if cached is not None and cached[0] == stat_sig:
+            out = dict(cached[1])
+            if isinstance(out.get("materials"), list):
+                out["materials"] = list(out["materials"])
+            return out
     if os.path.exists(import_path):
         try:
             with open(import_path) as _f:
@@ -764,6 +785,11 @@ def _read_mesh_import(path: str) -> dict:
                 settings["materials"] = [m for m in _data["materials"] if isinstance(m, str)]
         except Exception:
             pass
+    with _settings_cache_lock:
+        _settings_cache[import_path] = (stat_sig, dict(settings))
+        if len(_settings_cache) > 4096:
+            _settings_cache.clear()
+            _settings_cache[import_path] = (stat_sig, dict(settings))
     return settings
 
 
@@ -799,6 +825,231 @@ def _generate_planar_uvs(verts: np.ndarray) -> np.ndarray:
     uvs = uvs[:, :2]
     uvs[:, 1] = 1.0 - uvs[:, 1]
     return uvs.astype(np.float32)
+
+
+_OBJ_FAST_MIN_BYTES = 2 << 20
+_OBJ_FAST_THREADS = min(8, max(4, (os.cpu_count() or 4) // 2))
+
+
+def _obj_chunk_bounds(data: bytes, nchunks: int) -> list:
+    n = len(data)
+    bounds = []
+    start = 0
+    for i in range(1, nchunks):
+        cut = (n * i) // nchunks
+        nl = data.find(b"\n", cut)
+        cut = n if nl < 0 else nl + 1
+        bounds.append((start, cut))
+        start = cut
+        if start >= n:
+            break
+    bounds.append((start, n))
+    return [(s, e) for s, e in bounds if e > s]
+
+
+def _obj_parse_chunk(chunk: bytes):
+    if _cy_parse_obj_chunk is not None:
+        try:
+            return _cy_parse_obj_chunk(chunk)
+        except (ValueError, OverflowError, MemoryError):
+            return None
+    vbuf = bytearray()
+    tbuf = bytearray()
+    nbuf = bytearray()
+    nv = ntt = nvn = 0
+    fp: list = []
+    ft: list = []
+    fn: list = []
+    for line in chunk.split(b"\n"):
+        line = line.strip()
+        if not line or line[:1] == b"#":
+            continue
+        c0 = line[:1]
+        if c0 == b"v":
+            c1 = line[1:2]
+            if c1 and c1.isspace():
+                vbuf += line[1:]
+                vbuf += b" "
+                nv += 1
+            elif c1 == b"t":
+                if line[2:3] and not line[2:3].isspace():
+                    continue
+                rest = line[2:].strip()
+                if not rest:
+                    return None
+                tbuf += rest
+                tbuf += b" "
+                ntt += 1
+            elif c1 == b"n":
+                if line[2:3] and not line[2:3].isspace():
+                    continue
+                rest = line[2:].strip()
+                if not rest:
+                    return None
+                nbuf += rest
+                nbuf += b" "
+                nvn += 1
+            elif not c1:
+                return None
+            continue
+        if c0 == b"f":
+            if line == b"f":
+                continue
+            if not line[1:2].isspace():
+                continue
+            toks = line[1:].split()
+            if not toks:
+                continue
+            if len(toks) == 3 and b"//" not in line:
+                cells = [t.split(b"/") for t in toks]
+                if all(len(c) == 3 and c[0] and c[1] and c[2] for c in cells):
+                    for c in cells:
+                        fp.append(int(c[0]) - 1)
+                        ft.append(int(c[1]) - 1)
+                        fn.append(int(c[2]) - 1)
+                    continue
+            for tok in toks:
+                v = tok.split(b"/")
+                fp.append(int(v[0]) - 1)
+                if len(v) > 1 and v[1]:
+                    ft.append(int(v[1]) - 1)
+                else:
+                    ft.append(-1)
+                if len(v) > 2 and v[2]:
+                    fn.append(int(v[2]) - 1)
+                else:
+                    fn.append(-1)
+            continue
+        continue
+    try:
+        varr = np.fromstring(bytes(vbuf), dtype=np.float32, sep=" ") if nv else np.zeros(0, dtype=np.float32)
+        tarr = np.fromstring(bytes(tbuf), dtype=np.float32, sep=" ") if ntt else np.zeros(0, dtype=np.float32)
+        narr = np.fromstring(bytes(nbuf), dtype=np.float32, sep=" ") if nvn else np.zeros(0, dtype=np.float32)
+    except (ValueError, TypeError):
+        return None
+    if varr.size != nv * 3 or tarr.size != ntt * 2 or narr.size != nvn * 3:
+        return None
+    try:
+        return (varr, tarr, narr, np.array(fp, dtype=np.int64),
+                np.array(ft, dtype=np.int64), np.array(fn, dtype=np.int64))
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _obj_parse_fast(data: bytes, jobs: int):
+    import concurrent.futures as _cf
+    if b"\r" in data:
+        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    bounds = _obj_chunk_bounds(data, max(1, jobs))
+    if len(bounds) < 2:
+        bounds = [(0, len(data))]
+    results = []
+    if len(bounds) == 1:
+        try:
+            r = _obj_parse_chunk(data)
+        except (ValueError, TypeError, OverflowError, MemoryError):
+            return None
+        if r is None:
+            return None
+        results.append(r)
+    else:
+        try:
+            with _cf.ThreadPoolExecutor(max_workers=len(bounds)) as ex:
+                futs = [ex.submit(_obj_parse_chunk, data[s:e]) for s, e in bounds]
+                for f in futs:
+                    r = f.result()
+                    if r is None:
+                        return None
+                    results.append(r)
+        except (ValueError, TypeError, OverflowError, MemoryError):
+            return None
+    varr = np.concatenate([r[0] for r in results]) if results else np.zeros(0, dtype=np.float32)
+    tarr = np.concatenate([r[1] for r in results]) if results else np.zeros(0, dtype=np.float32)
+    narr = np.concatenate([r[2] for r in results]) if results else np.zeros(0, dtype=np.float32)
+    fp = np.concatenate([r[3] for r in results]) if results else np.zeros(0, dtype=np.int64)
+    ft = np.concatenate([r[4] for r in results]) if results else np.zeros(0, dtype=np.int64)
+    fn = np.concatenate([r[5] for r in results]) if results else np.zeros(0, dtype=np.int64)
+    return varr, tarr, narr, fp, ft, fn
+
+
+def _obj_weld_slow(positions: list, texcoords: list, normals: list,
+                   face_pos: list, face_tex: list, face_nrm: list):
+    has_uv = len(face_tex) == len(face_pos) and len(texcoords) > 0
+    has_nrm = len(face_nrm) == len(face_pos) and len(normals) > 0
+    pos_arr = np.array(positions, dtype=np.float32)
+    n_faces = len(face_pos)
+    verts = np.empty(n_faces * 3, dtype=np.float32)
+    norms_out = np.empty(n_faces * 3, dtype=np.float32)
+    uvs_out = np.empty(n_faces * 2, dtype=np.float32)
+    idx = np.empty(n_faces, dtype=np.uint32)
+    seen: dict = {}
+    out_idx = 0
+    normals_arr = np.array(normals, dtype=np.float32)
+    texcoords_arr = np.array(texcoords, dtype=np.float32)
+    for i in range(n_faces):
+        pi = face_pos[i]
+        ni = face_nrm[i] if has_nrm else 0
+        ti = face_tex[i] if has_uv else 0
+        key = (int(pi), int(ni), int(ti))
+        if key not in seen:
+            seen[key] = out_idx
+            pi3 = int(pi) * 3
+            verts[out_idx * 3:out_idx * 3 + 3] = pos_arr[pi3:pi3 + 3]
+            if has_nrm:
+                ni3 = int(ni) * 3
+                norms_out[out_idx * 3:out_idx * 3 + 3] = normals_arr[ni3:ni3 + 3]
+            else:
+                norms_out[out_idx * 3:out_idx * 3 + 3] = [0.0, 0.0, 0.0]
+            if has_uv:
+                ti2 = int(ti) * 2
+                uvs_out[out_idx * 2:out_idx * 2 + 2] = texcoords_arr[ti2:ti2 + 2]
+            else:
+                uvs_out[out_idx * 2:out_idx * 2 + 2] = [0.0, 0.0]
+            out_idx += 1
+        idx[i] = seen[key]
+    return verts, norms_out, uvs_out, idx, has_uv, has_nrm
+
+
+def _obj_weld(varr: np.ndarray, tarr: np.ndarray, narr: np.ndarray,
+              fp: np.ndarray, ft: np.ndarray, fn: np.ndarray):
+    n_faces = int(fp.shape[0])
+    if n_faces and (bool((fp < 0).any()) or bool((ft < -1).any()) or bool((fn < -1).any())):
+        return _obj_weld_slow(varr.tolist(), tarr.tolist(), narr.tolist(),
+                              fp.tolist(), ft.tolist(), fn.tolist())
+    has_uv = bool(np.all(ft != -1)) and tarr.size > 0
+    has_nrm = bool(np.all(fn != -1)) and narr.size > 0
+    pos_arr = np.ascontiguousarray(varr, dtype=np.float32)
+    if has_uv:
+        ti_col = ft
+    else:
+        ti_col = np.zeros(n_faces, dtype=np.int64)
+    if has_nrm:
+        ni_col = fn
+    else:
+        ni_col = np.zeros(n_faces, dtype=np.int64)
+    keys = np.empty((n_faces, 3), dtype=np.int64)
+    keys[:, 0] = fp
+    keys[:, 1] = ni_col
+    keys[:, 2] = ti_col
+    _, first, inv = np.unique(keys, axis=0, return_index=True, return_inverse=True)
+    order = np.argsort(first, kind="stable")
+    remap = np.empty(first.shape[0], dtype=np.int64)
+    remap[order] = np.arange(first.shape[0])
+    idx = remap[inv].astype(np.uint32)
+    pick = first[order]
+    pos3 = pos_arr.reshape(-1, 3)
+    verts = np.ascontiguousarray(pos3[fp[pick]].reshape(-1).astype(np.float32))
+    if has_nrm:
+        nrm3 = np.ascontiguousarray(narr, dtype=np.float32).reshape(-1, 3)
+        norms_out = np.ascontiguousarray(nrm3[ni_col[pick]].reshape(-1).astype(np.float32))
+    else:
+        norms_out = np.zeros(verts.shape[0], dtype=np.float32)
+    if has_uv:
+        tex2 = np.ascontiguousarray(tarr, dtype=np.float32).reshape(-1, 2)
+        uvs_out = np.ascontiguousarray(tex2[ti_col[pick]].reshape(-1).astype(np.float32))
+    else:
+        uvs_out = np.zeros((verts.shape[0] // 3) * 2, dtype=np.float32)
+    return verts, norms_out, uvs_out, idx, has_uv, has_nrm
 
 
 def load_mesh(path: str, import_settings: Optional[dict] = None) -> Optional[MeshImportData]:
@@ -938,22 +1189,56 @@ class MeshImportData:
         self.blendshape_normals: list[np.ndarray] = []
 
 
-def load_obj(path: str, import_settings: Optional[dict] = None) -> Optional[MeshImportData]:
-    _sig = _import_meta_signature(path)
-    with _mem_cache_lock:
-        cached = _mem_cache.get(path)
-        if cached is not None and cached[0] == _sig:
-            return cached[1]
+def _obj_apply_gen(data: MeshImportData, has_nrm: bool, has_uv: bool,
+                   import_settings: Optional[dict], path: str):
+    if len(data.vertices) == 0:
+        return
+    _v = data.vertices.reshape(-1, 3)
+    _settings = import_settings if import_settings is not None else _read_mesh_import(path)
+    if (not has_nrm or len(data.normals) == 0) and _settings.get("gen_normals", True):
+        data.normals = _compute_smooth_normals(_v, data.indices).ravel()
+    if (not has_uv or len(data.uvs) == 0) and _settings.get("gen_uvs", True):
+        data.uvs = _generate_planar_uvs(_v).ravel()
 
-    eng = None
+
+def _obj_load_fast(path: str, import_settings: Optional[dict]) -> Optional[MeshImportData]:
     try:
-        from core.engine.engine import Engine
-        eng = Engine.instance()
+        with open(path, "rb") as f:
+            blob = f.read()
+    except OSError:
+        return None
+    try:
+        parsed = _obj_parse_fast(blob, _OBJ_FAST_THREADS)
+    except (MemoryError, OSError):
+        return None
+    if parsed is None:
+        return None
+    varr, tarr, narr, fp, ft, fn = parsed
+    if fp.shape[0] == 0:
+        return None
+    try:
+        welded = _obj_weld(varr, tarr, narr, fp, ft, fn)
+    except (ValueError, TypeError, IndexError, MemoryError, OverflowError):
+        return None
+    if welded is None:
+        return None
+    verts, norms_out, uvs_out, idx, has_uv, has_nrm = welded
+    if verts.shape[0] == 0:
+        return None
+    data = MeshImportData()
+    data.name = os.path.splitext(os.path.basename(path))[0]
+    data.vertices = np.ascontiguousarray(verts, dtype=np.float32)
+    data.normals = np.ascontiguousarray(norms_out, dtype=np.float32)
+    data.uvs = np.ascontiguousarray(uvs_out, dtype=np.float32)
+    data.indices = np.ascontiguousarray(idx, dtype=np.uint32)
+    try:
+        _obj_apply_gen(data, has_uv, has_nrm, import_settings, path)
     except Exception:
-        pass
-    prof = eng._profiler if eng and hasattr(eng, '_profiler') else None
-    if prof: prof.start("load_obj")
+        return None
+    return data
 
+
+def _obj_load_slow(path: str, import_settings: Optional[dict]) -> Optional[MeshImportData]:
     positions, texcoords, normals = [], [], []
     face_pos, face_tex, face_nrm = [], [], []
     try:
@@ -984,10 +1269,8 @@ def load_obj(path: str, import_settings: Optional[dict] = None) -> Optional[Mesh
                         if len(v) > 2 and v[2]:
                             face_nrm.append(int(v[2]) - 1)
     except Exception:
-        if prof: prof.stop("load_obj")
         return None
     if not face_pos:
-        if prof: prof.stop("load_obj")
         return None
     has_uv = len(face_tex) == len(face_pos) and len(texcoords) > 0
     has_nrm = len(face_nrm) == len(face_pos) and len(normals) > 0
@@ -1030,13 +1313,41 @@ def load_obj(path: str, import_settings: Optional[dict] = None) -> Optional[Mesh
         data.uvs = uvs_out[:out_idx * 2].copy()
     data.indices = idx
     if out_idx > 0:
-        _v = data.vertices.reshape(-1, 3)
-        _settings = import_settings if import_settings is not None else _read_mesh_import(path)
-        if (not has_nrm or len(data.normals) == 0) and _settings.get("gen_normals", True):
-            data.normals = _compute_smooth_normals(_v, data.indices).ravel()
-        if (not has_uv or len(data.uvs) == 0) and _settings.get("gen_uvs", True):
-            data.uvs = _generate_planar_uvs(_v).ravel()
-    if prof: prof.stop("load_obj")
+        try:
+            _obj_apply_gen(data, has_nrm, has_uv, import_settings, path)
+        except Exception:
+            return None
+    return data
+
+
+def load_obj(path: str, import_settings: Optional[dict] = None) -> Optional[MeshImportData]:
+    _sig = _import_meta_signature(path)
+    with _mem_cache_lock:
+        cached = _mem_cache.get(path)
+        if cached is not None and cached[0] == _sig:
+            return cached[1]
+
+    eng = None
+    try:
+        from core.engine.engine import Engine
+        eng = Engine.instance()
+    except Exception:
+        pass
+    prof = eng._profiler if eng and hasattr(eng, '_profiler') else None
+    if prof: prof.start("load_obj")
+
+    data = None
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        size = 0
+    if size >= _OBJ_FAST_MIN_BYTES:
+        data = _obj_load_fast(path, import_settings)
+    if data is None:
+        data = _obj_load_slow(path, import_settings)
+        if prof: prof.stop("load_obj")
+    else:
+        if prof: prof.stop("load_obj")
     if data is not None and len(data.vertices) > 0:
         with _mem_cache_lock:
             _mem_cache[path] = (_sig, data)

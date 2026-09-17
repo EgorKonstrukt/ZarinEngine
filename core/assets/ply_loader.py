@@ -99,6 +99,129 @@ def _ply_type(s: str):
     return m.get(s, np.float32)
 
 
+_SPLAT_TILE_ROWS = 16384
+
+_Z180_REST_SIGN = {
+    9: (0, 2, 3, 5, 6, 8),
+    24: (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22),
+    45: (0, 2, 4, 6, 8, 10, 12, 14, 15, 17, 19, 21, 23, 25, 27, 29, 30,
+         32, 34, 36, 38, 40, 42, 44),
+}
+
+
+def _parse_splat_columns(raw, prop_names: list, has_normals: bool):
+    n = int(raw.shape[0])
+    if n == 0:
+        return None
+    try:
+        col_index = {name: j for j, (name, _) in enumerate(raw.dtype.descr)}
+        ix = col_index["x"]
+        iy = col_index["y"]
+        iz = col_index["z"]
+        idc = [col_index["f_dc_0"], col_index["f_dc_1"], col_index["f_dc_2"]]
+        iop = col_index["opacity"]
+        isc = [col_index["scale_0"], col_index["scale_1"], col_index["scale_2"]]
+        iqx = [col_index["rot_1"], col_index["rot_2"],
+               col_index["rot_3"], col_index["rot_0"]]
+    except KeyError:
+        return None
+    try:
+        for _nm, _dt in raw.dtype.descr:
+            if np.dtype(_dt) != np.float32:
+                return None
+    except (TypeError, ValueError):
+        return None
+    rest_keys = [k for k in prop_names if k.startswith("f_rest_")]
+    if len(rest_keys) > 45:
+        rest_keys = rest_keys[:45]
+    num_rest = len(rest_keys)
+    try:
+        rk = [col_index[k] for k in rest_keys]
+        if has_normals:
+            inx = col_index["nx"]
+            iny = col_index["ny"]
+            inz = col_index["nz"]
+        else:
+            inx = iny = inz = -1
+    except KeyError:
+        return None
+    flip = _Z180_REST_SIGN.get(num_rest, ())
+    flip_set = set(flip)
+    ncols = len(col_index)
+    positions = np.empty((n, 3), dtype=np.float32)
+    normals = np.zeros((n, 3), dtype=np.float32)
+    sh_coeffs = np.empty((n, 3 + num_rest), dtype=np.float32)
+    opacity = np.empty(n, dtype=np.float32)
+    scales = np.empty((n, 3), dtype=np.float32)
+    quaternions = np.empty((n, 4), dtype=np.float32)
+    valid = np.ones(n, dtype=np.bool_)
+    c0 = np.float32(SH_C0)
+    c05 = np.float32(0.5)
+    tile = _SPLAT_TILE_ROWS
+    for s in range(0, n, tile):
+        e = s + tile if s + tile < n else n
+        c = np.asarray(raw[s:e]).view(np.float32).reshape(e - s, ncols)
+        p = positions[s:e]
+        p[:, 0] = c[:, ix]
+        p[:, 1] = c[:, iy]
+        p[:, 2] = c[:, iz]
+        p[:, 0] *= np.float32(-1.0)
+        p[:, 1] *= np.float32(-1.0)
+        if has_normals:
+            nn = normals[s:e]
+            nn[:, 0] = c[:, inx]
+            nn[:, 1] = c[:, iny]
+            nn[:, 2] = c[:, inz]
+        sh = sh_coeffs[s:e]
+        sh[:, 0] = c[:, idc[0]] * c0 + c05
+        sh[:, 1] = c[:, idc[1]] * c0 + c05
+        sh[:, 2] = c[:, idc[2]] * c0 + c05
+        for j, k in enumerate(rk):
+            col = c[:, k]
+            if j in flip_set:
+                np.negative(col, out=sh[:, 3 + j])
+            else:
+                sh[:, 3 + j] = col
+        op = opacity[s:e]
+        op[:] = c[:, iop]
+        np.negative(op, out=op)
+        np.exp(op, out=op)
+        op += np.float32(1.0)
+        np.reciprocal(op, out=op)
+        sc = scales[s:e]
+        sc[:, 0] = c[:, isc[0]]
+        sc[:, 1] = c[:, isc[1]]
+        sc[:, 2] = c[:, isc[2]]
+        np.exp(sc, out=sc)
+        qq = quaternions[s:e]
+        qq[:, 0] = c[:, iqx[0]]
+        qq[:, 1] = c[:, iqx[1]]
+        qq[:, 2] = c[:, iqx[2]]
+        qq[:, 3] = c[:, iqx[3]]
+        q0 = -qq[:, 1].copy()
+        q3 = -qq[:, 2].copy()
+        qq[:, 1] = qq[:, 0]
+        qq[:, 2] = qq[:, 3]
+        qq[:, 0] = q0
+        qq[:, 3] = q3
+        q_len = np.linalg.norm(qq, axis=1, keepdims=True)
+        q_len = np.maximum(q_len, 1e-8)
+        qq /= q_len
+        vm = valid[s:e]
+        vm[:] = True
+        vm &= np.isfinite(p).all(axis=1)
+        vm &= np.isfinite(sh).all(axis=1)
+        vm &= np.isfinite(op)
+        vm &= np.isfinite(sc).all(axis=1)
+        vm &= np.isfinite(qq).all(axis=1)
+        vm &= sc.max(axis=1) > 0.0
+    num_sh = 1
+    if num_rest > 0:
+        num_sh = max(1, min(int(np.sqrt(num_rest // 3 + 1)), 4))
+    return (positions, normals, sh_coeffs, opacity, scales,
+            quaternions, num_sh, valid)
+
+
 def load_ply_gaussian_splat(path: str) -> Optional[GaussianSplatData]:
     path = os.path.abspath(path)
     if not os.path.isfile(path):
@@ -122,7 +245,40 @@ def load_ply_gaussian_splat(path: str) -> Optional[GaussianSplatData]:
 
             if fmt == "binary_little_endian":
                 dt = np.dtype([(p[1], _ply_type(p[0])) for p in properties])
-                raw = np.frombuffer(f.read(vertex_count * dt.itemsize), dtype=dt)
+                blob = f.read(vertex_count * dt.itemsize)
+                raw = np.frombuffer(blob, dtype=dt)
+                parsed = _parse_splat_columns(raw, prop_names, has_normals)
+                if parsed is None:
+                    try:
+                        dt32 = np.dtype([(nm, np.float32) for nm in prop_names])
+                        raw32 = np.empty(vertex_count, dtype=dt32)
+                        for nm in prop_names:
+                            raw32[nm] = raw[nm].astype(np.float32)
+                        parsed = _parse_splat_columns(raw32, prop_names, has_normals)
+                    except (ValueError, TypeError, KeyError):
+                        parsed = None
+                    if parsed is None:
+                        return None
+                (positions, normals, sh_coeffs, opacity, scales,
+                 quaternions, num_sh, valid) = parsed
+                if not bool(valid.all()):
+                    if not bool(valid.any()):
+                        return None
+                    positions = np.ascontiguousarray(positions[valid])
+                    normals = np.ascontiguousarray(normals[valid])
+                    sh_coeffs = np.ascontiguousarray(sh_coeffs[valid])
+                    opacity = np.ascontiguousarray(opacity[valid])
+                    scales = np.ascontiguousarray(scales[valid])
+                    quaternions = np.ascontiguousarray(quaternions[valid])
+                return GaussianSplatData(
+                    positions=positions,
+                    normals=normals,
+                    sh_coeffs=sh_coeffs,
+                    opacity=opacity,
+                    scales=scales,
+                    quaternions=quaternions,
+                    num_sh=num_sh,
+                )
             elif fmt == "binary_big_endian":
                 dt = np.dtype([(p[1], _ply_type(p[0])) for p in properties])
                 raw = np.frombuffer(f.read(vertex_count * dt.itemsize), dtype=dt)
