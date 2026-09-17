@@ -32,6 +32,7 @@ def _icon_for_script(path: str) -> QIcon:
     ext = os.path.splitext(path)[1].lower()
     mapping = {
         ".py": "fa5b.python",
+        ".pyx": "fa5b.python",
         ".txt": "fa5s.file-alt",
         ".md": "fa5s.file-alt",
         ".json": "fa5s.file-code",

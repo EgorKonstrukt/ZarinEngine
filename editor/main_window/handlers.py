@@ -97,7 +97,7 @@ def on_project_file_double_clicked(mw, path: str):
             mw._terrain_editor.load_graph(path)
             mw._terrain_editor.show()
             mw._terrain_editor.raise_()
-    elif ext == ".py":
+    elif ext in (".py", ".pyx"):
         se = getattr(mw, "_script_editor", None)
         opened = False
         if se is not None:

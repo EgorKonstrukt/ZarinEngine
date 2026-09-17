@@ -2045,6 +2045,7 @@ class ProjectPanel(QDockWidget):
             ("Animation Clip", self._create_new_animclip),
             ("Animator Controller", self._create_new_animcontroller),
             ("Python Script", self._create_new_script),
+            ("Cython Script", self._create_new_cython_script),
         ]:
             a = QAction(name, self)
             a.triggered.connect(cb)
@@ -3845,6 +3846,30 @@ class CLASSNAME:
         with open(path, "w", encoding="utf-8") as f:
             f.write(template)
         self._push_file_undo({"kind": "create", "paths": [path], "label": "Create script"})
+        self._refresh()
+        self.file_double_clicked.emit(path)
+
+    def _create_new_cython_script(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Create Cython Script", self._current_dir(), "Cython Scripts (*.pyx)")
+        if not path:
+            return
+        if not path.endswith(".pyx"):
+            path += ".pyx"
+        try:
+            from core.components.scripting.cython_support import CYTHON_TEMPLATE
+        except Exception:
+            CYTHON_TEMPLATE = None
+        base = os.path.splitext(os.path.basename(path))[0]
+        mod_name = "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in base).strip("_") or "fast_module"
+        if mod_name[0].isdigit():
+            mod_name = "fast_" + mod_name
+        if CYTHON_TEMPLATE:
+            template = CYTHON_TEMPLATE.replace("MODULENAME", mod_name)
+        else:
+            template = '# cython: language_level=3\ncpdef double add(double a, double b):\n    return a + b\n'
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(template)
+        self._push_file_undo({"kind": "create", "paths": [path], "label": "Create cython script"})
         self._refresh()
         self.file_double_clicked.emit(path)
 

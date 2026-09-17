@@ -90,6 +90,7 @@ class ScriptComponent(Component):
         self._py_class: Optional[type] = None
         self._py_methods: dict[str, Any] = {}
         self._py_collision_arity: dict[str, int] = {}
+        self._py_ext_sources: dict = {}
         self._field_values: dict[str, Any] = {}
         self._cached_fields: list[InspectorField] = []
         self._cached_hints: dict[str, Any] | None = None
@@ -240,6 +241,11 @@ class ScriptComponent(Component):
             mtime = os.path.getmtime(script_path)
         except Exception:
             mtime = None
+        try:
+            from core.components.scripting import cython_support
+            script_dir = cython_support.prepare_script_imports(script_path)
+        except Exception:
+            script_dir = ""
         if (self._py_class is not None and mtime is not None
                 and self._py_mtime == mtime):
             return
@@ -276,6 +282,11 @@ class ScriptComponent(Component):
             spec.loader.exec_module(mod)
             self._py_module = mod
             self._py_mtime = mtime
+            try:
+                from core.components.scripting import cython_support as _cy
+                self._py_ext_sources = _cy.snapshot_ext_modules(script_dir) if script_dir else {}
+            except Exception:
+                self._py_ext_sources = {}
             for attr in dir(mod):
                 obj = getattr(mod, attr)
                 if isinstance(obj, type) and (any(hasattr(obj, n) for n in _SCRIPT_DETECT_NAMES) or hasattr(obj, "_inspector_buttons")):
@@ -500,13 +511,23 @@ class ScriptComponent(Component):
             mtime = os.path.getmtime(self._resolve_script_path())
         except Exception:
             return
-        if self._py_instance is not None and mtime == self._py_mtime:
+        try:
+            from core.components.scripting import cython_support as _cy
+            pyx_changed = _cy.ext_sources_changed(self._py_ext_sources)
+        except Exception:
+            pyx_changed = False
+        if self._py_instance is not None and mtime == self._py_mtime and not pyx_changed:
             return
-        if self._py_instance is None and mtime == self._last_failed_mtime:
+        if self._py_instance is None and mtime == self._last_failed_mtime and not pyx_changed:
             return
+        if pyx_changed:
+            try:
+                _cy.unload_ext_modules(self._py_ext_sources)
+            except Exception:
+                pass
         old_class, old_instance = self._py_class, self._py_instance
         old_methods, old_arity = self._py_methods, self._py_collision_arity
-        old_mtime = self._py_mtime
+        old_ext, old_mtime = self._py_ext_sources, self._py_mtime
         self._py_class = None
         self._py_instance = None
         self._py_methods = {}
@@ -521,7 +542,7 @@ class ScriptComponent(Component):
         else:
             self._py_class, self._py_instance = old_class, old_instance
             self._py_methods, self._py_collision_arity = old_methods, old_arity
-            self._py_mtime = old_mtime
+            self._py_ext_sources, self._py_mtime = old_ext, old_mtime
             self._last_failed_mtime = mtime
 
     def on_start(self):

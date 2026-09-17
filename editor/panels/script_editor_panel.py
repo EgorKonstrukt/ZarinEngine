@@ -2073,6 +2073,18 @@ class _ScriptEditorWidget(QWidget):
 
         if not tab._file_path or tab._dirty:
             return
+        if tab._file_path.endswith(".pyx"):
+            try:
+                from core.components.scripting.cython_support import check_pyx_errors
+                errors = check_pyx_errors(tab._file_path)
+            except Exception as e:
+                QMessageBox.critical(self, "Check Error", f"Failed to check:\n{e}")
+                return
+            if errors:
+                QMessageBox.critical(self, "Check Cython Script", "Found %d error(s):\n\n%s" % (len(errors), "\n".join(errors[:20])))
+            else:
+                QMessageBox.information(self, "Check Cython Script", "No errors found.\nThe module builds automatically on first import.")
+            return
         try:
             from core.components.scripting.script_component import ScriptComponent
             checker = ScriptComponent()
