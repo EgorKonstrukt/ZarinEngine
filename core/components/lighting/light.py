@@ -326,6 +326,7 @@ class Light(Component):
 @ComponentRegistry.register
 class DirectionalLight(Light):
     _icon = "Light.png"
+    _editor_hidden = False
     _gizmo_icon_color = (255, 220, 50)
     _gizmo_icon_label = "D"
     _gizmo_pass = "light"
@@ -371,6 +372,7 @@ class DirectionalLight(Light):
 @ComponentRegistry.register
 class PointLight(Light):
     _icon = "Light.png"
+    _editor_hidden = False
     _gizmo_icon_color = (255, 200, 80)
     _gizmo_icon_label = "P"
     _gizmo_pass = "light"
@@ -450,6 +452,7 @@ class PointLight(Light):
 @ComponentRegistry.register
 class SpotLight(Light):
     _icon = "Light.png"
+    _editor_hidden = False
     _gizmo_icon_color = (255, 200, 80)
     _gizmo_icon_label = "S"
     _gizmo_pass = "light"
@@ -532,6 +535,7 @@ class SpotLight(Light):
 @ComponentRegistry.register
 class AreaLight(Light):
     _icon = "Light.png"
+    _editor_hidden = False
     _gizmo_icon_color = (200, 220, 255)
     _gizmo_icon_label = "A"
     _gizmo_pass = "light"

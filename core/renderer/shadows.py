@@ -197,6 +197,10 @@ class ShadowRenderer:
         self._model_pack_buf_cap: int = 0
         self._temporal_frame: int = 0
         self._temporal_skip_idx: int = -1
+        self._cascade_valid = [False, False, False, False]
+        self._prev_flat_centers = np.zeros((0, 3), dtype=np.float64)
+        self._prev_flat_radii = np.zeros(0, dtype=np.float64)
+        self._prev_flat_n: int = 0
         self._cascade_resolutions: list[int] = [2048, 1024, 1024, 512]
         self._last_light_dir: Optional[Vec3] = None
         self._last_cam_view_hash: int = 0
@@ -262,6 +266,7 @@ class ShadowRenderer:
         if type_flags is not None:
             self._type_flags = dict(type_flags)
         if changed:
+            self._cascade_valid = [False, False, False, False]
             try:
                 self._create_csm_resources()
             except Exception:
@@ -301,6 +306,7 @@ class ShadowRenderer:
                 pass
         self._shadow_maps = []
         self._shadow_fbos = []
+        self._cascade_valid = [False, False, False, False]
         base = self._shadow_resolution
         for i in range(self._cascade_count):
             res = self._cascade_resolutions[i] if i < len(self._cascade_resolutions) else base
@@ -742,16 +748,29 @@ class ShadowRenderer:
         n = self._flat_n
         if n == 0:
             return 0
+        try:
+            base_range = math.sqrt(max(float(range_sq), 0.0))
+        except Exception:
+            base_range = 0.0
         if _HAS_CYTHON:
             try:
-                return int(cull_flat_range_min(self._flat_centers[:n], self._flat_radii[:n], vp, float(lx), float(ly), float(lz), float(range_sq), float(min_radius), self._flat_out[:n]))
+                rmax = float(np.max(self._flat_radii[:n]))
+            except Exception:
+                rmax = 0.0
+            if rmax < 0.0:
+                rmax = 0.0
+            eff = base_range + rmax
+            try:
+                return int(cull_flat_range_min(self._flat_centers[:n], self._flat_radii[:n], vp, float(lx), float(ly), float(lz), float(eff * eff), float(min_radius), self._flat_out[:n]))
             except Exception:
                 pass
         c = self._flat_centers[:n]
+        rad = self._flat_radii[:n]
         dx = c[:, 0] - lx
         dy = c[:, 1] - ly
         dz = c[:, 2] - lz
-        mask = (dx * dx + dy * dy + dz * dz) <= range_sq
+        lim = base_range + rad
+        mask = (dx * dx + dy * dy + dz * dz) <= lim * lim
         if min_radius > 0.0:
             mask = mask & (self._flat_radii[:n] >= min_radius)
         idx = np.nonzero(mask)[0].astype(np.intp, copy=False)
@@ -836,15 +855,30 @@ class ShadowRenderer:
                 cnt = self._cull_flat_count(vp32)
                 if cnt:
                     self._draw_flat_visible(vp32, fbo, resolution, cnt)
+                else:
+                    try:
+                        fbo.clear(depth=1.0)
+                    except Exception:
+                        pass
                 return
             except Exception:
                 pass
         groups = self._build_shadow_groups(renderable_shadow)
+        if not groups:
+            try:
+                fbo.clear(depth=1.0)
+            except Exception:
+                pass
+            return
         self._render_geometry_with_groups(vp, fbo, groups, resolution)
 
     @staticmethod
     def _filter_by_range(shadow_groups: dict, light_x: float, light_y: float, light_z: float,
                          range_sq: float) -> dict:
+        try:
+            base_range = math.sqrt(max(float(range_sq), 0.0))
+        except Exception:
+            base_range = 0.0
         result = {}
         for mid, group in shadow_groups.items():
             near = []
@@ -853,7 +887,25 @@ class ShadowRenderer:
                 dx = p[3][0] - light_x
                 dy = p[3][1] - light_y
                 dz = p[3][2] - light_z
-                if dx * dx + dy * dy + dz * dz <= range_sq:
+                dsq = dx * dx + dy * dy + dz * dz
+                try:
+                    br = float(mesh.bounding_radius)
+                except Exception:
+                    br = 1.0
+                try:
+                    wm = tr.world_matrix._d
+                    sx = math.sqrt(wm[0, 0] * wm[0, 0] + wm[1, 0] * wm[1, 0] + wm[2, 0] * wm[2, 0])
+                    sy = math.sqrt(wm[0, 1] * wm[0, 1] + wm[1, 1] * wm[1, 1] + wm[2, 1] * wm[2, 1])
+                    sz = math.sqrt(wm[0, 2] * wm[0, 2] + wm[1, 2] * wm[1, 2] + wm[2, 2] * wm[2, 2])
+                    ms = sx
+                    if sy > ms:
+                        ms = sy
+                    if sz > ms:
+                        ms = sz
+                except Exception:
+                    ms = 1.0
+                rr = base_range + ms * br
+                if dsq <= rr * rr:
                     near.append((mesh, tr))
             if near:
                 result[mid] = near
@@ -1118,6 +1170,7 @@ class ShadowRenderer:
 
     def reset_shadow_state(self):
         self._cascade_splits = [0.0] * 4
+        self._cascade_valid = [False, False, False, False]
         self._has_point_shadow = False
         self._point_shadow_count = 0
         self._has_spot_shadow = False
@@ -1193,7 +1246,11 @@ class ShadowRenderer:
             lv = self._last_view
             cam_moved = True
             if self._last_view_valid and lv.shape == vd.shape:
-                if bool(np.array_equal(lv, vd)):
+                try:
+                    views_equal = bool(np.allclose(lv, vd, rtol=0.0, atol=1e-7))
+                except Exception:
+                    views_equal = False
+                if views_equal:
                     px, py, pz = self._last_light_dir_xyz
                     if abs(px - ld_x) < 0.002 and abs(py - ld_y) < 0.002 and abs(pz - ld_z) < 0.002:
                         cam_moved = False
@@ -1212,6 +1269,25 @@ class ShadowRenderer:
             self._shadow_cache_valid = False
         use_flat = self._flat_n > 0
         try:
+            if self._flat_n != self._prev_flat_n:
+                scene_moved = True
+            elif self._flat_n == 0:
+                scene_moved = False
+            else:
+                n_now = self._flat_n
+                dc = self._flat_centers[:n_now] - self._prev_flat_centers[:n_now]
+                dr = self._flat_radii[:n_now] - self._prev_flat_radii[:n_now]
+                scene_moved = bool(np.any(np.abs(dc) > 1e-4) or np.any(np.abs(dr) > 1e-5))
+        except Exception:
+            scene_moved = True
+        try:
+            self._prev_flat_centers = self._flat_centers[:self._flat_n].copy()
+            self._prev_flat_radii = self._flat_radii[:self._flat_n].copy()
+            self._prev_flat_n = self._flat_n
+        except Exception:
+            pass
+        stagger_allowed = (not cam_moved) and (not scene_moved)
+        try:
             light_dir_v = Vec3(ld_x, ld_y, ld_z)
         except Exception:
             light_dir_v = None
@@ -1224,7 +1300,7 @@ class ShadowRenderer:
         mmap = self._flat_mesh_map
         for ci in range(self._cascade_count):
             res = self._cascade_resolutions[ci] if ci < len(self._cascade_resolutions) else self._shadow_resolution
-            if not cam_moved:
+            if stagger_allowed and self._cascade_valid[ci]:
                 if ci == 3 and (self._temporal_frame % 3) != 0:
                     near_z = splits[ci]
                     continue
@@ -1252,33 +1328,26 @@ class ShadowRenderer:
                 vp = self._build_directional_cascade(light_dir_v, corners, splits[ci] - near_z, res)
                 np.copyto(self._vp_f32_buf, vp)
             self._light_space_matrices[ci] = self._vp_f32_buf.copy()
+            self._cascade_valid[ci] = True
             if use_flat:
-                thr = 0.0
-                if ci == 2:
-                    thr = 0.4
-                elif ci >= 3:
-                    thr = 0.8
                 try:
-                    if thr > 0.0:
-                        cnt = self._cull_flat_min_count(self._vp_f32_buf, thr)
-                    else:
-                        cnt = self._cull_flat_count(self._vp_f32_buf)
+                    cnt = self._cull_flat_count(self._vp_f32_buf)
                 except Exception:
                     cnt = 0
-                if cnt > 0:
-                    try:
+                try:
+                    self._shadow_fbos[ci].clear(depth=1.0)
+                    self._shadow_fbos[ci].use()
+                    self._ctx.viewport = (0, 0, res, res)
+                    if first_cascade:
+                        self._ctx.enable(moderngl.DEPTH_TEST)
+                        self._ctx.depth_mask = True
+                        self._ctx.disable(moderngl.CULL_FACE)
+                        first_cascade = False
+                    prog["u_light_vp"].write(self._vp_f32_buf.tobytes())
+                    if cnt > 0:
                         vis = self._flat_out[:cnt]
                         vis_mesh = self._flat_mesh_ids[:self._flat_n][vis]
                         uniq = np.unique(vis_mesh)
-                        self._shadow_fbos[ci].clear(depth=1.0)
-                        self._shadow_fbos[ci].use()
-                        self._ctx.viewport = (0, 0, res, res)
-                        if first_cascade:
-                            self._ctx.enable(moderngl.DEPTH_TEST)
-                            self._ctx.depth_mask = True
-                            self._ctx.disable(moderngl.CULL_FACE)
-                            first_cascade = False
-                        prog["u_light_vp"].write(self._vp_f32_buf.tobytes())
                         if supports_instancing:
                             if use_inst:
                                 prog["u_use_instancing"].value = 1
@@ -1312,9 +1381,12 @@ class ShadowRenderer:
                                 else:
                                     for _fi in sel:
                                         mesh.render(prog)
-                        self._maybe_render_skinned(self._vp_f32_buf, self._shadow_fbos[ci], res)
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
+                try:
+                    self._maybe_render_skinned(self._vp_f32_buf, self._shadow_fbos[ci], res)
+                except Exception:
+                    pass
                 near_z = splits[ci]
                 continue
             if _HAS_CYTHON and shadow_groups:
@@ -1351,7 +1423,15 @@ class ShadowRenderer:
                         for _, tr in group:
                             prog["u_model"].write(tr.world_matrix.to_f32().tobytes())
                             mesh.render(prog)
+            else:
+                try:
+                    self._shadow_fbos[ci].clear(depth=1.0)
+                except Exception:
+                    pass
+            try:
                 self._maybe_render_skinned(self._vp_f32_buf, self._shadow_fbos[ci], res)
+            except Exception:
+                pass
             near_z = splits[ci]
         if not first_cascade:
             self._ctx.enable(moderngl.CULL_FACE)
@@ -1678,6 +1758,13 @@ class ShadowRenderer:
                 self._maybe_render_skinned(vp, self._area_shadow_fbo, self._area_shadow_resolution)
             except Exception:
                 pass
+        else:
+            try:
+                self._area_shadow_fbo.use()
+                self._ctx.viewport = (0, 0, self._area_shadow_resolution, self._area_shadow_resolution)
+                self._area_shadow_fbo.clear(depth=1.0)
+            except Exception:
+                pass
 
     def render_projector_shadows(self, projectors, renderable_shadow, shadow_groups: dict = None):
         if self._flat_n == 0:
@@ -1753,6 +1840,13 @@ class ShadowRenderer:
             if cnt > 0:
                 try:
                     self._draw_flat_visible(vp, self._projector_shadow_fbos[i], self._shadow_resolution, cnt)
+                except Exception:
+                    pass
+            else:
+                try:
+                    self._projector_shadow_fbos[i].use()
+                    self._ctx.viewport = (0, 0, self._shadow_resolution, self._shadow_resolution)
+                    self._projector_shadow_fbos[i].clear(depth=1.0)
                 except Exception:
                     pass
         for i in range(len(projectors[:2]), 2):
@@ -1869,7 +1963,11 @@ class ShadowRenderer:
             if "u_cascade_count" in names:
                 prog["u_cascade_count"].value = 0
         if "u_shadow_bias" in names:
-            prog["u_shadow_bias"].value = 0.0008
+            prog["u_shadow_bias"].value = 0.0015
+        if "u_shadow_normal_bias" in names:
+            prog["u_shadow_normal_bias"].value = 0.02
+        if "u_shadow_slope_scale" in names:
+            prog["u_shadow_slope_scale"].value = 0.008
         if self._has_point_shadow and "u_point_shadow_count" in names:
             prog["u_point_shadow_count"].value = self._point_shadow_count
             if "u_point_shadow_vps" in names:

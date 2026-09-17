@@ -363,4 +363,4 @@ class WaterPassMixin:
         self._scene_depth_tex.use(14)
         self._shadows.set_uniforms(overlay_prog)
         if "u_shadow_bias" in overlay_prog:
-            overlay_prog["u_shadow_bias"].value = 0.0008
+            overlay_prog["u_shadow_bias"].value = 0.0015

@@ -32,17 +32,25 @@ uniform float u_shadow_bias;
 in vec2 v_uv;
 out vec4 frag_color;
 float sample_projector_shadow(sampler2D shadow_map, vec3 proj_coords) {
-    float current_depth = proj_coords.z - u_shadow_bias;
+    float slope_bias = clamp(fwidth(proj_coords.z) * 2.0, 0.0, 0.01);
+    float bias = u_shadow_bias + slope_bias;
+    float current_depth = proj_coords.z - bias;
     float result = 0.0;
     vec2 texel_size = 1.0 / vec2(textureSize(shadow_map, 0));
-    float radius = 0.75;
+    float radius = 1.0;
+    float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+    float ca = cos(rot);
+    float sa = sin(rot);
     float weight_sum = 0.0;
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
             float weight = 1.0;
             if (x == 0) weight += 1.0;
             if (y == 0) weight += 1.0;
-            float pcf_depth = texture(shadow_map, proj_coords.xy + vec2(x, y) * texel_size * radius).r;
+            vec2 o = vec2(float(x), float(y));
+            vec2 ro = vec2(o.x * ca - o.y * sa, o.x * sa + o.y * ca);
+            vec2 uv = clamp(proj_coords.xy + ro * texel_size * radius, vec2(0.001), vec2(0.999));
+            float pcf_depth = texture(shadow_map, uv).r;
             result += (current_depth > pcf_depth ? 1.0 : 0.0) * weight;
             weight_sum += weight;
         }

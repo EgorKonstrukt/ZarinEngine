@@ -226,6 +226,8 @@ uniform sampler2D u_shadow_map_3;
             uniform mat4 u_light_space_matrices[CASCADE_COUNT];
             uniform float u_cascade_splits[CASCADE_COUNT];
             uniform float u_shadow_bias;
+            uniform float u_shadow_normal_bias;
+            uniform float u_shadow_slope_scale;
             uniform int u_cascade_count;
             uniform sampler2D u_point_shadow_maps[MAX_POINT_SHADOWS * 6];
             uniform mat4 u_point_shadow_vps[MAX_POINT_SHADOWS * 6];
@@ -394,25 +396,49 @@ uniform sampler2D u_shadow_map_3;
                 for (int i = 0; i < CASCADE_COUNT - 1; i++) {
                     if (frag_depth > u_cascade_splits[i]) cascade_idx = i + 1;
                 }
-                vec4 light_space_pos = u_light_space_matrices[cascade_idx] * vec4(v_world_pos, 1.0);
+                vec3 SN = normalize(v_normal);
+                if (!gl_FrontFacing) {
+                    if (v_is_leaf > 0.5 || u_double_sided == 1) SN = -SN;
+                }
+                vec3 SL = vec3(0.0, 0.0, 1.0);
+                if (u_shadow_light_index >= 0 && u_shadow_light_index < MAX_LIGHTS) SL = normalize(-u_lights[u_shadow_light_index].direction);
+                float slope = 1.0 - clamp(dot(SN, SL), 0.0, 1.0);
+                float cascade_scale = 1.0 + float(cascade_idx) * 0.75;
+                vec3 bpos = v_world_pos + SN * (u_shadow_normal_bias * cascade_scale * (0.35 + 0.65 * slope));
+                vec4 light_space_pos = u_light_space_matrices[cascade_idx] * vec4(bpos, 1.0);
                 vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
                 proj_coords = proj_coords * 0.5 + 0.5;
                 if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
-                float current_depth = proj_coords.z - u_shadow_bias;
+                float bias = (u_shadow_bias + u_shadow_slope_scale * slope) * cascade_scale;
+                float current_depth = proj_coords.z - bias;
                 float result = 0.0;
-                vec2 texel_size = 1.0 / vec2(textureSize(u_shadow_map_0, 0));
+                float weight_sum = 0.0;
+                float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+                float ca = cos(rot);
+                float sa = sin(rot);
                 for (int i = -1; i <= 1; i++) {
                     for (int j = -1; j <= 1; j++) {
-                        vec2 offset = vec2(float(i), float(j)) * texel_size;
+                        vec2 texel_size = vec2(1.0 / 2048.0);
+                        if (cascade_idx == 0) texel_size = 1.0 / vec2(textureSize(u_shadow_map_0, 0));
+                        else if (cascade_idx == 1) texel_size = 1.0 / vec2(textureSize(u_shadow_map_1, 0));
+                        else if (cascade_idx == 2) texel_size = 1.0 / vec2(textureSize(u_shadow_map_2, 0));
+                        else texel_size = 1.0 / vec2(textureSize(u_shadow_map_3, 0));
+                        vec2 o = vec2(float(i), float(j));
+                        vec2 ro = vec2(o.x * ca - o.y * sa, o.x * sa + o.y * ca);
+                        vec2 uv = clamp(proj_coords.xy + ro * texel_size, vec2(0.001), vec2(0.999));
                         float pcf_depth = 0.0;
-                        if (cascade_idx == 0) pcf_depth = texture(u_shadow_map_0, proj_coords.xy + offset).r;
-                        else if (cascade_idx == 1) pcf_depth = texture(u_shadow_map_1, proj_coords.xy + offset).r;
-                        else if (cascade_idx == 2) pcf_depth = texture(u_shadow_map_2, proj_coords.xy + offset).r;
-                        else pcf_depth = texture(u_shadow_map_3, proj_coords.xy + offset).r;
-                        result += (current_depth > pcf_depth + u_shadow_bias) ? 1.0 : 0.0;
+                        if (cascade_idx == 0) pcf_depth = texture(u_shadow_map_0, uv).r;
+                        else if (cascade_idx == 1) pcf_depth = texture(u_shadow_map_1, uv).r;
+                        else if (cascade_idx == 2) pcf_depth = texture(u_shadow_map_2, uv).r;
+                        else pcf_depth = texture(u_shadow_map_3, uv).r;
+                        float w = 1.0;
+                        if (i == 0) w += 1.0;
+                        if (j == 0) w += 1.0;
+                        result += (current_depth > pcf_depth ? 1.0 : 0.0) * w;
+                        weight_sum += w;
                     }
                 }
-                return 1.0 - result / 9.0;
+                return 1.0 - result / max(weight_sum, 1.0);
             }
 
             void main() {
@@ -667,6 +693,8 @@ uniform sampler2D u_shadow_map_3;
             uniform mat4 u_light_space_matrices[CASCADE_COUNT];
             uniform float u_cascade_splits[CASCADE_COUNT];
             uniform float u_shadow_bias;
+            uniform float u_shadow_normal_bias;
+            uniform float u_shadow_slope_scale;
             uniform int u_cascade_count;
             uniform sampler2D u_point_shadow_maps[MAX_POINT_SHADOWS * 6];
             uniform mat4 u_point_shadow_vps[MAX_POINT_SHADOWS * 6];
@@ -835,25 +863,49 @@ uniform sampler2D u_shadow_map_3;
                 for (int i = 0; i < CASCADE_COUNT - 1; i++) {
                     if (frag_depth > u_cascade_splits[i]) cascade_idx = i + 1;
                 }
-                vec4 light_space_pos = u_light_space_matrices[cascade_idx] * vec4(v_world_pos, 1.0);
+                vec3 SN = normalize(v_normal);
+                if (!gl_FrontFacing) {
+                    if (v_is_leaf > 0.5 || u_double_sided == 1) SN = -SN;
+                }
+                vec3 SL = vec3(0.0, 0.0, 1.0);
+                if (u_shadow_light_index >= 0 && u_shadow_light_index < MAX_LIGHTS) SL = normalize(-u_lights[u_shadow_light_index].direction);
+                float slope = 1.0 - clamp(dot(SN, SL), 0.0, 1.0);
+                float cascade_scale = 1.0 + float(cascade_idx) * 0.75;
+                vec3 bpos = v_world_pos + SN * (u_shadow_normal_bias * cascade_scale * (0.35 + 0.65 * slope));
+                vec4 light_space_pos = u_light_space_matrices[cascade_idx] * vec4(bpos, 1.0);
                 vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
                 proj_coords = proj_coords * 0.5 + 0.5;
                 if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
-                float current_depth = proj_coords.z - u_shadow_bias;
+                float bias = (u_shadow_bias + u_shadow_slope_scale * slope) * cascade_scale;
+                float current_depth = proj_coords.z - bias;
                 float result = 0.0;
-                vec2 texel_size = 1.0 / vec2(textureSize(u_shadow_map_0, 0));
+                float weight_sum = 0.0;
+                float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+                float ca = cos(rot);
+                float sa = sin(rot);
                 for (int i = -1; i <= 1; i++) {
                     for (int j = -1; j <= 1; j++) {
-                        vec2 offset = vec2(float(i), float(j)) * texel_size;
+                        vec2 texel_size = vec2(1.0 / 2048.0);
+                        if (cascade_idx == 0) texel_size = 1.0 / vec2(textureSize(u_shadow_map_0, 0));
+                        else if (cascade_idx == 1) texel_size = 1.0 / vec2(textureSize(u_shadow_map_1, 0));
+                        else if (cascade_idx == 2) texel_size = 1.0 / vec2(textureSize(u_shadow_map_2, 0));
+                        else texel_size = 1.0 / vec2(textureSize(u_shadow_map_3, 0));
+                        vec2 o = vec2(float(i), float(j));
+                        vec2 ro = vec2(o.x * ca - o.y * sa, o.x * sa + o.y * ca);
+                        vec2 uv = clamp(proj_coords.xy + ro * texel_size, vec2(0.001), vec2(0.999));
                         float pcf_depth = 0.0;
-                        if (cascade_idx == 0) pcf_depth = texture(u_shadow_map_0, proj_coords.xy + offset).r;
-                        else if (cascade_idx == 1) pcf_depth = texture(u_shadow_map_1, proj_coords.xy + offset).r;
-                        else if (cascade_idx == 2) pcf_depth = texture(u_shadow_map_2, proj_coords.xy + offset).r;
-                        else pcf_depth = texture(u_shadow_map_3, proj_coords.xy + offset).r;
-                        result += (current_depth > pcf_depth + u_shadow_bias) ? 1.0 : 0.0;
+                        if (cascade_idx == 0) pcf_depth = texture(u_shadow_map_0, uv).r;
+                        else if (cascade_idx == 1) pcf_depth = texture(u_shadow_map_1, uv).r;
+                        else if (cascade_idx == 2) pcf_depth = texture(u_shadow_map_2, uv).r;
+                        else pcf_depth = texture(u_shadow_map_3, uv).r;
+                        float w = 1.0;
+                        if (i == 0) w += 1.0;
+                        if (j == 0) w += 1.0;
+                        result += (current_depth > pcf_depth ? 1.0 : 0.0) * w;
+                        weight_sum += w;
                     }
                 }
-                return 1.0 - result / 9.0;
+                return 1.0 - result / max(weight_sum, 1.0);
             }
 
             void main() {
