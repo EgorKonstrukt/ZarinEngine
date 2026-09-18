@@ -917,12 +917,15 @@ class Sky(Component):
     def _ibl_settings_key(self, atmos) -> tuple:
         key = self._night_settings_key()
         if atmos is not None and getattr(atmos, "enabled", False):
-            key = key + (
-                atmos._intensity, atmos._sun_intensity, atmos._resolution_scale,
-                atmos._ozone_factor, atmos._aerosol_scale,
-                atmos._sun_angular_radius, atmos._sun_limb_darkening,
-                atmos._sun_convergence, atmos._color_temperature,
-            )
+            try:
+                key = key + atmos.ibl_key()
+            except Exception:
+                key = key + (
+                    atmos._intensity, atmos._sun_intensity, atmos._resolution_scale,
+                    atmos._ozone_factor, atmos._aerosol_scale,
+                    atmos._sun_angular_radius, atmos._sun_limb_darkening,
+                    atmos._sun_convergence, atmos._color_temperature,
+                )
         return key
 
     def _apply_night_sky(self, prog, ctx=None):

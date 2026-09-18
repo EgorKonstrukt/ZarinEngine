@@ -13,6 +13,15 @@ ComputeShader "Zarin/Atmosphere"
         _SunIntensity("Sun Intensity", Float) = 1
         _OzoneFactor("Ozone Factor", Float) = 1
         _AerosolScale("Aerosol Scale", Float) = 1
+        _PlanetRadius("Planet Radius (km)", Float) = 6360
+        _AtmosphereHeight("Atmosphere Height (km)", Float) = 60
+        _RayleighScale("Rayleigh Scale", Float) = 1
+        _MieAnisotropy("Mie Anisotropy", Float) = 0.76
+        _MieAlbedo("Mie Albedo", Float) = 0.9
+        _GroundAlbedo("Ground Albedo", Float) = 0.3
+        _Multiscatter("Multiscatter Strength", Float) = 1
+        _CameraHeight("Camera Height (km)", Float) = 0.02
+        _HorizonHaze("Horizon Haze", Float) = 0.4
     }
 
     GLSLPROGRAM
@@ -20,20 +29,12 @@ ComputeShader "Zarin/Atmosphere"
     layout(local_size_x = 8, local_size_y = 8) in;
 
     #define PI 3.14159265359
-
-    // Physical atmosphere parameters (Bruneton-style)
-    const float Rg = 6360.0;          // ground radius (km)
-    const float Rt = 6420.0;          // atmosphere top radius (km)
-    const float Hr = 8.0;             // rayleigh scale height (km)
-    const float Hm = 1.2;             // mie scale height (km)
-    const float M_KM = 1000.0;        // meters per km
-    const vec3 betaR = vec3(5.802e-6, 13.558e-6, 33.1e-6);   // rayleigh scattering (1/m)
-    const vec3 betaM = vec3(3.996e-6, 3.996e-6, 3.996e-6);   // mie scattering (1/m)
-    // Ozone absorption in the Chappuis band (Bruneton 2017 constants). Ozone
-    // absorbs but does not scatter, so it only contributes to extinction.
-    const vec3 betaO = vec3(0.650e-6, 1.881e-6, 0.085e-6);   // ozone absorption (1/m)
-    const float g = 0.8;
-    const float CAM_HEIGHT_KM = 0.02; // camera altitude above ground (km)
+    #define M_KM 1000.0
+    #define BETA_R vec3(5.802e-6, 13.558e-6, 33.1e-6)
+    #define BETA_M vec3(3.996e-6, 3.996e-6, 3.996e-6)
+    #define BETA_O vec3(0.650e-6, 1.881e-6, 0.085e-6)
+    #define HR 8.0
+    #define HM 1.2
 
     layout(rgba32f, binding = 0) uniform image2D transmittance_lut;
     layout(rgba32f, binding = 1) uniform image2D sky_lut;
@@ -44,6 +45,15 @@ ComputeShader "Zarin/Atmosphere"
     uniform float u_sun_intensity;
     uniform float u_ozone_factor;
     uniform float u_aerosol_scale;
+    uniform float u_planet_radius;
+    uniform float u_atmosphere_height;
+    uniform float u_rayleigh_scale;
+    uniform float u_mie_g;
+    uniform float u_mie_albedo;
+    uniform float u_ground_albedo;
+    uniform float u_ms_strength;
+    uniform float u_camera_height_km;
+    uniform float u_horizon_haze;
 
     bool intersect_sphere(vec3 o, vec3 d, float radius, out float tmin, out float tmax) {
         float b = dot(o, d);
@@ -56,22 +66,30 @@ ComputeShader "Zarin/Atmosphere"
         return true;
     }
 
-    // Ozone density: concentration peaks around 25 km altitude.
     float ozone_density(float h_km) {
-        float x = (h_km - 25.0) / 15.0;
-        return u_ozone_factor * exp(-x * x);
+        float x = (h_km - 25.0) / 12.0;
+        return exp(-x * x);
     }
 
-    vec3 extinction_at(float h_km) {
-        return betaR * exp(-h_km / Hr)
-             + betaM * u_aerosol_scale * exp(-h_km / Hm)
-             + betaO * ozone_density(h_km) * 0.55;
+    float haze_factor(float h_km) {
+        return 1.0 + u_horizon_haze * exp(-max(h_km, 0.0) / 0.4);
     }
 
-    // ---- Transmittance LUT ----
-    // Texel u: r = Rg + (Rt - Rg) * u ; texel v: mu = 2v - 1
+    void extinction_scattering(float h_km, out vec3 ext, out vec3 scat_r, out vec3 scat_m) {
+        vec3 bR = BETA_R * u_rayleigh_scale;
+        vec3 bM = BETA_M * u_aerosol_scale * haze_factor(h_km);
+        float od = ozone_density(h_km) * u_ozone_factor;
+        float er = exp(-h_km / HR);
+        float em = exp(-h_km / HM);
+        scat_r = bR * er;
+        scat_m = bM * em * clamp(u_mie_albedo, 0.0, 1.0);
+        ext = bR * er + bM * em + BETA_O * od;
+    }
+
     vec2 transmittance_to_uv(float r, float mu) {
-        float u = clamp((r - Rg) / (Rt - Rg), 0.0, 1.0);
+        float Rg = u_planet_radius;
+        float Rt = Rg + u_atmosphere_height;
+        float u = clamp((r - Rg) / max(Rt - Rg, 1e-4), 0.0, 1.0);
         float v = mu * 0.5 + 0.5;
         return vec2(u, v);
     }
@@ -81,16 +99,29 @@ ComputeShader "Zarin/Atmosphere"
         return texture(u_transmittance_lut, uv).rgb;
     }
 
+    float rayleigh_phase(float mu) {
+        return 3.0 / (16.0 * PI) * (1.0 + mu * mu);
+    }
+
+    float mie_phase(float mu) {
+        float g = clamp(u_mie_g, -0.9, 0.99);
+        float gg = g * g;
+        float num = (1.0 - gg) * (1.0 + mu * mu);
+        float den = (2.0 + gg) * pow(max(1.0 + gg - 2.0 * g * mu, 1e-5), 1.5);
+        return (3.0 / (8.0 * PI)) * num / max(den, 1e-4);
+    }
+
     void compute_transmittance() {
         ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
         ivec2 size = imageSize(transmittance_lut);
         if (pix.x >= size.x || pix.y >= size.y) return;
+        float Rg = u_planet_radius;
+        float Rt = Rg + u_atmosphere_height;
         vec2 uv = (vec2(pix) + 0.5) / vec2(size);
         float r = mix(Rg, Rt, uv.x);
         float mu = uv.y * 2.0 - 1.0;
         vec3 o = vec3(0.0, r, 0.0);
         vec3 d = normalize(vec3(sqrt(max(1.0 - mu * mu, 0.0)), mu, 0.0));
-
         float tEnter, tExit, tGroundMin, tGroundMax;
         intersect_sphere(o, d, Rt, tEnter, tExit);
         if (intersect_sphere(o, d, Rg, tGroundMin, tGroundMax) && tGroundMin > 0.0) {
@@ -99,16 +130,17 @@ ComputeShader "Zarin/Atmosphere"
                 return;
             }
         }
-
-        const int STEPS = 32;
+        tExit = max(tExit, 0.0);
+        const int STEPS = 48;
         vec3 optical = vec3(0.0);
         float dt_km = tExit / float(STEPS);
         float dt_m = dt_km * M_KM;
         for (int i = 0; i < STEPS; i++) {
             vec3 p = o + d * (float(i) + 0.5) * dt_km;
             float h = length(p) - Rg;
-            vec3 beta = extinction_at(h);
-            optical += beta * dt_m;
+            vec3 ext, sr, sm;
+            extinction_scattering(h, ext, sr, sm);
+            optical += ext * dt_m;
         }
         imageStore(transmittance_lut, pix, vec4(exp(-optical), 1.0));
     }
@@ -117,49 +149,83 @@ ComputeShader "Zarin/Atmosphere"
         ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
         ivec2 size = imageSize(sky_lut);
         if (pix.x >= size.x || pix.y >= size.y) return;
-
+        float Rg = u_planet_radius;
+        float Rt = Rg + u_atmosphere_height;
+        float cam_h = max(u_camera_height_km, 0.005);
         vec2 uv = (vec2(pix) + 0.5) / vec2(size);
-        float theta = uv.y * (PI * 0.5);
         float phi = uv.x * 2.0 * PI - PI;
-        vec3 dir = vec3(sin(theta) * cos(phi), cos(theta), sin(theta) * sin(phi));
-
-        vec3 o = vec3(0.0, Rg + CAM_HEIGHT_KM, 0.0);
+        float elev = (uv.y - 0.5) * PI;
+        float ce = cos(elev);
+        vec3 dir = vec3(ce * cos(phi), sin(elev), ce * sin(phi));
+        if (pix.y == size.y - 1) {
+            dir = vec3(0.0, 1.0, 0.0);
+        } else if (pix.y == 0) {
+            dir = vec3(0.0, -1.0, 0.0);
+        }
+        vec3 o = vec3(0.0, Rg + cam_h, 0.0);
         float tEnter, tExit;
         if (!intersect_sphere(o, dir, Rt, tEnter, tExit)) {
             imageStore(sky_lut, pix, vec4(0.0));
             return;
         }
+        tExit = max(tExit, 0.0);
         float tEnd = tExit;
+        bool hit_ground = false;
         float tGroundMin, tGroundMax;
-        if (dir.y < 0.0 && intersect_sphere(o, dir, Rg, tGroundMin, tGroundMax) && tGroundMin > 0.0) {
-            tEnd = min(tEnd, tGroundMin);
+        if (intersect_sphere(o, dir, Rg, tGroundMin, tGroundMax) && tGroundMin > 0.0) {
+            if (tGroundMin < tEnd) {
+                tEnd = tGroundMin;
+                hit_ground = true;
+            }
         }
-
-        const int STEPS = 24;
+        if (tEnd <= 0.0) {
+            imageStore(sky_lut, pix, vec4(0.0));
+            return;
+        }
+        const int STEPS = 40;
         vec3 sun_dir = normalize(u_sun_direction);
         vec3 in_scatter = vec3(0.0);
         vec3 transmittance = vec3(1.0);
-        float cos_theta = dot(dir, sun_dir);
-        float rayleigh_phase = 3.0 / (16.0 * PI) * (1.0 + cos_theta * cos_theta);
-        float gg = g * g;
-        float mie_phase = (1.0 - gg) / max(pow(1.0 + gg - 2.0 * g * cos_theta, 1.5), 1e-4) / (4.0 * PI);
-
+        float cos_gamma = dot(dir, sun_dir);
+        float pr = rayleigh_phase(cos_gamma);
+        float pm = mie_phase(cos_gamma);
         for (int i = 0; i < STEPS; i++) {
-            float frac = pow(float(i + 1) / float(STEPS), 1.5);
-            float t = tEnd * frac;
+            float f0 = pow(float(i) / float(STEPS), 1.5);
+            float f1 = pow(float(i + 1) / float(STEPS), 1.5);
+            float fm = (f0 + f1) * 0.5;
+            float fw = f1 - f0;
+            float t = fm * tEnd;
+            float dt = fw * tEnd * M_KM;
             vec3 p = o + dir * t;
             float h = length(p) - Rg;
-            if (h < 0.0) break;
-            vec3 beta = extinction_at(h);
-            float dt = tEnd * (pow(float(i + 1) / float(STEPS), 1.5) - pow(float(i) / float(STEPS), 1.5)) * M_KM;
+            if (h < -0.05) continue;
+            h = max(h, 0.0);
+            vec3 ext, sr, sm;
+            extinction_scattering(h, ext, sr, sm);
             float mu_sun = dot(normalize(p), sun_dir);
             vec3 sun_trans = sample_transmittance(length(p), mu_sun);
-            vec3 scatter = u_sun_color * u_sun_intensity * sun_trans
-                         * (betaR * rayleigh_phase + betaM * u_aerosol_scale * mie_phase);
+            vec3 scatter = u_sun_color * u_sun_intensity * sun_trans * (sr * pr + sm * pm);
             in_scatter += transmittance * scatter * dt;
-            transmittance *= exp(-beta * dt);
+            transmittance *= exp(-ext * dt);
         }
-        imageStore(sky_lut, pix, vec4(in_scatter, 1.0));
+        if (hit_ground) {
+            vec3 gp = o + dir * tEnd;
+            vec3 ng = normalize(gp);
+            float ndl = max(dot(ng, sun_dir), 0.0);
+            vec3 gtrans = sample_transmittance(length(gp), dot(ng, sun_dir));
+            float alb = clamp(u_ground_albedo, 0.0, 1.0);
+            vec3 ground_direct = u_sun_color * u_sun_intensity * gtrans * ndl * (alb / PI);
+            float day_mix = clamp(sun_dir.y * 0.5 + 0.5, 0.0, 1.0);
+            vec3 ground_ambient = alb * u_sun_color * u_sun_intensity * vec3(0.020, 0.025, 0.035) * (0.2 + 0.8 * day_mix);
+            in_scatter += transmittance * (ground_direct + ground_ambient);
+        }
+        vec3 sea_ext, sea_sr, sea_sm;
+        extinction_scattering(0.0, sea_ext, sea_sr, sea_sm);
+        vec3 sea_scat = sea_sr + sea_sm;
+        vec3 sea_albedo = clamp(sea_scat / max(sea_ext, vec3(1e-9)), vec3(0.0), vec3(1.0));
+        vec3 ms_gain = vec3(1.0) + clamp(u_ms_strength, 0.0, 2.0) * sea_albedo * (vec3(1.0) - transmittance) * 1.5;
+        in_scatter *= ms_gain;
+        imageStore(sky_lut, pix, vec4(max(in_scatter, vec3(0.0)), 1.0));
     }
 
     void main() {

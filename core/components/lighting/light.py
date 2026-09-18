@@ -165,32 +165,51 @@ class Light(Component):
 
     @staticmethod
     def compute_sun_light(sun_dir: Vec3, color_temp: float = 5778.0,
-                          aerosol_scale: float = 1.0,
-                          use_atmosphere: bool = True) -> tuple[list[float], float]:
+                           aerosol_scale: float = 1.0,
+                           use_atmosphere: bool = True,
+                           ozone_factor: float = 1.0,
+                           rayleigh_scale: float = 1.0,
+                           mie_albedo: float = 0.9) -> tuple[list[float], float]:
         elevation = float(sun_dir.y)
         vis = Light._smoothstep(-0.14, 0.05, elevation)
+        day = Light._smoothstep(-0.08, 0.12, elevation)
         if use_atmosphere:
-            eff = max(elevation, 1e-4)
+            refr = 0.0003 / max(math.tan(math.radians(max(math.degrees(max(elevation, -0.05)) + 7.31 / (math.degrees(max(elevation, -0.05)) + 4.4), 0.5))), 0.02)
+            eff = max(elevation + refr * 0.3, 1e-4)
             airmass = 1.0 / (eff + 0.50572 * math.pow(math.degrees(eff) + 6.07995, -1.6364))
+            airmass = min(airmass, 38.0)
             wp = Light._planck_white(color_temp)
-            tau_r = [5.802e-6 * 8000.0 * airmass,
-                     13.558e-6 * 8000.0 * airmass,
-                     33.1e-6 * 8000.0 * airmass]
-            tau_m = 3.996e-6 * 1200.0 * max(float(aerosol_scale), 0.0) * airmass
-            color = [wp[i] * math.exp(-(tau_r[i] + tau_m)) for i in range(3)]
+            rs = max(float(rayleigh_scale), 0.0)
+            ae = max(float(aerosol_scale), 0.0)
+            oz = max(float(ozone_factor), 0.0)
+            alb = min(max(float(mie_albedo), 0.0), 1.0)
+            tau_r = [5.802e-6 * 8000.0 * rs * airmass,
+                     13.558e-6 * 8000.0 * rs * airmass,
+                     33.1e-6 * 8000.0 * rs * airmass]
+            tau_m_ext = 3.996e-6 * 1200.0 * ae * airmass
+            tau_o = [0.650e-6 * 15000.0 * oz * airmass,
+                     1.881e-6 * 15000.0 * oz * airmass,
+                     0.085e-6 * 15000.0 * oz * airmass]
+            color = [wp[i] * math.exp(-(tau_r[i] + tau_m_ext + tau_o[i])) for i in range(3)]
             luma = 0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]
             if luma > 1e-6:
                 color = [c / luma for c in color]
             else:
                 color = [1.0, 0.7, 0.4]
-            tau_luma = (0.2126 * tau_r[0] + 0.7152 * tau_r[1]
-                        + 0.0722 * tau_r[2] + tau_m)
+            tau_luma = (0.2126 * (tau_r[0] + tau_o[0]) + 0.7152 * (tau_r[1] + tau_o[1])
+                        + 0.0722 * (tau_r[2] + tau_o[2]) + tau_m_ext * (1.0 - alb * 0.5))
+            twilight = math.exp(-max(-elevation, 0.0) * 12.0) * (1.0 - day)
+            sunset = [1.0, 0.32, 0.12]
+            tw = min(max(twilight * 2.2, 0.0), 1.0)
+            color = [color[i] + (sunset[i] - color[i]) * tw * 0.65 for i in range(3)]
         else:
             color = list(Light._planck_white(color_temp))
             tau_luma = 0.0
+            twilight = 0.0
         intensity = 1.2 * vis * (0.55 + 0.45 * (1.0 - math.exp(-max(elevation, 0.0) * 4.0)))
         if use_atmosphere:
             intensity *= (0.5 + 0.5 * math.exp(-tau_luma))
+            intensity += 0.35 * math.exp(-max(-elevation, 0.0) * 14.0) * (1.0 - day) * math.exp(-tau_luma * 0.25)
         night = 1.0 - vis
         moon_c = [0.3, 0.35, 0.55]
         k = 1.0 - night
@@ -205,6 +224,9 @@ class Light(Component):
             if getattr(light, "procedural_sky_lighting", False):
                 color_temp = 5778.0
                 aerosol = 1.0
+                ozone = 1.0
+                rayleigh = 1.0
+                albedo = 0.9
                 try:
                     from core.components.rendering.environment.atmosphere import Atmosphere
                     atmos = next((a for a in Atmosphere._registry
@@ -212,9 +234,12 @@ class Light(Component):
                     if atmos is not None:
                         color_temp = float(getattr(atmos, "_color_temperature", 5778.0))
                         aerosol = float(getattr(atmos, "_aerosol_scale", 1.0))
+                        ozone = float(getattr(atmos, "_ozone_factor", 1.0))
+                        rayleigh = float(getattr(atmos, "_rayleigh_scale", 1.0))
+                        albedo = float(getattr(atmos, "_mie_albedo", 0.9))
                 except Exception:
                     pass
-                c, i = Light.compute_sun_light(-transform.forward, color_temp, aerosol)
+                c, i = Light.compute_sun_light(-transform.forward, color_temp, aerosol, True, ozone, rayleigh, albedo)
                 try:
                     from core.components.rendering.environment.sky import Sky
                     sky = next((s for s in Sky._registry

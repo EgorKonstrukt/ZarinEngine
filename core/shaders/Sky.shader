@@ -69,6 +69,9 @@ Shader "Zarin/Sky"
             uniform sampler2D u_sky_lut;
             uniform float u_use_atmosphere;
             uniform float u_atmosphere_intensity;
+            uniform float u_planet_radius;
+            uniform float u_atmosphere_height;
+            uniform float u_camera_height_km;
 
             uniform float _NightSkyEnabled;
             uniform float _StarEnabled;
@@ -94,9 +97,20 @@ Shader "Zarin/Sky"
             uniform float u_time;
 
             const float PI = 3.14159265359;
-            const float Rg = 6360.0;
-            const float Rt = 6420.0;
-            const float CAM_HEIGHT_KM = 0.02;
+
+            float sky_Rg() {
+                return (u_planet_radius > 100.0) ? u_planet_radius : 6360.0;
+            }
+
+            float sky_Rt() {
+                float rg = sky_Rg();
+                float h = (u_atmosphere_height > 1.0) ? u_atmosphere_height : 60.0;
+                return rg + h;
+            }
+
+            float sky_cam() {
+                return (u_camera_height_km > 0.0005) ? u_camera_height_km : 0.02;
+            }
 
             float hash12(vec2 p) {
                 vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -168,16 +182,33 @@ Shader "Zarin/Sky"
             }
 
             vec3 sample_transmittance_dir(vec3 dir) {
+                float Rg = sky_Rg();
+                float Rt = sky_Rt();
                 float mu = clamp(dot(normalize(dir), vec3(0.0, 1.0, 0.0)), -1.0, 1.0);
-                float u = (Rg + CAM_HEIGHT_KM - Rg) / (Rt - Rg);
+                float u = sky_cam() / max(Rt - Rg, 1e-4);
                 float v = mu * 0.5 + 0.5;
                 return texture(u_transmittance_lut, vec2(u, v)).rgb;
+            }
+
+            vec3 refracted_sun(vec3 s) {
+                float e = asin(clamp(s.y, -1.0, 1.0));
+                float ed = degrees(e);
+                float eplus = max(ed + 4.4, 0.6);
+                float denom = max(ed + 7.31 / eplus, 0.5);
+                float rmin = 0.0167 / tan(radians(denom));
+                float lift = radians(rmin / 60.0);
+                float e2 = e + lift;
+                vec2 h = s.xz;
+                float l = length(h);
+                vec2 hn = (l > 1e-5) ? (h / l) : vec2(1.0, 0.0);
+                return vec3(hn.x * cos(e2), sin(e2), hn.y * cos(e2));
             }
 
             float sun_disk_factor(vec3 dir, vec3 sun_dir) {
                 float radius = radians(max(_SunAngularRadius, 0.01));
                 float ry = radius * mix(1.0, 0.35, smoothstep(0.0, -0.08, sun_dir.y));
                 vec3 u = sun_dir;
+                if (dot(dir, u) <= 0.0) return 0.0;
                 vec3 v = cross(vec3(0.0, 1.0, 0.0), u);
                 float vl = length(v);
                 v = (vl > 1e-5) ? (v / vl) : vec3(1.0, 0.0, 0.0);
@@ -250,6 +281,7 @@ Shader "Zarin/Sky"
         v = (vl > 1e-5) ? (v / vl) : vec3(1.0, 0.0, 0.0);
         vec3 w = cross(v, u);
         vec3 lp = vec3(dot(dir, v), dot(dir, w), dot(dir, u));
+        if (lp.z <= 0.0) return vec3(0.0);
         float radius = radians(max(_MoonSize, 0.05));
         float dist = length(lp.xy);
         float disk = 1.0 - smoothstep(radius * 0.92, radius * 1.06, dist);
@@ -297,16 +329,21 @@ Shader "Zarin/Sky"
                 vec3 sun_contrib = vec3(0.0);
                 vec3 color;
                 if (u_use_atmosphere > 0.5) {
-                    float theta = acos(clamp(dir.y, 0.0, 1.0));
+                    float elev = asin(clamp(dir.y, -1.0, 1.0));
                     float phi = atan(dir.z, dir.x);
-                    vec2 sky_uv = vec2(phi / 6.28318530718 + 0.5, theta / 1.57079632679);
+                    vec2 sky_uv = vec2(phi / 6.28318530718 + 0.5, elev / 3.14159265359 + 0.5);
                     color = texture(u_sky_lut, sky_uv).rgb * u_atmosphere_intensity;
                     color = max(color, vec3(0.0));
                     vec3 sun_trans = sample_transmittance_dir(sun_dir);
+                    vec3 sun_vis = refracted_sun(sun_dir);
+                    float cos_g = max(dot(dir, sun_dir), 0.0);
+                    float halo_tight = exp(-(1.0 - cos_g) * 1500.0);
+                    float halo_wide = exp(-(1.0 - cos_g) * 60.0);
+                    vec3 halo = sun_trans * _SunColor * _SunIntensity * (halo_tight * 0.15 + halo_wide * 0.015) * u_atmosphere_intensity;
                     sun_contrib = _SunColor * _SunIntensity * sun_trans
-                                * sun_disk_factor(dir, sun_dir)
+                                * sun_disk_factor(dir, sun_vis)
                                 * u_atmosphere_intensity * 2.0;
-                    color += sun_contrib;
+                    color += sun_contrib + halo;
                     color *= day_fade;
                 } else if (u_use_env > 0.5) {
                     vec2 uv = vec2(0.5 + atan(dir.z, dir.x) / 6.28318530718, acos(clamp(dir.y, -1.0, 1.0)) / 3.14159265359);
@@ -369,6 +406,8 @@ Shader "Zarin/Sky"
                                * ray_fall * ray_mask * 0.8;
                     }
                 }
+                float dith = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+                color += (dith - 0.5) * (1.5 / 255.0);
                 frag_color = vec4(color, 1.0);
             }
             ENDGLSL

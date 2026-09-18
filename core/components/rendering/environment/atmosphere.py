@@ -3,11 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2026 Zarrakun
-#
-# Precomputed Atmospheric Scattering (Bruneton-style LUTs).
-# The Atmosphere component dispatches a compute shader that fills a
-# transmittance LUT and a sky-view radiance LUT, caches them, and makes
-# them available to the Sky shader for real-time sampling.
 
 from __future__ import annotations
 import os
@@ -18,13 +13,39 @@ from core.ecs.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.foundation.logger import Logger
 
-_SHADER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))))), "shaders", "Atmosphere.compute")
+_SHADERS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))), "shaders")
+_SHADER_PATH = os.path.join(_SHADERS_DIR, "Atmosphere.compute")
 
-_TRANSMITTANCE_W = 64
-_TRANSMITTANCE_H = 16
-_SKY_W = 192
-_SKY_H = 108
+_TRANSMITTANCE_W = 128
+_TRANSMITTANCE_H = 32
+_SKY_W = 256
+_SKY_H = 128
+
+_SUN_DIR_QUANT = 10000.0
+_SUN_COLOR_QUANT = 1000.0
+
+
+def _quant_dir(v) -> tuple:
+    try:
+        import math as _m
+        x, y, z = float(v[0]), float(v[1]), float(v[2])
+        n = _m.sqrt(x * x + y * y + z * z)
+        if n < 1e-9:
+            return (0.0, 1.0, 0.0)
+        x, y, z = x / n, y / n, z / n
+        return (round(x * _SUN_DIR_QUANT) / _SUN_DIR_QUANT,
+                round(y * _SUN_DIR_QUANT) / _SUN_DIR_QUANT,
+                round(z * _SUN_DIR_QUANT) / _SUN_DIR_QUANT)
+    except Exception:
+        return (0.0, 1.0, 0.0)
+
+
+def _quant_color(v) -> tuple:
+    try:
+        return tuple(round(float(c) * _SUN_COLOR_QUANT) / _SUN_COLOR_QUANT for c in v)
+    except Exception:
+        return (1.0, 0.95, 0.85)
 
 
 def _compile_atmosphere_compute(ctx: moderngl.Context) -> Optional[moderngl.ComputeShader]:
@@ -60,6 +81,15 @@ class Atmosphere(Component):
             InspectorField("_resolution_scale", "LUT Resolution", FieldType.SLIDER, min_val=0.25, max_val=1.0, step=0.25, decimals=2),
             InspectorField("_ozone_factor", "Ozone Factor", FieldType.SLIDER, min_val=0.0, max_val=3.0, step=0.1, decimals=1),
             InspectorField("_aerosol_scale", "Aerosol Scale", FieldType.SLIDER, min_val=0.0, max_val=5.0, step=0.1, decimals=1),
+            InspectorField("_rayleigh_scale", "Rayleigh Scale", FieldType.SLIDER, min_val=0.0, max_val=3.0, step=0.05, decimals=2),
+            InspectorField("_mie_anisotropy", "Mie Anisotropy", FieldType.SLIDER, min_val=0.0, max_val=0.95, step=0.01, decimals=2),
+            InspectorField("_mie_albedo", "Mie Albedo", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
+            InspectorField("_ground_albedo", "Ground Albedo", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
+            InspectorField("_multiscatter_strength", "Multiscatter", FieldType.SLIDER, min_val=0.0, max_val=2.0, step=0.05, decimals=2),
+            InspectorField("_horizon_haze", "Horizon Haze", FieldType.SLIDER, min_val=0.0, max_val=2.0, step=0.05, decimals=2),
+            InspectorField("_planet_radius", "Planet Radius (km)", FieldType.SLIDER, min_val=6000.0, max_val=6500.0, step=1.0, decimals=0),
+            InspectorField("_atmosphere_height", "Atmosphere Height (km)", FieldType.SLIDER, min_val=20.0, max_val=120.0, step=1.0, decimals=0),
+            InspectorField("_camera_height_m", "Camera Height (m)", FieldType.SLIDER, min_val=0.0, max_val=8000.0, step=10.0, decimals=0),
             InspectorField("_sun_angular_radius", "Sun Angular Radius (deg)", FieldType.SLIDER, min_val=0.05, max_val=1.0, step=0.01, decimals=2),
             InspectorField("_sun_limb_darkening", "Sun Limb Darkening", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.05, decimals=2),
             InspectorField("_sun_convergence", "Sun Edge Softness", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.05, decimals=2),
@@ -73,11 +103,19 @@ class Atmosphere(Component):
         self._resolution_scale: float = 1.0
         self._ozone_factor: float = 1.0
         self._aerosol_scale: float = 1.0
+        self._rayleigh_scale: float = 1.0
+        self._mie_anisotropy: float = 0.76
+        self._mie_albedo: float = 0.9
+        self._ground_albedo: float = 0.3
+        self._multiscatter_strength: float = 1.0
+        self._horizon_haze: float = 0.4
+        self._planet_radius: float = 6360.0
+        self._atmosphere_height: float = 60.0
+        self._camera_height_m: float = 20.0
         self._sun_angular_radius: float = 0.27
         self._sun_limb_darkening: float = 0.7
         self._sun_convergence: float = 0.5
         self._color_temperature: float = 5778.0
-
         self._ctx: Optional[moderngl.Context] = None
         self._program: Optional[moderngl.ComputeShader] = None
         self._transmittance_tex: Optional[moderngl.Texture] = None
@@ -93,6 +131,15 @@ class Atmosphere(Component):
             "_resolution_scale": self._resolution_scale,
             "_ozone_factor": self._ozone_factor,
             "_aerosol_scale": self._aerosol_scale,
+            "_rayleigh_scale": self._rayleigh_scale,
+            "_mie_anisotropy": self._mie_anisotropy,
+            "_mie_albedo": self._mie_albedo,
+            "_ground_albedo": self._ground_albedo,
+            "_multiscatter_strength": self._multiscatter_strength,
+            "_horizon_haze": self._horizon_haze,
+            "_planet_radius": self._planet_radius,
+            "_atmosphere_height": self._atmosphere_height,
+            "_camera_height_m": self._camera_height_m,
             "_sun_angular_radius": self._sun_angular_radius,
             "_sun_limb_darkening": self._sun_limb_darkening,
             "_sun_convergence": self._sun_convergence,
@@ -108,6 +155,15 @@ class Atmosphere(Component):
         inst._resolution_scale = float(data.get("_resolution_scale", 1.0))
         inst._ozone_factor = float(data.get("_ozone_factor", 1.0))
         inst._aerosol_scale = float(data.get("_aerosol_scale", 1.0))
+        inst._rayleigh_scale = float(data.get("_rayleigh_scale", 1.0))
+        inst._mie_anisotropy = float(data.get("_mie_anisotropy", 0.76))
+        inst._mie_albedo = float(data.get("_mie_albedo", 0.9))
+        inst._ground_albedo = float(data.get("_ground_albedo", 0.3))
+        inst._multiscatter_strength = float(data.get("_multiscatter_strength", 1.0))
+        inst._horizon_haze = float(data.get("_horizon_haze", 0.4))
+        inst._planet_radius = float(data.get("_planet_radius", 6360.0))
+        inst._atmosphere_height = float(data.get("_atmosphere_height", 60.0))
+        inst._camera_height_m = float(data.get("_camera_height_m", 20.0))
         inst._sun_angular_radius = float(data.get("_sun_angular_radius", 0.27))
         inst._sun_limb_darkening = float(data.get("_sun_limb_darkening", 0.7))
         inst._sun_convergence = float(data.get("_sun_convergence", 0.5))
@@ -136,6 +192,28 @@ class Atmosphere(Component):
         if self not in self._registry:
             self._registry.append(self)
 
+    def ibl_key(self) -> tuple:
+        return (
+            round(float(self._intensity), 3),
+            round(float(self._sun_intensity), 3),
+            round(float(self._resolution_scale), 3),
+            round(float(self._ozone_factor), 3),
+            round(float(self._aerosol_scale), 3),
+            round(float(self._rayleigh_scale), 3),
+            round(float(self._mie_anisotropy), 3),
+            round(float(self._mie_albedo), 3),
+            round(float(self._ground_albedo), 3),
+            round(float(self._multiscatter_strength), 3),
+            round(float(self._horizon_haze), 3),
+            round(float(self._planet_radius), 2),
+            round(float(self._atmosphere_height), 2),
+            round(float(self._camera_height_m), 1),
+            round(float(self._sun_angular_radius), 3),
+            round(float(self._sun_limb_darkening), 3),
+            round(float(self._sun_convergence), 3),
+            round(float(self._color_temperature), 1),
+        )
+
     def _lut_size(self, base: int) -> int:
         return max(8, int(base * self._resolution_scale))
 
@@ -156,6 +234,13 @@ class Atmosphere(Component):
             self._lut_sizes = (tw, th, sw, sh)
             self._cache_key = None
 
+    def _set_uniform(self, prog, name: str, value: float):
+        try:
+            if name in prog:
+                prog[name].value = float(value)
+        except Exception:
+            pass
+
     def _dispatch(self, ctx: moderngl.Context, sun_dir, sun_color, sun_intensity):
         tw, th, sw, sh = self._lut_sizes
         if self._program is None:
@@ -166,14 +251,21 @@ class Atmosphere(Component):
         prog["u_sun_direction"].write(np.array(sun_dir, dtype=np.float32).tobytes())
         prog["u_sun_color"].write(np.array(sun_color, dtype=np.float32).tobytes())
         prog["u_sun_intensity"].value = float(sun_intensity) * float(self._sun_intensity)
-        prog["u_ozone_factor"].value = float(self._ozone_factor)
-        prog["u_aerosol_scale"].value = float(self._aerosol_scale)
-
+        self._set_uniform(prog, "u_ozone_factor", self._ozone_factor)
+        self._set_uniform(prog, "u_aerosol_scale", self._aerosol_scale)
+        self._set_uniform(prog, "u_planet_radius", self._planet_radius)
+        self._set_uniform(prog, "u_atmosphere_height", self._atmosphere_height)
+        self._set_uniform(prog, "u_rayleigh_scale", self._rayleigh_scale)
+        self._set_uniform(prog, "u_mie_g", self._mie_anisotropy)
+        self._set_uniform(prog, "u_mie_albedo", self._mie_albedo)
+        self._set_uniform(prog, "u_ground_albedo", self._ground_albedo)
+        self._set_uniform(prog, "u_ms_strength", self._multiscatter_strength)
+        self._set_uniform(prog, "u_horizon_haze", self._horizon_haze)
+        self._set_uniform(prog, "u_camera_height_km", max(float(self._camera_height_m) / 1000.0, 0.005))
         prog["u_pass"].value = 0
         self._transmittance_tex.bind_to_image(0, read=True, write=True)
         prog.run((tw + 7) // 8, (th + 7) // 8, 1)
         ctx.memory_barrier(moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
-
         prog["u_pass"].value = 1
         prog["u_transmittance_lut"] = 2
         self._transmittance_tex.use(2)
@@ -186,11 +278,10 @@ class Atmosphere(Component):
         if not self.enabled:
             return False
         self._ensure_textures(ctx)
-        key = (tuple(float(v) for v in sun_dir),
-               tuple(float(v) for v in sun_color),
-               float(sun_intensity), float(self._sun_intensity),
-               float(self._ozone_factor),
-               float(self._aerosol_scale), self._lut_sizes)
+        key = (_quant_dir(sun_dir),
+               _quant_color(sun_color),
+               round(float(sun_intensity), 3),
+               self.ibl_key(), self._lut_sizes)
         if key != self._cache_key:
             self._cache_key = key
             try:
@@ -217,9 +308,15 @@ class Atmosphere(Component):
                 prog["u_use_atmosphere"].value = 1
             if "u_atmosphere_intensity" in prog:
                 prog["u_atmosphere_intensity"].value = self._intensity
+            if "u_planet_radius" in prog:
+                prog["u_planet_radius"].value = float(self._planet_radius)
+            if "u_atmosphere_height" in prog:
+                prog["u_atmosphere_height"].value = float(self._atmosphere_height)
+            if "u_camera_height_km" in prog:
+                prog["u_camera_height_km"].value = max(float(self._camera_height_m) / 1000.0, 0.005)
+            if "u_mie_g" in prog:
+                prog["u_mie_g"].value = float(self._mie_anisotropy)
             if "_SunIntensity" in prog:
-                # Sun disc shares the same intensity multiplier as the sky LUT
-                # in-scatter so the whole sun scales together.
                 prog["_SunIntensity"].value = float(prog["_SunIntensity"].value) * self._sun_intensity
             if "_SunAngularRadius" in prog:
                 prog["_SunAngularRadius"].value = float(self._sun_angular_radius)
