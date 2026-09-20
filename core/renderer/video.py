@@ -117,6 +117,9 @@ class VideoPlayer:
             "spatial_blend": 0.0,
             "min_distance": 1.0,
             "max_distance": 50.0,
+            "zone_shape": "sphere",
+            "box_inner_size": [2.0, 2.0, 2.0],
+            "box_outer_size": [10.0, 10.0, 10.0],
             "volume_rolloff": [[0, 1], [1, 0]],
             "offset": self._offset,
         }
@@ -129,12 +132,23 @@ class VideoPlayer:
                     from core.components.audio.audio_source import AudioSource
                     audio_src = entity.get_component(AudioSource)
                     if audio_src:
+                        try:
+                            inner = audio_src.box_inner_size.to_list()
+                        except Exception:
+                            inner = [2.0, 2.0, 2.0]
+                        try:
+                            outer = audio_src.box_outer_size.to_list()
+                        except Exception:
+                            outer = [10.0, 10.0, 10.0]
                         cfg.update({
                             "volume": self._volume * audio_src.volume,
                             "loop": self._loop,
                             "spatial_blend": audio_src.spatial_blend,
                             "min_distance": audio_src.min_distance,
                             "max_distance": audio_src.max_distance,
+                            "zone_shape": getattr(audio_src.zone_shape, "value", audio_src.zone_shape),
+                            "box_inner_size": inner,
+                            "box_outer_size": outer,
                             "volume_rolloff": audio_src.volume_rolloff or [[0, 1], [1, 0]],
                             "offset": self._offset,
                         })
@@ -158,6 +172,9 @@ class VideoPlayer:
                 max_distance=cfg["max_distance"],
                 volume_rolloff=cfg["volume_rolloff"],
                 offset=cfg["offset"],
+                zone_shape=cfg.get("zone_shape", "sphere"),
+                box_inner_size=cfg.get("box_inner_size"),
+                box_outer_size=cfg.get("box_outer_size"),
             )
             if src_id:
                 self._audio_source_id = src_id
@@ -326,7 +343,12 @@ class VideoPlayer:
                 from core.audio.audio_system import AudioSourceManager
                 mgr = AudioSourceManager.instance()
                 if mgr:
-                    mgr.update_source(self._audio_source_id, cfg["volume"], 1.0, (0, 0, 0), cfg["spatial_blend"])
+                    mgr.update_source(
+                        self._audio_source_id, cfg["volume"], 1.0, (0, 0, 0), cfg["spatial_blend"],
+                        None, cfg["min_distance"], cfg["max_distance"],
+                        cfg.get("zone_shape", "sphere"),
+                        cfg.get("box_inner_size"), cfg.get("box_outer_size"),
+                    )
             except Exception:
                 pass
 

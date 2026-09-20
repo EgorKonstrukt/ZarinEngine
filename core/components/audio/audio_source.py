@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 import math
+from enum import Enum
 from typing import Callable
 from core.ecs.ecs import Component, ComponentRegistry
 from core.maths.math3d import Vec3
@@ -14,12 +15,63 @@ from core.audio.audio_system import AudioSystem, AudioSourceManager
 from core.foundation.logger import Logger
 
 
+class AudioZoneShape(Enum):
+    SPHERE = "sphere"
+    BOX = "box"
+
+
+def parse_audio_zone_shape(value) -> AudioZoneShape:
+    try:
+        if isinstance(value, AudioZoneShape):
+            return value
+        s = str(getattr(value, "value", value)).strip().lower()
+        if "." in s:
+            s = s.rsplit(".", 1)[-1]
+        if s == "box":
+            return AudioZoneShape.BOX
+    except Exception:
+        pass
+    return AudioZoneShape.SPHERE
+
+
+def audio_box_half_tuple(value) -> tuple[float, float, float]:
+    try:
+        if hasattr(value, "x"):
+            return (
+                max(0.0, float(value.x)) * 0.5,
+                max(0.0, float(value.y)) * 0.5,
+                max(0.0, float(value.z)) * 0.5,
+            )
+        return (
+            max(0.0, float(value[0])) * 0.5,
+            max(0.0, float(value[1])) * 0.5,
+            max(0.0, float(value[2])) * 0.5,
+        )
+    except Exception:
+        return (0.0, 0.0, 0.0)
+
+
+def audio_box_edges(pos: Vec3, hx: float, hy: float, hz: float, color: list[float]):
+    corners = [
+        Vec3(pos.x - hx, pos.y - hy, pos.z - hz),
+        Vec3(pos.x + hx, pos.y - hy, pos.z - hz),
+        Vec3(pos.x + hx, pos.y - hy, pos.z + hz),
+        Vec3(pos.x - hx, pos.y - hy, pos.z + hz),
+        Vec3(pos.x - hx, pos.y + hy, pos.z - hz),
+        Vec3(pos.x + hx, pos.y + hy, pos.z - hz),
+        Vec3(pos.x + hx, pos.y + hy, pos.z + hz),
+        Vec3(pos.x - hx, pos.y + hy, pos.z + hz),
+    ]
+    edges = ((0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7))
+    return [(corners[a], corners[b], color) for a, b in edges]
+
+
 @ComponentRegistry.register
 class AudioSource(Component):
     _icon = "AudioSource.png"
     _gizmo_icon_color = (80, 220, 80)
     _gizmo_icon_label = "A"
-    _gizmo_cache_attrs = ("min_distance", "max_distance")
+    _gizmo_cache_attrs = ("zone_shape", "min_distance", "max_distance", "box_inner_size", "box_outer_size")
     _gizmo_pass = "audio"
 
     @classmethod
@@ -31,9 +83,12 @@ class AudioSource(Component):
             InspectorField("loop", "Loop", FieldType.BOOL),
             InspectorField("play_on_awake", "Play On Awake", FieldType.BOOL),
             InspectorField("spatial_blend", "Spatial Blend", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01),
+            InspectorField("zone_shape", "Zone Shape", FieldType.ENUM, enum_class=AudioZoneShape),
             InspectorField("volume_rolloff", "Volume Rolloff", FieldType.CURVE),
             InspectorField("min_distance", "Min Distance", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("max_distance", "Max Distance", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=1.0, decimals=2),
+            InspectorField("box_inner_size", "Box Inner Size", FieldType.VEC3, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
+            InspectorField("box_outer_size", "Box Outer Size", FieldType.VEC3, min_val=0.0, max_val=10000.0, step=1.0, decimals=2),
             InspectorField("offset", "Offset (sec)", FieldType.FLOAT, min_val=0.0, max_val=3600.0, step=0.01, decimals=2),
             InspectorField("fade_in_time", "Fade In Time", FieldType.FLOAT, min_val=0.0, max_val=60.0, step=0.1, decimals=2),
             InspectorField("fade_out_time", "Fade Out Time", FieldType.FLOAT, min_val=0.0, max_val=60.0, step=0.1, decimals=2),
@@ -47,9 +102,12 @@ class AudioSource(Component):
         self.loop: bool = False
         self.play_on_awake: bool = False
         self.spatial_blend: float = 1.0
+        self.zone_shape: AudioZoneShape = AudioZoneShape.SPHERE
         self.volume_rolloff: list[list[float]] = [[0, 1], [1, 0]]
         self.min_distance: float = 1.0
         self.max_distance: float = 50.0
+        self.box_inner_size: Vec3 = Vec3(2.0, 2.0, 2.0)
+        self.box_outer_size: Vec3 = Vec3(10.0, 10.0, 10.0)
         self.offset: float = 0.0
         self.fade_in_time: float = 0.0
         self.fade_out_time: float = 0.0
@@ -137,6 +195,9 @@ class AudioSource(Component):
         self._fade_active = False
         self._fade_stop_requested = False
 
+    def is_box_zone(self) -> bool:
+        return parse_audio_zone_shape(getattr(self, "zone_shape", "sphere")) == AudioZoneShape.BOX
+
     def play(self):
         if not self.clip_path or self._playing: return
         audio_sys = AudioSystem.instance()
@@ -153,6 +214,9 @@ class AudioSource(Component):
             max_distance=self.max_distance,
             volume_rolloff=self.volume_rolloff,
             offset=self.offset,
+            zone_shape=getattr(self.zone_shape, "value", self.zone_shape),
+            box_inner_size=self.box_inner_size,
+            box_outer_size=self.box_outer_size,
         )
         if source:
             self._source_id = source
@@ -233,7 +297,12 @@ class AudioSource(Component):
             self._prev_pos = pos
 
             effective_volume = self.volume * self._fade_volume
-            mgr.update_source(self._source_id, effective_volume, self.pitch, pos, self.spatial_blend, vel)
+            mgr.update_source(
+                self._source_id, effective_volume, self.pitch, pos, self.spatial_blend, vel,
+                self.min_distance, self.max_distance,
+                getattr(self.zone_shape, "value", self.zone_shape),
+                self.box_inner_size, self.box_outer_size,
+            )
         except Exception as e:
             err_str = str(e)
             if "AL_INVALID_NAME" in err_str or "invalid name" in err_str.lower():
@@ -249,6 +318,19 @@ class AudioSource(Component):
         if not tr:
             return []
         pos = tr.position
+        if self.is_box_zone():
+            lines: list[tuple[Vec3, Vec3, list[float]]] = []
+            ihx, ihy, ihz = audio_box_half_tuple(self.box_inner_size)
+            ohx, ohy, ohz = audio_box_half_tuple(self.box_outer_size)
+            ohx = max(ohx, ihx)
+            ohy = max(ohy, ihy)
+            ohz = max(ohz, ihz)
+            if ihx > 0.01 or ihy > 0.01 or ihz > 0.01:
+                lines.extend(audio_box_edges(pos, ihx, ihy, ihz, [0.2, 1.0, 0.2, 0.5]))
+            if ohx > 0.01 or ohy > 0.01 or ohz > 0.01:
+                if abs(ohx - ihx) > 0.01 or abs(ohy - ihy) > 0.01 or abs(ohz - ihz) > 0.01:
+                    lines.extend(audio_box_edges(pos, ohx, ohy, ohz, [1.0, 0.7, 0.1, 0.4]))
+            return lines
         min_dist = self.min_distance
         max_dist = self.max_distance
         lines: list[tuple[Vec3, Vec3, list[float]]] = []
@@ -295,12 +377,33 @@ class AudioSource(Component):
 
     def serialize(self) -> dict:
         d = super().serialize()
+        try:
+            zone_value = getattr(self.zone_shape, "value", self.zone_shape)
+            zone_value = str(zone_value)
+        except Exception:
+            zone_value = "sphere"
+        try:
+            inner_list = self.box_inner_size.to_list()
+        except Exception:
+            try:
+                inner_list = [float(self.box_inner_size[0]), float(self.box_inner_size[1]), float(self.box_inner_size[2])]
+            except Exception:
+                inner_list = [2.0, 2.0, 2.0]
+        try:
+            outer_list = self.box_outer_size.to_list()
+        except Exception:
+            try:
+                outer_list = [float(self.box_outer_size[0]), float(self.box_outer_size[1]), float(self.box_outer_size[2])]
+            except Exception:
+                outer_list = [10.0, 10.0, 10.0]
         d.update({
             "clip_path": self.clip_path, "volume": self.volume, "pitch": self.pitch,
             "loop": self.loop, "play_on_awake": self.play_on_awake,
             "spatial_blend": self.spatial_blend,
+            "zone_shape": zone_value,
             "volume_rolloff": self.volume_rolloff or [[0, 1], [1, 0]],
             "min_distance": self.min_distance, "max_distance": self.max_distance,
+            "box_inner_size": inner_list, "box_outer_size": outer_list,
             "offset": self.offset,
             "fade_in_time": self.fade_in_time,
             "fade_out_time": self.fade_out_time,
@@ -317,9 +420,18 @@ class AudioSource(Component):
         a.loop = data.get("loop", False)
         a.play_on_awake = data.get("play_on_awake", False)
         a.spatial_blend = data.get("spatial_blend", 1.0)
+        a.zone_shape = parse_audio_zone_shape(data.get("zone_shape", "sphere"))
         a.volume_rolloff = data.get("volume_rolloff", [[0, 1], [1, 0]])
         a.min_distance = data.get("min_distance", 1.0)
         a.max_distance = data.get("max_distance", 50.0)
+        try:
+            a.box_inner_size = Vec3(*data.get("box_inner_size", [2.0, 2.0, 2.0]))
+        except Exception:
+            a.box_inner_size = Vec3(2.0, 2.0, 2.0)
+        try:
+            a.box_outer_size = Vec3(*data.get("box_outer_size", [10.0, 10.0, 10.0]))
+        except Exception:
+            a.box_outer_size = Vec3(10.0, 10.0, 10.0)
         a.offset = data.get("offset", 0.0)
         a.fade_in_time = data.get("fade_in_time", 0.0)
         a.fade_out_time = data.get("fade_out_time", 0.0)

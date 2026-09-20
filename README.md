@@ -107,7 +107,7 @@ Separate 2D physics with its own components:
 
 3D positional audio via OpenAL:
 
-- **AudioSource** — clip, volume, pitch, loop, play-on-awake, spatial blend (0-1), volume rolloff curve, min/max distance
+- **AudioSource** — clip, volume, pitch, loop, play-on-awake, spatial blend (0-1), volume rolloff curve, zone shape (sphere/box), min/max distance, box inner/outer size
 - **AudioListener** — attached to an entity, defines the ears
 - **ReverbZone** — spatial reverb via OpenAL EFX extensions, with configurable density, diffusion, gain, HF gain, decay time, HF ratio, late delay, diffusion/reflection gains
 - AudioSystem handles resource management, clip caching, async loading

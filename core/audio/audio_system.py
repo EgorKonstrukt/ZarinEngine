@@ -41,6 +41,29 @@ _AUDIO_CATEGORIES = ("master", "sfx", "music", "voice", "ambient")
 
 class AudioRolloffCurve:
     @staticmethod
+    def evaluate_normalized(t: float, curve_data: list[list[float]]) -> float:
+        if not curve_data:
+            return 1.0
+        try:
+            tt = max(0.0, min(1.0, float(t)))
+        except Exception:
+            return 1.0
+        keys = sorted(curve_data, key=lambda k: k[0])
+        if tt <= keys[0][0]:
+            return keys[0][1]
+        if tt >= keys[-1][0]:
+            return keys[-1][1]
+        for i in range(len(keys) - 1):
+            t0, v0 = keys[i]
+            t1, v1 = keys[i + 1]
+            if t0 <= tt <= t1:
+                dt = t1 - t0
+                if dt == 0:
+                    return v0
+                return v0 + (v1 - v0) * (tt - t0) / dt
+        return 1.0
+
+    @staticmethod
     def evaluate(distance: float, min_dist: float, max_dist: float,
                  curve_data: list[list[float]]) -> float:
         if not curve_data or min_dist >= max_dist or max_dist <= 0:
@@ -50,20 +73,7 @@ class AudioRolloffCurve:
         if distance >= max_dist:
             return 0.0
         t = (distance - min_dist) / (max_dist - min_dist)
-        keys = sorted(curve_data, key=lambda k: k[0])
-        if t <= keys[0][0]:
-            return keys[0][1]
-        if t >= keys[-1][0]:
-            return keys[-1][1]
-        for i in range(len(keys) - 1):
-            t0, v0 = keys[i]
-            t1, v1 = keys[i + 1]
-            if t0 <= t <= t1:
-                dt = t1 - t0
-                if dt == 0:
-                    return v0
-                return v0 + (v1 - v0) * (t - t0) / dt
-        return 1.0
+        return AudioRolloffCurve.evaluate_normalized(t, curve_data)
 
 
 class AudioClip:
@@ -658,6 +668,68 @@ def _read_audio_value(key: str, default):
         return default
 
 
+def _normalize_audio_zone_shape(value) -> str:
+    try:
+        s = str(getattr(value, "value", value)).strip().lower()
+        if "." in s:
+            s = s.rsplit(".", 1)[-1]
+        if s == "box":
+            return "box"
+    except Exception:
+        pass
+    return "sphere"
+
+
+def _normalize_audio_box_halves(value, default: float) -> tuple[float, float, float]:
+    try:
+        if value is None:
+            raise ValueError()
+        if hasattr(value, "x"):
+            vals = (float(value.x), float(value.y), float(value.z))
+        else:
+            vals = (float(value[0]), float(value[1]), float(value[2]))
+        out = []
+        for v in vals:
+            if v != v or v == float("inf") or v == float("-inf"):
+                raise ValueError()
+            out.append(max(0.0, v) * 0.5)
+        return (out[0], out[1], out[2])
+    except Exception:
+        pass
+    try:
+        d = max(0.0, float(default)) * 0.5
+    except Exception:
+        d = 0.0
+    return (d, d, d)
+
+
+def _box_zone_t(listener: tuple[float, float, float], center: tuple[float, float, float],
+                inner_half: tuple[float, float, float], outer_half: tuple[float, float, float]) -> float:
+    try:
+        ix, iy, iz = (max(0.0, float(inner_half[0])), max(0.0, float(inner_half[1])), max(0.0, float(inner_half[2])))
+        ox, oy, oz = (max(float(outer_half[0]), ix), max(float(outer_half[1]), iy), max(float(outer_half[2]), iz))
+        dx = abs(float(listener[0]) - float(center[0]))
+        dy = abs(float(listener[1]) - float(center[1]))
+        dz = abs(float(listener[2]) - float(center[2]))
+        q_in = max(dx - ix, dy - iy, dz - iz)
+        q_out = max(dx - ox, dy - oy, dz - oz)
+        if q_out >= 0.0:
+            return 1.0
+        if q_in <= 0.0:
+            return 0.0
+        span = q_in - q_out
+        if span <= 1e-09:
+            return 1.0
+        t = q_in / span
+        if t < 0.0:
+            return 0.0
+        if t > 1.0:
+            return 1.0
+        return t
+    except Exception:
+        return 1.0
+
+
 class AudioSourceManager:
     _instance: Optional[AudioSourceManager] = None
 
@@ -750,7 +822,8 @@ class AudioSourceManager:
     def play(self, clip_path: str, loop: bool = False, volume: float = 1.0, pitch: float = 1.0,
              spatial_blend: float = 1.0, min_distance: float = 1.0, max_distance: float = 50.0,
              volume_rolloff: list[list[float]] = None, offset: float = 0.0,
-             velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> int | None:
+             velocity: tuple[float, float, float] = (0.0, 0.0, 0.0), zone_shape: str = "sphere",
+             box_inner_size=None, box_outer_size=None) -> int | None:
         if not al.oalGetInit(): return None
         audio_sys = AudioSystem.instance()
         if not audio_sys: return None
@@ -776,8 +849,22 @@ class AudioSourceManager:
                 pass
             al.alSource3f(src_val, al.AL_POSITION, 0.0, 0.0, 0.0)
             al.alSource3f(src_val, al.AL_VELOCITY, *velocity)
-            al.alSourcef(src_val, al.AL_REFERENCE_DISTANCE, min_distance)
-            al.alSourcef(src_val, al.AL_MAX_DISTANCE, max_distance)
+            zs = _normalize_audio_zone_shape(zone_shape)
+            inner_half = _normalize_audio_box_halves(box_inner_size, 2.0)
+            outer_half = _normalize_audio_box_halves(box_outer_size, 10.0)
+            outer_half = (
+                max(outer_half[0], inner_half[0]),
+                max(outer_half[1], inner_half[1]),
+                max(outer_half[2], inner_half[2]),
+            )
+            if zs == "box":
+                ref_d = min(inner_half[0], inner_half[1], inner_half[2])
+                max_d = math.sqrt(outer_half[0] * outer_half[0] + outer_half[1] * outer_half[1] + outer_half[2] * outer_half[2])
+            else:
+                ref_d = min_distance
+                max_d = max_distance
+            al.alSourcef(src_val, al.AL_REFERENCE_DISTANCE, ref_d)
+            al.alSourcef(src_val, al.AL_MAX_DISTANCE, max_d)
             al.alSourcef(src_val, al.AL_ROLLOFF_FACTOR, 0.0)
             al.alSourcei(src_val, al.AL_SOURCE_RELATIVE, 0 if spatial_blend > 0 else 1)
             if offset > 0.0:
@@ -798,6 +885,9 @@ class AudioSourceManager:
             "offset": offset,
             "velocity": velocity,
             "looping": loop,
+            "zone_shape": zs,
+            "box_inner": inner_half,
+            "box_outer": outer_half,
         }
         self._source_positions[src_val] = (0.0, 0.0, 0.0)
         self._source_aux_slot[src_val] = 0
@@ -814,7 +904,9 @@ class AudioSourceManager:
 
     def update_source(self, source: int, volume: float, pitch: float, position: tuple[float, float, float],
                       spatial_blend: float | None = None,
-                      velocity: tuple[float, float, float] | None = None):
+                      velocity: tuple[float, float, float] | None = None,
+                      min_distance: float | None = None, max_distance: float | None = None,
+                      zone_shape=None, box_inner_size=None, box_outer_size=None):
         if not source or not al.oalGetInit(): return
         try:
             state = al.ctypes.c_int()
@@ -831,17 +923,61 @@ class AudioSourceManager:
                 info = self._source_info.get(source)
                 if spatial_blend is not None and info:
                     info["spatial_blend"] = spatial_blend
+                    if min_distance is not None:
+                        try:
+                            info["min_distance"] = float(min_distance)
+                        except Exception:
+                            pass
+                    if max_distance is not None:
+                        try:
+                            info["max_distance"] = float(max_distance)
+                        except Exception:
+                            pass
+                    if zone_shape is not None:
+                        info["zone_shape"] = _normalize_audio_zone_shape(zone_shape)
+                    if box_inner_size is not None:
+                        try:
+                            cur = info.get("box_inner", (1.0, 1.0, 1.0))
+                            info["box_inner"] = _normalize_audio_box_halves(box_inner_size, cur[0] * 2.0)
+                        except Exception:
+                            pass
+                    if box_outer_size is not None:
+                        try:
+                            cur = info.get("box_outer", (5.0, 5.0, 5.0))
+                            info["box_outer"] = _normalize_audio_box_halves(box_outer_size, cur[0] * 2.0)
+                        except Exception:
+                            pass
+                    try:
+                        inner_half = info.get("box_inner", (1.0, 1.0, 1.0))
+                        outer_half = info.get("box_outer", (5.0, 5.0, 5.0))
+                        info["box_outer"] = (
+                            max(float(outer_half[0]), float(inner_half[0])),
+                            max(float(outer_half[1]), float(inner_half[1])),
+                            max(float(outer_half[2]), float(inner_half[2])),
+                        )
+                    except Exception:
+                        pass
                     if spatial_blend > 0:
                         al.alSource3f(source, al.AL_POSITION, *position)
                         al.alSourcei(source, al.AL_SOURCE_RELATIVE, 0)
                         self._source_positions[source] = position
-                        dist = self._distance_to_listener(position)
-                        atten = AudioRolloffCurve.evaluate(
-                            dist,
-                            info["min_distance"],
-                            info["max_distance"],
-                            info.get("volume_rolloff", [[0, 1], [1, 0]])
-                        )
+                        if info.get("zone_shape", "sphere") == "box":
+                            t = _box_zone_t(
+                                self._listener_pos, position,
+                                info.get("box_inner", (1.0, 1.0, 1.0)),
+                                info.get("box_outer", (5.0, 5.0, 5.0)),
+                            )
+                            atten = AudioRolloffCurve.evaluate_normalized(
+                                t, info.get("volume_rolloff", [[0, 1], [1, 0]])
+                            )
+                        else:
+                            dist = self._distance_to_listener(position)
+                            atten = AudioRolloffCurve.evaluate(
+                                dist,
+                                info["min_distance"],
+                                info["max_distance"],
+                                info.get("volume_rolloff", [[0, 1], [1, 0]])
+                            )
                         final_volume = volume * atten
                         al.alSourcef(source, al.AL_GAIN, final_volume)
                     else:
