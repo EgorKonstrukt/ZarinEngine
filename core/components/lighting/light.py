@@ -41,6 +41,31 @@ class Light(Component):
     LEGACY_POINT_MULT = 2000.0
     LEGACY_AREA_MULT = 100.0
     _LIGHT_SCALE = 1.0
+    LUX_REFERENCE = {
+        "direct_sun": 100000.0,
+        "full_daylight": 15000.0,
+        "overcast_day": 5000.0,
+        "sunrise_sunset": 400.0,
+        "office": 500.0,
+        "twilight": 10.0,
+        "full_moon": 0.2,
+    }
+    LUMEN_REFERENCE = {
+        "candle": 12.57,
+        "decorative_led": 100.0,
+        "desk_lamp": 300.0,
+        "room_ceiling": 800.0,
+        "bulb_100w": 1600.0,
+        "street_light": 15000.0,
+        "stadium_floodlight": 100000.0,
+    }
+    NIT_REFERENCE = {
+        "monitor_sdr": 200.0,
+        "office_panel": 500.0,
+        "overcast_sky": 2000.0,
+        "clear_sky": 5000.0,
+        "led_softbox": 10000.0,
+    }
 
     @classmethod
     def set_light_scale(cls, scale: float) -> None:
@@ -159,6 +184,24 @@ class Light(Component):
         return [r / m, g / m, b / m]
 
     @staticmethod
+    def point_lumen_to_candela(lumens: float) -> float:
+        return max(float(lumens), 0.0) / (4.0 * math.pi)
+
+    @staticmethod
+    def spot_solid_angle(outer_angle_deg: float) -> float:
+        half = math.radians(max(min(float(outer_angle_deg), 179.0), 1.0)) * 0.5
+        return 2.0 * math.pi * (1.0 - math.cos(half))
+
+    @staticmethod
+    def spot_lumen_to_candela(lumens: float, outer_angle_deg: float) -> float:
+        return max(float(lumens), 0.0) / max(Light.spot_solid_angle(outer_angle_deg), 1e-6)
+
+    @staticmethod
+    def candela_to_lux(candela: float, distance: float) -> float:
+        d = max(float(distance), 1e-3)
+        return max(float(candela), 0.0) / (d * d)
+
+    @staticmethod
     def _smoothstep(edge0: float, edge1: float, x: float) -> float:
         t = max(0.0, min(1.0, (x - edge0) / (edge1 - edge0)))
         return t * t * (3.0 - 2.0 * t)
@@ -251,8 +294,11 @@ class Light(Component):
                 return [c[0], c[1], c[2]], i * sc
             return list(light.color), light.intensity * Light.LUX_TO_RADIANCE * sc
         if isinstance(light, AreaLight):
-            return list(light.color), light.intensity * Light.AREA_TO_RADIANCE * sc
-        candela = max(float(light.intensity), 0.0) / (4.0 * math.pi)
+            return list(light.color), max(float(light.intensity), 0.0) * Light.AREA_TO_RADIANCE * sc
+        if isinstance(light, SpotLight):
+            candela = Light.spot_lumen_to_candela(light.intensity, light.spot_angle)
+            return list(light.color), candela * Light.CANDELA_TO_RADIANCE * sc
+        candela = Light.point_lumen_to_candela(light.intensity)
         return list(light.color), candela * Light.CANDELA_TO_RADIANCE * sc
 
     @staticmethod
@@ -361,7 +407,8 @@ class DirectionalLight(Light):
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
             InspectorField("color", "Color", FieldType.COLOR),
-            InspectorField("intensity", "Intensity (lux)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=100.0, decimals=1),
+            InspectorField("intensity", "Intensity (lux)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=100.0, decimals=1,
+                           description="Illuminance in lux. Direct sun 100000, daylight 10000-25000, overcast 1000-10000, sunrise 400, office 500, twilight 10, full moon 0.2"),
             InspectorField("procedural_sky_lighting", "Procedural Sky Lighting", FieldType.BOOL),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
         ]
@@ -407,7 +454,8 @@ class PointLight(Light):
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
             InspectorField("color", "Color", FieldType.COLOR),
-            InspectorField("intensity", "Intensity (lumens)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1),
+            InspectorField("intensity", "Intensity (lumens)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1,
+                           description="Total flux in lumens. Candle 13, desk lamp 300, room ceiling 800, 100W bulb 1600, street 1000-40000, stadium 100000"),
             InspectorField("range", "Range", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
         ]
@@ -487,7 +535,8 @@ class SpotLight(Light):
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
             InspectorField("color", "Color", FieldType.COLOR),
-            InspectorField("intensity", "Intensity (lumens)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1),
+            InspectorField("intensity", "Intensity (lumens)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1,
+                           description="Total flux in lumens inside the cone. Narrow cones concentrate the same lumens, wide cones spread them. Flashlight 100-1000, street 1000-40000"),
             InspectorField("range", "Range", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("spot_angle", "Spot Angle", FieldType.FLOAT, min_val=1.0, max_val=179.0, step=1.0, decimals=1),
             InspectorField("spot_inner_angle", "Inner Angle", FieldType.FLOAT, min_val=0.0, max_val=179.0, step=1.0, decimals=1),
@@ -570,7 +619,9 @@ class AreaLight(Light):
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
             InspectorField("color", "Color", FieldType.COLOR),
-            InspectorField("intensity", "Intensity (nits)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1),
+            InspectorField("intensity", "Intensity (nits)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1,
+                           description="Surface brightness in nits (cd per sq m). Monitor 200, office panel 500, overcast sky 2000, softbox 10000. Same nits on a bigger panel lights the scene more"),
+            InspectorField("range", "Range", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("area_type", "Area Type", FieldType.ENUM, enum_class=LightAreaType),
             InspectorField("area_width", "Area Width", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.1, decimals=2),
             InspectorField("area_height", "Area Height", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.1, decimals=2),
@@ -583,6 +634,7 @@ class AreaLight(Light):
     def __init__(self):
         super().__init__()
         self.intensity = 100.0
+        self.range = 10.0
         self.area_type = LightAreaType.RECT
         self.area_width = 1.0
         self.area_height = 1.0
@@ -653,6 +705,7 @@ class AreaLight(Light):
         l.intensity = data.get("intensity", 100.0)
         if data.get("light_version", 2) < 2 and data.get("type") == "Light":
             l.intensity = l.intensity * Light.LEGACY_AREA_MULT
+        l.range = data.get("range", 10.0)
         l.cast_shadows = data.get("cast_shadows", True)
         try:
             l.area_type = LightAreaType(data.get("area_type", "rect"))

@@ -124,14 +124,32 @@ float area_pcss(sampler2D shadow_map, vec3 proj_coords, float z_view) {
 float compute_area_shadow() {
     if (u_area_shadow_light_index < 0) return 1.0;
     vec4 light_space_pos = u_area_light_vp * vec4(v_world_pos, 1.0);
-    vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
-    proj_coords = proj_coords * 0.5 + 0.5;
-    if (any(lessThan(proj_coords, vec3(0.0))) || any(greaterThan(proj_coords, vec3(1.0)))) return 1.0;
-    float z_ndc = proj_coords.z * 2.0 - 1.0;
-    float near_z = u_area_light_near_far.x;
-    float far_z = u_area_light_near_far.y;
-    float z_view = 2.0 * near_z * far_z / max(far_z + near_z - z_ndc * (far_z - near_z), 0.001);
-    return area_pcss(u_area_shadow_map, proj_coords, z_view);
+    if (light_space_pos.w > 0.0) {
+        vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
+        proj_coords = proj_coords * 0.5 + 0.5;
+        if (all(greaterThanEqual(proj_coords, vec3(0.0))) && all(lessThanEqual(proj_coords, vec3(1.0)))) {
+            float z_ndc = proj_coords.z * 2.0 - 1.0;
+            float near_z = u_area_light_near_far.x;
+            float far_z = u_area_light_near_far.y;
+            float z_view = 2.0 * near_z * far_z / max(far_z + near_z - z_ndc * (far_z - near_z), 0.001);
+            return area_pcss(u_area_shadow_map, proj_coords, z_view);
+        }
+    }
+    if (u_area_shadow_back > 0.5) {
+        vec4 back_space_pos = u_area_light_vp_back * vec4(v_world_pos, 1.0);
+        if (back_space_pos.w > 0.0) {
+            vec3 back_coords = back_space_pos.xyz / back_space_pos.w;
+            back_coords = back_coords * 0.5 + 0.5;
+            if (all(greaterThanEqual(back_coords, vec3(0.0))) && all(lessThanEqual(back_coords, vec3(1.0)))) {
+                float z_ndc = back_coords.z * 2.0 - 1.0;
+                float near_z = u_area_light_near_far.x;
+                float far_z = u_area_light_near_far.y;
+                float z_view = 2.0 * near_z * far_z / max(far_z + near_z - z_ndc * (far_z - near_z), 0.001);
+                return area_pcss(u_area_shadow_map_back, back_coords, z_view);
+            }
+        }
+    }
+    return 1.0;
 }
 
 #endif

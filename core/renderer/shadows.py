@@ -155,6 +155,11 @@ class ShadowRenderer:
         self._area_shadow_map: Optional[Any] = None
         self._area_shadow_fbo: Optional[Any] = None
         self._area_light_vp: np.ndarray = np.eye(4, dtype=np.float32)
+        self._area_shadow_map_back: Optional[Any] = None
+        self._area_shadow_fbo_back: Optional[Any] = None
+        self._area_light_vp_back: np.ndarray = np.eye(4, dtype=np.float32)
+        self._has_area_shadow_back: bool = False
+        self._area_shadow_two_sided: float = 0.0
         self._has_area_shadow: bool = False
         self._area_light_idx: int = -1
         self._area_light_size: float = 1.0
@@ -232,6 +237,7 @@ class ShadowRenderer:
         self._spot_vps_bytes: bytes = b""
         self._spot_idx_bytes: bytes = b""
         self._area_vp_bytes: bytes = b""
+        self._area_vp_back_bytes: bytes = b""
         self._area_nearfar_bytes: bytes = b""
         self._create_csm_resources()
 
@@ -434,6 +440,21 @@ class ShadowRenderer:
         except Exception:
             try:
                 tex.release()
+            except Exception:
+                pass
+            return
+        try:
+            btex = self._ctx.depth_texture((res, res))
+        except Exception:
+            return
+        btex.repeat_x = False
+        btex.repeat_y = False
+        try:
+            self._area_shadow_map_back = btex
+            self._area_shadow_fbo_back = self._ctx.framebuffer(depth_attachment=self._area_shadow_map_back)
+        except Exception:
+            try:
+                btex.release()
             except Exception:
                 pass
 
@@ -1189,6 +1210,8 @@ class ShadowRenderer:
         self._has_spot_shadow = False
         self._spot_shadow_count = 0
         self._has_area_shadow = False
+        self._has_area_shadow_back = False
+        self._area_shadow_two_sided = 0.0
 
     def _compute_cascade_splits(self, cam_near: float, cam_far: float) -> list[float]:
         if not self._cascade_splits_norm:
@@ -1743,6 +1766,12 @@ class ShadowRenderer:
             self._area_shadow_bias = float(getattr(area_light, 'area_shadow_bias', 0.005))
         except Exception:
             self._area_shadow_bias = 0.005
+        self._area_light_vp_back = np.eye(4, dtype=np.float32)
+        self._has_area_shadow_back = False
+        try:
+            self._area_shadow_two_sided = 1.0 if bool(getattr(area_light, "area_double_sided", False)) else 0.0
+        except Exception:
+            self._area_shadow_two_sided = 0.0
         try:
             view_d = Mat4.look_at(light_pos, light_pos + light_dir, light_up)._d
             proj_d = Mat4.perspective(fov, 1.0, near_plane, far_plane)._d
@@ -1761,23 +1790,45 @@ class ShadowRenderer:
         lr2 = light_range * light_range
         if self._flat_n == 0:
             return
+        self._draw_area_shadow_side(vp, lp_x, lp_y, lp_z, lr2, self._area_shadow_fbo)
+        if self._area_shadow_two_sided > 0.5:
+            try:
+                if self._area_shadow_fbo_back is None:
+                    self._create_area_shadow_resources()
+            except Exception:
+                pass
+            if self._area_shadow_fbo_back is None:
+                return
+            try:
+                bview_d = Mat4.look_at(light_pos, light_pos + (-light_dir), light_up)._d
+                bproj_d = Mat4.perspective(fov, 1.0, near_plane, far_plane)._d
+                bvp = (bview_d @ bproj_d).astype(np.float32)
+            except Exception:
+                return
+            self._area_light_vp_back = bvp
+            self._has_area_shadow_back = True
+            self._draw_area_shadow_side(bvp, lp_x, lp_y, lp_z, lr2, self._area_shadow_fbo_back)
+
+    def _draw_area_shadow_side(self, vp, px: float, py: float, pz: float, lr2: float, fbo) -> bool:
         try:
-            cnt = self._cull_flat_range_count(vp, lp_x, lp_y, lp_z, lr2, 0.0)
+            cnt = self._cull_flat_range_count(vp, px, py, pz, lr2, 0.0)
         except Exception:
             cnt = 0
         if cnt > 0:
             try:
-                self._draw_flat_visible(vp, self._area_shadow_fbo, self._area_shadow_resolution, cnt)
-                self._maybe_render_skinned(vp, self._area_shadow_fbo, self._area_shadow_resolution)
+                self._draw_flat_visible(vp, fbo, self._area_shadow_resolution, cnt)
+                self._maybe_render_skinned(vp, fbo, self._area_shadow_resolution)
             except Exception:
                 pass
-        else:
-            try:
-                self._area_shadow_fbo.use()
+            return True
+        try:
+            if fbo is not None:
+                fbo.use()
                 self._ctx.viewport = (0, 0, self._area_shadow_resolution, self._area_shadow_resolution)
-                self._area_shadow_fbo.clear(depth=1.0)
-            except Exception:
-                pass
+                fbo.clear(depth=1.0)
+        except Exception:
+            pass
+        return False
 
     def render_projector_shadows(self, projectors, renderable_shadow, shadow_groups: dict = None):
         if self._flat_n == 0:
@@ -1937,6 +1988,10 @@ class ShadowRenderer:
         except Exception:
             pass
         try:
+            self._area_vp_back_bytes = np.ascontiguousarray(self._area_light_vp_back, dtype=np.float32).tobytes()
+        except Exception:
+            pass
+        try:
             af = self._area_nearfar_buf
             af[0] = float(self._area_light_near)
             af[1] = float(self._area_light_far)
@@ -2085,9 +2140,28 @@ class ShadowRenderer:
                 prog["u_area_shadow_light_index"].value = self._area_light_idx if self._area_light_idx >= 0 else -1
             if "u_area_shadow_bias" in names:
                 prog["u_area_shadow_bias"].value = float(self._area_shadow_bias)
+            back_ok = bool(self._has_area_shadow_back and self._area_shadow_map_back is not None and self._area_shadow_two_sided > 0.5)
+            if "u_area_shadow_map_back" in names:
+                try:
+                    if back_ok:
+                        self._area_shadow_map_back.use(38)
+                except Exception:
+                    pass
+                prog["u_area_shadow_map_back"].value = 38
+            if "u_area_light_vp_back" in names:
+                try:
+                    if not self._area_vp_back_bytes:
+                        self._cache_uniform_bytes()
+                    prog["u_area_light_vp_back"].write(self._area_vp_back_bytes)
+                except Exception:
+                    pass
+            if "u_area_shadow_back" in names:
+                prog["u_area_shadow_back"].value = 1.0 if back_ok else 0.0
         else:
             if "u_area_shadow_light_index" in names:
                 prog["u_area_shadow_light_index"].value = -1
+            if "u_area_shadow_back" in names:
+                prog["u_area_shadow_back"].value = 0.0
         for i in range(2):
             suf = f"u_pj_{i}_shadow_map"
             if self._has_projector_shadow[i] and suf in names:
@@ -2146,6 +2220,16 @@ class ShadowRenderer:
         if self._area_shadow_fbo:
             try:
                 self._area_shadow_fbo.release()
+            except Exception:
+                pass
+        if self._area_shadow_map_back:
+            try:
+                self._area_shadow_map_back.release()
+            except Exception:
+                pass
+        if self._area_shadow_fbo_back:
+            try:
+                self._area_shadow_fbo_back.release()
             except Exception:
                 pass
         for sm in self._projector_shadow_maps:

@@ -213,6 +213,9 @@ uniform sampler2D u_shadow_map_3;
 
             uniform sampler2D u_area_shadow_map;
             uniform mat4 u_area_light_vp;
+            uniform sampler2D u_area_shadow_map_back;
+            uniform mat4 u_area_light_vp_back;
+            uniform float u_area_shadow_back;
             uniform float u_area_light_size;
             uniform float u_area_light_fov_scale;
             uniform vec2 u_area_light_near_far;
@@ -926,6 +929,9 @@ uniform sampler2D u_shadow_map_3;
 
             uniform sampler2D u_area_shadow_map;
             uniform mat4 u_area_light_vp;
+            uniform sampler2D u_area_shadow_map_back;
+            uniform mat4 u_area_light_vp_back;
+            uniform float u_area_shadow_back;
             uniform float u_area_light_size;
             uniform float u_area_light_fov_scale;
             uniform vec2 u_area_light_near_far;
