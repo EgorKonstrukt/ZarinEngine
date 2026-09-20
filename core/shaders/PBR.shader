@@ -541,6 +541,7 @@ uniform sampler2D u_shadow_map_3;
                 float hw = light.area_width * 0.5;
                 float hh = light.area_height * 0.5;
                 vec3 c = light.position;
+                vec3 lightN = normalize(cross(light.up, light.right));
                 int S = max(1, light.area_samples);
                 bool ds = light.area_double_sided > 0.5;
                 float inv_n = 1.0 / float(S * S);
@@ -570,8 +571,14 @@ uniform sampler2D u_shadow_map_3;
                         }
                         vec3 sp = c + right * u * hw + up * v * hh;
                         vec3 to_sp = sp - v_world_pos;
-                        float dist = length(to_sp);
+                        float dist = max(length(to_sp), 1e-4);
                         vec3 ld = to_sp / dist;
+                        float eNdL = dot(-ld, lightN);
+                        if (!ds) {
+                            if (eNdL <= 0.0) continue;
+                        } else {
+                            eNdL = abs(eNdL);
+                        }
                         float NdL = dot(N, ld);
                         if (!ds) {
                             NdL = max(NdL, 0.0);
@@ -581,7 +588,7 @@ uniform sampler2D u_shadow_map_3;
                         }
                         float range_fade = clamp(1.0 - pow(dist / max(light.range, 1e-4), 4.0), 0.0, 1.0);
                         float att = range_fade * range_fade / (dist * dist + 1.0);
-                        vec3 radiance = light.color * light.intensity * att * inv_n;
+                        vec3 radiance = light.color * light.intensity * att * inv_n * eNdL;
                         vec3 H = normalize(V + ld);
                         vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
                         float NDF;
@@ -1331,6 +1338,7 @@ float compute_shadow_improved() {
                 float hw = light.area_width * 0.5;
                 float hh = light.area_height * 0.5;
                 vec3 c = light.position;
+                vec3 lightN = normalize(cross(light.up, light.right));
                 int S = max(1, light.area_samples);
                 bool ds = light.area_double_sided > 0.5;
                 float inv_n = 1.0 / float(S * S);
@@ -1360,8 +1368,14 @@ float compute_shadow_improved() {
                         }
                         vec3 sp = c + right * u * hw + up * v * hh;
                         vec3 to_sp = sp - v_world_pos;
-                        float dist = length(to_sp);
+                        float dist = max(length(to_sp), 1e-4);
                         vec3 ld = to_sp / dist;
+                        float eNdL = dot(-ld, lightN);
+                        if (!ds) {
+                            if (eNdL <= 0.0) continue;
+                        } else {
+                            eNdL = abs(eNdL);
+                        }
                         float NdL = dot(N, ld);
                         if (!ds) {
                             NdL = max(NdL, 0.0);
@@ -1371,7 +1385,7 @@ float compute_shadow_improved() {
                         }
                         float range_fade = clamp(1.0 - pow(dist / max(light.range, 1e-4), 4.0), 0.0, 1.0);
                         float att = range_fade * range_fade / (dist * dist + 1.0);
-                        vec3 radiance = light.color * light.intensity * att * inv_n;
+                        vec3 radiance = light.color * light.intensity * att * inv_n * eNdL;
                         vec3 H = normalize(V + ld);
                         vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
                         float NDF;
