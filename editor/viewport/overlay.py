@@ -30,6 +30,17 @@ _STATS_FONT_TINY = QFont("Consolas", 7)
 _STATS_FONT_TINY.setStyleStrategy(QFont.StyleStrategy.ForceOutline)
 
 
+def _audio_panel_qt(vp, av):
+    fw, fh = vp._get_physical_dims()
+    dpr = vp.devicePixelRatio() or 1.0
+    x, y, w, h = av.panel_rect(fw, fh)
+    lx = x / dpr
+    lw = w / dpr
+    lh = h / dpr
+    ty = (fh - y - h) / dpr
+    return lx, ty, lw, lh
+
+
 def draw_stats_overlay(vp, painter):
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -73,14 +84,10 @@ def draw_audio_viz_header(vp, painter):
     if an is None or av is None:
         return
     try:
-        fw, fh = vp._get_physical_dims()
-        dpr = vp.devicePixelRatio() or 1.0
-        x, y, w, h = av.panel_rect(fw, fh)
-        lx, ly = x / dpr, y / dpr
-        lw = w / dpr
+        lx, ly, lw, lh = _audio_panel_qt(vp, av)
         painter.save()
         painter.setFont(_STATS_FONT_S)
-        fm = QFontMetrics(font)
+        fm = QFontMetrics(_STATS_FONT_S)
         bar_w = 90
         pad = 6
         head_h = fm.height() + 8
@@ -131,19 +138,14 @@ def draw_audio_freq_labels(vp, painter):
     if an is None or av is None:
         return
     try:
-        fw, fh = vp._get_physical_dims()
-        dpr = vp.devicePixelRatio() or 1.0
-        x, y, w, h = av.panel_rect(fw, fh)
-        lx, ly = x / dpr, y / dpr
-        lw = w / dpr
-        lh = h / dpr
+        lx, ly, lw, lh = _audio_panel_qt(vp, av)
         sr = getattr(an, "sample_rate", 0) or 48000
         nyquist = sr * 0.5
         if nyquist <= 20.0:
             return
         lmin = math.log10(20.0)
         lmax = math.log10(nyquist)
-        spec_bottom = ly + lh * 0.52
+        spec_bottom = ly + lh * 0.48
         painter.save()
         painter.setFont(_STATS_FONT_TINY)
         fm = QFontMetrics(_STATS_FONT_TINY)
@@ -176,18 +178,15 @@ def draw_audio_db_labels(vp, painter):
     if an is None or av is None:
         return
     try:
-        fw, fh = vp._get_physical_dims()
-        dpr = vp.devicePixelRatio() or 1.0
-        x, y, w, h = av.panel_rect(fw, fh)
-        lx, ly = x / dpr, y / dpr
-        lw = w / dpr
-        lh = h / dpr
+        lx, ly, lw, lh = _audio_panel_qt(vp, av)
         top_db = float(getattr(an, "spec_top_db", 0.0) or 0.0)
         floor_db = float(getattr(an, "spec_floor_db", -60.0) or -60.0)
         if floor_db >= top_db:
             return
         span = max(top_db - floor_db, 1e-3)
-        spec_bottom = ly + lh * 0.52
+        spec_bottom = ly + lh * 0.48
+        panel_bottom = ly + lh
+        spec_h = panel_bottom - spec_bottom
         painter.save()
         painter.setFont(_STATS_FONT_TINY)
         fm = QFontMetrics(_STATS_FONT_TINY)
@@ -196,8 +195,8 @@ def draw_audio_db_labels(vp, painter):
             if db < floor_db - 0.01:
                 continue
             v = (db - floor_db) / span
-            py = spec_bottom - 2.0 - v * (spec_bottom - ly - 4.0)
-            if py < ly + 1.0 or py > spec_bottom - 1.0:
+            py = spec_bottom + 2.0 + v * (spec_h - 6.0)
+            if py < spec_bottom + 1.0 or py > panel_bottom - 1.0:
                 continue
             label = str(int(db))
             tw = fm.horizontalAdvance(label)

@@ -247,7 +247,7 @@ class AudioVizGL:
         if h > fh - margin * 2:
             h = max(90, fh - margin * 2)
         x = margin
-        y = fh - margin - h
+        y = margin
         return (x, y, w, h)
 
     def _set_radar_uniforms(self, analyzer, fw: int, fh: int):
@@ -336,7 +336,14 @@ class AudioVizGL:
         scope = getattr(analyzer, "scope", None)
         if scope is None or scope.size == 0:
             return
-        pts = np.ascontiguousarray(scope, dtype=np.float32)
+        arr = np.ascontiguousarray(scope, dtype=np.float32)
+        if arr.ndim != 2 or arr.shape[0] < 2 or arr.shape[1] < 2:
+            return
+        l = arr[:, 0]
+        r = arr[:, 1]
+        mid = (l + r) * 0.70710678
+        side = (l - r) * 0.70710678
+        pts = np.ascontiguousarray(np.stack([side, mid], axis=1), dtype=np.float32)
         if self._scope_vbo is None or self._scope_vbo.size != pts.nbytes:
             if self._scope_vbo is not None:
                 try:

@@ -100,7 +100,16 @@ def initial_dock_sizes(mw):
         [620, 370], Qt.Orientation.Vertical)
 
 
-def load_renderer_config(mw):
+def load_renderer_config(mw, _attempt=0):
     from core.config.config import get_global_config
-    if mw._viewport.renderer:
-        mw._viewport.renderer.load_config(get_global_config())
+    try:
+        renderer = getattr(getattr(mw, "_viewport", None), "renderer", None)
+    except Exception:
+        renderer = None
+    if renderer is not None:
+        try:
+            renderer.load_config(get_global_config())
+        except Exception:
+            pass
+    elif _attempt < 50:
+        QTimer.singleShot(100, lambda: load_renderer_config(mw, _attempt + 1))

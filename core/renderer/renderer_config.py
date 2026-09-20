@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 from core.components.lighting import Light, Projector
-from core.engine.engine import Engine
 from core.renderer.types import RenderMode
 from core.renderer.mesh_data import MeshData, read_shader
 from core.components.rendering.environment.sky import Sky, release_env_cache
@@ -29,7 +28,29 @@ class RendererConfigMixin:
         self._selection_outline_thickness = config.get("rendering.selection_outline_thickness", self._selection_outline_thickness)
         from core.renderer.mesh_data import MeshData
         MeshData.outline_max_triangles = int(config.get("rendering.selection_outline_max_tris", MeshData.outline_max_triangles))
-        self._max_lights = config.get("rendering.max_lights", self._max_lights)
+        max_lights = int(config.get("rendering.max_lights", self._max_lights))
+        if max_lights != self._max_lights:
+            self._max_lights = max(1, max_lights)
+            self._light_uniforms = [
+                {
+                    "type": f"u_lights[{i}].type",
+                    "position": f"u_lights[{i}].position",
+                    "direction": f"u_lights[{i}].direction",
+                    "color": f"u_lights[{i}].color",
+                    "intensity": f"u_lights[{i}].intensity",
+                    "range": f"u_lights[{i}].range",
+                    "spot_angle": f"u_lights[{i}].spot_angle",
+                    "spot_inner_angle": f"u_lights[{i}].spot_inner_angle",
+                    "right": f"u_lights[{i}].right",
+                    "up": f"u_lights[{i}].up",
+                    "area_width": f"u_lights[{i}].area_width",
+                    "area_height": f"u_lights[{i}].area_height",
+                    "area_type": f"u_lights[{i}].area_type",
+                    "area_samples": f"u_lights[{i}].area_samples",
+                    "area_double_sided": f"u_lights[{i}].area_double_sided",
+                }
+                for i in range(self._max_lights)
+            ]
         self._shadow_resolution = config.get("rendering.shadow_resolution", self._shadow_resolution)
         self._shadow_distance = config.get("rendering.shadow_distance", self._shadow_distance)
         self._cascade_count = config.get("rendering.cascade_count", self._cascade_count)
@@ -39,6 +60,27 @@ class RendererConfigMixin:
         self._exposure = config.get("rendering.exposure", self._exposure)
         Light.set_light_scale(config.get("rendering.light_scale", 1.0))
         self._line_width = config.get("gizmo.line_width", self._line_width)
+        try:
+            if getattr(self, "_gizmo", None) is not None:
+                self._gizmo._line_width = self._line_width
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_grid", None) is not None:
+                self._grid.show = config.get("rendering.show_grid", self._grid.show)
+                self._grid.grid_size = config.get("rendering.grid_size", self._grid.grid_size)
+                try:
+                    self._grid._grid_world_size = float(config.get("rendering.grid_world_size", self._grid._grid_world_size))
+                except Exception:
+                    pass
+                self._grid.grid_2d_mode = config.get("rendering.grid_2d_mode", self._grid.grid_2d_mode)
+                self._grid.grid_zoom_distance = config.get("rendering.grid_zoom_distance", self._grid.grid_zoom_distance)
+        except Exception:
+            pass
+        try:
+            self._skybox_enabled = config.get("rendering.show_skybox", self._skybox_enabled)
+        except Exception:
+            pass
 
 
     def _apply_shadow_system_state(self, update: bool = True) -> bool:
@@ -90,16 +132,38 @@ class RendererConfigMixin:
 
 
     def _load_grid_config(self):
-        eng = Engine.instance()
-        config = eng.config if eng and hasattr(eng, 'config') else None
-        if not config:
+        try:
+            from core.config.config import get_global_config
+            config = get_global_config()
+        except Exception:
             return
-        if self._grid:
-            self._grid.show = config.get("rendering.show_grid", self._grid.show)
-            self._grid.grid_size = config.get("rendering.grid_size", self._grid.grid_size)
-            self._grid.grid_2d_mode = config.get("rendering.grid_2d_mode", self._grid.grid_2d_mode)
-            self._grid.grid_zoom_distance = config.get("rendering.grid_zoom_distance", self._grid.grid_zoom_distance)
-        self._skybox_enabled = config.get("rendering.show_skybox", self._skybox_enabled)
+        if config is None:
+            return
+        if getattr(self, "_grid", None) is not None:
+            try:
+                self._grid.show = config.get("rendering.show_grid", self._grid.show)
+            except Exception:
+                pass
+            try:
+                self._grid.grid_size = config.get("rendering.grid_size", self._grid.grid_size)
+            except Exception:
+                pass
+            try:
+                self._grid._grid_world_size = float(config.get("rendering.grid_world_size", self._grid._grid_world_size))
+            except Exception:
+                pass
+            try:
+                self._grid.grid_2d_mode = config.get("rendering.grid_2d_mode", self._grid.grid_2d_mode)
+            except Exception:
+                pass
+            try:
+                self._grid.grid_zoom_distance = config.get("rendering.grid_zoom_distance", self._grid.grid_zoom_distance)
+            except Exception:
+                pass
+        try:
+            self._skybox_enabled = config.get("rendering.show_skybox", self._skybox_enabled)
+        except Exception:
+            pass
 
 
     @property

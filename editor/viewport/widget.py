@@ -804,6 +804,11 @@ class SceneViewport(QOpenGLWidget):
             from core.renderer.renderer import Renderer
             self._renderer = Renderer(self._ctx)
             self._renderer.initialize()
+            try:
+                from core.config.config import get_global_config
+                self._renderer.load_config(get_global_config())
+            except Exception:
+                pass
             self._renderer.request_render(lambda: self.update())
             try:
                 from editor.viewport.audio_viz_gl import AudioVizGL

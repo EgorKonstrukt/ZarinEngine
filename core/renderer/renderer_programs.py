@@ -35,6 +35,11 @@ class RendererProgramsMixin:
 
     def initialize(self):
         try:
+            try:
+                from core.config.config import get_global_config
+                self.load_config(get_global_config())
+            except Exception:
+                pass
             default_frag_src = read_shader("default.frag")
             default_frag_src = ShaderManager._inject_area_shadows(default_frag_src)
             self._default_prog = program_with_fallback(
@@ -304,6 +309,11 @@ void main() {
             self._svgs = SvgRendererGL(self._ctx, self._sprite_prog)
             self._icons = IconRenderer(self._ctx, self._icon_prog)
             self._gaussians = GaussianSplatRenderer(self._ctx)
+            try:
+                from core.config.config import get_global_config
+                self.load_config(get_global_config())
+            except Exception:
+                pass
             self._initialized = True
             Logger.info("Renderer initialized.")
         except Exception as e:
