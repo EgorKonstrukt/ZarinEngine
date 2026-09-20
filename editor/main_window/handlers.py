@@ -77,8 +77,24 @@ def on_entity_double_clicked(mw, eid: str):
     if not entity:
         return
     t = entity.transform
-    if t:
-        mw._viewport.camera.frame_bounds(t.position)
+    if not t:
+        return
+    try:
+        from editor.entity_frame import compute_entity_frame
+        vp = getattr(mw, "_viewport", None)
+        renderer = getattr(vp, "_renderer", None) if vp is not None else None
+        if renderer is None and vp is not None:
+            try:
+                renderer = vp.renderer
+            except Exception:
+                renderer = None
+        center, radius = compute_entity_frame(entity, renderer)
+        mw._viewport.camera.frame_bounds(center, radius)
+    except Exception:
+        try:
+            mw._viewport.camera.frame_bounds(t.position)
+        except Exception:
+            pass
 
 
 def reset_camera(mw):

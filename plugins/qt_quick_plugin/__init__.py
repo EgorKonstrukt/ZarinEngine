@@ -612,6 +612,32 @@ class QtQuickWorldPlugin(PluginBase):
             if tr is None:
                 return
             try:
+                from editor.entity_frame import compute_entity_frame
+                ent = getattr(comp, "_entity", None)
+                target = comp
+                try:
+                    if ent is not None and hasattr(ent, "transform") and hasattr(ent, "children"):
+                        target = ent
+                    elif hasattr(comp, "transform") and hasattr(comp, "children") and hasattr(comp, "_components"):
+                        target = comp
+                    else:
+                        e = getattr(comp, "entity", None)
+                        if e is not None and hasattr(e, "transform"):
+                            target = e
+                except Exception:
+                    target = comp
+                renderer = getattr(vp, "_renderer", None)
+                if renderer is None:
+                    try:
+                        renderer = vp.renderer
+                    except Exception:
+                        renderer = None
+                center, radius = compute_entity_frame(target, renderer)
+                cam.frame_bounds(center, radius)
+                return
+            except Exception:
+                pass
+            try:
                 cam.frame_bounds(tr.position)
                 return
             except Exception:

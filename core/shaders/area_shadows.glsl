@@ -132,7 +132,10 @@ float compute_area_shadow() {
             float near_z = u_area_light_near_far.x;
             float far_z = u_area_light_near_far.y;
             float z_view = 2.0 * near_z * far_z / max(far_z + near_z - z_ndc * (far_z - near_z), 0.001);
-            return area_pcss(u_area_shadow_map, proj_coords, z_view);
+            float shadow = area_pcss(u_area_shadow_map, proj_coords, z_view);
+            vec2 border = min(proj_coords.xy, vec2(1.0) - proj_coords.xy);
+            float fade = clamp(min(border.x, border.y) / 0.05, 0.0, 1.0);
+            return mix(1.0, shadow, fade);
         }
     }
     if (u_area_shadow_back > 0.5) {
@@ -145,7 +148,10 @@ float compute_area_shadow() {
                 float near_z = u_area_light_near_far.x;
                 float far_z = u_area_light_near_far.y;
                 float z_view = 2.0 * near_z * far_z / max(far_z + near_z - z_ndc * (far_z - near_z), 0.001);
-                return area_pcss(u_area_shadow_map_back, back_coords, z_view);
+                float shadow = area_pcss(u_area_shadow_map_back, back_coords, z_view);
+                vec2 border = min(back_coords.xy, vec2(1.0) - back_coords.xy);
+                float fade = clamp(min(border.x, border.y) / 0.05, 0.0, 1.0);
+                return mix(1.0, shadow, fade);
             }
         }
     }

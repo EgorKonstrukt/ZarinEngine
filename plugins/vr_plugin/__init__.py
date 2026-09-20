@@ -355,9 +355,18 @@ class VRPlugin(PluginBase):
                         self_._gizmo.mode = GizmoMode.SCALE
                     elif self_._im and self_._im.key_just_pressed(KEY_F):
                         if self_._selected_entities:
-                            t = self_._selected_entities[0].transform
+                            ent = self_._selected_entities[0]
+                            t = ent.transform
                             if t:
-                                self_._cam.frame_bounds(t.position)
+                                try:
+                                    from editor.entity_frame import compute_entity_frame
+                                    center, radius = compute_entity_frame(ent, getattr(self_, "_renderer", None))
+                                    self_._cam.frame_bounds(center, radius)
+                                except Exception:
+                                    try:
+                                        self_._cam.frame_bounds(t.position)
+                                    except Exception:
+                                        pass
                     elif self_._im and self_._im.key_just_pressed(KEY_DELETE):
                         if self_._selected_entities and eng.scene:
                             from core.foundation.commands import DeleteEntityCommand, get_history

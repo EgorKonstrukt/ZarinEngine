@@ -931,9 +931,18 @@ class SceneViewport(QOpenGLWidget):
                     send_collab_gizmo_state(self)
                 elif self._im and self._im.key_just_pressed(KEY_F):
                     if self._selected_entities:
-                        t = self._selected_entities[0].transform
+                        ent = self._selected_entities[0]
+                        t = ent.transform
                         if t:
-                            self._cam.frame_bounds(t.position)
+                            try:
+                                from editor.entity_frame import compute_entity_frame
+                                center, radius = compute_entity_frame(ent, self._renderer)
+                                self._cam.frame_bounds(center, radius)
+                            except Exception:
+                                try:
+                                    self._cam.frame_bounds(t.position)
+                                except Exception:
+                                    pass
                 elif self._im and self._im.key_just_pressed(KEY_DELETE):
                     if self._selected_entities and eng.scene:
                         from editor.viewport.collaboration import is_collab_locked
