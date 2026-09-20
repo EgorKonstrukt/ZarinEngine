@@ -47,6 +47,7 @@ class MaterialManager:
         self._texture_cache: dict[str, Any] = {}
         self._tex_alpha_cache: dict[str, tuple] = {}
         self._tex_wrap_cache: dict[str, bool] = {}
+        self._tex_path_cache: dict[str, str] = {}
         self._transparency_cache: dict[tuple, bool] = {}
         self._pending_texture_queue: list = []
         self._async_lock = None
@@ -173,11 +174,17 @@ class MaterialManager:
             return None
 
     def _resolve_tex_path(self, path: str) -> str:
+        cached = self._tex_path_cache.get(path)
+        if cached is not None:
+            return cached
         if os.path.exists(path):
-            return os.path.abspath(path)
+            res = os.path.abspath(path)
+            self._tex_path_cache[path] = res
+            return res
         if not os.path.isabs(path):
             candidate = os.path.join(os.getcwd(), path)
             if os.path.exists(candidate):
+                self._tex_path_cache[path] = candidate
                 return candidate
         eng = Engine.instance()
         root = eng.project_root if eng and eng.project_root else os.getcwd()
@@ -188,9 +195,12 @@ class MaterialManager:
                 if sub:
                     c = os.path.normpath(os.path.join(root, sub))
                     if os.path.exists(c):
-                        return c.replace("\\", "/")
+                        res = c.replace("\\", "/")
+                        self._tex_path_cache[path] = res
+                        return res
         candidate = os.path.normpath(os.path.join(root, path))
         if os.path.exists(candidate):
+            self._tex_path_cache[path] = candidate
             return candidate
         return path
 
@@ -725,7 +735,6 @@ class MaterialManager:
                     Logger.error(f"set_uniform {name}={value} bool failed: {e}")
 
     def clear_caches(self):
-        """Release GPU textures and clear all caches for scene reload."""
         for _mtime, tex in self._texture_cache.values():
             try:
                 tex.release()
@@ -735,6 +744,7 @@ class MaterialManager:
         self._material_cache.clear()
         self._tex_alpha_cache.clear()
         self._tex_wrap_cache.clear()
+        self._tex_path_cache.clear()
         self._transparency_cache.clear()
 
     def release(self):

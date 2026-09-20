@@ -78,7 +78,7 @@ Shader "Zarin/PBR"
             void main() {
                 mat4 inst_model = mat4(in_model0, in_model1, in_model2, in_model3);
                 mat4 _model = (u_use_instancing == 1) ? inst_model : ((u_use_instancing == 2 || u_use_instancing == 3) ? _ssbo_models[_ssbo_indices[gl_InstanceID]] : u_model);
-                mat3 _normal_matrix = (u_use_instancing >= 1) ? transpose(inverse(mat3(_model))) : u_normal_matrix;
+                mat3 _normal_matrix = (u_use_instancing >= 1) ? mat3(_model) : u_normal_matrix;
                 vec3 skinned_pos = in_position;
                 vec3 skinned_nrm = in_normal;
                 if (u_use_skinning == 1) {
@@ -815,7 +815,7 @@ uniform sampler2D u_shadow_map_3;
             void main() {
                 mat4 inst_model = mat4(in_model0, in_model1, in_model2, in_model3);
                 mat4 _model = (u_use_instancing == 1) ? inst_model : u_model;
-                mat3 _normal_matrix = (u_use_instancing >= 1) ? transpose(inverse(mat3(_model))) : u_normal_matrix;
+                mat3 _normal_matrix = (u_use_instancing >= 1) ? mat3(_model) : u_normal_matrix;
                 vec4 world_pos = _model * vec4(in_position, 1.0);
                 v_world_pos = world_pos.xyz;
                 v_normal = normalize(_normal_matrix * in_normal);

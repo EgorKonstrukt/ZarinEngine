@@ -216,23 +216,76 @@ class SceneUniformsMixin:
     def _partition_transparent(self, renderable):
         opaque = []
         transparent = []
+        mm = self._materials
+        if mm is None:
+            return list(renderable), transparent
         try:
-            mm = self._materials
             ism = mm.mesh_transparency
             lm = mm.load_material
         except Exception:
             return list(renderable), transparent
+        uniq = set()
+        has_sprite = False
+        uniq_add = uniq.add
         for e in renderable:
+            mr = e[3]
+            if mr is None:
+                uniq_add("")
+                continue
+            sp = mr.sprite_texture
+            if sp:
+                has_sprite = True
+                break
+            mats = mr.materials
+            if not mats:
+                uniq_add("")
+            else:
+                sub = e[5]
+                if sub < len(mats):
+                    uniq_add(mats[sub].get("path", ""))
+                else:
+                    uniq_add(mats[-1].get("path", ""))
+        if has_sprite:
+            for e in renderable:
+                try:
+                    mr = e[3]
+                    sub = e[5] if len(e) > 5 else 0
+                    mat = lm(mr.get_material_path(sub) if mr else "")
+                    if ism(mr, mat):
+                        transparent.append(e)
+                    else:
+                        opaque.append(e)
+                except Exception:
+                    opaque.append(e)
+            return opaque, transparent
+        trans_set = set()
+        for p in uniq:
             try:
-                mr = e[3]
-                sub = e[5] if len(e) > 5 else 0
-                mat = lm(mr.get_material_path(sub) if mr else "")
-                if ism(mr, mat):
+                mat = lm(p)
+                if ism(None, mat):
+                    trans_set.add(p)
+            except Exception:
+                pass
+        if not trans_set:
+            return list(renderable), transparent
+        for e in renderable:
+            mr = e[3]
+            if mr is None:
+                opaque.append(e)
+                continue
+            mats = mr.materials
+            if not mats:
+                opaque.append(e)
+            else:
+                sub = e[5]
+                if sub < len(mats):
+                    p = mats[sub].get("path", "")
+                else:
+                    p = mats[-1].get("path", "")
+                if p in trans_set:
                     transparent.append(e)
                 else:
                     opaque.append(e)
-            except Exception:
-                opaque.append(e)
         return opaque, transparent
 
 
@@ -245,5 +298,24 @@ class SceneUniformsMixin:
             return
         try:
             entries.sort(key=lambda e: -(((float(e[4]._d[3, 0]) - cx) ** 2) + ((float(e[4]._d[3, 1]) - cy) ** 2) + ((float(e[4]._d[3, 2]) - cz) ** 2)))
+        except Exception:
+            pass
+
+
+    def _sort_opaque_front_first(self, entries, cam_pos):
+        try:
+            n = len(entries)
+        except Exception:
+            return
+        if n < 2:
+            return
+        try:
+            cx = float(cam_pos.x)
+            cy = float(cam_pos.y)
+            cz = float(cam_pos.z)
+        except Exception:
+            return
+        try:
+            entries.sort(key=lambda e: (((float(e[4]._d[3, 0]) - cx) ** 2) + ((float(e[4]._d[3, 1]) - cy) ** 2) + ((float(e[4]._d[3, 2]) - cz) ** 2)))
         except Exception:
             pass

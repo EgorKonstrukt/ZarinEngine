@@ -380,6 +380,20 @@ class SceneCollectorMixin:
         snap = self._snap_cache
         if snap is None:
             return
+        try:
+            tv = scene._transform_version
+        except Exception:
+            tv = None
+        try:
+            no_soft = not scene._component_indices.get("SoftBody")
+        except Exception:
+            no_soft = False
+        if no_soft and tv is not None and tv == getattr(self, "_snap_refresh_tv", None):
+            try:
+                if not scene._dirty_roots and not scene._transform_version_pending:
+                    return
+            except Exception:
+                pass
         renderable = snap.renderable
         for entry in renderable:
             tr = entry[1]
@@ -422,5 +436,9 @@ class SceneCollectorMixin:
             item.refresh_vp()
         try:
             self._refresh_soft_snapshot_meshes(scene)
+        except Exception:
+            pass
+        try:
+            self._snap_refresh_tv = scene._transform_version
         except Exception:
             pass

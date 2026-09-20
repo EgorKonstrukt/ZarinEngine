@@ -127,6 +127,12 @@ class GeometryCacheMixin:
 
     def _refresh_soft_snapshot_meshes(self, scene=None, snap=None) -> None:
         try:
+            if scene is not None:
+                try:
+                    if not scene._component_indices.get("SoftBody"):
+                        return
+                except Exception:
+                    pass
             if snap is None:
                 snap = self._snap_cache
             if snap is None:

@@ -249,7 +249,7 @@ mat4 _resolve_model() {
     return u_model;
 }
 mat3 _resolve_normal_matrix() {
-    if (u_use_instancing >= 1) return transpose(inverse(mat3(_resolve_model())));
+    if (u_use_instancing >= 1) return mat3(_resolve_model());
     return u_normal_matrix;
 }
 
@@ -267,7 +267,7 @@ mat4 _resolve_model() {
     return u_model;
 }
 mat3 _resolve_normal_matrix() {
-    if (u_use_instancing >= 1) return transpose(inverse(mat3(_resolve_model())));
+    if (u_use_instancing >= 1) return mat3(_resolve_model());
     return u_normal_matrix;
 }
 

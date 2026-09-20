@@ -245,6 +245,8 @@ class SceneRendererMixin:
             pass
         opaque_entries, transparent_entries = self._partition_transparent(renderable)
         self._sort_transparent_far_first(transparent_entries, cam_pos)
+        if len(opaque_entries) > 32:
+            self._sort_opaque_front_first(opaque_entries, cam_pos)
         for _is_trans_phase, _phase_entries in ((False, opaque_entries), (True, transparent_entries)):
             if not _phase_entries:
                 continue
@@ -670,21 +672,41 @@ class SceneRendererMixin:
         self._triangles_drawn = 0
         self._vertices_drawn = 0
         counted_mesh_ids: set[int] = set()
+        tri_cache = getattr(self, "_tri_cache", None)
+        vert_cache = getattr(self, "_vert_cache", None)
+        tri_gen = getattr(self, "_tri_cache_gen", -1)
+        cur_gen = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+        if tri_cache is None or vert_cache is None or tri_gen != cur_gen:
+            tri_cache = {}
+            vert_cache = {}
+            self._tri_cache = tri_cache
+            self._vert_cache = vert_cache
+            self._tri_cache_gen = cur_gen
+        tri_get = tri_cache.get
+        vert_get = vert_cache.get
         for entry in renderable:
             mesh = entry[2]
-            sub_idx = entry[5] if len(entry) > 5 else -1
-            ranges = getattr(mesh, 'sub_mesh_ranges', None)
-            if ranges and sub_idx >= 0 and sub_idx < len(ranges):
-                _, count = ranges[sub_idx]
-                self._triangles_drawn += count // 3
-            else:
-                if hasattr(mesh, 'indices') and mesh.indices is not None and len(mesh.indices) > 0:
-                    self._triangles_drawn += len(mesh.indices) // 3
+            sub_idx = entry[5]
+            mkey = (id(mesh), sub_idx)
+            tri = tri_get(mkey)
+            if tri is None:
+                ranges = mesh.sub_mesh_ranges
+                if ranges and sub_idx >= 0 and sub_idx < len(ranges):
+                    tri = ranges[sub_idx][1] // 3
+                else:
+                    idx = mesh.indices
+                    tri = len(idx) // 3 if idx is not None and len(idx) > 0 else 0
+                tri_cache[mkey] = tri
+            self._triangles_drawn += tri
             mid = id(mesh)
             if mid not in counted_mesh_ids:
                 counted_mesh_ids.add(mid)
-                if hasattr(mesh, 'vertices') and mesh.vertices is not None and len(mesh.vertices) > 0:
-                    self._vertices_drawn += len(mesh.vertices) // 3
+                vert = vert_get(mid)
+                if vert is None:
+                    v = mesh.vertices
+                    vert = len(v) // 3 if v is not None and len(v) > 0 else 0
+                    vert_cache[mid] = vert
+                self._vertices_drawn += vert
         if hasattr(snap, 'skinned_renderables'):
             for entry in snap.skinned_renderables:
                 mesh = entry[2]
@@ -901,5 +923,4 @@ class SceneRendererMixin:
             if prof:
                 prof.stop("render_outlines")
         if prof:
-            prof.set_value("render_scene", (time.perf_counter() - _render_t0) * 1000.0)
             prof.stop("render_scene")

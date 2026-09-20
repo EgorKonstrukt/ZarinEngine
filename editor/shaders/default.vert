@@ -37,11 +37,11 @@ void main() {
     if (u_use_instancing == 1) {
         mat4 inst_model = mat4(in_model0, in_model1, in_model2, in_model3);
         model = inst_model;
-        nm = transpose(inverse(mat3(model)));
-    } else if (u_use_instancing == 2) {
+        nm = mat3(model);
+    } else if (u_use_instancing == 2 || u_use_instancing == 3) {
         int idx = indices[gl_InstanceID];
         model = models[idx];
-        nm = transpose(inverse(mat3(model)));
+        nm = mat3(model);
     }
     vec3 local_pos = in_position;
     vec3 local_nrm = in_normal;

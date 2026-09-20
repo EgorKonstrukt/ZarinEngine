@@ -204,56 +204,62 @@ class RenderBatcher:
         default_prog = self._default_prog
         none_id = id(self._MAT_NONE)
         mpath_cache: dict = {}
+        get_cached = mpath_cache.get
         for entry in renderables:
-            ent, tr, mesh, mr = entry[0], entry[1], entry[2], entry[3]
-            wm = entry[4] if len(entry) > 4 else tr.world_matrix
-            sub_idx = entry[5] if len(entry) > 5 else -1
-            mpath = mr.get_material_path(sub_idx)
-            cached = mpath_cache.get(mpath)
+            mr = entry[3]
+            mesh = entry[2]
+            wm = entry[4]
+            sub_idx = entry[5]
+            mats = mr.materials
+            if mats:
+                if sub_idx < len(mats):
+                    mpath = mats[sub_idx].get("path", "")
+                else:
+                    mpath = mats[-1].get("path", "")
+            else:
+                mpath = ""
+            cached = get_cached(mpath)
             if cached is None:
                 mat = get_mat(mpath)
                 shader_path = mat.shader_path if mat is not None else ""
                 prog = get_prog(shader_path) if shader_path else None
                 if prog is None:
                     prog = default_prog
-                mpath_cache[mpath] = (mat, prog)
+                cached = (mat, prog)
+                mpath_cache[mpath] = cached
             else:
                 mat, prog = cached
             mat_key = id(mat) if mat is not None else none_id
-            try:
-                _uv = getattr(mr, "uv_scale", None)
-                _usx = float(_uv.x) if _uv is not None else 1.0
-                _usy = float(_uv.y) if _uv is not None else 1.0
-            except Exception:
-                try:
-                    _usx = float(_uv[0])
-                    _usy = float(_uv[1])
-                except Exception:
-                    _usx, _usy = 1.0, 1.0
-            try:
-                _uo = getattr(mr, "uv_offset", None)
-                _uox = float(_uo.x) if _uo is not None else 0.0
-                _uoy = float(_uo.y) if _uo is not None else 0.0
-            except Exception:
-                try:
-                    _uox = float(_uo[0])
-                    _uoy = float(_uo[1])
-                except Exception:
-                    _uox, _uoy = 0.0, 0.0
-            try:
-                _uw = bool(getattr(mr, "uv_scale_by_transform", False))
-            except Exception:
-                _uw = False
-            try:
-                _sp = getattr(mr, "sprite_texture", "") or ""
-            except Exception:
+            _uv = mr.uv_scale
+            _usx = getattr(_uv, "x", None)
+            if _usx is None:
+                _usx = float(_uv[0])
+                _usy = float(_uv[1])
+            else:
+                _usy = _uv.y
+            _uo = mr.uv_offset
+            _uox = getattr(_uo, "x", None)
+            if _uox is None:
+                _uox = float(_uo[0])
+                _uoy = float(_uo[1])
+            else:
+                _uoy = _uo.y
+            _uw = mr.uv_scale_by_transform
+            _sp = mr.sprite_texture
+            if not _sp:
                 _sp = ""
-            key = (id(prog), mat_key, id(mesh), mr.receive_shadows, sub_idx, getattr(mr, 'dynamic_reflections', False), (_usx, _usy, _uox, _uoy, _uw, _sp))
+            if _usx == 1.0 and _usy == 1.0 and _uox == 0.0 and _uoy == 0.0 and not _uw and _sp == "":
+                uv_key = 0
+            else:
+                uv_key = (_usx, _usy, _uox, _uoy, _uw, _sp)
+            _rs = mr.receive_shadows
+            _dr = mr.dynamic_reflections
+            key = (id(prog), mat_key, id(mesh), _rs, sub_idx, _dr, uv_key)
             lst = groups.get(key)
             if lst is None:
-                groups[key] = [(ent, tr, mesh, mr, mat, prog, wm, sub_idx)]
+                groups[key] = [(entry[0], entry[1], mesh, mr, mat, prog, wm, sub_idx)]
             else:
-                lst.append((ent, tr, mesh, mr, mat, prog, wm, sub_idx))
+                lst.append((entry[0], entry[1], mesh, mr, mat, prog, wm, sub_idx))
         return groups
 
     def _ensure_index_buffer(self, n: int) -> moderngl.Buffer:
@@ -293,9 +299,9 @@ class RenderBatcher:
         try:
             from core._render_utils import batch_mat4_to_f32_flat
             flat = batch_mat4_to_f32_flat(matrices)
-            self._shared_inst_vbo.write(flat.tobytes())
+            self._shared_inst_vbo.write(flat)
         except ImportError:
-            self._shared_inst_vbo.write(Mat4.batch_to_f32(matrices).tobytes())
+            self._shared_inst_vbo.write(Mat4.batch_to_f32(matrices))
         return self._shared_inst_vbo
 
     def _get_vao(self, prog: moderngl.Program, mesh) -> moderngl.VertexArray:
