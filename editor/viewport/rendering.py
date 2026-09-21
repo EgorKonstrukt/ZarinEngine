@@ -53,7 +53,12 @@ def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
     tv = None
     use_cache = False
     cached = None
-    if not sel:
+    try:
+        _play = bool(vp._engine and vp._engine.play_mode)
+    except Exception:
+        _play = False
+    cacheable = (not sel) or _play
+    if cacheable:
         try:
             rv = scene._render_version
             tv = scene._transform_version
@@ -95,7 +100,7 @@ def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
             col_data = pipe_col.get_instance_render_data()
         except Exception:
             col_data = []
-        if not col_lines and not sel and rv is not None and col_data:
+        if not col_lines and cacheable and rv is not None and col_data:
             try:
                 if len(_GIZMO_INST_CACHE) > 8:
                     _GIZMO_INST_CACHE.clear()

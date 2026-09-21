@@ -966,6 +966,11 @@ class SceneViewport(QOpenGLWidget):
                         eng._scene_lock.release()
                 self._cam.update(dt)
             else:
+                try:
+                    if self._gizmos_api is not None:
+                        self._gizmos_api.update(dt)
+                except Exception:
+                    pass
                 self._cam.update(dt)
         prof = eng._profiler if hasattr(eng, '_profiler') else None
         in_frame = prof is not None and len(prof._stack) > 0 and prof._stack[0][0] == "frame"
@@ -1011,9 +1016,9 @@ class SceneViewport(QOpenGLWidget):
                 _acquired = eng._scene_lock.acquire(blocking=False)
                 try:
                     if _acquired:
+                        if self._gizmo_visible:
+                            render_component_gizmos(self, vp_mat)
                         if not _play:
-                            if self._gizmo_visible:
-                                render_component_gizmos(self, vp_mat)
                             render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
                             try:
                                 if self._gizmo_icons_visible:
