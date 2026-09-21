@@ -84,14 +84,49 @@ class RendererConfigMixin:
 
 
     def _apply_shadow_system_state(self, update: bool = True) -> bool:
-        from core.components.rendering.environment.directional_shadow import DirectionalShadow
-        from core.components.rendering.environment.point_shadow import PointShadow
-        from core.components.rendering.environment.spot_shadow import SpotShadow
-        from core.components.rendering.environment.area_shadow import AreaShadow
-        d = DirectionalShadow.find_active()
-        p = PointShadow.find_active()
-        s = SpotShadow.find_active()
-        a = AreaShadow.find_active()
+        cls_cache = getattr(self, "_shadow_cls", None)
+        if cls_cache is None:
+            from core.components.rendering.environment.directional_shadow import DirectionalShadow as _D
+            from core.components.rendering.environment.point_shadow import PointShadow as _P
+            from core.components.rendering.environment.spot_shadow import SpotShadow as _S
+            from core.components.rendering.environment.area_shadow import AreaShadow as _A
+            cls_cache = (_D, _P, _S, _A)
+            self._shadow_cls = cls_cache
+            self._shadow_state_sig = False
+            self._shadow_splits_cache = None
+        _D, _P, _S, _A = cls_cache
+        d = _D.find_active()
+        p = _P.find_active()
+        s = _S.find_active()
+        a = _A.find_active()
+        if d is not None:
+            try:
+                _ds = d._cascade_splits
+            except Exception:
+                _ds = []
+            try:
+                sig = (d, p, s, a, d._shadow_resolution, d._shadow_distance, d._cascade_count,
+                       _ds == getattr(self, "_shadow_splits_cache", None),
+                       getattr(p, "_shadow_resolution", 0) if p is not None else 0,
+                       getattr(s, "_shadow_resolution", 0) if s is not None else 0,
+                       getattr(a, "_shadow_resolution", 0) if a is not None else 0)
+            except Exception:
+                sig = None
+        else:
+            try:
+                sig = (None, p, s, a,
+                       getattr(p, "_shadow_resolution", 0) if p is not None else 0,
+                       getattr(s, "_shadow_resolution", 0) if s is not None else 0,
+                       getattr(a, "_shadow_resolution", 0) if a is not None else 0)
+            except Exception:
+                sig = None
+        if sig is not None and sig == getattr(self, "_shadow_state_sig", None):
+            return self._shadow_enabled
+        self._shadow_state_sig = sig
+        try:
+            self._shadow_splits_cache = list(_ds) if d is not None else None
+        except Exception:
+            pass
         directional = d is not None
         point = p is not None
         spot = s is not None

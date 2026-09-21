@@ -274,14 +274,19 @@ class TextRendererGL:
             return
         if tex is None:
             return
-        if "u_color" in prog:
+        names = getattr(self, "_prog_names", None)
+        if names is None or getattr(self, "_prog_id", None) is not id(prog):
+            names = frozenset(prog)
+            self._prog_names = names
+            self._prog_id = id(prog)
+        if "u_color" in names:
             prog["u_color"].write(np.array(color, dtype=np.float32).tobytes())
-        if "u_solid" in prog:
+        if "u_solid" in names:
             prog["u_solid"].value = 1.0 if solid else 0.0
-        if "u_clip_alpha" in prog:
+        if "u_clip_alpha" in names:
             prog["u_clip_alpha"].value = clip_alpha
         tex.use(0)
-        if "u_texture" in prog:
+        if "u_texture" in names:
             prog["u_texture"].value = 0
         if write_depth:
             self._ctx.depth_mask = True
@@ -486,15 +491,20 @@ class TextRendererGL:
         prog = self._prog
         view_f32 = view_mat.to_f32()
         proj_f32 = proj_mat.to_f32()
+        names = getattr(self, "_prog_names", None)
+        if names is None or getattr(self, "_prog_id", None) is not id(prog):
+            names = frozenset(prog)
+            self._prog_names = names
+            self._prog_id = id(prog)
         zero3 = np.array([0.0, 0.0, 0.0], dtype=np.float32)
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.enable(moderngl.BLEND)
         self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
-        if "u_view" in prog:
+        if "u_view" in names:
             prog["u_view"].write(view_f32.tobytes())
-        if "u_proj" in prog:
+        if "u_proj" in names:
             prog["u_proj"].write(proj_f32.tobytes())
-        if "u_viewport_size" in prog:
+        if "u_viewport_size" in names:
             prog["u_viewport_size"].write(np.array([float(viewport_w), float(viewport_h)], dtype=np.float32).tobytes())
         for ent in scene.get_entities_with_component(TextRenderer):
             if not ent.active:
@@ -518,11 +528,11 @@ class TextRendererGL:
                 continue
             self._ensure_capacity(len(tr.text))
             model_f32 = t.world_matrix.to_f32()
-            if "u_model" in prog:
+            if "u_model" in names:
                 prog["u_model"].write(model_f32.tobytes())
-            if "u_billboard" in prog:
+            if "u_billboard" in names:
                 prog["u_billboard"].value = 1.0 if tr.billboard else 0.0
-            if "u_screen_space" in prog:
+            if "u_screen_space" in names:
                 prog["u_screen_space"].value = 0.0 if tr.font_world_space else 1.0
             gh = self._geom_hash(tr, atlas)
             cached = self._geom_cache.get(ent.id)
@@ -551,13 +561,13 @@ class TextRendererGL:
             if has_shadow:
                 self._ctx.disable(moderngl.DEPTH_TEST)
                 sx, sy = tr.shadow_offset[0], tr.shadow_offset[1]
-                if "u_offset" in prog:
+                if "u_offset" in names:
                     prog["u_offset"].write(np.array([-sx, -sy, 0.0], dtype=np.float32).tobytes())
                 if vi > 0:
                     self._render_quads(vi, list(tr.shadow_color), tex, False, False, 0)
                 if evi > 0:
                     self._render_quads(evi, list(tr.shadow_color), tex, False, True, ev)
-                if "u_offset" in prog:
+                if "u_offset" in names:
                     prog["u_offset"].write(zero3.tobytes())
                 if tr.font_world_space:
                     self._ctx.enable(moderngl.DEPTH_TEST)
@@ -573,7 +583,7 @@ class TextRendererGL:
                     if a < 0.005:
                         continue
                     gc[3] = a
-                    if "u_offset" in prog:
+                    if "u_offset" in names:
                         for dx, dy in self._OUTLINE_DIRS:
                             prog["u_offset"].write(np.array([dx * r, dy * r, 0.0], dtype=np.float32).tobytes())
                             if vi > 0:
@@ -584,7 +594,7 @@ class TextRendererGL:
             if has_outline:
                 oc = list(tr.outline_color)
                 ow = tr.outline_width
-                if "u_offset" in prog:
+                if "u_offset" in names:
                     for dx, dy in self._OUTLINE_DIRS:
                         prog["u_offset"].write(np.array([dx * ow, dy * ow, 0.0], dtype=np.float32).tobytes())
                         if vi > 0:
@@ -597,7 +607,7 @@ class TextRendererGL:
                     self._ctx.enable(moderngl.DEPTH_TEST)
             if has_3d:
                 layer_step = tr.extrusion_depth / max(tr.extrusion_layers, 1)
-                if "u_offset" in prog:
+                if "u_offset" in names:
                     for layer in range(tr.extrusion_layers, 0, -1):
                         z_off = layer * layer_step
                         t_factor = 0.3 + 0.7 * (1.0 - layer / max(tr.extrusion_layers, 1))

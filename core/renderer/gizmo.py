@@ -237,6 +237,17 @@ class GizmoRenderer:
         self._stat_upload_bytes: int = 0
         self._stat_upload_full: int = 0
         self._stat_upload_partial: int = 0
+        self._prog_names: dict = {}
+
+    def _names(self, prog):
+        pid = id(prog)
+        n = self._prog_names.get(pid)
+        if n is None:
+            n = frozenset(prog)
+            if len(self._prog_names) > 32:
+                self._prog_names.clear()
+            self._prog_names[pid] = n
+        return n
 
     def _ensure_instanced_prog(self):
         if self._instanced_prog is not None:
@@ -349,14 +360,15 @@ class GizmoRenderer:
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.disable(moderngl.DEPTH_TEST)
         prog = self._fatline_prog
+        names = self._names(prog)
         vp_f32 = vp_mat.to_f32()
-        if "u_mvp" in prog:
+        if "u_mvp" in names:
             prog["u_mvp"].write(vp_f32.tobytes())
         ndc_x = desired_pixels / max(1.0, float(fw))
         ndc_y = desired_pixels / max(1.0, float(fh))
-        if "u_thickness_ndc_x" in prog:
+        if "u_thickness_ndc_x" in names:
             prog["u_thickness_ndc_x"] = float(ndc_x)
-        if "u_thickness_ndc_y" in prog:
+        if "u_thickness_ndc_y" in names:
             prog["u_thickness_ndc_y"] = float(ndc_y)
         strip_t = _STRIP_T
         strip_s = _STRIP_S
@@ -412,21 +424,22 @@ class GizmoRenderer:
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.disable(moderngl.DEPTH_TEST)
         prog = self._fatline_prog
+        names = self._names(prog)
         vp_f32 = vp_mat.to_f32()
-        if "u_mvp" in prog:
+        if "u_mvp" in names:
             prog["u_mvp"].write(vp_f32.tobytes())
         ndc_x = desired_pixels / max(1.0, float(fw))
         ndc_y = desired_pixels / max(1.0, float(fh))
-        if "u_thickness_ndc_x" in prog:
+        if "u_thickness_ndc_x" in names:
             prog["u_thickness_ndc_x"] = float(ndc_x)
-        if "u_thickness_ndc_y" in prog:
+        if "u_thickness_ndc_y" in names:
             prog["u_thickness_ndc_y"] = float(ndc_y)
-        if dash_opts and "u_dash_enabled" in prog:
+        if dash_opts and "u_dash_enabled" in names:
             prog["u_dash_enabled"] = True
             prog["u_dash_length"] = float(dash_opts.get('dash_length', 0.3))
             prog["u_gap_length"] = float(dash_opts.get('gap_length', 0.15))
             prog["u_dash_time"] = float(dash_opts.get('time', 0.0))
-        elif "u_dash_enabled" in prog:
+        elif "u_dash_enabled" in names:
             prog["u_dash_enabled"] = False
         self._ensure_fatline_capacity(n_verts)
         sv = self._fs_starts[:n_verts].reshape(-1, 6, 3)
@@ -525,7 +538,7 @@ class GizmoRenderer:
         self._stat_draws += 1
         prog = self._instanced_prog
         vp_f32 = vp_mat.to_f32()
-        if "u_mvp" in prog:
+        if "u_mvp" in self._names(prog):
             prog["u_mvp"].write(vp_f32.tobytes())
         data_size = num_instances * mesh.instance_stride
         if data_size > 0:
@@ -631,30 +644,34 @@ void main() {
             self.initialize_instanced_lines()
             if self._inst_line_prog is None:
                 return
-        mesh_map = {
-            'box': self._box_inst_mesh,
-            'sphere': self._sphere_inst_mesh,
-            'rect': self._rect_inst_mesh,
-            'circle': self._circle_inst_mesh,
-            'capsule': self._capsule_inst_mesh,
-        }
-        mesh = mesh_map.get(shape_type)
+        mesh = None
+        if shape_type == 'box':
+            mesh = self._box_inst_mesh
+        elif shape_type == 'sphere':
+            mesh = self._sphere_inst_mesh
+        elif shape_type == 'rect':
+            mesh = self._rect_inst_mesh
+        elif shape_type == 'circle':
+            mesh = self._circle_inst_mesh
+        elif shape_type == 'capsule':
+            mesh = self._capsule_inst_mesh
         if mesh is None or mesh.instance_vbo is None or num_instances == 0:
             return
         self._stat_instances += num_instances
         self._stat_draws += 1
         prog = self._inst_line_prog
+        names = self._names(prog)
         vp_f32 = vp_mat.to_f32()
-        if "u_mvp" in prog:
+        if "u_mvp" in names:
             prog["u_mvp"].write(vp_f32.tobytes())
         desired_pixels = max(1.0, float(self._line_width) * 1.5 * thickness_multiplier)
         ndc_x = desired_pixels / max(1.0, float(fw))
         ndc_y = desired_pixels / max(1.0, float(fh))
-        if "u_thickness_ndc_x" in prog:
+        if "u_thickness_ndc_x" in names:
             prog["u_thickness_ndc_x"] = float(ndc_x)
-        if "u_thickness_ndc_y" in prog:
+        if "u_thickness_ndc_y" in names:
             prog["u_thickness_ndc_y"] = float(ndc_y)
-        if "u_camera_pos" in prog:
+        if "u_camera_pos" in names:
             prog["u_camera_pos"].write(np.array([cam_pos.x, cam_pos.y, cam_pos.z], dtype=np.float32).tobytes())
         data_size = num_instances * mesh.instance_stride
         if data_size > 0:
@@ -846,21 +863,22 @@ void main() {
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.disable(moderngl.DEPTH_TEST)
         prog = self._raw_line_prog
+        names = self._names(prog)
         vp_f32 = vp_mat.to_f32()
-        if "u_mvp" in prog:
+        if "u_mvp" in names:
             prog["u_mvp"].write(vp_f32.tobytes())
         ndc_x = desired_pixels / max(1.0, float(fw))
         ndc_y = desired_pixels / max(1.0, float(fh))
-        if "u_thickness_ndc_x" in prog:
+        if "u_thickness_ndc_x" in names:
             prog["u_thickness_ndc_x"] = float(ndc_x)
-        if "u_thickness_ndc_y" in prog:
+        if "u_thickness_ndc_y" in names:
             prog["u_thickness_ndc_y"] = float(ndc_y)
-        if dash_opts and "u_dash_enabled" in prog:
+        if dash_opts and "u_dash_enabled" in names:
             prog["u_dash_enabled"] = True
             prog["u_dash_length"] = float(dash_opts.get('dash_length', 0.3))
             prog["u_gap_length"] = float(dash_opts.get('gap_length', 0.15))
             prog["u_dash_time"] = float(dash_opts.get('time', 0.0))
-        elif "u_dash_enabled" in prog:
+        elif "u_dash_enabled" in names:
             prog["u_dash_enabled"] = False
         self._raw_line_vao.render(moderngl.TRIANGLES, vertices=6, instances=n)
         if old_cull:
@@ -907,7 +925,7 @@ void main() {
         self._stat_mesh_verts += v_data.shape[0]
         self._stat_draws += 1
         vp_f32 = vp_mat.to_f32()
-        if "u_mvp" in prog:
+        if "u_mvp" in self._names(prog):
             prog["u_mvp"].write(vp_f32.tobytes())
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.enable(moderngl.BLEND)

@@ -82,29 +82,34 @@ class GridRenderer:
             cam_pos, viewport_h, fov
         )
 
-        if "u_view" in self._prog:
+        names = getattr(self, "_prog_names", None)
+        if names is None or getattr(self, "_prog_id", None) is not id(self._prog):
+            names = frozenset(self._prog)
+            self._prog_names = names
+            self._prog_id = id(self._prog)
+        if "u_view" in names:
             self._prog["u_view"].write(view_f32.tobytes())
-        if "u_proj" in self._prog:
+        if "u_proj" in names:
             self._prog["u_proj"].write(proj_f32.tobytes())
-        if "u_camera_pos" in self._prog:
+        if "u_camera_pos" in names:
             self._prog["u_camera_pos"].write(
                 np.array([cam_pos.x, cam_pos.y, cam_pos.z], dtype=np.float32).tobytes()
             )
-        if "u_grid_size" in self._prog:
+        if "u_grid_size" in names:
             self._prog["u_grid_size"].value = float(minor_w)
-        if "u_grid_alpha_minor" in self._prog:
+        if "u_grid_alpha_minor" in names:
             self._prog["u_grid_alpha_minor"].value = float(self._alpha_from_px(minor_px))
-        if "u_grid_alpha_major" in self._prog:
+        if "u_grid_alpha_major" in names:
             self._prog["u_grid_alpha_major"].value = float(self._alpha_from_px(major_px))
-        if "u_grid_alpha_super" in self._prog:
+        if "u_grid_alpha_super" in names:
             self._prog["u_grid_alpha_super"].value = float(self._alpha_from_px(super_px))
-        if "u_grid_2d" in self._prog:
+        if "u_grid_2d" in names:
             self._prog["u_grid_2d"].value = 1.0 if self._grid_2d_mode else 0.0
-        if "u_grid_step_major" in self._prog:
+        if "u_grid_step_major" in names:
             self._prog["u_grid_step_major"].value = float(self._MAJOR_MULT)
-        if "u_grid_step_super" in self._prog:
+        if "u_grid_step_super" in names:
             self._prog["u_grid_step_super"].value = float(self._SUPER_MULT)
-        if "u_grid_opacity" in self._prog:
+        if "u_grid_opacity" in names:
             self._prog["u_grid_opacity"].value = float(self._grid_opacity)
         self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.depth_mask = False
