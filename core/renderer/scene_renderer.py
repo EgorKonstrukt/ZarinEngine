@@ -498,7 +498,10 @@ class SceneRendererMixin:
                 self._scene_color_tex.use(12)
             if "u_viewport_size" in self._grid_prog:
                 self._grid_prog["u_viewport_size"].value = (float(viewport_w), float(viewport_h))
+            self._ctx.enable(moderngl.BLEND)
+            self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
             self._grid.render(view_f32, proj_f32, cam_pos, self._clear_color, viewport_h, cam_fov)
+            self._ctx.disable(moderngl.BLEND)
             if prof:
                 prof.stop("render_grid")
         if water_components and self._water_plane:
