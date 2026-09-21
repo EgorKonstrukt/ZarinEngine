@@ -231,19 +231,11 @@ class RenderBatcher:
                 mat, prog = cached
             mat_key = id(mat) if mat is not None else none_id
             _uv = mr.uv_scale
-            _usx = getattr(_uv, "x", None)
-            if _usx is None:
-                _usx = float(_uv[0])
-                _usy = float(_uv[1])
-            else:
-                _usy = _uv.y
+            _usx = _uv.x
+            _usy = _uv.y
             _uo = mr.uv_offset
-            _uox = getattr(_uo, "x", None)
-            if _uox is None:
-                _uox = float(_uo[0])
-                _uoy = float(_uo[1])
-            else:
-                _uoy = _uo.y
+            _uox = _uo.x
+            _uoy = _uo.y
             _uw = mr.uv_scale_by_transform
             _sp = mr.sprite_texture
             if not _sp:

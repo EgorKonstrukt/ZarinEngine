@@ -215,7 +215,10 @@ class SceneRendererMixin:
                     offsets = snap.cull_offsets
                     counts = snap.cull_counts
                     n_vis = len(visible)
-                    self._culled_visible = sum(counts[i] for i in visible) if n_vis else 0
+                    if n_vis == n_ent:
+                        self._culled_visible = self._culled_total
+                    else:
+                        self._culled_visible = sum(counts[i] for i in visible) if n_vis else 0
                     if n_vis < n_ent:
                         if n_vis == 0:
                             renderable = []
@@ -243,10 +246,53 @@ class SceneRendererMixin:
                 selected_entities = frozenset()
         except Exception:
             pass
-        opaque_entries, transparent_entries = self._partition_transparent(renderable)
-        self._sort_transparent_far_first(transparent_entries, cam_pos)
-        if len(opaque_entries) > 32:
-            self._sort_opaque_front_first(opaque_entries, cam_pos)
+        opaque_entries = None
+        transparent_entries = []
+        use_fast_groups = False
+        fast_groups = getattr(self, "_fast_groups", None)
+        if fast_groups is not None and renderable is snap.renderable and len(renderable) > 0:
+            try:
+                _fc = getattr(self, "_fast_count", 0) + 1
+                self._fast_count = _fc
+                if _fc < 600 and scene._render_version == getattr(self, "_fast_rv", None) and scene._transform_version == getattr(self, "_fast_tv", None) and len(renderable) == getattr(self, "_fast_len", -1) and id(snap) == getattr(self, "_fast_snap", -1) and getattr(self, "_triangles_drawn", 0) < 500000 and not getattr(self, "_fast_has_fx", True) and not getattr(self, "_fast_has_sprite", True) and not getattr(self, "_fast_trans", True):
+                    _funiq = getattr(self, "_fast_uniq", None)
+                    _fmats = getattr(self, "_fast_mats", None)
+                    if _funiq is not None and _fmats is not None:
+                        _ok = True
+                        for _p in _funiq:
+                            _m = self._materials.load_material(_p)
+                            _sp = self._shaders.get_or_compile(_m.shader_path) if _m is not None and getattr(_m, "shader_path", "") else None
+                            if _sp is None:
+                                _sp = self._default_prog
+                            _cid = _fmats.get(_p)
+                            if _cid is None or _cid[0] != (id(_m) if _m is not None else 0) or _cid[1] != id(_sp):
+                                _ok = False
+                                break
+                            if self._materials.mesh_transparency(None, _m):
+                                _ok = False
+                                break
+                        if _ok:
+                            use_fast_groups = True
+            except Exception:
+                use_fast_groups = False
+        if use_fast_groups:
+            groups = fast_groups
+            if self._batcher:
+                self._batcher.render_groups(
+                    groups, view_f32, proj_f32, cam_pos, lights, False,
+                    self._set_scene_uniforms, self._materials.apply_material,
+                    self._normal_cache,
+                    selected_entities or set(), outline_queue,
+                    gpu_storage=self._gpu_storage,
+                    dynamic_cubemaps=dynamic_cubemaps,
+                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None)
+            opaque_entries = []
+            transparent_entries = []
+        else:
+            opaque_entries, transparent_entries = self._partition_transparent(renderable)
+            self._sort_transparent_far_first(transparent_entries, cam_pos)
+            if len(opaque_entries) > 64 and getattr(self, "_triangles_drawn", 0) > 500000:
+                self._sort_opaque_front_first(opaque_entries, cam_pos)
         for _is_trans_phase, _phase_entries in ((False, opaque_entries), (True, transparent_entries)):
             if not _phase_entries:
                 continue
@@ -271,6 +317,32 @@ class SceneRendererMixin:
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
                     sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None)
+                try:
+                    if not _is_trans_phase and not transparent_entries and renderable is snap.renderable and not fx_renderable:
+                        _lu = getattr(self, "_last_uniq", None)
+                        _lt = getattr(self, "_last_trans", None)
+                        _lhs = getattr(self, "_last_has_sprite", True)
+                        if _lu is not None and _lt is not None and not _lhs and len(_lt) == 0:
+                            _fm = {}
+                            for _pp in _lu:
+                                _mm = self._materials.load_material(_pp)
+                                _psp = self._shaders.get_or_compile(_mm.shader_path) if _mm is not None and getattr(_mm, "shader_path", "") else None
+                                if _psp is None:
+                                    _psp = self._default_prog
+                                _fm[_pp] = ((id(_mm) if _mm is not None else 0), id(_psp))
+                            self._fast_groups = groups
+                            self._fast_rv = scene._render_version
+                            self._fast_tv = scene._transform_version
+                            self._fast_len = len(renderable)
+                            self._fast_snap = id(snap)
+                            self._fast_uniq = _lu
+                            self._fast_trans = _lt
+                            self._fast_mats = _fm
+                            self._fast_has_sprite = False
+                            self._fast_has_fx = False
+                            self._fast_count = 0
+                except Exception:
+                    pass
             else:
                 for entry in _phase_entries:
                     ent, tr, mesh, mr = entry[:4]

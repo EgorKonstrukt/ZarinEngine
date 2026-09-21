@@ -218,11 +218,19 @@ class SceneUniformsMixin:
         transparent = []
         mm = self._materials
         if mm is None:
+            try:
+                self._last_has_sprite = False
+            except Exception:
+                pass
             return list(renderable), transparent
         try:
             ism = mm.mesh_transparency
             lm = mm.load_material
         except Exception:
+            try:
+                self._last_has_sprite = False
+            except Exception:
+                pass
             return list(renderable), transparent
         uniq = set()
         has_sprite = False
@@ -246,6 +254,12 @@ class SceneUniformsMixin:
                 else:
                     uniq_add(mats[-1].get("path", ""))
         if has_sprite:
+            try:
+                self._last_has_sprite = True
+                self._last_uniq = None
+                self._last_trans = None
+            except Exception:
+                pass
             for e in renderable:
                 try:
                     mr = e[3]
@@ -266,6 +280,12 @@ class SceneUniformsMixin:
                     trans_set.add(p)
             except Exception:
                 pass
+        try:
+            self._last_has_sprite = False
+            self._last_uniq = frozenset(uniq)
+            self._last_trans = frozenset(trans_set)
+        except Exception:
+            pass
         if not trans_set:
             return list(renderable), transparent
         for e in renderable:
@@ -307,7 +327,7 @@ class SceneUniformsMixin:
             n = len(entries)
         except Exception:
             return
-        if n < 2:
+        if n < 64:
             return
         try:
             cx = float(cam_pos.x)
@@ -316,6 +336,22 @@ class SceneUniformsMixin:
         except Exception:
             return
         try:
-            entries.sort(key=lambda e: (((float(e[4]._d[3, 0]) - cx) ** 2) + ((float(e[4]._d[3, 1]) - cy) ** 2) + ((float(e[4]._d[3, 2]) - cz) ** 2)))
+            import numpy as _np
+            try:
+                from core._render_utils import build_frustum_cull_inputs as _bfci
+                centers, _ = _bfci(entries)
+            except ImportError:
+                centers = _np.empty((n, 3), dtype=_np.float64)
+                for _i, _e in enumerate(entries):
+                    _d = _e[4]._d
+                    centers[_i, 0] = _d[3, 0]
+                    centers[_i, 1] = _d[3, 1]
+                    centers[_i, 2] = _d[3, 2]
+            _dx = centers[:, 0] - cx
+            _dy = centers[:, 1] - cy
+            _dz = centers[:, 2] - cz
+            _idx = _np.argsort(_dx * _dx + _dy * _dy + _dz * _dz, kind="stable")
+            _ordered = [entries[int(_i)] for _i in _idx]
+            entries[:] = _ordered
         except Exception:
             pass
