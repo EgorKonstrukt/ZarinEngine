@@ -169,26 +169,31 @@ def _dash_np(starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
              dash_len: float, gap_len: float):
     step = dash_len + gap_len
     n = starts.shape[0]
-    s_parts, e_parts, c_parts = [], [], []
-    for i in range(n):
-        sx, sy, sz = starts[i]; ex, ey, ez = ends[i]
-        dx, dy, dz = ex - sx, ey - sy, ez - sz
-        ln = math.sqrt(dx*dx + dy*dy + dz*dz)
-        if ln < 1e-8:
-            continue
-        nd = max(int(ln / step), 1)
-        for j in range(nd):
-            t0 = j * step; t1 = min(j * step + dash_len, ln)
-            s_parts.append([sx + dx/ln*t0, sy + dy/ln*t0, sz + dz/ln*t0])
-            e_parts.append([sx + dx/ln*t1, sy + dy/ln*t1, sz + dz/ln*t1])
-            c_parts.append(colors[i])
-    if not s_parts:
+    if n == 0 or step <= 1e-12:
         return (np.empty((0, 3), dtype=np.float32),
                 np.empty((0, 3), dtype=np.float32),
                 np.empty((0, 4), dtype=np.float32))
-    return (np.array(s_parts, dtype=np.float32),
-            np.array(e_parts, dtype=np.float32),
-            np.array(c_parts, dtype=np.float32))
+    d = np.subtract(ends, starts, dtype=np.float64)
+    ln = np.sqrt(np.einsum('ij,ij->i', d, d))
+    valid = ln >= 1e-8
+    nd = np.zeros(n, dtype=np.intp)
+    nd[valid] = np.maximum((ln[valid] / step).astype(np.intp), 1)
+    total = int(nd.sum())
+    if total == 0:
+        return (np.empty((0, 3), dtype=np.float32),
+                np.empty((0, 3), dtype=np.float32),
+                np.empty((0, 4), dtype=np.float32))
+    idx = np.repeat(np.arange(n), nd)
+    seg_start = np.cumsum(nd, dtype=np.intp) - nd
+    j = np.arange(total, dtype=np.intp) - np.repeat(seg_start, nd)
+    t0 = j * step
+    t1 = np.minimum(j * step + dash_len, ln[idx])
+    f0 = (t0 / ln[idx])[:, None]
+    f1 = (t1 / ln[idx])[:, None]
+    s0 = starts[idx].astype(np.float64, copy=False)
+    new_s = np.add(s0, d[idx] * f0, dtype=np.float64).astype(np.float32)
+    new_e = np.add(s0, d[idx] * f1, dtype=np.float64).astype(np.float32)
+    return (new_s, new_e, np.ascontiguousarray(colors[idx]))
 
 
 

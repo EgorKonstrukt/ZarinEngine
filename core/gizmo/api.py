@@ -164,39 +164,40 @@ def _apply_line_style(starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
     if style == LineStyle.HIDDEN:
         return starts[:0], ends[:0], colors[:0]
     n = starts.shape[0]
-    new_s, new_e, new_c = [], [], []
     if style == LineStyle.DASHED:
-        step = dash_len + gap_len
-        for i in range(n):
-            sx, sy, sz = starts[i]; ex, ey, ez = ends[i]
-            dx, dy, dz = ex-sx, ey-sy, ez-sz
-            ln = math.sqrt(dx*dx + dy*dy + dz*dz)
-            if ln < 1e-8: continue
-            nd = int(ln / step) if ln / step >= 1 else 1
-            for j in range(nd):
-                t0 = j * step
-                t1 = min(j * step + dash_len, ln)
-                new_s.append([sx + dx/ln*t0, sy + dy/ln*t0, sz + dz/ln*t0])
-                new_e.append([sx + dx/ln*t1, sy + dy/ln*t1, sz + dz/ln*t1])
-                new_c.append(colors[i])
+        return _expand_dash_np(starts, ends, colors, dash_len + gap_len, dash_len)
     elif style == LineStyle.DOTTED:
         dot_len = max(gap_len * 0.15, 0.02)
-        step = dot_len + gap_len
-        for i in range(n):
-            sx, sy, sz = starts[i]; ex, ey, ez = ends[i]
-            dx, dy, dz = ex-sx, ey-sy, ez-sz
-            ln = math.sqrt(dx*dx + dy*dy + dz*dz)
-            if ln < 1e-8: continue
-            nd = int(ln / step) if ln / step >= 1 else 1
-            for j in range(nd):
-                t0 = j * step
-                t1 = min(j * step + dot_len, ln)
-                new_s.append([sx + dx/ln*t0, sy + dy/ln*t0, sz + dz/ln*t0])
-                new_e.append([sx + dx/ln*t1, sy + dy/ln*t1, sz + dz/ln*t1])
-                new_c.append(colors[i])
-    if not new_s:
+        return _expand_dash_np(starts, ends, colors, dot_len + gap_len, dot_len)
+    if not n:
         return starts[:0], ends[:0], colors[:0]
-    return (np.array(new_s, dtype=np.float32), np.array(new_e, dtype=np.float32), np.array(new_c, dtype=np.float32))
+    return (np.array([], dtype=np.float32).reshape(0, 3), np.array([], dtype=np.float32).reshape(0, 3), np.array([], dtype=np.float32).reshape(0, 4))
+
+
+def _expand_dash_np(starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
+                    step: float, seg_len: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    n = starts.shape[0]
+    if n == 0 or step <= 1e-12:
+        return starts[:0], ends[:0], colors[:0]
+    d = np.subtract(ends, starts, dtype=np.float64)
+    ln = np.sqrt(np.einsum('ij,ij->i', d, d))
+    valid = ln >= 1e-8
+    nd = np.zeros(n, dtype=np.intp)
+    nd[valid] = np.maximum((ln[valid] / step).astype(np.intp), 1)
+    total = int(nd.sum())
+    if total == 0:
+        return starts[:0], ends[:0], colors[:0]
+    idx = np.repeat(np.arange(n), nd)
+    seg_start = np.cumsum(nd, dtype=np.intp) - nd
+    j = np.arange(total, dtype=np.intp) - np.repeat(seg_start, nd)
+    t0 = j * step
+    t1 = np.minimum(j * step + seg_len, ln[idx])
+    f0 = (t0 / ln[idx])[:, None]
+    f1 = (t1 / ln[idx])[:, None]
+    s0 = starts[idx].astype(np.float64, copy=False)
+    new_s = np.add(s0, d[idx] * f0, dtype=np.float64).astype(np.float32)
+    new_e = np.add(s0, d[idx] * f1, dtype=np.float64).astype(np.float32)
+    return new_s, new_e, np.ascontiguousarray(colors[idx])
 
 
 _GIZMO_LINE_BUILDERS: Dict[GizmoType, Callable[[GizmoData], Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]]] = {}
@@ -1154,6 +1155,8 @@ class GizmosManager:
         self._current_style: Optional[dict] = None
         self._revision: int = 0
         self._cached_revision: int = -1
+        self._label_count: int = 0
+        self._icon_count: int = 0
         self._cache_starts: Optional[np.ndarray] = None
         self._cache_ends: Optional[np.ndarray] = None
         self._cache_colors: Optional[np.ndarray] = None
@@ -1177,6 +1180,8 @@ class GizmosManager:
     def update(self, dt: float):
         with self._lock:
             self._time += dt
+            if not self.unique_draws and not self.used_unique_keys:
+                return
             old_unique = len(self.unique_draws)
             for key in set(self.unique_draws.keys()) - self.used_unique_keys:
                 del self.unique_draws[key]
@@ -1186,6 +1191,8 @@ class GizmosManager:
 
     def get_label_data(self) -> list[dict]:
         with self._lock:
+            if self._label_count == 0:
+                return []
             labels = []
             gizmos = list(self.persistent_draws)
             if self.unique_draws:
@@ -1199,6 +1206,8 @@ class GizmosManager:
 
     def get_icon_data(self) -> list[dict]:
         with self._lock:
+            if self._icon_count == 0:
+                return []
             icons = []
             gizmos = list(self.persistent_draws)
             if self.unique_draws:
@@ -1277,6 +1286,8 @@ class GizmosManager:
         self.draws.clear()
         self._batches.clear()
         self._flat_size = 0
+        self._label_count = 0
+        self._icon_count = 0
 
     def clear(self):
         with self._lock:
@@ -1294,6 +1305,8 @@ class GizmosManager:
     def clear_persistent(self):
         with self._lock:
             self.persistent_draws.clear()
+            self._label_count = 0
+            self._icon_count = 0
             self._revision += 1
 
     def clear_unique(self):
@@ -1304,8 +1317,18 @@ class GizmosManager:
     def clear_tag(self, tag: str):
         with self._lock:
             old = len(self.persistent_draws)
-            self.persistent_draws[:] = [g for g in self.persistent_draws if g.tag != tag]
-            if len(self.persistent_draws) != old:
+            kept = [g for g in self.persistent_draws if g.tag != tag]
+            if len(kept) != old:
+                lc = 0
+                ic = 0
+                for g in kept:
+                    if g.gizmo_type == GizmoType.LABEL:
+                        lc += 1
+                    elif g.gizmo_type == GizmoType.ICON:
+                        ic += 1
+                self.persistent_draws[:] = kept
+                self._label_count = lc
+                self._icon_count = ic
                 self._revision += 1
 
     def draw_lines(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray):
@@ -1357,6 +1380,10 @@ class GizmosManager:
                 setattr(g, k, v)
         with self._lock:
             self.persistent_draws.append(g)
+            if g.gizmo_type == GizmoType.LABEL:
+                self._label_count += 1
+            elif g.gizmo_type == GizmoType.ICON:
+                self._icon_count += 1
             self._revision += 1
 
     def _resolve_color(self, color) -> Tuple[float, float, float, float]:

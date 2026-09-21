@@ -358,8 +358,8 @@ class GizmoRenderer:
             prog["u_thickness_ndc_x"] = float(ndc_x)
         if "u_thickness_ndc_y" in prog:
             prog["u_thickness_ndc_y"] = float(ndc_y)
-        strip_t = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
-        strip_s = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0], dtype=np.float32)
+        strip_t = _STRIP_T
+        strip_s = _STRIP_S
         try:
             for color_key, segs in color_groups.items():
                 alpha_val = float(color_key[3]) if len(color_key) > 3 else 1.0
@@ -373,19 +373,19 @@ class GizmoRenderer:
                     pts[i, 3] = e.x; pts[i, 4] = e.y; pts[i, 5] = e.z
                 starts_arr = np.repeat(pts[:, :3], 6, axis=0)
                 ends_arr = np.repeat(pts[:, 3:], 6, axis=0)
-                ts_arr = np.tile(strip_t, n_segs)
-                side_arr = np.tile(strip_s, n_segs)
+                ts_arr = np.tile(_STRIP_T, n_segs)
+                side_arr = np.tile(_STRIP_S, n_segs)
                 self._ensure_fatline_capacity(n_verts)
-                self._fatline_vbo_start.write(starts_arr.tobytes())
-                self._fatline_vbo_end.write(ends_arr.tobytes())
-                self._fatline_vbo_t.write(ts_arr.tobytes())
-                self._fatline_vbo_side.write(side_arr.tobytes())
+                self._fatline_vbo_start.write(memoryview(starts_arr))
+                self._fatline_vbo_end.write(memoryview(ends_arr))
+                self._fatline_vbo_t.write(memoryview(ts_arr))
+                self._fatline_vbo_side.write(memoryview(side_arr))
                 color_arr = np.zeros((n_verts, 4), dtype=np.float32)
                 color_arr[:, 0] = color_key[0]
                 color_arr[:, 1] = color_key[1]
                 color_arr[:, 2] = color_key[2]
                 color_arr[:, 3] = alpha_val
-                self._fatline_vbo_color.write(color_arr.tobytes())
+                self._fatline_vbo_color.write(memoryview(color_arr))
                 self._stat_upload_bytes += n_verts * 48
                 self._stat_upload_full += 1
                 self._fatline_vao.render(moderngl.TRIANGLES, vertices=n_verts)
@@ -437,16 +437,14 @@ class GizmoRenderer:
         tv[:] = _STRIP_T[None, :]
         sidev = self._fs_side[:n_verts].reshape(-1, 6)
         sidev[:] = _STRIP_S[None, :]
-        if colors.shape[1] == 3:
-            cr = np.empty((n_segs, 4), dtype=np.float32)
-            cr[:, :3] = colors
-            cr[:, 3] = 1.0
-        elif colors.shape[1] >= 4:
-            cr = colors[:, :4]
-        else:
-            cr = np.full((n_segs, 4), 0.5, dtype=np.float32)
         cv = self._fs_colors[:n_verts].reshape(-1, 6, 4)
-        cv[:] = cr[:, None, :]
+        if colors.shape[1] == 3:
+            cv[:, :, :3] = colors[:, None, :]
+            cv[:, :, 3] = 1.0
+        elif colors.shape[1] >= 4:
+            cv[:] = colors[:, None, :4]
+        else:
+            cv[:] = 0.5
         self._fatline_vbo_start.write(memoryview(self._fs_starts[:n_verts]))
         self._fatline_vbo_end.write(memoryview(self._fs_ends[:n_verts]))
         self._fatline_vbo_t.write(memoryview(self._fs_t[:n_verts]))
@@ -532,7 +530,10 @@ class GizmoRenderer:
         data_size = num_instances * mesh.instance_stride
         if data_size > 0:
             self._ensure_inst_solid_capacity(mesh, num_instances)
-            mesh.instance_vbo.write(instance_data[:data_size].tobytes())
+            if instance_data.flags.c_contiguous:
+                mesh.instance_vbo.write(memoryview(instance_data)[:data_size])
+            else:
+                mesh.instance_vbo.write(instance_data[:data_size].tobytes())
             self._stat_upload_bytes += data_size
             self._stat_upload_full += 1
         try:
@@ -658,7 +659,10 @@ void main() {
         data_size = num_instances * mesh.instance_stride
         if data_size > 0:
             self._ensure_inst_line_capacity(mesh, num_instances)
-            mesh.instance_vbo.write(instance_data[:data_size].tobytes())
+            if instance_data.flags.c_contiguous:
+                mesh.instance_vbo.write(memoryview(instance_data)[:data_size])
+            else:
+                mesh.instance_vbo.write(instance_data[:data_size].tobytes())
             self._stat_upload_bytes += data_size
             self._stat_upload_full += 1
         try:
