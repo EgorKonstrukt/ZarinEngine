@@ -90,27 +90,57 @@ class CapsuleCollider(Component):
         tr = self.transform
         if not tr:
             return None
-        dir_idx = self.direction
-        r = self.radius
-        half_h = max(0, self.height * 0.5 - r)
-        sc = np.array([1.0, 1.0, 1.0], dtype=np.float32)
-        sc[dir_idx] = half_h + r
-        sc[(dir_idx + 1) % 3] = r
-        sc[(dir_idx + 2) % 3] = r
-        c = np.array([self.center.x, self.center.y, self.center.z], dtype=np.float32)
-        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
         import math as m
-        q = tr.local_rotation
-        x, y, z, w = q.x, q.y, q.z, q.w
-        n = m.sqrt(x*x + y*y + z*z + w*w)
+        lp = tr.local_position
+        lr = tr.local_rotation
+        ls = tr.local_scale
+        px, py, pz = lp.x, lp.y, lp.z
+        qx, qy, qz, qw = lr.x, lr.y, lr.z, lr.w
+        sx, sy, sz = ls.x, ls.y, ls.z
+        cx, cy, cz = self.center.x, self.center.y, self.center.z
+        rd = self.radius
+        ht = self.height
+        dd = self.direction
+        try:
+            tv = self._entity._scene._transform_version
+        except Exception:
+            tv = None
+        ck = getattr(self, "_gizmo_ck", None)
+        if ck is not None and ck[0] == tv and ck[1] == px and ck[2] == py and ck[3] == pz and ck[4] == qx and ck[5] == qy and ck[6] == qz and ck[7] == qw and ck[8] == sx and ck[9] == sy and ck[10] == sz and ck[11] == cx and ck[12] == cy and ck[13] == cz and ck[14] == rd and ck[15] == ht and ck[16] == dd:
+            return getattr(self, "_gizmo_prim", None)
+        hh = ht * 0.5 - rd
+        if hh < 0.0:
+            hh = 0.0
+        ex = rd; ey = rd; ez = rd
+        if dd == 0:
+            ex = hh + rd
+        elif dd == 1:
+            ey = hh + rd
+        else:
+            ez = hh + rd
+        n = m.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
         if n > 1e-10:
-            inv = 1.0/n; x *= inv; y *= inv; z *= inv; w *= inv
-        R = np.array([[1-2*(y*y+z*z), 2*(x*y-w*z), 2*(x*z+w*y)],
-                       [2*(x*y+w*z), 1-2*(x*x+z*z), 2*(y*z-w*x)],
-                       [2*(x*z-w*y), 2*(y*z+w*x), 1-2*(x*x+y*y)]], dtype=np.float32)
-        S = np.array([tr.local_scale.x, tr.local_scale.y, tr.local_scale.z], dtype=np.float32)
-        RS = R * S
-        combined = np.eye(4, dtype=np.float32)
-        combined[:3, :3] = RS * sc
-        combined[:3, 3] = RS @ c + T
-        return InstancePrimitive('capsule', combined.ravel('F'), [0.0, 1.0, 0.0, 0.6])
+            inv = 1.0/n; qx *= inv; qy *= inv; qz *= inv; qw *= inv
+        xx, yy, zz = qx*qx, qy*qy, qz*qz
+        xy, xz, yz = qx*qy, qx*qz, qy*qz
+        wx, wy, wz = qw*qx, qw*qy, qw*qz
+        r00 = 1.0-2.0*(yy+zz); r01 = 2.0*(xy-wz); r02 = 2.0*(xz+wy)
+        r10 = 2.0*(xy+wz); r11 = 1.0-2.0*(xx+zz); r12 = 2.0*(yz-wx)
+        r20 = 2.0*(xz-wy); r21 = 2.0*(yz+wx); r22 = 1.0-2.0*(xx+yy)
+        b00 = r00*sx; b01 = r01*sy; b02 = r02*sz
+        b10 = r10*sx; b11 = r11*sy; b12 = r12*sz
+        b20 = r20*sx; b21 = r21*sy; b22 = r22*sz
+        a00 = b00*ex; a01 = b01*ey; a02 = b02*ez
+        a10 = b10*ex; a11 = b11*ey; a12 = b12*ez
+        a20 = b20*ex; a21 = b21*ey; a22 = b22*ez
+        t0 = b00*cx+b01*cy+b02*cz+px
+        t1 = b10*cx+b11*cy+b12*cz+py
+        t2 = b20*cx+b21*cy+b22*cz+pz
+        flat = [a00,a10,a20,0.0, a01,a11,a21,0.0, a02,a12,a22,0.0, t0,t1,t2,1.0]
+        prim = InstancePrimitive('capsule', flat, [0.0, 1.0, 0.0, 0.6])
+        try:
+            self._gizmo_ck = (tv, px, py, pz, lr.x, lr.y, lr.z, lr.w, sx, sy, sz, cx, cy, cz, rd, ht, dd)
+            self._gizmo_prim = prim
+        except Exception:
+            pass
+        return prim

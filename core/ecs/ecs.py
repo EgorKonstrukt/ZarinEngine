@@ -44,6 +44,8 @@ _TRANSFORM_NAME = "Transform"
 _SUBCLASS_CACHE: dict = {}
 _SUBCLASS_CACHE_VERSION: int = 0
 
+_GIZMO_HOOK_CACHE: dict = {}
+
 
 def _subclass_names(key: str, cls) -> list:
     cached = _SUBCLASS_CACHE.get(key)
@@ -220,21 +222,39 @@ class Component:
 
     @classmethod
     def gizmo_collect(cls, pipe, scene):
+        hk = _GIZMO_HOOK_CACHE.get(cls)
+        if hk is None:
+            hk = (cls.gizmo_instances is not Component.gizmo_instances,
+                  cls.gizmo_instance_data is not Component.gizmo_instance_data,
+                  cls.gizmo_lines is not Component.gizmo_lines or cls.gizmo_primitives is not Component.gizmo_primitives)
+            _GIZMO_HOOK_CACHE[cls] = hk
+        has_insts, has_data, has_lines = hk
+        if not has_insts and not has_data and not has_lines:
+            return
+        add = pipe.add_instance if (has_insts or has_data) else None
         for entity in scene.get_entities_with_component(cls):
             if not entity.active:
                 continue
-            for comp in entity.get_components(cls):
+            lst = entity._type_map.get(cls)
+            if lst is None:
+                lst = entity.get_components(cls)
+                if not lst:
+                    continue
+            for comp in lst:
                 try:
-                    insts = comp.gizmo_instances()
-                    if insts:
-                        for ip in insts:
-                            pipe.add_instance(ip.shape_type, ip.transform_flat, ip.color)
-                    inst = comp.gizmo_instance_data()
-                    if inst is not None:
-                        pipe.add_instance(inst.shape_type, inst.transform_flat, inst.color)
-                    for prim in comp.gizmo():
-                        if prim.starts.shape[0] > 0:
-                            pipe.add(prim)
+                    if has_insts:
+                        insts = comp.gizmo_instances()
+                        if insts:
+                            for ip in insts:
+                                add(ip.shape_type, ip.transform_flat, ip.color)
+                    if has_data:
+                        inst = comp.gizmo_instance_data()
+                        if inst is not None:
+                            add(inst.shape_type, inst.transform_flat, inst.color)
+                    if has_lines:
+                        for prim in comp.gizmo():
+                            if prim.starts.shape[0] > 0:
+                                pipe.add(prim)
                 except Exception:
                     pass
 

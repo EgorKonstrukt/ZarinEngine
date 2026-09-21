@@ -210,7 +210,21 @@ class SceneRendererMixin:
                 cull_entries = snap.cull_entries
                 n_ent = len(cull_entries)
                 if n_ent:
-                    centers, radii = _bfci(cull_entries)
+                    _cc = getattr(self, "_cull_cache", None)
+                    try:
+                        _tvg = scene._transform_version
+                    except Exception:
+                        _tvg = -1
+                    try:
+                        _mg = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+                    except Exception:
+                        _mg = 0
+                    _ck = (id(snap), _tvg, _mg, n_ent)
+                    if _cc is not None and _cc[0] == _ck:
+                        centers, radii = _cc[1], _cc[2]
+                    else:
+                        centers, radii = _bfci(cull_entries)
+                        self._cull_cache = (_ck, centers, radii)
                     visible = cpu_frustum_cull(centers, radii, vp)
                     offsets = snap.cull_offsets
                     counts = snap.cull_counts
@@ -285,7 +299,7 @@ class SceneRendererMixin:
                     selected_entities or set(), outline_queue,
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
-                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None)
+                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True)
             opaque_entries = []
             transparent_entries = []
         else:
@@ -309,6 +323,10 @@ class SceneRendererMixin:
             if self._batcher:
                 groups = self._batcher.collect_groups(
                     _phase_entries, self._materials, self._shaders)
+                try:
+                    _all_vis = self._culled_visible == self._culled_total
+                except Exception:
+                    _all_vis = False
                 self._batcher.render_groups(
                     groups, view_f32, proj_f32, cam_pos, lights, False,
                     self._set_scene_uniforms, self._materials.apply_material,
@@ -316,7 +334,7 @@ class SceneRendererMixin:
                     selected_entities or set(), outline_queue,
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
-                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None)
+                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=_all_vis)
                 try:
                     if not _is_trans_phase and not transparent_entries and renderable is snap.renderable and not fx_renderable:
                         _lu = getattr(self, "_last_uniq", None)

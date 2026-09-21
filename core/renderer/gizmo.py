@@ -14,7 +14,8 @@ from core.renderer.gpu_primitives import (
     make_cube_mesh, make_quad_mesh, make_circle_ring_mesh, make_instance_vao,
     make_unit_box_line_verts, make_unit_sphere_line_verts,
     make_unit_rect_line_verts, make_unit_circle_line_verts, make_unit_capsule_line_verts,
-    make_instance_line_vao
+    make_instance_line_vao, VERT_FORMAT, VERT_ATTRS, INST_FORMAT, INST_ATTRS,
+    INST_LINE_FORMAT, INST_LINE_ATTRS, INST_INST_FORMAT, INST_INST_ATTRS
 )
 
 _STRIP_T = np.array([0.0, 1.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
@@ -460,6 +461,65 @@ class GizmoRenderer:
             self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.enable(moderngl.DEPTH_TEST)
 
+    def _ensure_inst_solid_capacity(self, mesh: GpuMesh, needed: int):
+        try:
+            cur = mesh.instance_vbo.size // mesh.instance_stride
+        except Exception:
+            cur = 0
+        if needed <= cur:
+            return
+        new_cap = cur * 2 if cur > 0 else needed
+        if new_cap < needed:
+            new_cap = needed
+        new_buf = self._ctx.buffer(reserve=new_cap * mesh.instance_stride, dynamic=True)
+        new_vao = self._ctx.vertex_array(
+            self._instanced_prog,
+            [
+                (mesh.vbo, VERT_FORMAT, *VERT_ATTRS),
+                (new_buf, INST_FORMAT, *INST_ATTRS),
+            ],
+            mesh.ibo
+        )
+        try:
+            mesh.vao.release()
+        except Exception:
+            pass
+        try:
+            mesh.instance_vbo.release()
+        except Exception:
+            pass
+        mesh.vao = new_vao
+        mesh.instance_vbo = new_buf
+
+    def _ensure_inst_line_capacity(self, mesh: GpuMesh, needed: int):
+        try:
+            cur = mesh.instance_vbo.size // mesh.instance_stride
+        except Exception:
+            cur = 0
+        if needed <= cur:
+            return
+        new_cap = cur * 2 if cur > 0 else needed
+        if new_cap < needed:
+            new_cap = needed
+        new_buf = self._ctx.buffer(reserve=new_cap * mesh.instance_stride, dynamic=True)
+        new_vao = self._ctx.vertex_array(
+            self._inst_line_prog,
+            [
+                (mesh.vbo, INST_LINE_FORMAT, *INST_LINE_ATTRS),
+                (new_buf, INST_INST_FORMAT, *INST_INST_ATTRS),
+            ]
+        )
+        try:
+            mesh.vao.release()
+        except Exception:
+            pass
+        try:
+            mesh.instance_vbo.release()
+        except Exception:
+            pass
+        mesh.vao = new_vao
+        mesh.instance_vbo = new_buf
+
     def render_instanced(self, mesh: GpuMesh, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int):
         if not self._instanced_initialized or mesh.instance_vbo is None:
             return
@@ -471,6 +531,7 @@ class GizmoRenderer:
             prog["u_mvp"].write(vp_f32.tobytes())
         data_size = num_instances * mesh.instance_stride
         if data_size > 0:
+            self._ensure_inst_solid_capacity(mesh, num_instances)
             mesh.instance_vbo.write(instance_data[:data_size].tobytes())
             self._stat_upload_bytes += data_size
             self._stat_upload_full += 1
@@ -596,6 +657,7 @@ void main() {
             prog["u_camera_pos"].write(np.array([cam_pos.x, cam_pos.y, cam_pos.z], dtype=np.float32).tobytes())
         data_size = num_instances * mesh.instance_stride
         if data_size > 0:
+            self._ensure_inst_line_capacity(mesh, num_instances)
             mesh.instance_vbo.write(instance_data[:data_size].tobytes())
             self._stat_upload_bytes += data_size
             self._stat_upload_full += 1

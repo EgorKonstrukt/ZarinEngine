@@ -291,8 +291,16 @@ class RenderBatcher:
         try:
             from core._render_utils import batch_mat4_to_f32_flat
             flat = batch_mat4_to_f32_flat(matrices)
+            try:
+                self._shared_inst_vbo.orphan()
+            except Exception:
+                pass
             self._shared_inst_vbo.write(flat)
         except ImportError:
+            try:
+                self._shared_inst_vbo.orphan()
+            except Exception:
+                pass
             self._shared_inst_vbo.write(Mat4.batch_to_f32(matrices))
         return self._shared_inst_vbo
 
@@ -335,7 +343,7 @@ class RenderBatcher:
                       disable_shadows: bool, set_scene_uniforms_fn,
                       apply_material_fn, normal_cache: dict,
                       selected_entities: set, outline_queue: list,
-                      gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None):
+                      gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None, skip_cull=False):
         self.reset_stats()
         try:
             if selected_entities is not None and len(selected_entities) > 256:
@@ -343,7 +351,9 @@ class RenderBatcher:
         except Exception:
             pass
         scene_done = set()
-        frustum_planes = self._get_frustum_planes(view_f32, proj_f32)
+        frustum_planes = None
+        if not skip_cull:
+            frustum_planes = self._get_frustum_planes(view_f32, proj_f32)
         for key, group in groups.items():
             _, _, mesh, _, mat, prog, _, _ = group[0]
             dyn_ref = key[5] if len(key) > 5 else False
@@ -391,8 +401,11 @@ class RenderBatcher:
                                 and gpu_storage.is_gpu_driven()
                                 and len(group) >= self._gpu_driven_min_instances)
                 if not gpu_eligible:
-                    visible = _frustum_cull_instances(group, frustum_planes,
-                                                      mesh.bounding_radius)
+                    if skip_cull:
+                        visible = group
+                    else:
+                        visible = _frustum_cull_instances(group, frustum_planes,
+                                                          mesh.bounding_radius)
                     if len(visible) == 0:
                         self._stats_draw_calls += 1
                         continue

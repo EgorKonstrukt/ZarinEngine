@@ -56,24 +56,51 @@ class SphereCollider(Component):
         tr = self.transform
         if not tr:
             return None
-        sc = tr.local_scale
-        max_s = max(sc.x, sc.y, sc.z)
-        c = self.center
-        scaled_c = np.array([c.x * sc.x, c.y * sc.y, c.z * sc.z], dtype=np.float32)
-        r = self.radius * max_s
-        T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
-        q = tr.local_rotation
-        x, y, z, w = q.x, q.y, q.z, q.w
-        n = math.sqrt(x*x + y*y + z*z + w*w)
+        lp = tr.local_position
+        lr = tr.local_rotation
+        ls = tr.local_scale
+        px, py, pz = lp.x, lp.y, lp.z
+        qx, qy, qz, qw = lr.x, lr.y, lr.z, lr.w
+        sx, sy, sz = ls.x, ls.y, ls.z
+        cx, cy, cz = self.center.x, self.center.y, self.center.z
+        rd = self.radius
+        try:
+            tv = self._entity._scene._transform_version
+        except Exception:
+            tv = None
+        ck = getattr(self, "_gizmo_ck", None)
+        if ck is not None and ck[0] == tv and ck[1] == px and ck[2] == py and ck[3] == pz and ck[4] == qx and ck[5] == qy and ck[6] == qz and ck[7] == qw and ck[8] == sx and ck[9] == sy and ck[10] == sz and ck[11] == cx and ck[12] == cy and ck[13] == cz and ck[14] == rd:
+            return getattr(self, "_gizmo_prim", None)
+        ms = sx
+        if sy > ms:
+            ms = sy
+        if sz > ms:
+            ms = sz
+        r = rd * ms
+        scx = cx * sx; scy = cy * sy; scz = cz * sz
+        n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
         if n > 1e-10:
-            inv = 1.0/n; x *= inv; y *= inv; z *= inv; w *= inv
-        R = np.array([[1-2*(y*y+z*z), 2*(x*y-w*z), 2*(x*z+w*y)],
-                       [2*(x*y+w*z), 1-2*(x*x+z*z), 2*(y*z-w*x)],
-                       [2*(x*z-w*y), 2*(y*z+w*x), 1-2*(x*x+y*y)]], dtype=np.float32)
-        combined = np.eye(4, dtype=np.float32)
-        combined[:3, :3] = R * r
-        combined[:3, 3] = R @ scaled_c + T
-        return InstancePrimitive('sphere', combined.ravel('F'), [0.0, 1.0, 0.0, 0.6])
+            inv = 1.0/n; qx *= inv; qy *= inv; qz *= inv; qw *= inv
+        xx, yy, zz = qx*qx, qy*qy, qz*qz
+        xy, xz, yz = qx*qy, qx*qz, qy*qz
+        wx, wy, wz = qw*qx, qw*qy, qw*qz
+        r00 = 1.0-2.0*(yy+zz); r01 = 2.0*(xy-wz); r02 = 2.0*(xz+wy)
+        r10 = 2.0*(xy+wz); r11 = 1.0-2.0*(xx+zz); r12 = 2.0*(yz-wx)
+        r20 = 2.0*(xz-wy); r21 = 2.0*(yz+wx); r22 = 1.0-2.0*(xx+yy)
+        a00 = r00*r; a01 = r01*r; a02 = r02*r
+        a10 = r10*r; a11 = r11*r; a12 = r12*r
+        a20 = r20*r; a21 = r21*r; a22 = r22*r
+        t0 = r00*scx+r01*scy+r02*scz+px
+        t1 = r10*scx+r11*scy+r12*scz+py
+        t2 = r20*scx+r21*scy+r22*scz+pz
+        flat = [a00,a10,a20,0.0, a01,a11,a21,0.0, a02,a12,a22,0.0, t0,t1,t2,1.0]
+        prim = InstancePrimitive('sphere', flat, [0.0, 1.0, 0.0, 0.6])
+        try:
+            self._gizmo_ck = (tv, px, py, pz, lr.x, lr.y, lr.z, lr.w, sx, sy, sz, cx, cy, cz, rd)
+            self._gizmo_prim = prim
+        except Exception:
+            pass
+        return prim
 
     def serialize(self) -> dict:
         d = super().serialize()

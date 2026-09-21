@@ -15,17 +15,101 @@ from core.gizmo.pipeline import GizmoPipeline
 from core.assets.font_atlas import request_font_atlas, get_default_font_path as get_def_font
 
 
+import math
+import time
+import numpy as np
+from core.maths.math3d import Mat4, Vec3
+from core.config.config import get_global_config
+from core.ecs.ecs import _GIZMO_PASSES, _GIZMO_PASS_ORDER, Component
+from core.gizmo.pipeline import GizmoPipeline
+from core.assets.font_atlas import request_font_atlas, get_default_font_path as get_def_font
+
+
+_GIZMO_INST_CACHE: dict = {}
+
+
 def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
     scene = vp._engine.scene if vp._engine else None
     if not scene:
         return
+    if fw is None or fh is None:
+        try:
+            _fw, _fh = vp._get_physical_dims()
+            if fw is None:
+                fw = _fw
+            if fh is None:
+                fh = _fh
+        except Exception:
+            if fw is None:
+                fw = 1920
+            if fh is None:
+                fh = 1080
+    try:
+        cam_pos = vp._cam.position if vp._cam else Vec3(0, 0, 0)
+    except Exception:
+        cam_pos = Vec3(0, 0, 0)
+    sel = getattr(vp, "_selected_entities", None)
+    rv = None
+    tv = None
+    use_cache = False
+    cached = None
+    if not sel:
+        try:
+            rv = scene._render_version
+            tv = scene._transform_version
+        except Exception:
+            rv = None
+        if rv is not None:
+            ent = _GIZMO_INST_CACHE.get(id(scene))
+            if ent is not None and ent[0] is scene and ent[1] == rv and ent[2] == tv and time.perf_counter() - ent[3] < 2.0 and not ent[6]:
+                use_cache = True
+                cached = ent
+                if len(_GIZMO_INST_CACHE) > 8:
+                    _GIZMO_INST_CACHE.clear()
+                    _GIZMO_INST_CACHE[id(scene)] = ent
     pipe = GizmoPipeline()
+    pipe_col = GizmoPipeline() if not use_cache else None
     meshes = []
     for pass_name in _GIZMO_PASS_ORDER:
+        if use_cache and pass_name == "collider":
+            continue
+        tgt = pipe_col if (pipe_col is not None and pass_name == "collider") else pipe
         for ct in _GIZMO_PASSES.get(pass_name, []):
-            ct.gizmo_collect(pipe, scene)
+            ct.gizmo_collect(tgt, scene)
             try:
                 meshes.extend(ct.gizmo_collect_meshes(scene))
+            except Exception:
+                pass
+    if use_cache:
+        for shape_type, buf, n in cached[4]:
+            try:
+                vp._renderer.render_instanced_gizmo_lines(shape_type, buf, n, vp_mat, fw, fh, thickness_multiplier=1.0, cam_pos=cam_pos)
+            except Exception:
+                pass
+    elif pipe_col is not None:
+        try:
+            col_lines = len(pipe_col._batches) > 0
+        except Exception:
+            col_lines = True
+        try:
+            col_data = pipe_col.get_instance_render_data()
+        except Exception:
+            col_data = []
+        if not col_lines and not sel and rv is not None and col_data:
+            try:
+                if len(_GIZMO_INST_CACHE) > 8:
+                    _GIZMO_INST_CACHE.clear()
+                _GIZMO_INST_CACHE[id(scene)] = (scene, rv, tv, time.perf_counter(), col_data, None, False)
+            except Exception:
+                pass
+        for shape_type, buf, n in col_data:
+            try:
+                vp._renderer.render_instanced_gizmo_lines(shape_type, buf, n, vp_mat, fw, fh, thickness_multiplier=1.0, cam_pos=cam_pos)
+            except Exception:
+                pass
+        if col_lines:
+            try:
+                pipe._batches.extend(pipe_col._batches)
             except Exception:
                 pass
     pipe.flush_and_render(vp, vp_mat, fw=fw, fh=fh)
