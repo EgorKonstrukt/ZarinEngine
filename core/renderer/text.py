@@ -474,6 +474,11 @@ class TextRendererGL:
     def render(self, scene, view_mat: Mat4, proj_mat: Mat4, viewport_w: int, viewport_h: int, world_space_only: bool | None = None):
         if not self._prog or not self._vao:
             return
+        try:
+            if scene is None or not scene._component_indices.get("TextRenderer"):
+                return
+        except Exception:
+            pass
         alive_ids = {e.id for e in scene.get_entities_with_component(TextRenderer)}
         stale = [eid for eid in self._geom_cache if eid not in alive_ids]
         for eid in stale:

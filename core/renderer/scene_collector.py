@@ -333,6 +333,20 @@ class SceneCollectorMixin:
 
 
     def _collect_interactors(self, snap, scene):
+        try:
+            if not scene._component_indices.get("Water"):
+                snap.interactors = []
+                return
+        except Exception:
+            pass
+        try:
+            rv = scene._render_version
+            tvg = scene._transform_version
+        except Exception:
+            rv = tvg = None
+        ck = getattr(self, "_inter_cache_key", None)
+        if ck is not None and rv is not None and ck == (rv, tvg, id(scene)):
+            return
         interactors = []
         collider_types = (SphereCollider, BoxCollider, CapsuleCollider)
         for ent in scene.get_entities_with_component(SphereCollider):
@@ -374,6 +388,11 @@ class SceneCollectorMixin:
             interactors.append((ent, center, c.scaled_radius, vel, c.scaled_radius))
         capped = sorted(interactors, key=lambda it: abs(it[1].y), reverse=False)[:64]
         snap.interactors = capped
+        try:
+            if rv is not None:
+                self._inter_cache_key = (rv, tvg, id(scene))
+        except Exception:
+            pass
 
 
     def _refresh_snapshot_world_matrices(self, scene):

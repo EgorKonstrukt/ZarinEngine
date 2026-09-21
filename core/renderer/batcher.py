@@ -343,7 +343,7 @@ class RenderBatcher:
                       disable_shadows: bool, set_scene_uniforms_fn,
                       apply_material_fn, normal_cache: dict,
                       selected_entities: set, outline_queue: list,
-                      gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None, skip_cull=False):
+                      gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None, skip_cull=False, skip_inst_upload=False):
         self.reset_stats()
         try:
             if selected_entities is not None and len(selected_entities) > 256:
@@ -354,6 +354,7 @@ class RenderBatcher:
         frustum_planes = None
         if not skip_cull:
             frustum_planes = self._get_frustum_planes(view_f32, proj_f32)
+        skip_up = skip_inst_upload and len(groups) == 1
         for key, group in groups.items():
             _, _, mesh, _, mat, prog, _, _ = group[0]
             dyn_ref = key[5] if len(key) > 5 else False
@@ -423,7 +424,7 @@ class RenderBatcher:
                                        group_disable_shadows, set_scene_uniforms_fn,
                                        apply_material_fn,
                                        selected_entities, outline_queue,
-                                       gpu_storage=gpu_storage, set_scene=False)
+                                       gpu_storage=gpu_storage, set_scene=False, skip_upload=skip_up)
             else:
                 for item in group:
                     self._render_single(item, prog, mesh, mat,
@@ -438,9 +439,9 @@ class RenderBatcher:
                           disable_shadows, set_scene_uniforms_fn,
                           apply_material_fn,
                           selected_entities, outline_queue,
-                          gpu_storage=None, set_scene=True):
+                          gpu_storage=None, set_scene=True, skip_upload=False):
         names = self._uniform_names(prog)
-        if (gpu_storage is not None and gpu_storage.is_gpu_driven()
+        if not skip_upload and (gpu_storage is not None and gpu_storage.is_gpu_driven()
                 and len(group) >= self._gpu_driven_min_instances
                 and self._try_render_gpu_driven(
                     group, prog, mesh, mat, view_f32, proj_f32, cam_pos,
@@ -457,21 +458,30 @@ class RenderBatcher:
         world_ssbo = gpu_storage.get_world_matrix_ssbo() if gpu_storage else None
 
         if world_ssbo is not None:
-            model_mats = [item[6] for item in group]
-            bounding_radii = np.full(len(model_mats), mesh.bounding_radius,
-                                     dtype=np.float64)
-            gpu_storage.upload_world_matrices(model_mats, bounding_radii,
-                                              self._gpu_version)
-            indices = np.arange(len(model_mats), dtype=np.uint32)
-            idx_buf = self._ensure_index_buffer(len(indices))
-            idx_buf.write(indices.tobytes())
-            world_ssbo.bind_to_storage_buffer(WORLD_MATRIX_BINDING)
-            idx_buf.bind_to_storage_buffer(INDEX_BINDING)
-            if "u_use_instancing" in names:
-                prog["u_use_instancing"].value = 2
+            if skip_upload:
+                idx_buf = self._ensure_index_buffer(len(group))
+                idx_buf.write(np.arange(len(group), dtype=np.uint32).tobytes())
+                world_ssbo.bind_to_storage_buffer(WORLD_MATRIX_BINDING)
+                idx_buf.bind_to_storage_buffer(INDEX_BINDING)
+                if "u_use_instancing" in names:
+                    prog["u_use_instancing"].value = 2
+            else:
+                model_mats = [item[6] for item in group]
+                bounding_radii = np.full(len(model_mats), mesh.bounding_radius,
+                                         dtype=np.float64)
+                gpu_storage.upload_world_matrices(model_mats, bounding_radii,
+                                                  self._gpu_version)
+                indices = np.arange(len(model_mats), dtype=np.uint32)
+                idx_buf = self._ensure_index_buffer(len(indices))
+                idx_buf.write(indices.tobytes())
+                world_ssbo.bind_to_storage_buffer(WORLD_MATRIX_BINDING)
+                idx_buf.bind_to_storage_buffer(INDEX_BINDING)
+                if "u_use_instancing" in names:
+                    prog["u_use_instancing"].value = 2
         else:
-            model_mats = [item[6] for item in group]
-            self._write_shared_vbo(model_mats)
+            if not skip_upload:
+                model_mats = [item[6] for item in group]
+                self._write_shared_vbo(model_mats)
             if "u_use_instancing" in names:
                 prog["u_use_instancing"].value = 1
         if "u_use_skinning" in names:

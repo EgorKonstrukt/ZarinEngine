@@ -291,6 +291,7 @@ class SceneRendererMixin:
                 use_fast_groups = False
         if use_fast_groups:
             groups = fast_groups
+            _stats_groups = [groups]
             if self._batcher:
                 self._batcher.render_groups(
                     groups, view_f32, proj_f32, cam_pos, lights, False,
@@ -299,10 +300,11 @@ class SceneRendererMixin:
                     selected_entities or set(), outline_queue,
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
-                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True)
+                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=True)
             opaque_entries = []
             transparent_entries = []
         else:
+            _stats_groups = []
             opaque_entries, transparent_entries = self._partition_transparent(renderable)
             self._sort_transparent_far_first(transparent_entries, cam_pos)
             if len(opaque_entries) > 64 and getattr(self, "_triangles_drawn", 0) > 500000:
@@ -335,6 +337,7 @@ class SceneRendererMixin:
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
                     sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=_all_vis)
+                _stats_groups.append(groups)
                 try:
                     if not _is_trans_phase and not transparent_entries and renderable is snap.renderable and not fx_renderable:
                         _lu = getattr(self, "_last_uniq", None)
@@ -726,8 +729,18 @@ class SceneRendererMixin:
             prof.stop("render_overlay")
 
         if scene:
-            from core.components.rendering.renderers.raytracing_renderer import RaytracingRenderer
-            for ent in scene.get_entities_with_component(RaytracingRenderer):
+            try:
+                _rt_idx = scene._component_indices.get("RaytracingRenderer")
+            except Exception:
+                _rt_idx = True
+            _rt_ents = []
+            if _rt_idx:
+                from core.components.rendering.renderers.raytracing_renderer import RaytracingRenderer
+                try:
+                    _rt_ents = scene.get_entities_with_component(RaytracingRenderer)
+                except Exception:
+                    _rt_ents = []
+            for ent in _rt_ents:
                 if not ent.active:
                     continue
                 rtr = ent.get_component(RaytracingRenderer)
@@ -741,8 +754,18 @@ class SceneRendererMixin:
                 self._rt_rays_per_frame = 0
 
         if scene:
-            from core.components.rendering.environment.radiance_cascades_gi import RadianceCascadesGI
-            for ent in scene.get_entities_with_component(RadianceCascadesGI):
+            try:
+                _gi_idx = scene._component_indices.get("RadianceCascadesGI")
+            except Exception:
+                _gi_idx = True
+            _gi_ents = []
+            if _gi_idx:
+                from core.components.rendering.environment.radiance_cascades_gi import RadianceCascadesGI
+                try:
+                    _gi_ents = scene.get_entities_with_component(RadianceCascadesGI)
+                except Exception:
+                    _gi_ents = []
+            for ent in _gi_ents:
                 if not ent.active:
                     continue
                 gi = ent.get_component(RadianceCascadesGI)
@@ -774,29 +797,57 @@ class SceneRendererMixin:
             self._tri_cache_gen = cur_gen
         tri_get = tri_cache.get
         vert_get = vert_cache.get
-        for entry in renderable:
-            mesh = entry[2]
-            sub_idx = entry[5]
-            mkey = (id(mesh), sub_idx)
-            tri = tri_get(mkey)
-            if tri is None:
-                ranges = mesh.sub_mesh_ranges
-                if ranges and sub_idx >= 0 and sub_idx < len(ranges):
-                    tri = ranges[sub_idx][1] // 3
-                else:
-                    idx = mesh.indices
-                    tri = len(idx) // 3 if idx is not None and len(idx) > 0 else 0
-                tri_cache[mkey] = tri
-            self._triangles_drawn += tri
-            mid = id(mesh)
-            if mid not in counted_mesh_ids:
-                counted_mesh_ids.add(mid)
-                vert = vert_get(mid)
-                if vert is None:
-                    v = mesh.vertices
-                    vert = len(v) // 3 if v is not None and len(v) > 0 else 0
-                    vert_cache[mid] = vert
-                self._vertices_drawn += vert
+        if self._batcher is not None:
+            for _sg in _stats_groups:
+                for _gk, _grp in _sg.items():
+                    if not _grp:
+                        continue
+                    _gm = _grp[0][2]
+                    _gs = _grp[0][7]
+                    _mk = (id(_gm), _gs)
+                    _tri = tri_get(_mk)
+                    if _tri is None:
+                        _ranges = _gm.sub_mesh_ranges
+                        if _ranges and _gs >= 0 and _gs < len(_ranges):
+                            _tri = _ranges[_gs][1] // 3
+                        else:
+                            _idx = _gm.indices
+                            _tri = len(_idx) // 3 if _idx is not None and len(_idx) > 0 else 0
+                        tri_cache[_mk] = _tri
+                    self._triangles_drawn += len(_grp) * _tri
+                    _mid = id(_gm)
+                    if _mid not in counted_mesh_ids:
+                        counted_mesh_ids.add(_mid)
+                        _vert = vert_get(_mid)
+                        if _vert is None:
+                            _v = _gm.vertices
+                            _vert = len(_v) // 3 if _v is not None and len(_v) > 0 else 0
+                            vert_cache[_mid] = _vert
+                        self._vertices_drawn += _vert
+        else:
+            for entry in renderable:
+                mesh = entry[2]
+                sub_idx = entry[5]
+                mkey = (id(mesh), sub_idx)
+                tri = tri_get(mkey)
+                if tri is None:
+                    ranges = mesh.sub_mesh_ranges
+                    if ranges and sub_idx >= 0 and sub_idx < len(ranges):
+                        tri = ranges[sub_idx][1] // 3
+                    else:
+                        idx = mesh.indices
+                        tri = len(idx) // 3 if idx is not None and len(idx) > 0 else 0
+                    tri_cache[mkey] = tri
+                self._triangles_drawn += tri
+                mid = id(mesh)
+                if mid not in counted_mesh_ids:
+                    counted_mesh_ids.add(mid)
+                    vert = vert_get(mid)
+                    if vert is None:
+                        v = mesh.vertices
+                        vert = len(v) // 3 if v is not None and len(v) > 0 else 0
+                        vert_cache[mid] = vert
+                    self._vertices_drawn += vert
         if hasattr(snap, 'skinned_renderables'):
             for entry in snap.skinned_renderables:
                 mesh = entry[2]
