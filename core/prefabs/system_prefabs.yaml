@@ -147,13 +147,21 @@
     - type: Transform
     - type: Camera
 
-- menu: "Effects/Sky"
-  name: "Sky"
+- menu: "Effects/Procedural Sky"
+  name: "Procedural Sky"
   order: 50
   description: "Procedural sky environment"
   components:
     - type: Transform
-    - type: Sky
+    - type: ProceduralSky
+
+- menu: "Effects/Skybox"
+  name: "Skybox"
+  order: 51
+  description: "HDR/EXR image skybox with environment lighting"
+  components:
+    - type: Transform
+    - type: Skybox
 
 - menu: "Effects/Clouds"
   name: "Clouds"

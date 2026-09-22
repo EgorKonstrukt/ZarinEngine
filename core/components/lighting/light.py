@@ -284,8 +284,8 @@ class Light(Component):
                     pass
                 c, i = Light.compute_sun_light(-transform.forward, color_temp, aerosol, True, ozone, rayleigh, albedo)
                 try:
-                    from core.components.rendering.environment.sky import Sky
-                    sky = next((s for s in Sky._registry
+                    from core.components.rendering.environment.sky import ProceduralSky
+                    sky = next((s for s in ProceduralSky._registry
                                 if s.enabled and s.entity and s.entity.active), None)
                     if sky is not None:
                         i *= (1.0 - 0.95 * float(sky.eclipse_darkness))

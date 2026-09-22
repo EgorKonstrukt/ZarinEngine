@@ -22,7 +22,8 @@ from core.components.rendering.particles.particle_system import ParticleSystem
 from core.components.rendering.particles.particle_force_field import ParticleForceField, FORCE_FIELD_DTYPE, MAX_FORCE_FIELDS
 from core.components.rendering.renderers.video_renderer import VideoRenderer
 from core.maths.math3d import Mat4, Vec3
-from core.components.rendering.environment.sky import Sky, release_env_cache
+from core.components.rendering.environment.sky import ProceduralSky, release_env_cache
+from core.components.rendering.environment.skybox import Skybox
 from core.components.rendering.environment.clouds import Cloud
 from core.components.rendering.environment.water import Water
 from core.components.rendering.environment.dynamic_cubemap import DynamicCubemaps
@@ -66,6 +67,29 @@ class SceneCollectorMixin:
         return tuple(out)
 
 
+    def _select_sky_component(self, scene, snap) -> None:
+        try:
+            for ent in scene.get_entities_with_component(Skybox):
+                if ent.active:
+                    sb = ent.get_component(Skybox)
+                    if sb and sb.enabled and sb.skybox_path:
+                        snap.sky_component = sb
+                        snap.sky_entity = ent
+                        return
+        except Exception:
+            pass
+        snap.sky_component = None
+        snap.sky_entity = None
+        try:
+            for ent in scene.get_entities_with_component(ProceduralSky):
+                if ent.active:
+                    snap.sky_component = ent.get_component(ProceduralSky)
+                    snap.sky_entity = ent
+                    break
+        except Exception:
+            pass
+
+
     def _collect_snapshot(self, scene, cam_near, cam_far, cam_fov, view_mat, proj_mat, cam_pos) -> _RenderSnapshot:
         n_updated = scene.flush_transforms()
         struct_version = scene._render_version
@@ -78,6 +102,7 @@ class SceneCollectorMixin:
                 and self._snap_morph_sig == morph_sig):
             self._refresh_snapshot_world_matrices(scene)
             self._collect_interactors(self._snap_cache, scene)
+            self._select_sky_component(scene, self._snap_cache)
             return self._snap_cache
         snap = _RenderSnapshot()
         if not self._import_meta_cache:
@@ -91,11 +116,7 @@ class SceneCollectorMixin:
                 snap.lights.append((l, t))
                 if snap.dir_light is None and l.light_type == LightType.DIRECTIONAL:
                     snap.dir_light = (l, t)
-        for ent in scene.get_entities_with_component(Sky):
-            if ent.active:
-                snap.sky_component = ent.get_component(Sky)
-                snap.sky_entity = ent
-                break
+        self._select_sky_component(scene, snap)
         for ent in scene.get_entities_with_component(Cloud):
             if ent.active:
                 cloud = ent.get_component(Cloud)

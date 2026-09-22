@@ -807,6 +807,7 @@ class Entity:
 
 class ComponentRegistry:
     _registry: dict[str, Type[Component]] = {}
+    _aliases: dict[str, str] = {"Sky": "ProceduralSky"}
     _categories: dict[str, list[str]] = {}
     _category_name_map: dict[str, str] = {
         "transform": "Transform",
@@ -843,7 +844,12 @@ class ComponentRegistry:
 
     @classmethod
     def get(cls, name: str) -> Optional[Type[Component]]:
-        return cls._registry.get(name)
+        comp = cls._registry.get(name)
+        if comp is None and name:
+            alias = cls._aliases.get(name)
+            if alias is not None:
+                comp = cls._registry.get(alias)
+        return comp
 
     @classmethod
     def all(cls) -> dict[str, Type[Component]]:

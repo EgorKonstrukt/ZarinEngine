@@ -46,7 +46,7 @@ def post_init(mw):
         SplashScreen.show_message("Creating sample scene...")
         scene = mw._engine.new_scene("SampleScene")
         from core.components import Transform, MeshFilter, MeshRenderer, DirectionalLight, Camera
-        from core.components.rendering.environment.sky import Sky
+        from core.components.rendering.environment.sky import ProceduralSky
         from core.components.rendering.environment.clouds import Cloud
         from core.maths.math3d import Vec3
         dir_light = scene.create_entity("Directional Light")
@@ -69,7 +69,7 @@ def post_init(mw):
         cam.add_component(cam_t)
         cam.add_component(Camera())
         sky_ent = scene.create_entity("Sky")
-        sky_ent.add_component(Sky())
+        sky_ent.add_component(ProceduralSky())
         mw._scene_tab_manager.add_tab("SampleScene", scene=scene)
         mw._hierarchy.refresh()
         QTimer.singleShot(0, lambda: initial_dock_sizes(mw))

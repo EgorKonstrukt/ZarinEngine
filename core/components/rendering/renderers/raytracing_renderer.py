@@ -581,9 +581,9 @@ class RaytracingRenderer(Component):
 
         sky_comp = None
         try:
-            from core.components.rendering.environment.sky import Sky, _get_moon_texture, _get_white_tex
-            for ent in scene.get_entities_with_component(Sky):
-                sc = ent.get_component(Sky)
+            from core.components.rendering.environment.sky import ProceduralSky, _get_moon_texture, _get_white_tex
+            for ent in scene.get_entities_with_component(ProceduralSky):
+                sc = ent.get_component(ProceduralSky)
                 if sc and sc.enabled:
                     sky_comp = sc
                     break

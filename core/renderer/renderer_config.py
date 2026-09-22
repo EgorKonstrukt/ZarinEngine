@@ -10,7 +10,7 @@ from __future__ import annotations
 from core.components.lighting import Light, Projector
 from core.renderer.types import RenderMode
 from core.renderer.mesh_data import MeshData, read_shader
-from core.components.rendering.environment.sky import Sky, release_env_cache
+from core.components.rendering.environment.sky import ProceduralSky, release_env_cache
 
 
 class RendererConfigMixin:

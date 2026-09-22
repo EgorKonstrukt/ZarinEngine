@@ -33,16 +33,32 @@ uniform sampler2D u_equirect;
 uniform vec3 u_face_x;
 uniform vec3 u_face_y;
 uniform vec3 u_face_z;
+uniform float u_exposure;
+uniform float u_intensity;
+uniform vec3 u_tint;
+uniform float u_saturation;
+uniform mat3 u_rotation;
+uniform float u_flip_y;
 const float PI = 3.14159265359;
 void main() {
     vec2 tc = v_uv * 2.0 - 1.0;
-    vec3 dir = normalize(u_face_x * tc.x + u_face_y * tc.y + u_face_z);
+    vec3 dir = normalize(u_rotation * normalize(u_face_x * tc.x + u_face_y * tc.y + u_face_z));
     vec2 uv = vec2(0.5 + atan(dir.z, dir.x) / 6.28318530718, acos(clamp(dir.y, -1.0, 1.0)) / PI);
-    frag_color = vec4(texture(u_equirect, uv).rgb, 1.0);
+    if (u_flip_y > 0.5) {
+        uv.y = 1.0 - uv.y;
+    }
+    vec3 col = texture(u_equirect, uv).rgb;
+    col *= exp2(u_exposure) * u_intensity;
+    float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = mix(vec3(luma), col, u_saturation) * u_tint;
+    frag_color = vec4(col, 1.0);
 }
 """
 
-_SKY_IBL_CACHE: dict[str, tuple[int, float, Optional["SkyIbl"]]] = {}
+_IDENTITY_MAT3 = np.eye(3, dtype=np.float32).T.tobytes()
+
+_SKY_IBL_CACHE: dict = {}
+_SKY_IBL_CACHE_MAX = 8
 
 
 class SkyIbl:
@@ -114,15 +130,69 @@ def _make_face_vao(ctx: moderngl.Context, prog: moderngl.Program):
     return vao, vbo
 
 
-def _render_cubemap_from_equirect(ctx: moderngl.Context, env_tex: moderngl.Texture, res: int):
+_IBL_PROGS: dict[int, tuple] = {}
+
+
+def _get_ibl_progs(ctx: moderngl.Context):
+    import weakref
+    cid = id(ctx)
+    cached = _IBL_PROGS.get(cid)
+    if cached is not None:
+        try:
+            if cached[0]() is ctx:
+                return cached[1]
+        except Exception:
+            pass
+    try:
+        ref = weakref.ref(ctx)
+    except Exception:
+        ref = None
+    equirect = ctx.program(vertex_shader=_FULLSCREEN_QUAD_VERT, fragment_shader=_EQUIRECT_TO_CUBE_FRAG)
+    prefilter = ctx.program(vertex_shader=_FULLSCREEN_QUAD_VERT, fragment_shader=_PREFILTER_FRAG)
+    irradiance = ctx.program(vertex_shader=_FULLSCREEN_QUAD_VERT, fragment_shader=_IRRADIANCE_FRAG)
+    brdf = ctx.program(vertex_shader=_FULLSCREEN_QUAD_VERT, fragment_shader=_BRDF_LUT_FRAG)
+    if len(_IBL_PROGS) > 16:
+        for k in [k for k, v in _IBL_PROGS.items() if v[0]() is None]:
+            _IBL_PROGS.pop(k, None)
+    _IBL_PROGS[cid] = (ref, (equirect, prefilter, irradiance, brdf))
+    return equirect, prefilter, irradiance, brdf
+
+
+def _render_cubemap_from_equirect(ctx: moderngl.Context, env_tex: moderngl.Texture, res: int, grade=None):
     cube_tex = ctx.texture_cube((res, res), 4, dtype="f4")
     cube_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
     cube_tex.repeat_x = False
     cube_tex.repeat_y = False
-    prog = ctx.program(vertex_shader=_FULLSCREEN_QUAD_VERT, fragment_shader=_EQUIRECT_TO_CUBE_FRAG)
+    prog = _get_ibl_progs(ctx)[0]
     vao, vbo = _make_face_vao(ctx, prog)
     env_tex.use(0)
     prog["u_equirect"].value = 0
+    try:
+        prog["u_exposure"].value = float(grade.get("exposure", 0.0)) if grade else 0.0
+    except Exception:
+        pass
+    try:
+        prog["u_intensity"].value = float(grade.get("intensity", 1.0)) if grade else 1.0
+    except Exception:
+        pass
+    try:
+        _t = grade.get("tint", (1.0, 1.0, 1.0)) if grade else (1.0, 1.0, 1.0)
+        prog["u_tint"].value = (float(_t[0]), float(_t[1]), float(_t[2]))
+    except Exception:
+        pass
+    try:
+        prog["u_saturation"].value = float(grade.get("saturation", 1.0)) if grade else 1.0
+    except Exception:
+        pass
+    try:
+        _r = grade.get("rotation") if grade else None
+        prog["u_rotation"].write(_r if _r else _IDENTITY_MAT3)
+    except Exception:
+        pass
+    try:
+        prog["u_flip_y"].value = float(grade.get("flip_y", 0.0)) if grade else 0.0
+    except Exception:
+        pass
     ctx.disable(moderngl.DEPTH_TEST)
     ctx.disable(moderngl.CULL_FACE)
     prev_fbo = ctx.fbo
@@ -156,7 +226,7 @@ def _render_irradiance(ctx: moderngl.Context, src_tex: moderngl.TextureCube, res
     irr_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
     irr_tex.repeat_x = False
     irr_tex.repeat_y = False
-    prog = ctx.program(vertex_shader=_FULLSCREEN_QUAD_VERT, fragment_shader=_IRRADIANCE_FRAG)
+    prog = _get_ibl_progs(ctx)[2]
     vao, vbo = _make_face_vao(ctx, prog)
     src_tex.use(0)
     prog["u_cubemap"].value = 0
@@ -194,7 +264,7 @@ def _render_brdf_lut(ctx: moderngl.Context):
     brdf_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
     brdf_tex.repeat_x = False
     brdf_tex.repeat_y = False
-    prog = ctx.program(vertex_shader=_FULLSCREEN_QUAD_VERT, fragment_shader=_BRDF_LUT_FRAG)
+    prog = _get_ibl_progs(ctx)[3]
     vao, vbo = _make_face_vao(ctx, prog)
     prev_fbo = ctx.fbo
     fbo = ctx.framebuffer(color_attachments=[brdf_tex])
@@ -221,7 +291,7 @@ def _render_prefilter(ctx: moderngl.Context, src_cube: moderngl.TextureCube, res
     pref.repeat_x = False
     pref.repeat_y = False
     _allocate_cube_mip_levels(pref, res, _PREFILTER_MAX_LOD)
-    prog = ctx.program(vertex_shader=_FULLSCREEN_QUAD_VERT, fragment_shader=_PREFILTER_FRAG)
+    prog = _get_ibl_progs(ctx)[1]
     vao, vbo = _make_face_vao(ctx, prog)
     src_cube.use(0)
     prog["u_cubemap"].value = 0
@@ -270,10 +340,10 @@ def _generate_ibl_from_cube(ctx: moderngl.Context, src_cube: moderngl.TextureCub
     return ibl
 
 
-def _generate_ibl(ctx: moderngl.Context, env_tex: moderngl.Texture, res: int = 128) -> Optional[SkyIbl]:
+def _generate_ibl(ctx: moderngl.Context, env_tex: moderngl.Texture, res: int = 128, grade=None) -> Optional[SkyIbl]:
     src_cube = None
     try:
-        src_cube = _render_cubemap_from_equirect(ctx, env_tex, res)
+        src_cube = _render_cubemap_from_equirect(ctx, env_tex, res, grade)
         src_cube.build_mipmaps()
         return _generate_ibl_from_cube(ctx, src_cube, res)
     except Exception:
@@ -442,25 +512,36 @@ def get_procedural_sky_ibl(ctx: moderngl.Context, sky_prog: moderngl.Program,
     return ibl
 
 
-def get_sky_ibl(ctx: moderngl.Context, env_path: str, env_tex: Optional[moderngl.Texture] = None) -> Optional[SkyIbl]:
+def get_sky_ibl(ctx: moderngl.Context, env_path: str, env_tex: Optional[moderngl.Texture] = None, grade_key: str = "", grade=None) -> Optional[SkyIbl]:
     if not env_path:
         return None
     abs_path = os.path.abspath(env_path)
     if not os.path.exists(abs_path):
         return None
     mtime = os.path.getmtime(abs_path)
-    cached = _SKY_IBL_CACHE.get(abs_path)
+    key = (abs_path, grade_key or "")
+    cached = _SKY_IBL_CACHE.get(key)
     if cached is not None:
         cctx, cm, ibl = cached
         if cctx == id(ctx) and abs(mtime - cm) < 0.001:
+            _SKY_IBL_CACHE.pop(key, None)
+            _SKY_IBL_CACHE[key] = cached
             return ibl
         if ibl is not None:
             try:
                 ibl.release()
             except Exception:
                 pass
-    ibl = _generate_ibl(ctx, env_tex, 128) if env_tex is not None else None
-    _SKY_IBL_CACHE[abs_path] = (id(ctx), mtime, ibl)
+            _SKY_IBL_CACHE.pop(key, None)
+    ibl = _generate_ibl(ctx, env_tex, 128, grade) if env_tex is not None else None
+    _SKY_IBL_CACHE[key] = (id(ctx), mtime, ibl)
+    while len(_SKY_IBL_CACHE) > _SKY_IBL_CACHE_MAX:
+        _old_key, (_c, _m, _old) = _SKY_IBL_CACHE.popitem(last=False)
+        if _old is not None:
+            try:
+                _old.release()
+            except Exception:
+                pass
     return ibl
 
 

@@ -255,7 +255,7 @@ _DEFAULT_UTC_OFFSET = 3.0
 _J2000_JD = 2451545.0
 
 # Advanced celestial-model parameters. Every value mirrors the constants used
-# by the astronomy functions below; the Sky component exposes them in the
+# by the astronomy functions below; the ProceduralSky component exposes them in the
 # inspector ("Celestial Model (Advanced)") so orbits can be tuned per scene.
 _ASTRO_DEFAULTS = {
     "obliquity_deg": 23.439,
@@ -488,7 +488,7 @@ def release_env_cache():
 
 
 @ComponentRegistry.register
-class Sky(Component):
+class ProceduralSky(Component):
     _icon = "Sky.png"
     _registry: list = []
 
@@ -1095,7 +1095,7 @@ class Sky(Component):
         return d
 
     @classmethod
-    def deserialize(cls, data: dict) -> Sky:
+    def deserialize(cls, data: dict) -> ProceduralSky:
         c = cls()
         c.enabled = data.get("enabled", True)
         c.material_path = data.get("material_path", "core/shaders/Sky.shader")
@@ -1130,3 +1130,6 @@ class Sky(Component):
         for _k, _v in _ASTRO_DEFAULTS.items():
             setattr(c, "_astro_" + _k, data.get("_astro_" + _k, _v))
         return c
+
+
+Sky = ProceduralSky

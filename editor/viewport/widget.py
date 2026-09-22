@@ -1682,7 +1682,7 @@ class SceneViewport(QOpenGLWidget):
             "plane": "3D Object/Plane",
             "sun": "Light/Sun",
             "camera": "Camera",
-            "sky": "Effects/Sky",
+            "sky": "Effects/Procedural Sky",
             "clouds": "Effects/Clouds",
             "particle_system": "Effects/Particle System",
         }

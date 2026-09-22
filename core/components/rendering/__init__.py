@@ -13,7 +13,8 @@ from core.components.rendering.renderers.video_renderer import VideoRenderer
 from core.components.rendering.renderers.svg_renderer import SvgRenderer
 from core.components.rendering.particles.particle_system import ParticleSystem
 from core.components.rendering.particles.particle_force_field import ParticleForceField
-from core.components.rendering.environment.sky import Sky
+from core.components.rendering.environment.sky import ProceduralSky
+from core.components.rendering.environment.skybox import Skybox
 from core.components.rendering.environment.clouds import Cloud
 from core.components.rendering.renderers.text_renderer import TextRenderer
 from core.components.rendering.renderers.gaussian_splat_renderer import GaussianSplatRenderer
@@ -32,7 +33,7 @@ from core.components.rendering.terrain import Terrain
 __all__ = [
     "Camera", "CameraProjection", "EditorCamera", "MeshFilter", "MeshRenderer",
     "SpriteRenderer", "VideoRenderer", "SvgRenderer", "ParticleSystem", "ParticleForceField",
-    "Sky", "Cloud", "TextRenderer", "GaussianSplatRenderer",
+    "ProceduralSky", "Skybox", "Cloud", "TextRenderer", "GaussianSplatRenderer",
     "ObjectEffect", "DissolveEffect", "PolygonDisintegrationEffect", "SpikeGrowthEffect",
     "VoxelizeEffect", "HologramEffect", "FrostEffect", "EmissivePulseEffect", "GlitchEffect", "WindSwayEffect",
     "Terrain",

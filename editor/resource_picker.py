@@ -1169,6 +1169,7 @@ class ResourcePickerDialog(QDialog):
             ".wav": "Audio", ".mp3": "Audio", ".ogg": "Audio",
             ".py": "Python Script",
             ".png": "Image", ".jpg": "Image", ".jpeg": "Image",
+            ".hdr": "HDRI", ".exr": "HDRI",
             ".zpes": "Scene", ".zpep": "Prefab", ".mat": "Material",
             ".vert": "Vertex Shader", ".frag": "Fragment Shader",
             ".shader": "Shader", ".compute": "Compute Shader",
