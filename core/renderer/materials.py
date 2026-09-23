@@ -302,6 +302,7 @@ class MaterialManager:
     # Maps URP-style/PBR property names to default shader uniform names
     _UNIFORM_ALIASES = {
         "_EmissionColor": "u_emission",
+        "emission_color": "u_emission",
         "_EmissionIntensity": None,
         "_Metallic": "u_metallic",
         "_Smoothness": "u_smoothness",
@@ -386,6 +387,16 @@ class MaterialManager:
             self._apply_mesh_sprite(prog, names, mr)
             return
         props = mat.properties
+        try:
+            _emit_scale = None
+            for _ek in ("_EmissionIntensity", "emission_intensity"):
+                if _ek in props:
+                    _emit_scale = max(0.0, float(props[_ek]))
+                    break
+            if _emit_scale is None:
+                _emit_scale = 1.0
+        except Exception:
+            _emit_scale = 1.0
         tex_unit = 1
         tex_uniform_map = self._TEX_UNIFORM_MAP
         active_names = self._prog_tex_active_names.setdefault(pid, {})
@@ -446,7 +457,10 @@ class MaterialManager:
                 else:
                     alias = self._UNIFORM_ALIASES.get(key)
                     if alias is not None and alias in names:
-                        self._set_uniform_value(prog, alias, value)
+                        if alias == "u_emission" and key in ("_EmissionColor", "emission_color"):
+                            self._set_emission_uniform(prog, alias, value, _emit_scale)
+                        else:
+                            self._set_uniform_value(prog, alias, value)
         self._apply_mesh_sprite(prog, names, mr)
 
     def _mesh_uv_sprite_state(self, mr):
@@ -708,6 +722,25 @@ class MaterialManager:
                 names = frozenset()
             self._prog_uniform_names[id(prog)] = names
         return name in names
+
+    def _set_emission_uniform(self, prog, name: str, value, scale: float):
+        try:
+            arr = np.array(value, dtype=np.float32).ravel()
+        except Exception:
+            return
+        try:
+            rgb = np.zeros(3, dtype=np.float32)
+            n = min(3, int(arr.size))
+            if n > 0:
+                rgb[:n] = arr[:n]
+            rgb *= np.float32(max(0.0, float(scale)))
+        except Exception:
+            return
+        if self._has_uniform(prog, name):
+            try:
+                prog[name].write(rgb.tobytes())
+            except Exception as e:
+                Logger.error(f"set_uniform {name} emission failed: {e}")
 
     def _set_uniform_value(self, prog, name: str, value):
         if isinstance(value, (float, int)):
