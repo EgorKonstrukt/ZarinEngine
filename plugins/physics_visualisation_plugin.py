@@ -20,7 +20,7 @@ _REF_Y = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 class PhysicsVisualisationPlugin(PluginBase):
     NAME = "PhysicsVisualisation"
     VERSION = "1.1.0"
-    DESCRIPTION = "Batched gizmo arrows: velocity, acceleration, moment."
+    DESCRIPTION = ""
     SYSTEM = True
 
     def __init__(self):
