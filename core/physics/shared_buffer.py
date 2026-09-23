@@ -9,7 +9,7 @@ import numpy as np
 from typing import Optional
 import uuid
 
-MAX_ENTITIES = 4096
+MAX_ENTITIES = 65536
 
 _DTYPE_FLAGS = np.uint8
 _DTYPE_BODY = np.int32
