@@ -267,6 +267,26 @@ class RenderBatcher:
         self._index_buf_capacity = needed + 64
         return self._index_buf
 
+    def patch_shared_vbo_single(self, idx: int, mat) -> bool:
+        try:
+            vbo = self._shared_inst_vbo
+            if vbo is None:
+                return False
+            try:
+                f32 = mat.to_f32()
+            except Exception:
+                return False
+            try:
+                vbo.write(f32, offset=int(idx) * 64)
+            except Exception:
+                try:
+                    vbo.write(f32.tobytes(), offset=int(idx) * 64)
+                except Exception:
+                    return False
+            return True
+        except Exception:
+            return False
+
     def _write_shared_vbo(self, matrices: list[Mat4]):
         n = len(matrices)
         if n == 0:

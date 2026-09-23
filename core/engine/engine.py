@@ -491,6 +491,18 @@ class Engine:
     def tick_begin(self) -> float:
         sc = self._scene
         if sc is not None:
+            try:
+                sc._last_flushed = []
+                try:
+                    sc._last_flushed_set.clear()
+                except Exception:
+                    pass
+                try:
+                    sc._flushed_overflow = False
+                except Exception:
+                    pass
+            except Exception:
+                pass
             sc.flush_transforms()
         now = time.perf_counter()
         raw_dt = now - self._last_time

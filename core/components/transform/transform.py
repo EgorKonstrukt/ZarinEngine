@@ -48,7 +48,8 @@ class Transform(Component):
         if ent is None:
             self._dirty = True
             return
-        if not ent._children:
+        children = ent._children
+        if not children:
             self._dirty = True
             scene = ent._scene
             if scene is not None:
@@ -57,41 +58,69 @@ class Transform(Component):
                 scene._spatial_dirty = True
                 scene._transform_version_pending = True
             return
+        scene = ent._scene
+        if scene is None:
+            stack = [self]
+            pop = stack.pop
+            push = stack.append
+            while stack:
+                t = pop()
+                if t._dirty:
+                    continue
+                t._dirty = True
+                e = t._entity
+                if e is None:
+                    continue
+                for child in e._children:
+                    ct = child._transform
+                    if ct is not None and not ct._dirty:
+                        push(ct)
+            return
+        dirty_add = scene._dirty_roots.add
+        spatial_set = scene._spatial_dirty_entities
+        spatial_add = spatial_set.add
         stack = [self]
+        pop = stack.pop
+        push = stack.append
         while stack:
-            t = stack.pop()
+            t = pop()
             if t._dirty:
                 continue
             t._dirty = True
-            ent = t._entity
-            if ent is None:
+            e = t._entity
+            if e is None:
                 continue
-            scene = ent._scene
-            if scene is not None:
-                scene._dirty_roots.add(t)
-                scene._spatial_dirty_entities.add(ent._id)
-                scene._spatial_dirty = True
-                scene._transform_version_pending = True
-            for child in ent._children:
+            dirty_add(t)
+            spatial_add(e._id)
+            for child in e._children:
                 ct = child._transform
                 if ct is not None and not ct._dirty:
-                    stack.append(ct)
+                    push(ct)
+        scene._spatial_dirty = True
+        scene._transform_version_pending = True
     def _update_world_matrix(self):
         if not self._dirty:
             return
         if self._world_target is not None:
             self._resolve_world_target()
             return
-        chain = [self]
         ent = self._entity
-        p = ent._parent if ent is not None else None
+        parent = ent._parent if ent is not None else None
+        if parent is None:
+            local = self._build_local_matrix()
+            self._world_matrix._d[:, :] = local._d
+            self._dirty = False
+            return
+        chain = [self]
+        chain_append = chain.append
+        p = parent
         while p is not None:
             pt = p._transform
             if pt is None:
                 break
             if not pt._dirty and pt._world_target is None:
                 break
-            chain.append(pt)
+            chain_append(pt)
             pe = pt._entity
             p = pe._parent if pe is not None else None
         for node in reversed(chain):
@@ -104,12 +133,14 @@ class Transform(Component):
             if parent_entity is not None:
                 pt = parent_entity._transform
                 if pt is not None:
-                    m = Mat4.__new__(Mat4)
-                    m._d = local._d @ pt._world_matrix._d
-                    node._world_matrix = m
+                    try:
+                        import numpy as _np
+                        _np.matmul(local._d, pt._world_matrix._d, out=node._world_matrix._d)
+                    except Exception:
+                        node._world_matrix._d[:, :] = local._d @ pt._world_matrix._d
                     node._dirty = False
                     continue
-            node._world_matrix = local
+            node._world_matrix._d[:, :] = local._d
             node._dirty = False
 
     def _resolve_world_target(self):
@@ -132,7 +163,7 @@ class Transform(Component):
             self._local_pos = pos
             self._local_rot = rot
             self._local_scale = scale
-        self._world_matrix = self._world_target
+        self._world_matrix._d[:, :] = self._world_target._d
         self._world_target = None
         self._dirty = False
     def _build_local_matrix(self) -> Mat4:

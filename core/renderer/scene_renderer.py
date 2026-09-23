@@ -219,13 +219,100 @@ class SceneRendererMixin:
                         _mg = self._mesh_loader._loaded_generation if self._mesh_loader else 0
                     except Exception:
                         _mg = 0
-                    _ck = (id(snap), _tvg, _mg, n_ent)
+                    _ck = (id(snap), _mg, n_ent)
+                    _centers = None
+                    _radii = None
+                    _cull_index = None
                     if _cc is not None and _cc[0] == _ck:
-                        centers, radii = _cc[1], _cc[2]
+                        _centers = _cc[1]
+                        _radii = _cc[2]
+                        _cull_index = _cc[3] if len(_cc) > 3 else None
+                        _last_tv = _cc[4] if len(_cc) > 4 else None
+                        if _last_tv is not None and _tvg == _last_tv:
+                            centers, radii = _centers, _radii
+                            visible = cpu_frustum_cull(centers, radii, vp)
+                        else:
+                            try:
+                                _flushed = scene.peek_flushed_transforms() if hasattr(scene, "peek_flushed_transforms") else []
+                            except Exception:
+                                _flushed = []
+                            try:
+                                _overflow = bool(getattr(scene, "_flushed_overflow", False))
+                            except Exception:
+                                _overflow = False
+                            if _overflow:
+                                _centers, _radii = _bfci(cull_entries)
+                                _cull_index = None
+                                self._cull_cache = (_ck, _centers, _radii, _cull_index, _tvg)
+                            elif _flushed and len(_flushed) * 16 < n_ent:
+                                if _cull_index is None:
+                                    _cull_index = {}
+                                    for _ci, _ce in enumerate(cull_entries):
+                                        try:
+                                            _tr = _ce[1]
+                                        except Exception:
+                                            continue
+                                        if _tr is None:
+                                            continue
+                                        _tid = id(_tr)
+                                        _lst = _cull_index.get(_tid)
+                                        if _lst is None:
+                                            _cull_index[_tid] = [_ci]
+                                        else:
+                                            _lst.append(_ci)
+                                for _t in _flushed:
+                                    try:
+                                        _lst = _cull_index.get(id(_t))
+                                    except Exception:
+                                        _lst = None
+                                    if not _lst:
+                                        continue
+                                    try:
+                                        _d = _t._world_matrix._d
+                                        _cx = float(_d[3, 0])
+                                        _cy = float(_d[3, 1])
+                                        _cz = float(_d[3, 2])
+                                        _sx = _d[0, 0] * _d[0, 0] + _d[1, 0] * _d[1, 0] + _d[2, 0] * _d[2, 0]
+                                        _sy = _d[0, 1] * _d[0, 1] + _d[1, 1] * _d[1, 1] + _d[2, 1] * _d[2, 1]
+                                        _sz = _d[0, 2] * _d[0, 2] + _d[1, 2] * _d[1, 2] + _d[2, 2] * _d[2, 2]
+                                        _ms = _sx
+                                        if _sy > _ms:
+                                            _ms = _sy
+                                        if _sz > _ms:
+                                            _ms = _sz
+                                        try:
+                                            import math as _math
+                                            _ms = _math.sqrt(_ms)
+                                        except Exception:
+                                            _ms = _ms ** 0.5
+                                    except Exception:
+                                        continue
+                                    for _ci in _lst:
+                                        try:
+                                            _centers[_ci, 0] = _cx
+                                            _centers[_ci, 1] = _cy
+                                            _centers[_ci, 2] = _cz
+                                            try:
+                                                _mesh = cull_entries[_ci][2]
+                                                _br = float(getattr(_mesh, "bounding_radius", 1.0))
+                                            except Exception:
+                                                _br = 1.0
+                                            _radii[_ci] = _ms * _br
+                                        except Exception:
+                                            pass
+                                self._cull_cache = (_ck, _centers, _radii, _cull_index, _tvg)
+                            elif _flushed and len(_flushed) > 0:
+                                _centers, _radii = _bfci(cull_entries)
+                                self._cull_cache = (_ck, _centers, _radii, None, _tvg)
+                            else:
+                                self._cull_cache = (_ck, _centers, _radii, _cull_index, _tvg)
+                            centers, radii = _centers, _radii
+                            visible = cpu_frustum_cull(centers, radii, vp)
                     else:
-                        centers, radii = _bfci(cull_entries)
-                        self._cull_cache = (_ck, centers, radii)
-                    visible = cpu_frustum_cull(centers, radii, vp)
+                        _centers, _radii = _bfci(cull_entries)
+                        self._cull_cache = (_ck, _centers, _radii, None, _tvg)
+                        centers, radii = _centers, _radii
+                        visible = cpu_frustum_cull(centers, radii, vp)
                     offsets = snap.cull_offsets
                     counts = snap.cull_counts
                     n_vis = len(visible)
@@ -263,6 +350,8 @@ class SceneRendererMixin:
         opaque_entries = None
         transparent_entries = []
         use_fast_groups = False
+        use_struct_groups = False
+        struct_groups = None
         fast_groups = getattr(self, "_fast_groups", None)
         if fast_groups is not None and renderable is snap.renderable and len(renderable) > 0:
             try:
@@ -305,10 +394,123 @@ class SceneRendererMixin:
             transparent_entries = []
         else:
             _stats_groups = []
-            opaque_entries, transparent_entries = self._partition_transparent(renderable)
-            self._sort_transparent_far_first(transparent_entries, cam_pos)
-            if len(opaque_entries) > 64 and getattr(self, "_triangles_drawn", 0) > 500000:
-                self._sort_opaque_front_first(opaque_entries, cam_pos)
+            try:
+                _s_hit = False
+                if renderable is snap.renderable and len(renderable) > 0:
+                    try:
+                        _all_vis_chk = self._culled_visible == self._culled_total
+                    except Exception:
+                        _all_vis_chk = False
+                    if _all_vis_chk:
+                        try:
+                            _mg_s = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+                        except Exception:
+                            _mg_s = 0
+                        try:
+                            _skey = (scene._render_version, _mg_s, len(renderable), id(snap))
+                        except Exception:
+                            _skey = None
+                        if _skey is not None and getattr(self, "_struct_key", None) == _skey:
+                            _sg = getattr(self, "_struct_groups", None)
+                            _su = getattr(self, "_struct_uniq", None)
+                            _sm = getattr(self, "_struct_mats", None)
+                            if _sg is not None and _su is not None and _sm is not None:
+                                _ok_s = True
+                                for _p in _su:
+                                    _m = self._materials.load_material(_p)
+                                    _sp = self._shaders.get_or_compile(_m.shader_path) if _m is not None and getattr(_m, "shader_path", "") else None
+                                    if _sp is None:
+                                        _sp = self._default_prog
+                                    _cid = _sm.get(_p)
+                                    if _cid is None or _cid[0] != (id(_m) if _m is not None else 0) or _cid[1] != id(_sp):
+                                        _ok_s = False
+                                        break
+                                    if self._materials.mesh_transparency(None, _m):
+                                        _ok_s = False
+                                        break
+                                if _ok_s:
+                                    use_struct_groups = True
+                                    struct_groups = _sg
+            except Exception:
+                use_struct_groups = False
+                struct_groups = None
+            if use_struct_groups:
+                _stats_groups = [struct_groups]
+                if self._batcher:
+                    _patched = False
+                    try:
+                        try:
+                            _fl2 = scene.peek_flushed_transforms() if hasattr(scene, "peek_flushed_transforms") else []
+                        except Exception:
+                            _fl2 = []
+                        try:
+                            _ov2 = bool(getattr(scene, "_flushed_overflow", False))
+                        except Exception:
+                            _ov2 = False
+                        if not _fl2 and not _ov2:
+                            _patched = True
+                        elif len(struct_groups) == 1:
+                            _s_idx = getattr(self, "_struct_single_index", None)
+                            _s_snap = getattr(self, "_struct_single_snap", None)
+                            if _s_idx is not None and _s_snap == id(snap):
+                                if _fl2 and not _ov2 and len(_fl2) * 32 < len(renderable):
+                                    _ok_p = True
+                                    for _t in _fl2:
+                                        try:
+                                            _pi = _s_idx.get(id(_t))
+                                        except Exception:
+                                            _pi = None
+                                        if _pi is None:
+                                            continue
+                                        try:
+                                            _wm = _t._world_matrix
+                                        except Exception:
+                                            continue
+                                        if isinstance(_pi, list):
+                                            for _q in _pi:
+                                                if not self._batcher.patch_shared_vbo_single(int(_q), _wm):
+                                                    _ok_p = False
+                                                    break
+                                        else:
+                                            if not self._batcher.patch_shared_vbo_single(int(_pi), _wm):
+                                                _ok_p = False
+                                                break
+                                    if _ok_p:
+                                        _patched = True
+                    except Exception:
+                        _patched = False
+                    if _patched:
+                        self._batcher.render_groups(
+                            struct_groups, view_f32, proj_f32, cam_pos, lights, False,
+                            self._set_scene_uniforms, self._materials.apply_material,
+                            self._normal_cache,
+                            selected_entities or set(), outline_queue,
+                            gpu_storage=self._gpu_storage,
+                            dynamic_cubemaps=dynamic_cubemaps,
+                            sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=True)
+                    else:
+                        self._batcher.render_groups(
+                            struct_groups, view_f32, proj_f32, cam_pos, lights, False,
+                            self._set_scene_uniforms, self._materials.apply_material,
+                            self._normal_cache,
+                            selected_entities or set(), outline_queue,
+                            gpu_storage=self._gpu_storage,
+                            dynamic_cubemaps=dynamic_cubemaps,
+                            sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=False)
+                opaque_entries = []
+                transparent_entries = []
+            else:
+                opaque_entries, transparent_entries = self._partition_transparent(renderable)
+                self._sort_transparent_far_first(transparent_entries, cam_pos)
+                if not transparent_entries:
+                    try:
+                        _fl = scene.peek_flushed_transforms() if hasattr(scene, "peek_flushed_transforms") else []
+                    except Exception:
+                        _fl = []
+                    if _fl and len(_fl) * 16 < len(opaque_entries):
+                        pass
+                    elif len(opaque_entries) > 64 and getattr(self, "_triangles_drawn", 0) > 500000:
+                        self._sort_opaque_front_first(opaque_entries, cam_pos)
         for _is_trans_phase, _phase_entries in ((False, opaque_entries), (True, transparent_entries)):
             if not _phase_entries:
                 continue
@@ -362,6 +564,44 @@ class SceneRendererMixin:
                             self._fast_has_sprite = False
                             self._fast_has_fx = False
                             self._fast_count = 0
+                            try:
+                                _mg_c = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+                            except Exception:
+                                _mg_c = 0
+                            try:
+                                self._struct_key = (scene._render_version, _mg_c, len(renderable), id(snap))
+                                self._struct_groups = groups
+                                self._struct_uniq = _lu
+                                self._struct_mats = dict(_fm)
+                                try:
+                                    if len(groups) == 1:
+                                        _only = next(iter(groups.values()))
+                                        _smap = {}
+                                        for _ii, _it in enumerate(_only):
+                                            try:
+                                                _tr = _it[1]
+                                            except Exception:
+                                                continue
+                                            if _tr is None:
+                                                continue
+                                            _tid = id(_tr)
+                                            _ex = _smap.get(_tid)
+                                            if _ex is None:
+                                                _smap[_tid] = _ii
+                                            else:
+                                                if isinstance(_ex, list):
+                                                    _ex.append(_ii)
+                                                else:
+                                                    _smap[_tid] = [_ex, _ii]
+                                        self._struct_single_index = _smap
+                                        self._struct_single_snap = id(snap)
+                                    else:
+                                        self._struct_single_index = None
+                                        self._struct_single_snap = None
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
                 except Exception:
                     pass
             else:

@@ -350,6 +350,25 @@ class SceneCollectorMixin:
         self._snap_mesh_gen = mesh_gen
         self._snap_morph_sig = morph_sig
         self._snap_scene = scene
+        try:
+            if hasattr(scene, "take_flushed_transforms"):
+                scene.take_flushed_transforms()
+            try:
+                if getattr(scene, "_flushed_overflow", False):
+                    scene._flushed_overflow = False
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            self._snap_tr_index = None
+            self._snap_tr_index_snap = None
+        except Exception:
+            pass
+        try:
+            self._snap_refresh_tv = scene._transform_version
+        except Exception:
+            pass
         return snap
 
 
@@ -416,6 +435,40 @@ class SceneCollectorMixin:
             pass
 
 
+    def _ensure_snapshot_tr_index(self, snap):
+        try:
+            cached_id = self._snap_tr_index_snap
+            if cached_id == id(snap):
+                idx = self._snap_tr_index
+                if idx is not None and len(idx) > 0:
+                    return idx
+        except Exception:
+            pass
+        index = {}
+        try:
+            renderable = snap.renderable
+            for i, entry in enumerate(renderable):
+                try:
+                    tr = entry[1]
+                except Exception:
+                    continue
+                if tr is None:
+                    continue
+                tid = id(tr)
+                lst = index.get(tid)
+                if lst is None:
+                    index[tid] = [i]
+                else:
+                    lst.append(i)
+        except Exception:
+            pass
+        try:
+            self._snap_tr_index = index
+            self._snap_tr_index_snap = id(snap)
+        except Exception:
+            pass
+        return index
+
     def _refresh_snapshot_world_matrices(self, scene):
         snap = self._snap_cache
         if snap is None:
@@ -435,6 +488,92 @@ class SceneCollectorMixin:
             except Exception:
                 pass
         renderable = snap.renderable
+        n = len(renderable)
+        flushed = None
+        try:
+            if hasattr(scene, "peek_flushed_transforms"):
+                flushed = scene.peek_flushed_transforms()
+            else:
+                flushed = None
+        except Exception:
+            flushed = None
+        try:
+            overflow = bool(getattr(scene, "_flushed_overflow", False))
+        except Exception:
+            overflow = False
+        if flushed is not None and not overflow and n > 0 and len(flushed) > 0 and len(flushed) * 8 < n:
+            try:
+                index = self._ensure_snapshot_tr_index(snap)
+                for t in flushed:
+                    try:
+                        lst = index.get(id(t))
+                    except Exception:
+                        lst = None
+                    if not lst:
+                        continue
+                    try:
+                        wm = t._world_matrix
+                    except Exception:
+                        continue
+                    for i in lst:
+                        try:
+                            renderable[i][4] = wm
+                        except Exception:
+                            pass
+                for entry in snap.skinned_renderables:
+                    tr = entry[1]
+                    if tr is not None:
+                        if tr._dirty:
+                            tr._update_world_matrix()
+                        entry[4] = tr._world_matrix
+                for entry in snap.skinned_shadow_renderables:
+                    ent = entry[1]
+                    tr = ent._transform if ent is not None and ent._transform is not None else (ent.transform if ent is not None else None)
+                    if tr is not None:
+                        if tr._dirty:
+                            tr._update_world_matrix()
+                        entry[3] = tr._world_matrix
+                for item in snap.sprite_items:
+                    tr = item._tr
+                    if tr is not None:
+                        if tr._dirty:
+                            tr._update_world_matrix()
+                        item.world_matrix = tr._world_matrix
+                for item in snap.video_items:
+                    tr = item._tr
+                    if tr is not None:
+                        if tr._dirty:
+                            tr._update_world_matrix()
+                        item.world_matrix = tr._world_matrix
+                for item in snap.svg_items:
+                    tr = item._tr
+                    if tr is not None:
+                        if tr._dirty:
+                            tr._update_world_matrix()
+                        item.world_matrix = tr._world_matrix
+                for item in snap.projectors:
+                    item.refresh_vp()
+                try:
+                    self._refresh_soft_snapshot_meshes(scene)
+                except Exception:
+                    pass
+                try:
+                    self._snap_refresh_tv = scene._transform_version
+                except Exception:
+                    pass
+                return
+            except Exception:
+                pass
+        if flushed is not None and not overflow and n > 0 and len(flushed) == 0:
+            try:
+                if not scene._dirty_roots and not scene._transform_version_pending:
+                    try:
+                        self._snap_refresh_tv = scene._transform_version
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                pass
         for entry in renderable:
             tr = entry[1]
             if tr is not None:
