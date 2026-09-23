@@ -108,10 +108,8 @@ class PipeItem(QtWidgets.QGraphicsPathItem):
 
         painter.setPen(pen)
         painter.setBrush(self.brush())
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.drawPath(self.path())
 
-        # QPaintDevice: Cannot destroy paint device that is being painted.
         painter.restore()
 
     @staticmethod

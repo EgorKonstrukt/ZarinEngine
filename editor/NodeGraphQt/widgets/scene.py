@@ -18,6 +18,10 @@ class NodeScene(QtWidgets.QGraphicsScene):
         self._grid_color = ViewerEnum.GRID_COLOR.value
         self._bg_color = ViewerEnum.BACKGROUND_COLOR.value
         self.setBackgroundBrush(QtGui.QColor(*self._bg_color))
+        self.setItemIndexMethod(QtWidgets.QGraphicsScene.ItemIndexMethod.NoIndex)
+        self._grid_pen_minor = QtGui.QPen(QtGui.QColor(*self._grid_color), 0.65)
+        self._grid_pen_major = QtGui.QPen(QtGui.QColor(*self._bg_color).darker(200), 0.65)
+        self._dot_pen = QtGui.QPen(QtGui.QColor(*self._grid_color), 0.65)
 
     def __repr__(self):
         cls_name = str(self.__class__.__name__)
@@ -34,64 +38,62 @@ class NodeScene(QtWidgets.QGraphicsScene):
     #     painter.drawText(parent.mapToScene(pos), 'Not Editable')
 
     def _draw_grid(self, painter, rect, pen, grid_size):
-        """
-        draws the grid lines in the scene.
-
-        Args:
-            painter (QtGui.QPainter): painter object.
-            rect (QtCore.QRectF): rect object.
-            pen (QtGui.QPen): pen object.
-            grid_size (int): grid size.
-        """
         left = int(rect.left())
         right = int(rect.right())
         top = int(rect.top())
         bottom = int(rect.bottom())
-
+        if grid_size <= 0:
+            return
+        span_x = (right - left) // grid_size
+        span_y = (bottom - top) // grid_size
+        if span_x * span_y > 4000:
+            return
         first_left = left - (left % grid_size)
         first_top = top - (top % grid_size)
-
         lines = []
-        lines.extend([
-            QtCore.QLineF(x, top, x, bottom)
-            for x in range(first_left, right, grid_size)
-        ])
-        lines.extend([
-            QtCore.QLineF(left, y, right, y)
-            for y in range(first_top, bottom, grid_size)]
-        )
-
-        painter.setPen(pen)
-        painter.drawLines(lines)
+        append = lines.append
+        for x in range(first_left, right, grid_size):
+            append(QtCore.QLineF(x, top, x, bottom))
+            if len(lines) > 2000:
+                break
+        for y in range(first_top, bottom, grid_size):
+            append(QtCore.QLineF(left, y, right, y))
+            if len(lines) > 2000:
+                break
+        if lines:
+            painter.setPen(pen)
+            painter.drawLines(lines)
 
     def _draw_dots(self, painter, rect, pen, grid_size):
-        """
-        draws the grid dots in the scene.
-
-        Args:
-            painter (QtGui.QPainter): painter object.
-            rect (QtCore.QRectF): rect object.
-            pen (QtGui.QPen): pen object.
-            grid_size (int): grid size.
-        """
         zoom = self.viewer().get_zoom()
         if zoom < 0:
             grid_size = int(abs(zoom) / 0.3 + 1) * grid_size
-
         left = int(rect.left())
         right = int(rect.right())
         top = int(rect.top())
         bottom = int(rect.bottom())
-
+        if grid_size <= 0:
+            return
+        span_x = (right - left) // grid_size
+        span_y = (bottom - top) // grid_size
+        if span_x * span_y > 6000:
+            step = max(2, int(((span_x * span_y) / 6000) ** 0.5) + 1)
+            grid_size = grid_size * step
         first_left = left - (left % grid_size)
         first_top = top - (top % grid_size)
-
-        pen.setWidth(grid_size / 10)
+        pen.setWidth(max(1, grid_size // 10))
         painter.setPen(pen)
-
-        [painter.drawPoint(int(x), int(y))
-         for x in range(first_left, right, grid_size)
-         for y in range(first_top, bottom, grid_size)]
+        pts = []
+        append = pts.append
+        for x in range(first_left, right, grid_size):
+            for y in range(first_top, bottom, grid_size):
+                append(QtCore.QPointF(x, y))
+                if len(pts) > 6000:
+                    break
+            if len(pts) > 6000:
+                break
+        if pts:
+            painter.drawPoints(pts)
 
     def drawBackground(self, painter, rect):
         super(NodeScene, self).drawBackground(painter, rect)
@@ -101,23 +103,19 @@ class NodeScene(QtWidgets.QGraphicsScene):
         painter.setBrush(self.backgroundBrush())
 
         if self._grid_mode is ViewerEnum.GRID_DISPLAY_DOTS.value:
-            pen = QtGui.QPen(QtGui.QColor(*self.grid_color), 0.65)
-            self._draw_dots(painter, rect, pen, ViewerEnum.GRID_SIZE.value)
+            self._draw_dots(painter, rect, self._dot_pen, ViewerEnum.GRID_SIZE.value)
 
         elif self._grid_mode is ViewerEnum.GRID_DISPLAY_LINES.value:
-            zoom = self.viewer().get_zoom()
+            try:
+                zoom = self.viewer().get_zoom()
+            except Exception:
+                zoom = 0.0
             if zoom > -0.5:
-                pen = QtGui.QPen(QtGui.QColor(*self.grid_color), 0.65)
                 self._draw_grid(
-                    painter, rect, pen, ViewerEnum.GRID_SIZE.value
+                    painter, rect, self._grid_pen_minor, ViewerEnum.GRID_SIZE.value
                 )
-
-            color = QtGui.QColor(*self._bg_color).darker(200)
-            if zoom < -0.0:
-                color = color.darker(100 - int(zoom * 110))
-            pen = QtGui.QPen(color, 0.65)
             self._draw_grid(
-                painter, rect, pen, ViewerEnum.GRID_SIZE.value * 8
+                painter, rect, self._grid_pen_major, ViewerEnum.GRID_SIZE.value * 8
             )
 
         painter.restore()
@@ -166,6 +164,11 @@ class NodeScene(QtWidgets.QGraphicsScene):
     @grid_color.setter
     def grid_color(self, color=(0, 0, 0)):
         self._grid_color = color
+        try:
+            self._grid_pen_minor = QtGui.QPen(QtGui.QColor(*self._grid_color), 0.65)
+            self._dot_pen = QtGui.QPen(QtGui.QColor(*self._grid_color), 0.65)
+        except Exception:
+            pass
 
     @property
     def background_color(self):
@@ -175,3 +178,7 @@ class NodeScene(QtWidgets.QGraphicsScene):
     def background_color(self, color=(0, 0, 0)):
         self._bg_color = color
         self.setBackgroundBrush(QtGui.QColor(*self._bg_color))
+        try:
+            self._grid_pen_major = QtGui.QPen(QtGui.QColor(*self._bg_color).darker(200), 0.65)
+        except Exception:
+            pass

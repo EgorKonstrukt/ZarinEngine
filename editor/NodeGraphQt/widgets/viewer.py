@@ -71,8 +71,11 @@ class NodeViewer(QtWidgets.QGraphicsView):
         self.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setViewportUpdateMode(QtWidgets.QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
+        self.setViewportUpdateMode(QtWidgets.QGraphicsView.ViewportUpdateMode.SmartViewportUpdate)
         self.setCacheMode(QtWidgets.QGraphicsView.CacheModeFlag.CacheBackground)
+        self.setOptimizationFlag(QtWidgets.QGraphicsView.OptimizationFlag.DontSavePainterState, True)
+        self.setOptimizationFlag(QtWidgets.QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing, True)
+        self._cached_zoom = 0.0
 
         self.setAcceptDrops(True)
         self.resize(850, 800)
@@ -266,11 +269,16 @@ class NodeViewer(QtWidgets.QGraphicsView):
             w, h
         )
         self._update_scene()
+        self._refresh_zoom_cache()
+
+    def _refresh_zoom_cache(self):
+        try:
+            t = self.transform()
+            self._cached_zoom = round(t.m11() - 1.0, 2)
+        except Exception:
+            pass
 
     def _update_scene(self):
-        """
-        Redraw the scene.
-        """
         self.setSceneRect(self._scene_range)
         self.fitInView(self._scene_range, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
@@ -349,8 +357,8 @@ class NodeViewer(QtWidgets.QGraphicsView):
         w, h = self.size().width(), self.size().height()
         if 0 in [w, h]:
             self.resize(self._last_size)
-        delta = max(w / self._last_size.width(), h / self._last_size.height())
-        self._set_viewer_zoom(delta)
+            super(NodeViewer, self).resizeEvent(event)
+            return
         self._last_size = self.size()
         super(NodeViewer, self).resizeEvent(event)
 
@@ -1514,29 +1522,24 @@ class NodeViewer(QtWidgets.QGraphicsView):
             pipe_item.draw_path(pipe_item.input_port, pipe_item.output_port)
 
     def reset_zoom(self, cent=None):
-        """
-        Reset the viewer zoom level.
-
-        Args:
-            cent (QtCore.QPoint): specified center.
-        """
         self._scene_range = QtCore.QRectF(0, 0,
                                           self.size().width(),
                                           self.size().height())
         if cent:
             self._scene_range.translate(cent - self._scene_range.center())
         self._update_scene()
+        self._refresh_zoom_cache()
 
     def get_zoom(self):
-        """
-        Returns the viewer zoom level.
-
-        Returns:
-            float: zoom level.
-        """
-        transform = self.transform()
-        cur_scale = (transform.m11(), transform.m22())
-        return float('{:0.2f}'.format(cur_scale[0] - 1.0))
+        try:
+            return self._cached_zoom
+        except Exception:
+            pass
+        try:
+            t = self.transform()
+            return round(t.m11() - 1.0, 2)
+        except Exception:
+            return 0.0
 
     def set_zoom(self, value=0.0):
         """

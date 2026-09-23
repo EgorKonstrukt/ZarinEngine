@@ -116,7 +116,11 @@ class NodeItem(AbstractNodeItem):
                                     rect.width(), rect.height())
 
         pen = QtGui.QPen(border_color, border_width)
-        pen.setCosmetic(self.viewer().get_zoom() < 0.0)
+        try:
+            lod = option.levelOfDetailFromTransform(painter.worldTransform())
+        except Exception:
+            lod = 1.0
+        pen.setCosmetic(lod < 1.0)
         path = QtGui.QPainterPath()
         path.addRoundedRect(border_rect, radius, radius)
         painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
@@ -173,7 +177,11 @@ class NodeItem(AbstractNodeItem):
                                     rect.width(), rect.height())
 
         pen = QtGui.QPen(border_color, border_width)
-        pen.setCosmetic(self.viewer().get_zoom() < 0.0)
+        try:
+            lod = option.levelOfDetailFromTransform(painter.worldTransform())
+        except Exception:
+            lod = 1.0
+        pen.setCosmetic(lod < 1.0)
         painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
         painter.setPen(pen)
         painter.drawRoundedRect(border_rect, radius, radius)

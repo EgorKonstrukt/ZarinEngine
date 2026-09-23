@@ -144,6 +144,12 @@ class _TerrainNodeGraphWidget(QWidget):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(600)
         self._preview_timer.timeout.connect(self._do_update_previews)
+        self._live_timer = QTimer(self)
+        self._live_timer.setSingleShot(True)
+        self._live_timer.setInterval(800)
+        self._live_timer.timeout.connect(self._do_live_generate)
+        self._preview_busy = False
+        self._live_busy = False
 
         self._view.installEventFilter(self)
 
@@ -292,21 +298,35 @@ class _TerrainNodeGraphWidget(QWidget):
         if self._loading:
             return
         if self._panel._live:
+            self._live_timer.start()
+        self._preview_timer.start()
+
+    def _do_live_generate(self):
+        if self._live_busy:
+            self._live_timer.start()
+            return
+        self._live_busy = True
+        try:
             if self._panel._terrain is not None or self._panel._find_or_create_terrain():
                 self._panel._on_generate()
-        self._preview_timer.start()
+        finally:
+            self._live_busy = False
 
     def _on_preview(self):
         self._panel._on_generate()
         self._do_update_previews()
 
     def _do_update_previews(self):
+        if self._preview_busy:
+            return
+        self._preview_busy = True
         try:
             from editor.terrain_graph.node_preview import update_all_previews
-            res = self._res_spin.value() if self._res_spin else 64
-            update_all_previews(self._graph, resolution=res)
+            update_all_previews(self._graph, resolution=48)
         except Exception as e:
             Logger.warning(f"TerrainGraph: preview update failed: {e}")
+        finally:
+            self._preview_busy = False
 
     def _on_live_toggle(self, enabled):
         self._panel.set_live(enabled)
@@ -423,8 +443,7 @@ class TerrainPanel(QDockWidget):
             Logger.info("TerrainGraph: graph has no nodes")
             return
         from editor.terrain_graph.code_generator import generate_shader
-        from editor.terrain_graph.gpu_runner import run_shader, clear_cache
-        clear_cache()
+        from editor.terrain_graph.gpu_runner import run_shader
         res = int(self._res_spin.value()) if self._res_spin else 512
         seed = random.randint(0, 100000)
         source, uniforms, height_scale = generate_shader(self._graph, res)

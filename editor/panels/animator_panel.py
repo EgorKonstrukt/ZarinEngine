@@ -272,6 +272,10 @@ class AnimatorScene(QGraphicsScene):
         self._selected_node: Optional[StateNodeItem] = None
         self._selected_arrow: Optional[TransitionArrowItem] = None
         self.setBackgroundBrush(_BG_COLOR)
+        try:
+            self.setItemIndexMethod(QGraphicsScene.ItemIndexMethod.NoIndex)
+        except Exception:
+            pass
 
     def set_controller(self, ctrl: Optional[AnimatorController]):
         self._controller = ctrl
@@ -561,7 +565,10 @@ class AnimatorPanel(QDockWidget):
         self._view = QGraphicsView(self._scene)
         self._view.setRenderHint(QPainter.RenderHint.Antialiasing)
         self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
-        self._view.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+        self._view.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate)
+        self._view.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontSavePainterState, True)
+        self._view.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing, True)
+        self._view.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
         self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self._view.setStyleSheet("background: transparent; border: none;")
