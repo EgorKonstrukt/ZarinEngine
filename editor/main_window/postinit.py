@@ -86,18 +86,47 @@ def post_init(mw):
 def initial_dock_sizes(mw):
     if mw._layout_restored:
         return
-    mw.resizeDocks(
-        [mw._hierarchy, mw._viewport_dock, mw._inspector],
-        [200, 1420, 300], Qt.Orientation.Horizontal)
-    mw.resizeDocks(
-        [mw._hierarchy, mw._collab_panel],
-        [620, 370], Qt.Orientation.Vertical)
-    mw.resizeDocks(
-        [mw._viewport_dock, mw._project],
-        [620, 370], Qt.Orientation.Vertical)
-    mw.resizeDocks(
-        [mw._inspector, mw._console],
-        [620, 370], Qt.Orientation.Vertical)
+    hierarchy = getattr(mw, "_hierarchy", None)
+    viewport = getattr(mw, "_viewport_dock", None)
+    inspector = getattr(mw, "_inspector", None)
+    project = getattr(mw, "_project", None)
+    console = getattr(mw, "_console", None)
+    collab = getattr(mw, "_collab_panel", None)
+    physics = None
+    for d in getattr(mw, "_docks", []):
+        try:
+            name = d.objectName()
+        except Exception:
+            continue
+        if name.startswith("PluginDock_Physics"):
+            physics = d
+            break
+    if physics is None:
+        for d in getattr(mw, "_docks", []):
+            try:
+                title = d.windowTitle()
+            except Exception:
+                continue
+            if "Physics Visualisation" in title:
+                physics = d
+                break
+    left_bottom = physics or collab
+    if hierarchy is not None and viewport is not None and inspector is not None:
+        mw.resizeDocks(
+            [hierarchy, viewport, inspector],
+            [270, 1150, 500], Qt.Orientation.Horizontal)
+    if hierarchy is not None and left_bottom is not None and left_bottom is not hierarchy:
+        mw.resizeDocks(
+            [hierarchy, left_bottom],
+            [280, 700], Qt.Orientation.Vertical)
+    if viewport is not None and project is not None:
+        mw.resizeDocks(
+            [viewport, project],
+            [620, 360], Qt.Orientation.Vertical)
+    if inspector is not None and console is not None:
+        mw.resizeDocks(
+            [inspector, console],
+            [620, 360], Qt.Orientation.Vertical)
 
 
 def load_renderer_config(mw, _attempt=0):

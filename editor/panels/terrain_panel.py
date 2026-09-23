@@ -11,8 +11,10 @@ from typing import Optional, TYPE_CHECKING
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                              QToolBar, QToolButton, QLabel,
                              QDoubleSpinBox, QSpinBox,
-                             QPushButton, QPlainTextEdit, QFrame, QFileDialog)
+                             QPushButton, QPlainTextEdit, QFileDialog, QSplitter, QSizePolicy)
 from PyQt6.QtCore import Qt, QTimer, QSize
+from core.config.editor_scale import scale
+from editor.panels.node_palette import NodePalette
 from core.foundation.commands import AddComponentCommand, get_history
 from core.components.rendering.terrain import Terrain
 from core.components.physics.terrain_collider import TerrainCollider
@@ -33,6 +35,7 @@ class _TerrainNodeGraphWidget(QWidget):
         self._graph_path = ""
         self._loading = False
         self._collab_bridge = None
+        self._place_index = 0
         self._setup_ui()
 
     def _setup_ui(self):
@@ -114,14 +117,22 @@ class _TerrainNodeGraphWidget(QWidget):
 
         layout.addWidget(toolbar)
 
-        self._node_palette = self._create_node_palette()
-        layout.addWidget(self._node_palette)
-
         self._create_graph_view()
+        self._node_palette = self._create_node_palette()
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._node_palette)
         viewer = self._graph.viewer()
         self._view = viewer
-        self._view.setMinimumHeight(200)
-        layout.addWidget(self._view)
+        self._view.setMinimumWidth(scale(320))
+        self._view.setMinimumHeight(scale(200))
+        self._view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        splitter.addWidget(self._view)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([scale(190), scale(600)])
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        layout.addWidget(splitter, 1)
 
         self._graph.node_created.connect(self._on_graph_changed)
         self._graph.nodes_deleted.connect(self._on_graph_changed)
@@ -154,50 +165,28 @@ class _TerrainNodeGraphWidget(QWidget):
 
     def _create_node_palette(self):
         from editor.terrain_graph.nodes import ALL_NODES
-        palette = QWidget()
-        palette.setMaximumHeight(110)
-        palette.setStyleSheet("""
-            QToolButton { border-radius: 3px; padding: 3px 6px; font-size: 10px; }
-        """)
-        main_layout = QVBoxLayout(palette)
-        main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.setSpacing(2)
-
         node_map = {}
         for cls in ALL_NODES:
             name = cls.NODE_NAME if hasattr(cls, 'NODE_NAME') else cls.__name__
             node_map[name] = cls
         self._node_classes = node_map
-
-        categories = {}
+        categories: dict[str, list[tuple]] = {}
         for cls in ALL_NODES:
             name = cls.NODE_NAME if hasattr(cls, 'NODE_NAME') else cls.__name__
             nt = getattr(cls, 'NODE_TYPE', 'value')
             cat = nt.replace("_", " ").title()
             if cat not in categories:
                 categories[cat] = []
-            categories[cat].append((name, name))
-
-        cat_layout = QHBoxLayout()
-        cat_layout.setSpacing(4)
-        for cat_name, nodes in categories.items():
-            cat_frame = QFrame()
-            cat_frame_layout = QVBoxLayout(cat_frame)
-            cat_frame_layout.setContentsMargins(4, 2, 4, 2)
-            cat_frame_layout.setSpacing(2)
-            cat_label = QLabel(cat_name)
-            cat_frame_layout.addWidget(cat_label)
-            btn_layout = QHBoxLayout()
-            btn_layout.setSpacing(2)
-            for display_name, key in nodes:
-                btn = QToolButton()
-                btn.setText(display_name)
-                btn.setToolTip(f"Add {display_name} node")
-                btn.clicked.connect(lambda checked=False, k=key: self._add_node(k))
-                btn_layout.addWidget(btn)
-            cat_frame_layout.addLayout(btn_layout)
-            cat_layout.addWidget(cat_frame)
-        main_layout.addLayout(cat_layout)
+            categories[cat].append((name, name, f"Add {name} node"))
+        order = ["Generator", "Uv Modifier", "Modifier", "Math", "Output"]
+        ordered: dict[str, list[tuple]] = {}
+        for cat in order:
+            if cat in categories:
+                ordered[cat] = sorted(categories.pop(cat), key=lambda e: e[0].lower())
+        for cat in sorted(categories.keys()):
+            ordered[cat] = sorted(categories[cat], key=lambda e: e[0].lower())
+        palette = NodePalette(parent=self, title="Node Palette", placeholder="Search nodes...", categories=ordered)
+        palette.node_chosen.connect(self._add_node)
         return palette
 
     def _create_graph_view(self):
@@ -207,12 +196,35 @@ class _TerrainNodeGraphWidget(QWidget):
         self._graph.register_nodes(ALL_NODES)
 
     def _add_node(self, key):
+        target = None
         for cls in self._node_classes.values():
-            if cls.NODE_NAME == key:
-                node = cls()
-                self._graph.add_node(node)
-                node.set_pos(0, 0)
+            cls_name = getattr(cls, 'NODE_NAME', cls.__name__)
+            if cls_name == key:
+                target = cls
                 break
+        if target is None:
+            return
+        node = target()
+        pos = self._next_node_pos()
+        self._graph.add_node(node, pos=pos)
+        try:
+            self._graph.clear_selection()
+            node.set_selected(True)
+        except Exception:
+            pass
+
+    def _next_node_pos(self):
+        try:
+            center = self._view.mapToScene(self._view.viewport().rect().center())
+            cx = float(center.x())
+            cy = float(center.y())
+        except Exception:
+            cx = 0.0
+            cy = 0.0
+        idx = getattr(self, '_place_index', 0)
+        step = (idx % 8) * 36.0
+        self._place_index = idx + 1
+        return [cx + step - 126.0, cy + step - 126.0]
 
     def _delete_selected(self):
         selected = self._graph.selected_nodes()
@@ -331,6 +343,7 @@ class TerrainPanel(QDockWidget):
             QDockWidget.DockWidgetFeature.DockWidgetMovable |
             QDockWidget.DockWidgetFeature.DockWidgetFloatable |
             QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        self.setMinimumSize(scale(680), scale(420))
 
         root = QWidget()
         self.setWidget(root)

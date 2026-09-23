@@ -7,15 +7,14 @@
 from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
-from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
+from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout,
                               QToolBar, QToolButton, QLabel, QFileDialog,
-                              QFrame, QMessageBox)
+                              QMessageBox, QSplitter, QSizePolicy)
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QPalette
+from core.config.editor_scale import scale
+from editor.panels.node_palette import NodePalette
 if TYPE_CHECKING:
     from core.engine.engine import Engine
-
-from core.config.editor_scale import scale
 
 _DARK_STYLE = ""
 
@@ -24,7 +23,9 @@ class _ShaderGraphWidget(QWidget):
         super().__init__(parent)
         self._graph = None
         self._view = None
+        self._node_classes = {}
         self._current_file = None
+        self._place_index = 0
         self._setup_ui()
 
     def _setup_ui(self):
@@ -69,103 +70,121 @@ class _ShaderGraphWidget(QWidget):
 
         layout.addWidget(toolbar)
 
-        self._node_palette = self._create_node_palette()
-        layout.addWidget(self._node_palette)
-
         self._create_graph_view()
+        self._node_palette = self._create_node_palette()
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._node_palette)
+        self._view.setMinimumWidth(scale(320))
+        self._view.setMinimumHeight(scale(200))
+        self._view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        splitter.addWidget(self._view)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([scale(190), scale(600)])
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        layout.addWidget(splitter, 1)
 
     def _create_node_palette(self):
-        from editor.NodeGraphQt import BaseNode
-        palette = QWidget()
-        palette.setMaximumHeight(120)
-        palette.setStyleSheet(f"""
-                           border-radius: 3px; padding: 4px 8px; font-size: 10px; }}
-        """)
-        layout = QVBoxLayout(palette)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(2)
-
-        categories = {
-            "Input": [
-                ("Vertex Position", "VertexPosition"),
-                ("UV", "UV"),
-                ("Normal", "Normal"),
-                ("Time", "Time"),
-                ("Color", "Color"),
-                ("Float", "Float"),
-            ],
-            "Math": [
-                ("Add", "Add"),
-                ("Multiply", "Multiply"),
-                ("Subtract", "Subtract"),
-                ("Lerp", "Lerp"),
-                ("Dot Product", "DotProduct"),
-                ("Normalize", "Normalize"),
-                ("Clamp", "Clamp"),
-                ("Step", "Step"),
-                ("Fresnel", "Fresnel"),
-            ],
-            "Texture": [
-                ("Texture 2D", "Texture2D"),
-            ],
-            "Output": [
-                ("Vertex Output", "VertexOutput"),
-                ("Fragment Output", "FragmentOutput"),
-            ],
-        }
-
         from editor.shader_graph.nodes import ALL_NODES
-        node_map = {}
-        for i, cls in enumerate(ALL_NODES):
+        node_map: dict[str, object] = {}
+        for cls in ALL_NODES:
             name = cls.NODE_NAME if hasattr(cls, 'NODE_NAME') else cls.__name__
             node_map[name] = cls
         self._node_classes = node_map
-
-        cat_layout = QHBoxLayout()
-        cat_layout.setSpacing(4)
-        for cat_name, nodes in categories.items():
-            cat_frame = QFrame()
-            cat_layout_f = QVBoxLayout(cat_frame)
-            cat_layout_f.setContentsMargins(4, 2, 4, 2)
-            cat_layout_f.setSpacing(2)
-            cat_label = QLabel(cat_name)
-            cat_layout_f.addWidget(cat_label)
-            btn_layout = QHBoxLayout()
-            btn_layout.setSpacing(2)
-            for display_name, key in nodes:
-                btn = QToolButton()
-                btn.setText(display_name)
-                btn.setToolTip(f"Add {display_name} node")
-                btn.clicked.connect(lambda checked=False, k=key: self._add_node(k))
-                btn_layout.addWidget(btn)
-            cat_layout_f.addLayout(btn_layout)
-            cat_layout.addWidget(cat_frame)
-        layout.addLayout(cat_layout)
-
+        categories: dict[str, list[tuple]] = {
+            "Input": [
+                ("Vertex Position", "Vertex Position", "Add Vertex Position node"),
+                ("UV", "UV", "Add UV node"),
+                ("Normal", "Normal", "Add Normal node"),
+                ("Time", "Time", "Add Time node"),
+                ("Color", "Color", "Add Color node"),
+                ("Float", "Float", "Add Float node"),
+            ],
+            "Math": [
+                ("Add", "Add", "Add Add node"),
+                ("Multiply", "Multiply", "Add Multiply node"),
+                ("Subtract", "Subtract", "Add Subtract node"),
+                ("Lerp", "Lerp", "Add Lerp node"),
+                ("Dot Product", "Dot Product", "Add Dot Product node"),
+                ("Clamp", "Clamp", "Add Clamp node"),
+                ("Step", "Step", "Add Step node"),
+                ("Fresnel", "Fresnel", "Add Fresnel node"),
+            ],
+            "Vector": [
+                ("Normalize", "Normalize", "Add Normalize node"),
+            ],
+            "Texture": [
+                ("Texture 2D", "Texture 2D", "Add Texture 2D node"),
+            ],
+            "Output": [
+                ("Vertex Output", "Vertex Output", "Add Vertex Output node"),
+                ("Fragment Output", "Fragment Output", "Add Fragment Output node"),
+            ],
+        }
+        palette = NodePalette(parent=self, title="Node Palette", placeholder="Search nodes...", categories=categories)
+        palette.node_chosen.connect(self._add_node)
         return palette
 
     def _create_graph_view(self):
         from editor.NodeGraphQt import NodeGraph
+        from editor.shader_graph.nodes import ALL_NODES
+        if not getattr(self, '_node_classes', None):
+            node_map: dict[str, object] = {}
+            for cls in ALL_NODES:
+                name = cls.NODE_NAME if hasattr(cls, 'NODE_NAME') else cls.__name__
+                node_map[name] = cls
+            self._node_classes = node_map
         self._graph = NodeGraph()
         self._graph.register_nodes([cls for cls in self._node_classes.values()])
-
         viewer = self._graph.viewer()
         self._view = viewer
-        self.layout().addWidget(viewer)
+
+    def _resolve_node_class(self, key: str):
+        if key in self._node_classes:
+            return self._node_classes[key]
+        norm = str(key).lower().replace(" ", "").replace("_", "")
+        for name, cls in self._node_classes.items():
+            if str(name).lower().replace(" ", "").replace("_", "") == norm:
+                return cls
+        for name, cls in self._node_classes.items():
+            cn = type(cls).__name__ if not isinstance(cls, type) else cls.__name__
+            if norm in cn.lower().replace("_", ""):
+                return cls
+        return None
+
+    def _next_node_pos(self):
+        try:
+            center = self._view.mapToScene(self._view.viewport().rect().center())
+            cx = float(center.x())
+            cy = float(center.y())
+        except Exception:
+            cx = 0.0
+            cy = 0.0
+        idx = getattr(self, '_place_index', 0)
+        step = (idx % 8) * 36.0
+        self._place_index = idx + 1
+        return [cx + step - 126.0, cy + step - 126.0]
 
     def _add_node(self, key):
-        cls = self._node_classes.get(key)
-        if cls:
-            node = cls()
-            self._graph.add_node(node)
-            node.set_pos(0, 0)
+        cls = self._resolve_node_class(key)
+        if cls is None:
+            return
+        node = cls()
+        pos = self._next_node_pos()
+        self._graph.add_node(node, pos=pos)
+        try:
+            self._graph.clear_selection()
+            node.set_selected(True)
+        except Exception:
+            pass
 
     def _new_shader(self):
         self._graph.clear()
         self._current_file = None
         self._file_label.setText("  Untitled Shader")
-        self._add_node('VertexOutput')
-        self._add_node('FragmentOutput')
+        self._add_node('Vertex Output')
+        self._add_node('Fragment Output')
 
     def _open_shader(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -178,8 +197,8 @@ class _ShaderGraphWidget(QWidget):
         self._current_file = path
         self._file_label.setText(f"  {os.path.basename(path)}")
         self._graph.clear()
-        self._add_node('VertexOutput')
-        self._add_node('FragmentOutput')
+        self._add_node('Vertex Output')
+        self._add_node('Fragment Output')
         vo = None
         fo = None
         for n in self._graph.all_nodes():
@@ -247,6 +266,6 @@ class ScriptsPanel(QDockWidget):
             QDockWidget.DockWidgetFeature.DockWidgetMovable |
             QDockWidget.DockWidgetFeature.DockWidgetFloatable |
             QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self.setMinimumWidth(200)
+        self.setMinimumSize(scale(680), scale(420))
         self._shader_widget = _ShaderGraphWidget()
         self.setWidget(self._shader_widget)
