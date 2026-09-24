@@ -28,9 +28,11 @@ except ImportError:
 try:
     from core._ecs_batch import batch_update_flat as _batch_flat
     from core._ecs_batch import batch_update_from_transforms as _batch_from_transforms
+    from core._ecs_batch import collect_dirty_transforms as _collect_dirty
 except ImportError:
     _batch_flat = None
     _batch_from_transforms = None
+    _collect_dirty = None
 
 T = TypeVar("T", bound="Component")
 
@@ -1066,12 +1068,14 @@ class Scene:
             else:
                 flat_append(t)
         count = 0
+        bf = _batch_flat
+        bft = _batch_from_transforms
         if flat:
             nflat = len(flat)
             if nflat == 1:
                 flat[0]._update_world_matrix()
-            elif _batch_flat is not None:
-                _batch_flat(flat)
+            elif bf is not None:
+                bf(flat)
             else:
                 for t in flat:
                     t._update_world_matrix()
@@ -1085,21 +1089,41 @@ class Scene:
             if nhier == 1:
                 hier[0]._update_world_matrix()
             else:
-                dc = self._depth_cache
-                dc_get = dc.get
-                for t in hier:
-                    e = t._entity
-                    if e is None:
-                        continue
-                    eid = e._id
-                    if dc_get(eid) is None:
-                        depth = 0
-                        p = e._parent
-                        while p is not None:
-                            depth += 1
-                            p = p._parent
-                        dc[eid] = depth
-                hier.sort(key=self._get_entity_depth_key)
+                if _collect_dirty is not None:
+                    try:
+                        hier = _collect_dirty(hier)
+                    except Exception:
+                        dc = self._depth_cache
+                        dc_get = dc.get
+                        for t in hier:
+                            e = t._entity
+                            if e is None:
+                                continue
+                            eid = e._id
+                            if dc_get(eid) is None:
+                                depth = 0
+                                p = e._parent
+                                while p is not None:
+                                    depth += 1
+                                    p = p._parent
+                                dc[eid] = depth
+                        hier.sort(key=self._get_entity_depth_key)
+                else:
+                    dc = self._depth_cache
+                    dc_get = dc.get
+                    for t in hier:
+                        e = t._entity
+                        if e is None:
+                            continue
+                        eid = e._id
+                        if dc_get(eid) is None:
+                            depth = 0
+                            p = e._parent
+                            while p is not None:
+                                depth += 1
+                                p = p._parent
+                            dc[eid] = depth
+                    hier.sort(key=self._get_entity_depth_key)
                 has_target = False
                 for t in hier:
                     if t._world_target is not None:
@@ -1108,42 +1132,41 @@ class Scene:
                 if has_target:
                     for t in hier:
                         t._update_world_matrix()
-                elif _batch_from_transforms is not None:
-                    _batch_from_transforms(hier)
+                elif bft is not None:
+                    bft(hier)
                 else:
                     for t in hier:
                         t._update_world_matrix()
             count += nhier
-        if count:
-            try:
-                lf = self._last_flushed
-                lfs = self._last_flushed_set
-                total = len(lf) + len(flat) + len(flat_tgt) + len(hier)
-                if total > 32768:
+        if roots:
+            nroots = len(roots)
+            if nroots > 4096:
+                try:
                     self._last_flushed = []
-                    try:
-                        lfs.clear()
-                    except Exception:
-                        pass
-                    self._flushed_overflow = True
-                else:
-                    for t in flat:
-                        tid = id(t)
-                        if tid not in lfs:
-                            lfs.add(tid)
-                            lf.append(t)
-                    for t in flat_tgt:
-                        tid = id(t)
-                        if tid not in lfs:
-                            lfs.add(tid)
-                            lf.append(t)
-                    for t in hier:
-                        tid = id(t)
-                        if tid not in lfs:
-                            lfs.add(tid)
-                            lf.append(t)
-            except Exception:
-                pass
+                    self._last_flushed_set.clear()
+                except Exception:
+                    pass
+                self._flushed_overflow = True
+            else:
+                try:
+                    lf = self._last_flushed
+                    lfs = self._last_flushed_set
+                    total = len(lf) + nroots
+                    if total > 32768:
+                        self._last_flushed = []
+                        try:
+                            lfs.clear()
+                        except Exception:
+                            pass
+                        self._flushed_overflow = True
+                    else:
+                        for t in roots:
+                            tid = id(t)
+                            if tid not in lfs:
+                                lfs.add(tid)
+                                lf.append(t)
+                except Exception:
+                    pass
         return count
 
     def _get_entity_depth_key(self, t):

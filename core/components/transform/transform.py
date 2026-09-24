@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import math
 import numpy as np
 from core.ecs.ecs import Component, ComponentRegistry
 from core.maths.math3d import Vec3, Quat, Mat4, FLOAT_TYPE
@@ -107,6 +108,9 @@ class Transform(Component):
         ent = self._entity
         parent = ent._parent if ent is not None else None
         if parent is None:
+            if _batch_flat is not None:
+                _batch_flat([self])
+                return
             local = self._build_local_matrix()
             self._world_matrix._d[:, :] = local._d
             self._dirty = False
@@ -123,6 +127,17 @@ class Transform(Component):
             chain_append(pt)
             pe = pt._entity
             p = pe._parent if pe is not None else None
+        nchain = len(chain)
+        if nchain > 1 and _batch_from_transforms is not None:
+            has_target = False
+            for node in chain:
+                if node._world_target is not None:
+                    has_target = True
+                    break
+            if not has_target:
+                chain.reverse()
+                _batch_from_transforms(chain)
+                return
         for node in reversed(chain):
             if node._world_target is not None:
                 node._resolve_world_target()
@@ -133,11 +148,7 @@ class Transform(Component):
             if parent_entity is not None:
                 pt = parent_entity._transform
                 if pt is not None:
-                    try:
-                        import numpy as _np
-                        _np.matmul(local._d, pt._world_matrix._d, out=node._world_matrix._d)
-                    except Exception:
-                        node._world_matrix._d[:, :] = local._d @ pt._world_matrix._d
+                    np.matmul(local._d, pt._world_matrix._d, out=node._world_matrix._d)
                     node._dirty = False
                     continue
             node._world_matrix._d[:, :] = local._d
@@ -175,9 +186,10 @@ class Transform(Component):
         m = r
         if m.base is not None:
             m = m.copy()
-        m[0, 0] *= sx; m[0, 1] *= sx; m[0, 2] *= sx
-        m[1, 0] *= sy; m[1, 1] *= sy; m[1, 2] *= sy
-        m[2, 0] *= sz; m[2, 1] *= sz; m[2, 2] *= sz
+        if sx != 1.0 or sy != 1.0 or sz != 1.0:
+            m[0, 0] *= sx; m[0, 1] *= sx; m[0, 2] *= sx
+            m[1, 0] *= sy; m[1, 1] *= sy; m[1, 2] *= sy
+            m[2, 0] *= sz; m[2, 1] *= sz; m[2, 2] *= sz
         m[3, 0] = lp._x
         m[3, 1] = lp._y
         m[3, 2] = lp._z
@@ -189,7 +201,9 @@ class Transform(Component):
     def local_position(self) -> Vec3: return self._local_pos
     @local_position.setter
     def local_position(self, v: Vec3):
-        if isinstance(v, Vec3):
+        if type(v) is Vec3:
+            self._local_pos = v
+        elif isinstance(v, Vec3):
             self._local_pos = v
         elif isinstance(v, np.ndarray):
             self._local_pos = Vec3(float(v[0]), float(v[1]), float(v[2]))
@@ -210,7 +224,7 @@ class Transform(Component):
     def local_rotation(self) -> Quat: return self._local_rot
     @local_rotation.setter
     def local_rotation(self, v: Quat):
-        if isinstance(v, Quat):
+        if type(v) is Quat:
             self._local_rot = v.normalized()
         else:
             self._local_rot = v
@@ -224,7 +238,9 @@ class Transform(Component):
     def local_scale(self) -> Vec3: return self._local_scale
     @local_scale.setter
     def local_scale(self, v: Vec3):
-        if isinstance(v, Vec3):
+        if type(v) is Vec3:
+            self._local_scale = v
+        elif isinstance(v, Vec3):
             self._local_scale = v
         elif isinstance(v, np.ndarray):
             self._local_scale = Vec3(float(v[0]), float(v[1]), float(v[2]))
@@ -245,7 +261,9 @@ class Transform(Component):
     def local_euler_angles(self) -> Vec3: return self._local_rot.to_euler()
     @local_euler_angles.setter
     def local_euler_angles(self, v: Vec3):
-        if isinstance(v, Vec3):
+        if type(v) is Vec3:
+            self._local_rot = Quat.from_euler(v._x, v._y, v._z)
+        elif isinstance(v, Vec3):
             self._local_rot = Quat.from_euler(v._x, v._y, v._z)
         else:
             self._local_rot = Quat.from_euler(float(v[0]), float(v[1]), float(v[2]))
@@ -253,13 +271,17 @@ class Transform(Component):
         self._physics_dirty = True
     @property
     def position(self) -> Vec3:
+        wm = self._world_matrix
         if self._dirty:
             self._update_world_matrix()
-        d = self._world_matrix._d
+            wm = self._world_matrix
+        d = wm._d
         return Vec3(float(d[3, 0]), float(d[3, 1]), float(d[3, 2]))
     @position.setter
     def position(self, world_pos: Vec3):
-        if isinstance(world_pos, Vec3):
+        if type(world_pos) is Vec3:
+            wp = world_pos
+        elif isinstance(world_pos, Vec3):
             wp = world_pos
         elif isinstance(world_pos, np.ndarray):
             wp = Vec3(float(world_pos[0]), float(world_pos[1]), float(world_pos[2]))
@@ -310,32 +332,59 @@ class Transform(Component):
                 scene._transform_version_pending = True
     @property
     def forward(self) -> Vec3:
+        wm = self._world_matrix
         if self._dirty:
             self._update_world_matrix()
-        m = self._world_matrix._d
-        return Vec3(-float(m[2,0]), -float(m[2,1]), -float(m[2,2])).normalized()
+            wm = self._world_matrix
+        m = wm._d
+        x = -float(m[2, 0]); y = -float(m[2, 1]); z = -float(m[2, 2])
+        n = (x * x + y * y + z * z) ** 0.5
+        if n > 1e-10:
+            inv = 1.0 / n
+            return Vec3(x * inv, y * inv, z * inv)
+        return Vec3(0.0, 0.0, 0.0)
     @property
     def right(self) -> Vec3:
+        wm = self._world_matrix
         if self._dirty:
             self._update_world_matrix()
-        m = self._world_matrix._d
-        return Vec3(float(m[0,0]), float(m[0,1]), float(m[0,2])).normalized()
+            wm = self._world_matrix
+        m = wm._d
+        x = float(m[0, 0]); y = float(m[0, 1]); z = float(m[0, 2])
+        n = (x * x + y * y + z * z) ** 0.5
+        if n > 1e-10:
+            inv = 1.0 / n
+            return Vec3(x * inv, y * inv, z * inv)
+        return Vec3(0.0, 0.0, 0.0)
     @property
     def up(self) -> Vec3:
+        wm = self._world_matrix
         if self._dirty:
             self._update_world_matrix()
-        m = self._world_matrix._d
-        return Vec3(float(m[1,0]), float(m[1,1]), float(m[1,2])).normalized()
+            wm = self._world_matrix
+        m = wm._d
+        x = float(m[1, 0]); y = float(m[1, 1]); z = float(m[1, 2])
+        n = (x * x + y * y + z * z) ** 0.5
+        if n > 1e-10:
+            inv = 1.0 / n
+            return Vec3(x * inv, y * inv, z * inv)
+        return Vec3(0.0, 0.0, 0.0)
     def translate(self, delta: Vec3, world_space: bool = False):
         if world_space:
             p = self.position
-            if isinstance(delta, Vec3):
+            if type(delta) is Vec3:
+                self.position = Vec3(p._x + delta._x, p._y + delta._y, p._z + delta._z)
+            elif isinstance(delta, Vec3):
                 self.position = Vec3(p._x + delta._x, p._y + delta._y, p._z + delta._z)
             else:
                 self.position = Vec3(p._x + float(delta[0]), p._y + float(delta[1]), p._z + float(delta[2]))
         else:
             lp = self._local_pos
-            if isinstance(delta, Vec3):
+            if type(delta) is Vec3:
+                lp._x += delta._x
+                lp._y += delta._y
+                lp._z += delta._z
+            elif isinstance(delta, Vec3):
                 lp._x += delta._x
                 lp._y += delta._y
                 lp._z += delta._z
@@ -357,15 +406,27 @@ class Transform(Component):
             self._mark_dirty()
             self._physics_dirty = True
     def rotate(self, euler: Vec3):
-        if isinstance(euler, Vec3):
-            dq = Quat.from_euler(euler._x, euler._y, euler._z)
+        if type(euler) is Vec3:
+            ex = euler._x; ey = euler._y; ez = euler._z
+        elif isinstance(euler, Vec3):
+            ex = euler._x; ey = euler._y; ez = euler._z
         else:
-            dq = Quat.from_euler(float(euler[0]), float(euler[1]), float(euler[2]))
+            ex = float(euler[0]); ey = float(euler[1]); ez = float(euler[2])
+        hx = math.radians(ex) * 0.5
+        hy = math.radians(ey) * 0.5
+        hz = math.radians(ez) * 0.5
+        sx = math.sin(hx); cx = math.cos(hx)
+        sy = math.sin(hy); cy = math.cos(hy)
+        sz = math.sin(hz); cz = math.cos(hz)
+        qx = sx * cy * cz - cx * sy * sz
+        qy = cx * sy * cz + sx * cy * sz
+        qz = cx * cy * sz - sx * sy * cz
+        qw = cx * cy * cz + sx * sy * sz
         lr = self._local_rot
-        nx = lr._w * dq._x + lr._x * dq._w + lr._y * dq._z - lr._z * dq._y
-        ny = lr._w * dq._y - lr._x * dq._z + lr._y * dq._w + lr._z * dq._x
-        nz = lr._w * dq._z + lr._x * dq._y - lr._y * dq._x + lr._z * dq._w
-        nw = lr._w * dq._w - lr._x * dq._x - lr._y * dq._y - lr._z * dq._z
+        nx = lr._w * qx + lr._x * qw + lr._y * qz - lr._z * qy
+        ny = lr._w * qy - lr._x * qz + lr._y * qw + lr._z * qx
+        nz = lr._w * qz + lr._x * qy - lr._y * qx + lr._z * qw
+        nw = lr._w * qw - lr._x * qx - lr._y * qy - lr._z * qz
         n = (nx * nx + ny * ny + nz * nz + nw * nw) ** 0.5
         if n > 1e-10:
             inv = 1.0 / n
@@ -405,7 +466,8 @@ class Transform(Component):
         n = len(transforms)
         if n == 0:
             return
-        if _batch_from_transforms is not None:
+        bft = _batch_from_transforms
+        if bft is not None:
             need_py = False
             for t in transforms:
                 if t._world_target is not None:
@@ -415,7 +477,7 @@ class Transform(Component):
                 for t in transforms:
                     t._update_world_matrix()
             else:
-                _batch_from_transforms(transforms)
+                bft(transforms)
             return
         for t in transforms:
             t._update_world_matrix()
@@ -426,11 +488,13 @@ class Transform(Component):
         if n == 0:
             return
         stack = []
+        stack_append = stack.append
         for t in transforms:
             if not t._dirty:
-                stack.append(t)
+                stack_append(t)
+        pop = stack.pop
         while stack:
-            t = stack.pop()
+            t = pop()
             if t._dirty:
                 continue
             t._dirty = True
@@ -443,7 +507,8 @@ class Transform(Component):
                 sc._spatial_dirty_entities.add(ent._id)
                 sc._spatial_dirty = True
                 sc._transform_version_pending = True
-            for child in ent._children:
+            children = ent._children
+            for child in children:
                 ct = child._transform
                 if ct is not None and not ct._dirty:
-                    stack.append(ct)
+                    stack_append(ct)
