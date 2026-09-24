@@ -330,17 +330,27 @@ mat3 _resolve_normal_matrix() {
         tail = re.sub(r'\bin_uv\b', '_uv_ov', tail)
         return head + block + tail
 
+    _INCLUDE_CANDIDATES = ("include", "")
+
+    @staticmethod
+    def _read_include(filename: str) -> str | None:
+        for sub in ShaderManager._INCLUDE_CANDIDATES:
+            include_path = os.path.join(_ENGINE_ROOT, "core", "shaders", sub, filename) if sub else os.path.join(_ENGINE_ROOT, "core", "shaders", filename)
+            try:
+                with open(include_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception:
+                continue
+        return None
+
     @staticmethod
     def _inject_area_shadows(src: str) -> str:
         marker = "// @SHADOW_INCLUDE"
         if marker not in src:
             return src
-        include_path = os.path.join(_ENGINE_ROOT, "core", "shaders", "area_shadows.glsl")
-        try:
-            with open(include_path, "r", encoding="utf-8") as f:
-                include_src = f.read()
-        except Exception as e:
-            Logger.warning(f"Failed to read area_shadows.glsl: {e}")
+        include_src = ShaderManager._read_include("area_shadows.glsl")
+        if include_src is None:
+            Logger.warning("Failed to read area_shadows.glsl")
             return src.replace(marker, "// area shadows include failed to load")
         return src.replace(marker, include_src)
 
@@ -349,12 +359,9 @@ mat3 _resolve_normal_matrix() {
         marker = "// @CAUSTICS_INCLUDE"
         if marker not in src:
             return src
-        include_path = os.path.join(_ENGINE_ROOT, "core", "shaders", "caustics.glsl")
-        try:
-            with open(include_path, "r", encoding="utf-8") as f:
-                include_src = f.read()
-        except Exception as e:
-            Logger.warning(f"Failed to read caustics.glsl: {e}")
+        include_src = ShaderManager._read_include("caustics.glsl")
+        if include_src is None:
+            Logger.warning("Failed to read caustics.glsl")
             return src.replace(marker, "// caustics include failed to load")
         return src.replace(marker, include_src)
 

@@ -18,7 +18,7 @@ from core.components.lighting.light import Light, LightType
 
 from core.maths.math3d import Mat4, Vec3
 from core.foundation.logger import Logger
-from core.renderer.compute_shader import compile_compute_shader
+from core.assets.compute_shader import compile_compute_shader
 
 _INST_STRIDE = 46
 _MAX_INSTANCES = 256

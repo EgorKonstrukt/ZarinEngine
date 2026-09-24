@@ -47,8 +47,8 @@ class WaterPassMixin:
 
     def _load_water_sim_frag(self) -> str:
         from core.assets.material import _extract_glsl_from_shader
-        import os as _os
-        path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))), "core", "shaders", "WaterSim.shader")
+        from core.renderer.mesh_data import _resolve_shader_file
+        path = _resolve_shader_file("materials/WaterSim.shader")
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
         _, frag = _extract_glsl_from_shader(text)

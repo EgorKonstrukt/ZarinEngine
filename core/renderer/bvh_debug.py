@@ -3,7 +3,7 @@ import os
 import numpy as np
 import moderngl
 from typing import Optional
-from core.renderer.compute_shader import compile_compute_shader
+from core.assets.compute_shader import compile_compute_shader
 
 
 class BVHDebugRenderer:

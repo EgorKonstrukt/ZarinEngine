@@ -15,7 +15,7 @@ import numpy as np
 
 from core.foundation.logger import Logger
 from core.foundation.progress import task_complete, task_start, task_update
-from core.renderer.compute_shader import compile_compute_shader
+from core.assets.compute_shader import compile_compute_shader
 
 _SHADER_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "shaders", "compute", "terrain_gen.compute")
 

@@ -205,8 +205,8 @@ class Material:
         candidates.append(os.path.normpath(os.path.join(engine_root, shader_path)))
         candidates.append(os.path.normpath(os.path.join(engine_root, "core", "shaders", shader_path)))
         shader_name = os.path.basename(shader_path)
-        if shader_name != shader_path:
-            candidates.append(os.path.normpath(os.path.join(engine_root, "core", "shaders", shader_name)))
+        for sub in ("materials", "internal", "compute", "include", "legacy"):
+            candidates.append(os.path.normpath(os.path.join(engine_root, "core", "shaders", sub, shader_name)))
         for c in candidates:
             if os.path.exists(c):
                 return c
