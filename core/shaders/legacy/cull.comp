@@ -1,0 +1,56 @@
+// Frustum culling of bounding spheres + index compaction for
+// GPU-driven rendering (glDrawElementsIndirect).
+//
+// SSBO bindings (matched in core/renderer/gpu_culling.py):
+//   0: WorldMatrices (readonly)  - mat4[] per instance
+//   1: BoundingData   (readonly) - vec4[] (xyz = world center, w = radius)
+//   2: OutIndices     (writeonly) - uint[] compacted instance indices
+//   3: Counter        - uint visible count (atomic, cleared before dispatch)
+//
+// Frustum planes are world-space, normalized (same extraction as the
+// CPU path in core/renderer/culling.py). An instance survives when its
+// bounding sphere lies at least partially inside all six planes.
+#version 430 core
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer WorldMatrices {
+    mat4 models[];
+};
+
+layout(std430, binding = 1) readonly buffer BoundingData {
+    vec4 spheres[];
+};
+
+layout(std430, binding = 2) writeonly buffer OutIndices {
+    uint out_indices[];
+};
+
+layout(std430, binding = 3) buffer CounterBuf {
+    uint count;
+};
+
+uniform vec4 u_frustum_planes[6];
+uniform int u_total;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= uint(u_total)) return;
+
+    vec3 center = spheres[idx].xyz;
+    float radius = spheres[idx].w;
+
+    bool visible = true;
+    for (int i = 0; i < 6; i++) {
+        vec4 p = u_frustum_planes[i];
+        float d = dot(p.xyz, center) + p.w;
+        if (d < -radius) {
+            visible = false;
+            break;
+        }
+    }
+
+    if (visible) {
+        uint vi = atomicAdd(count, 1u);
+        out_indices[vi] = idx;
+    }
+}
