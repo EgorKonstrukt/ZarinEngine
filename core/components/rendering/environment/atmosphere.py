@@ -75,8 +75,10 @@ class Atmosphere(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Atmosphere", FieldType.HEADER),
             InspectorField("enabled", "Enabled", FieldType.BOOL),
             InspectorField("_intensity", "Intensity", FieldType.SLIDER, min_val=1.0, max_val=200.0, step=1.0, decimals=0),
+            InspectorField("", "Sun", FieldType.HEADER),
             InspectorField("_sun_intensity", "Sun Intensity", FieldType.SLIDER, min_val=0.0, max_val=10.0, step=0.1, decimals=1),
             InspectorField("_resolution_scale", "LUT Resolution", FieldType.SLIDER, min_val=0.25, max_val=1.0, step=0.25, decimals=2),
             InspectorField("_ozone_factor", "Ozone Factor", FieldType.SLIDER, min_val=0.0, max_val=3.0, step=0.1, decimals=1),

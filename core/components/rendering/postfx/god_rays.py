@@ -154,6 +154,7 @@ class GodRays(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "God Rays", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=5.0, step=0.1, decimals=2),
             InspectorField("_exposure", "Exposure", FieldType.FLOAT, min_val=0.0, max_val=0.5, step=0.001, decimals=4),
             InspectorField("_threshold", "Threshold", FieldType.SLIDER, min_val=0.05, max_val=0.5, step=0.01, decimals=2),

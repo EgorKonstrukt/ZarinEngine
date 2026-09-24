@@ -37,12 +37,16 @@ class LayoutElementComponent(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Limits", FieldType.HEADER),
             InspectorField("_min_width", "Min Width", FieldType.INT, min_val=-1, max_val=10000),
             InspectorField("_min_height", "Min Height", FieldType.INT, min_val=-1, max_val=10000),
+            InspectorField("", "Preferred", FieldType.HEADER),
             InspectorField("_preferred_width", "Pref Width", FieldType.INT, min_val=-1, max_val=10000),
             InspectorField("_preferred_height", "Pref Height", FieldType.INT, min_val=-1, max_val=10000),
+            InspectorField("", "Flexible", FieldType.HEADER),
             InspectorField("_flexible_width", "Flex Width", FieldType.FLOAT, min_val=0, max_val=100),
             InspectorField("_flexible_height", "Flex Height", FieldType.FLOAT, min_val=0, max_val=100),
+            InspectorField("", "Layout Element Component", FieldType.HEADER),
             InspectorField("_ignore_layout", "Ignore Layout", FieldType.BOOL),
         ]
 

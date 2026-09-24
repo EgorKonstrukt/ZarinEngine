@@ -23,12 +23,15 @@ class TreeWindEffect(ObjectEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Wind", FieldType.HEADER),
             InspectorField("wind_influence", "Wind Influence", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("wind_direction", "Wind Direction", FieldType.VEC3, min_val=-1.0, max_val=1.0, step=0.05, decimals=3),
             InspectorField("wind_speed", "Wind Speed", FieldType.FLOAT, min_val=0.0, max_val=20.0, step=0.1, decimals=2),
             InspectorField("wind_strength", "Wind Strength", FieldType.FLOAT, min_val=0.0, max_val=3.0, step=0.01, decimals=3),
+            InspectorField("", "Leaves", FieldType.HEADER),
             InspectorField("leaf_flutter_speed", "Leaf Flutter Speed", FieldType.FLOAT, min_val=0.0, max_val=30.0, step=0.1, decimals=2),
             InspectorField("leaf_flutter_amount", "Leaf Flutter Amount", FieldType.FLOAT, min_val=0.0, max_val=0.3, step=0.005, decimals=4),
+            InspectorField("", "Turbulence", FieldType.HEADER),
             InspectorField("turbulence_scale", "Turbulence Scale", FieldType.FLOAT, min_val=0.0, max_val=5.0, step=0.1, decimals=2),
             InspectorField("turbulence_amount", "Turbulence Amount", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
         ]

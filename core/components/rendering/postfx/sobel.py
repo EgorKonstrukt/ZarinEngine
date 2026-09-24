@@ -107,6 +107,7 @@ class Sobel(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Sobel", FieldType.HEADER),
             InspectorField("_mode", "Mode", FieldType.INT, min_val=0, max_val=4, step=1, decimals=0),
             InspectorField("_threshold", "Threshold", FieldType.FLOAT, min_val=0.0, max_val=2.0, step=0.05, decimals=3),
             InspectorField("_thickness", "Thickness", FieldType.FLOAT, min_val=0.5, max_val=8.0, step=0.5, decimals=1),

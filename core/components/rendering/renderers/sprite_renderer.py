@@ -17,6 +17,7 @@ class SpriteRenderer(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Sprite Renderer", FieldType.HEADER),
             InspectorField("texture_path", "Texture", FieldType.RESOURCE_PATH, file_filter="Textures (*.png *.jpg *.jpeg)"),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("flip_x", "Flip X", FieldType.BOOL),

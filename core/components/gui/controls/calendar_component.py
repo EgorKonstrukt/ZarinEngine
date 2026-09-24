@@ -27,6 +27,7 @@ class CalendarComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Calendar Component", FieldType.HEADER),
             InspectorField("_grid_visible", "Grid Visible", FieldType.BOOL),
             InspectorField("_navigation_bar_visible", "Nav Bar Visible", FieldType.BOOL),
         ] + cls._common_inspector_fields()

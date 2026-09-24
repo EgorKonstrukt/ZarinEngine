@@ -18,14 +18,17 @@ class Projector(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Projector", FieldType.HEADER),
             InspectorField("texture_path", "Texture", FieldType.RESOURCE_PATH, file_filter="Textures (*.png *.jpg *.jpeg)"),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=1000.0, step=0.1, decimals=3),
+            InspectorField("", "Projection", FieldType.HEADER),
             InspectorField("range", "Range", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("spot_angle", "Spot Angle", FieldType.FLOAT, min_val=1.0, max_val=179.0, step=1.0, decimals=1),
             InspectorField("aspect_ratio", "Aspect", FieldType.FLOAT, min_val=0.1, max_val=10.0, step=0.1, decimals=2),
             InspectorField("near_plane", "Near Plane", FieldType.FLOAT, min_val=0.01, max_val=10.0, step=0.1, decimals=2),
             InspectorField("far_plane", "Far Plane", FieldType.FLOAT, min_val=1.0, max_val=10000.0, step=1.0, decimals=1),
+            InspectorField("", "Options", FieldType.HEADER),
             InspectorField("flip_y", "Flip Y", FieldType.BOOL),
             InspectorField("flip_x", "Flip X", FieldType.BOOL),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),

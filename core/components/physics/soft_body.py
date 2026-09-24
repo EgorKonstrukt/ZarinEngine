@@ -35,6 +35,7 @@ class SoftBody(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Soft Body", FieldType.HEADER),
             InspectorField("mass", "Mass", FieldType.FLOAT, min_val=0.01, max_val=10000.0, step=0.1),
             InspectorField("stiffness", "Stiffness", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01),
             InspectorField("bend_mode", "Bend Mode", FieldType.ENUM, enum_class=SoftBendMode),

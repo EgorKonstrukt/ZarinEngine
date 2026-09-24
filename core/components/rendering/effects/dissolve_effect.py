@@ -20,11 +20,14 @@ class DissolveEffect(ObjectEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Dissolve Effect", FieldType.HEADER),
             InspectorField("amount", "Amount", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
+            InspectorField("", "Noise", FieldType.HEADER),
             InspectorField("noise_strength", "Noise Strength", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("noise_scale", "Noise Scale", FieldType.FLOAT, min_val=0.1, max_val=20.0, step=0.1, decimals=2),
             InspectorField("direction", "Gradient Direction", FieldType.VEC3, min_val=-1.0, max_val=1.0, step=0.05, decimals=3),
             InspectorField("invert", "Invert", FieldType.BOOL),
+            InspectorField("", "Edge", FieldType.HEADER),
             InspectorField("edge_width", "Edge Width", FieldType.SLIDER, min_val=0.0, max_val=0.5, step=0.01, decimals=3),
             InspectorField("edge_color", "Edge Color", FieldType.COLOR),
             InspectorField("edge_emission", "Edge Emission", FieldType.SLIDER, min_val=0.0, max_val=5.0, step=0.05, decimals=3),

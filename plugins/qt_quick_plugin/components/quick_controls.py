@@ -23,6 +23,7 @@ class QuickButton(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Button", FieldType.HEADER),
             InspectorField("text", "Text", FieldType.STRING),
             InspectorField("font_size", "Font Size", FieldType.INT, min_val=8, max_val=128, step=1),
             InspectorField("checkable", "Checkable", FieldType.BOOL),
@@ -99,6 +100,7 @@ class QuickLabel(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Label", FieldType.HEADER),
             InspectorField("text", "Text", FieldType.TEXTAREA),
             InspectorField("font_size", "Font Size", FieldType.INT, min_val=8, max_val=256, step=1),
             InspectorField("text_color", "Color", FieldType.COLOR),
@@ -154,6 +156,7 @@ class QuickSlider(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Slider", FieldType.HEADER),
             InspectorField("value", "Value", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.01, decimals=3),
             InspectorField("minimum", "Min", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.1, decimals=3),
             InspectorField("maximum", "Max", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.1, decimals=3),
@@ -234,6 +237,7 @@ class QuickTextField(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Text Field", FieldType.HEADER),
             InspectorField("text", "Text", FieldType.STRING),
             InspectorField("placeholder", "Placeholder", FieldType.STRING),
             InspectorField("max_length", "Max Length", FieldType.INT, min_val=1, max_val=4096, step=1),
@@ -296,6 +300,7 @@ class QuickCheckBox(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Check Box", FieldType.HEADER),
             InspectorField("text", "Text", FieldType.STRING),
             InspectorField("checked", "Checked", FieldType.BOOL),
         ]
@@ -360,6 +365,7 @@ class QuickProgressBar(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Progress Bar", FieldType.HEADER),
             InspectorField("value", "Value", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.01, decimals=3),
             InspectorField("minimum", "Min", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.1, decimals=3),
             InspectorField("maximum", "Max", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.1, decimals=3),
@@ -416,6 +422,7 @@ class QuickSwitch(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Switch", FieldType.HEADER),
             InspectorField("text", "Text", FieldType.STRING),
             InspectorField("checked", "Checked", FieldType.BOOL),
         ]
@@ -475,6 +482,7 @@ class QuickDial(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Dial", FieldType.HEADER),
             InspectorField("value", "Value", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.01, decimals=3),
             InspectorField("minimum", "Min", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.1, decimals=3),
             InspectorField("maximum", "Max", FieldType.FLOAT, min_val=-100000.0, max_val=100000.0, step=0.1, decimals=3),
@@ -540,6 +548,7 @@ class QuickComboBox(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Combo Box", FieldType.HEADER),
             InspectorField("items_text", "Items | separated", FieldType.TEXTAREA),
             InspectorField("current_index", "Current Index", FieldType.INT, min_val=0, max_val=256, step=1),
         ]
@@ -616,6 +625,7 @@ class QuickSpinBox(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Spin Box", FieldType.HEADER),
             InspectorField("value", "Value", FieldType.INT, min_val=-1000000, max_val=1000000, step=1),
             InspectorField("minimum", "Min", FieldType.INT, min_val=-1000000, max_val=1000000, step=1),
             InspectorField("maximum", "Max", FieldType.INT, min_val=-1000000, max_val=1000000, step=1),
@@ -678,6 +688,7 @@ class QuickPanel(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Panel", FieldType.HEADER),
             InspectorField("title", "Title", FieldType.STRING),
             InspectorField("panel_color", "Panel Color", FieldType.COLOR),
             InspectorField("radius", "Radius", FieldType.INT, min_val=0, max_val=64, step=1),
@@ -723,6 +734,7 @@ class QuickImageView(QuickView):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return QuickView._inspector_fields() + [
+            InspectorField("", "Quick Image View", FieldType.HEADER),
             InspectorField("image_source", "Image", FieldType.RESOURCE_PATH, file_filter="Images (*.png *.jpg *.jpeg *.bmp *.svg)"),
             InspectorField("fill_mode", "Fill Mode", FieldType.ENUM, enum_options=["Stretch", "Fit", "Crop", "Tile", "Pad"]),
         ]

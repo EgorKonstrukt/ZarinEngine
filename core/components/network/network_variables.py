@@ -26,6 +26,7 @@ class NetworkVariables(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Network Variables", FieldType.HEADER),
             InspectorField("authority", "Authority", FieldType.ENUM, enum_class=VariableAuthority),
             InspectorField("send_rate", "Send Rate", FieldType.FLOAT, min_val=1.0, max_val=30.0),
             InspectorField("reliable", "Reliable", FieldType.BOOL),

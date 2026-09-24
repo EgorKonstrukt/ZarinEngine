@@ -30,6 +30,7 @@ class MdiAreaComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Mdi Area Component", FieldType.HEADER),
             InspectorField("_view_mode", "View Mode", FieldType.INT, min_val=0, max_val=1),
             InspectorField("_tab_shape", "Tab Shape", FieldType.INT, min_val=0, max_val=1),
             InspectorField("_scrollbar_policy", "Scrollbars", FieldType.INT, min_val=0, max_val=2),

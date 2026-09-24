@@ -198,10 +198,13 @@ class Hatching(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Hatching", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.05, decimals=3),
+            InspectorField("", "Edge", FieldType.HEADER),
             InspectorField("_edge_color", "Edge Color", FieldType.COLOR),
             InspectorField("_edge_threshold", "Edge Threshold", FieldType.FLOAT, min_val=0.001, max_val=0.5, step=0.001, decimals=3),
             InspectorField("_hatch_scale", "Hatch Scale", FieldType.FLOAT, min_val=2.0, max_val=60.0, step=1.0, decimals=0),
+            InspectorField("", "Noise", FieldType.HEADER),
             InspectorField("_noise_frequency", "Noise Frequency", FieldType.FLOAT, min_val=0.1, max_val=20.0, step=0.1, decimals=1),
             InspectorField("_noise_offset_intensity", "Noise Offset", FieldType.FLOAT, min_val=0.0, max_val=0.05, step=0.001, decimals=3),
             InspectorField("_distort", "Hatch Distort", FieldType.FLOAT, min_val=0.0, max_val=0.3, step=0.005, decimals=3),

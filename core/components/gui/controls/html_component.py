@@ -27,6 +27,7 @@ class HtmlComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Html Component", FieldType.HEADER),
             InspectorField("widget_text", "HTML", FieldType.STRING),
             InspectorField("_open_external_links", "Open Ext Links", FieldType.BOOL),
         ] + cls._common_inspector_fields()

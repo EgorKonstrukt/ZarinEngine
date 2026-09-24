@@ -27,10 +27,12 @@ class Joint(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Joint", FieldType.HEADER),
             InspectorField("connected_entity_name", "Connected Entity", FieldType.STRING),
             InspectorField("anchor", "Anchor", FieldType.VEC3),
             InspectorField("axis", "Axis", FieldType.VEC3),
             InspectorField("joint_type", "Joint Type", FieldType.STRING),
+            InspectorField("", "Limits", FieldType.HEADER),
             InspectorField("limit_low", "Limit Low", FieldType.FLOAT, min_val=-3.14159, max_val=0.0, step=0.01, decimals=3),
             InspectorField("limit_high", "Limit High", FieldType.FLOAT, min_val=0.0, max_val=3.14159, step=0.01, decimals=3),
             InspectorField("stiffness", "Stiffness", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.1, decimals=1),

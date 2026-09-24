@@ -34,6 +34,7 @@ class ProBuilderMesh(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Pro Builder Mesh", FieldType.HEADER),
             InspectorField("selection_mode", "Selection", FieldType.ENUM, enum_class=SelectionMode),
             InspectorField("vertex_count", "Vertices", FieldType.INT, readonly=True),
             InspectorField("triangle_count", "Triangles", FieldType.INT, readonly=True),

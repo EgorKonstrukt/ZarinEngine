@@ -18,9 +18,11 @@ class VideoRenderer(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Video Renderer", FieldType.HEADER),
             InspectorField("video_path", "Video", FieldType.RESOURCE_PATH, file_filter="Videos (*.mp4 *.avi *.mov *.mkv *.webm)"),
             InspectorField("audio_source_entity_id", "Audio Source", FieldType.GAMEOBJECT),
             InspectorField("color", "Color", FieldType.COLOR),
+            InspectorField("", "Flip", FieldType.HEADER),
             InspectorField("flip_x", "Flip X", FieldType.BOOL),
             InspectorField("flip_y", "Flip Y", FieldType.BOOL),
             InspectorField("play_on_start", "Play on Start", FieldType.BOOL),

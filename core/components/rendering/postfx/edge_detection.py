@@ -81,6 +81,7 @@ class EdgeDetection(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Edge Detection", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=10.0, step=0.1, decimals=3),
             InspectorField("_edge_color", "Edge Color", FieldType.COLOR),
             InspectorField("_outline_only", "Outline Only", FieldType.BOOL),

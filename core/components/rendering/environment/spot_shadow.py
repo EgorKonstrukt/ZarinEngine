@@ -26,6 +26,7 @@ class SpotShadow(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Spot Shadow", FieldType.HEADER),
             InspectorField("enabled", "Enabled", FieldType.BOOL),
             InspectorField("_shadow_resolution", "Resolution", FieldType.INT_SLIDER,
                            min_val=128, max_val=2048, step=128, decimals=0),

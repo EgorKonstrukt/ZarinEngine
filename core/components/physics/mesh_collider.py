@@ -372,12 +372,15 @@ class MeshCollider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Mesh", FieldType.HEADER),
             InspectorField("mesh_path", "Mesh", FieldType.RESOURCE_PATH, file_filter="Collision Meshes (*.obj *.stl *.gltf *.glb)"),
             InspectorField("collision_mode", "Collision Mode", FieldType.ENUM, enum_class=CollisionMode),
             InspectorField("max_vertices", "Max Vertices", FieldType.INT, min_val=0, max_val=100000, step=100, decimals=0),
+            InspectorField("", "Collision", FieldType.HEADER),
             InspectorField("is_trigger", "Is Trigger", FieldType.BOOL),
             InspectorField("layer", "Layer", FieldType.LAYER),
             InspectorField("mask", "Collision Mask", FieldType.LAYER_MASK),
+            InspectorField("", "Material", FieldType.HEADER),
             InspectorField("physic_material", "Physic Material", FieldType.ASSET, resource_type="physicmaterial"),
         ]
 

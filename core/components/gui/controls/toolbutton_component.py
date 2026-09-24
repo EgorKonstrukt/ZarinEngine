@@ -28,6 +28,7 @@ class ToolButtonComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Tool Button Component", FieldType.HEADER),
             InspectorField("_popup_mode", "Popup Mode", FieldType.INT, min_val=0, max_val=2),
             InspectorField("_arrow_type", "Arrow Type", FieldType.INT, min_val=0, max_val=4),
             InspectorField("_tooltip", "Tooltip", FieldType.STRING),

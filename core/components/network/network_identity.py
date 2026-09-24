@@ -25,6 +25,7 @@ class NetworkIdentity(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Network Identity", FieldType.HEADER),
             InspectorField("net_id", "Net ID", FieldType.INT, min_val=-1, max_val=999999, readonly=True),
             InspectorField("owner_id", "Owner ID", FieldType.INT, min_val=-1, max_val=999999, readonly=True),
             InspectorField("prefab_id", "Prefab ID", FieldType.STRING),

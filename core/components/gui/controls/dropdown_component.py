@@ -31,6 +31,7 @@ class DropdownComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Dropdown Component", FieldType.HEADER),
             InspectorField("_items", "Items", FieldType.LIST),
             InspectorField("_current_index", "Current", FieldType.INT, min_val=0, max_val=1000),
         ] + cls._common_inspector_fields()

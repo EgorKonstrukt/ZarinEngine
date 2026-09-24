@@ -65,6 +65,7 @@ class ChromaticAberration(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Chromatic Aberration", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=5.0, step=0.05, decimals=3),
             InspectorField("_radial", "Radial", FieldType.BOOL, min_val=0.0, max_val=0.0, step=0.0, decimals=0),
         ]

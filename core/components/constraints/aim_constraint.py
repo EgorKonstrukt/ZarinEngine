@@ -18,6 +18,7 @@ class AimConstraint(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Constraint", FieldType.HEADER),
             InspectorField("is_active", "Active", FieldType.BOOL),
             InspectorField(
                 "sources",
@@ -28,8 +29,10 @@ class AimConstraint(Component):
                     ListElementField("weight", "Weight", FieldType.FLOAT, 0.0, 1.0, 0.01, 2),
                 ]
             ),
+            InspectorField("", "Weights", FieldType.HEADER),
             InspectorField("aim_position_weight", "Aim Position Weight", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
             InspectorField("world_up_weight", "World Up Weight", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
+            InspectorField("", "Axes", FieldType.HEADER),
             InspectorField("local_euler_axis_x", "Local Euler Axis X", FieldType.BOOL),
             InspectorField("local_euler_axis_y", "Local Euler Axis Y", FieldType.BOOL),
             InspectorField("local_euler_axis_z", "Local Euler Axis Z", FieldType.BOOL),

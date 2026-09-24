@@ -105,6 +105,7 @@ class Watercolor(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Watercolor", FieldType.HEADER),
             InspectorField("_brush_size", "Brush Size", FieldType.FLOAT, min_val=1.0, max_val=8.0, step=1.0, decimals=0),
             InspectorField("_edge_darken", "Edge Darken", FieldType.FLOAT, min_val=0.0, max_val=2.0, step=0.05, decimals=3),
             InspectorField("_wetness", "Wetness", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.05, decimals=3),

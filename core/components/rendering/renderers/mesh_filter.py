@@ -18,6 +18,7 @@ class MeshFilter(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Mesh Filter", FieldType.HEADER),
             InspectorField("mesh_name", "Mesh", FieldType.STRING),
             InspectorField("mesh_path", "Source", FieldType.RESOURCE_PATH, file_filter="Models (*.obj *.fbx)"),
         ]

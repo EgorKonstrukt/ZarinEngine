@@ -31,6 +31,7 @@ class EditorCamera(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Editor Camera", FieldType.HEADER),
             InspectorField("move_speed", "Move Speed", FieldType.FLOAT, min_val=0.1, max_val=100.0, step=0.5),
             InspectorField("rotate_speed", "Rotate Speed", FieldType.FLOAT, min_val=0.01, max_val=5.0, step=0.05, decimals=2),
             InspectorField("zoom_speed", "Zoom Speed", FieldType.FLOAT, min_val=0.1, max_val=50.0, step=0.5),

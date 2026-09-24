@@ -18,6 +18,7 @@ class RotateTowardsConstraint(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Rotate Towards Constraint", FieldType.HEADER),
             InspectorField("is_active", "Active", FieldType.BOOL),
             InspectorField(
                 "sources",

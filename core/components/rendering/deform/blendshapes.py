@@ -30,6 +30,7 @@ class BlendShapes(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Blend Shapes", FieldType.HEADER),
             InspectorField("shapes", "Blend Shapes", FieldType.LIST, element_fields=[
                 ListElementField("name", "Name", FieldType.STRING),
                 ListElementField("weight", "Weight", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01),

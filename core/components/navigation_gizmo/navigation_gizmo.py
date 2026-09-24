@@ -30,10 +30,13 @@ class NavigationGizmo(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Navigation Gizmo", FieldType.HEADER),
             InspectorField("rect_size", "Rect Size", FieldType.FLOAT, min_val=40.0, max_val=400.0, step=1.0),
+            InspectorField("", "Corner", FieldType.HEADER),
             InspectorField("corner_offset_x", "Corner Offset X", FieldType.FLOAT, step=1.0),
             InspectorField("corner_offset_y", "Corner Offset Y", FieldType.FLOAT, step=1.0),
             InspectorField("pivot_distance", "Pivot Distance", FieldType.FLOAT, min_val=0.0, step=0.1),
+            InspectorField("", "Physics", FieldType.HEADER),
             InspectorField("drag_enabled", "Drag To Orbit", FieldType.BOOL),
             InspectorField("click_enabled", "Click To Snap", FieldType.BOOL),
             InspectorField("drag_sensitivity", "Drag Sensitivity", FieldType.FLOAT, min_val=0.001, max_val=0.1, step=0.001, decimals=3),

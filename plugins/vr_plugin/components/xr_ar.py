@@ -19,6 +19,7 @@ class ARSession(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Ar Session", FieldType.HEADER),
             InspectorField("floor_y", "Floor Y", FieldType.FLOAT, min_val=-10.0, max_val=10.0, step=0.05, decimals=2),
             InspectorField("enable_automatic_passthrough", "Automatic Passthrough", FieldType.BOOL),
             InspectorField("match_viewport_orientation", "Match Viewport Orientation", FieldType.BOOL),
@@ -59,6 +60,7 @@ class ARCameraBackground(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Ar Camera Background", FieldType.HEADER),
             InspectorField("use_passthrough", "Use Passthrough", FieldType.BOOL),
             InspectorField("occlusion", "Occlusion", FieldType.BOOL),
         ]
@@ -95,6 +97,7 @@ class ARPlaneManager(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Ar Plane Manager", FieldType.HEADER),
             InspectorField("detected_planes", "Detected Planes", FieldType.ENUM, enum_options=["Nothing", "Horizontal", "Vertical", "Everything"]),
             InspectorField("spawn_plane_prefab", "Spawn Plane Prefab", FieldType.BOOL),
         ]
@@ -138,6 +141,7 @@ class ARRaycastManager(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Ar Raycast Manager", FieldType.HEADER),
             InspectorField("max_raycast_distance", "Max Distance", FieldType.FLOAT, min_val=1.0, max_val=100.0, step=1.0, decimals=1),
         ]
 

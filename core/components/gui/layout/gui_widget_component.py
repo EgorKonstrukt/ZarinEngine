@@ -20,6 +20,7 @@ class GuiWidgetComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Gui Widget Component", FieldType.HEADER),
             InspectorField("widget_type", "Type", FieldType.STRING),
         ] + cls._common_inspector_fields()
 

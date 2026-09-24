@@ -28,6 +28,7 @@ class LCDComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Lcd Component", FieldType.HEADER),
             InspectorField("_digit_count", "Digit Count", FieldType.INT, min_val=1, max_val=20),
             InspectorField("_value", "Value", FieldType.FLOAT, min_val=-999999, max_val=999999),
             InspectorField("_mode", "Mode", FieldType.STRING),

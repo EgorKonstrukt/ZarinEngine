@@ -42,10 +42,12 @@ class ParticleForceField(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Shape", FieldType.HEADER),
             InspectorField("shape", "Shape", FieldType.ENUM, enum_class=ForceFieldShape),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.01, max_val=500.0, step=0.1, decimals=2),
             InspectorField("box_size", "Box Size", FieldType.VEC3, min_val=0.01, max_val=500.0, step=0.1, decimals=2),
             InspectorField("start_range", "Start Range", FieldType.FLOAT, min_val=0.0, max_val=500.0, step=0.1, decimals=2),
+            InspectorField("", "Force", FieldType.HEADER),
             InspectorField("force_x", "Force X", FieldType.FLOAT, min_val=-1000.0, max_val=1000.0, step=0.1, decimals=2),
             InspectorField("force_y", "Force Y", FieldType.FLOAT, min_val=-1000.0, max_val=1000.0, step=0.1, decimals=2),
             InspectorField("force_z", "Force Z", FieldType.FLOAT, min_val=-1000.0, max_val=1000.0, step=0.1, decimals=2),

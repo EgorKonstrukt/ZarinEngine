@@ -159,6 +159,7 @@ class VolumetricLight(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Volumetric Light", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=10.0, step=0.1, decimals=2),
             InspectorField("_density", "Density", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.005, decimals=4),
             InspectorField("_scattering", "Scattering", FieldType.FLOAT, min_val=0.0, max_val=2.0, step=0.1, decimals=2),

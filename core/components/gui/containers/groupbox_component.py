@@ -28,6 +28,7 @@ class GroupBoxComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Group Box Component", FieldType.HEADER),
             InspectorField("_flat", "Flat", FieldType.BOOL),
             InspectorField("_checkable", "Checkable", FieldType.BOOL),
             InspectorField("_checked", "Checked", FieldType.BOOL),

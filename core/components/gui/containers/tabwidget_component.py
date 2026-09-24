@@ -35,6 +35,7 @@ class TabWidgetComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Tab Widget Component", FieldType.HEADER),
             InspectorField("_current_index", "Current Tab", FieldType.INT, min_val=0, max_val=100),
             InspectorField("_tabs", "Tab Names", FieldType.LIST),
             InspectorField("_tab_position", "Tab Position", FieldType.INT, min_val=0, max_val=3),

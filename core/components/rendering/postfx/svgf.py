@@ -279,8 +279,10 @@ class SpatiotemporalVarianceGuidedFilter(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Spatiotemporal Variance Guided Filter", FieldType.HEADER),
             InspectorField("_stability", "Temporal Stability", FieldType.FLOAT, min_val=0.0, max_val=0.99, step=0.01, decimals=3),
             InspectorField("_disocclusion", "Disocclusion Depth", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.005, decimals=3),
+            InspectorField("", "Phi", FieldType.HEADER),
             InspectorField("_phi_depth", "Phi Depth", FieldType.FLOAT, min_val=0.01, max_val=10.0, step=0.05, decimals=3),
             InspectorField("_phi_normal", "Phi Normal", FieldType.FLOAT, min_val=1.0, max_val=512.0, step=1.0, decimals=1),
             InspectorField("_phi_luma", "Phi Luminance", FieldType.FLOAT, min_val=0.1, max_val=16.0, step=0.1, decimals=2),

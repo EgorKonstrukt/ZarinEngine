@@ -31,6 +31,7 @@ class DoubleSpinBoxComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Double Spin Box Component", FieldType.HEADER),
             InspectorField("_min_val", "Min", FieldType.FLOAT, min_val=-100000, max_val=100000),
             InspectorField("_max_val", "Max", FieldType.FLOAT, min_val=-100000, max_val=100000),
             InspectorField("_value", "Value", FieldType.FLOAT, min_val=-100000, max_val=100000),

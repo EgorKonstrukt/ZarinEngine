@@ -28,6 +28,7 @@ class DirectionalShadow(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Directional Shadow", FieldType.HEADER),
             InspectorField("enabled", "Enabled", FieldType.BOOL),
             InspectorField("_shadow_resolution", "Resolution", FieldType.INT_SLIDER,
                            min_val=256, max_val=4096, step=256, decimals=0),

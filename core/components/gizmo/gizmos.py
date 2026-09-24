@@ -198,8 +198,10 @@ class GizmoLine(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Shape", FieldType.HEADER),
             InspectorField("start", "Start", FieldType.VEC3),
             InspectorField("end", "End", FieldType.VEC3),
+            InspectorField("", "Appearance", FieldType.HEADER),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("thickness", "Thickness", FieldType.FLOAT, min_val=0.1, max_val=10.0),
             InspectorField("show_in_play", "Show in Play", FieldType.BOOL),
@@ -256,8 +258,10 @@ class GizmoRay(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Shape", FieldType.HEADER),
             InspectorField("direction", "Direction", FieldType.VEC3),
             InspectorField("length", "Length", FieldType.FLOAT, min_val=0.1, max_val=100.0),
+            InspectorField("", "Appearance", FieldType.HEADER),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("thickness", "Thickness", FieldType.FLOAT, min_val=0.1, max_val=10.0),
             InspectorField("show_in_play", "Show in Play", FieldType.BOOL),
@@ -307,8 +311,10 @@ class GizmoArrow(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Shape", FieldType.HEADER),
             InspectorField("start", "Start", FieldType.VEC3),
             InspectorField("end", "End", FieldType.VEC3),
+            InspectorField("", "Appearance", FieldType.HEADER),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("thickness", "Thickness", FieldType.FLOAT, min_val=0.1, max_val=10.0),
             InspectorField("show_in_play", "Show in Play", FieldType.BOOL),
@@ -357,6 +363,7 @@ class GizmoCube(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Cube", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("size", "Size", FieldType.VEC3),
             InspectorField("color", "Color", FieldType.COLOR),
@@ -417,6 +424,7 @@ class GizmoSphere(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Sphere", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.01, max_val=10.0),
             InspectorField("color", "Color", FieldType.COLOR),
@@ -477,6 +485,7 @@ class GizmoCylinder(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Cylinder", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.01, max_val=10.0),
             InspectorField("height", "Height", FieldType.FLOAT, min_val=0.01, max_val=10.0),
@@ -533,6 +542,7 @@ class GizmoCapsule(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Capsule", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.01, max_val=10.0),
             InspectorField("height", "Height", FieldType.FLOAT, min_val=0.01, max_val=10.0),
@@ -586,6 +596,7 @@ class GizmoPlane(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Plane", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("normal", "Normal", FieldType.VEC3),
             InspectorField("size", "Size", FieldType.FLOAT, min_val=0.1, max_val=100.0),
@@ -636,6 +647,7 @@ class GizmoGrid(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Grid", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("size", "Size", FieldType.FLOAT, min_val=1.0, max_val=100.0),
             InspectorField("divisions", "Divisions", FieldType.INT, min_val=2, max_val=50),
@@ -689,6 +701,7 @@ class GizmoCircle(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Circle", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.01, max_val=10.0),
             InspectorField("color", "Color", FieldType.COLOR),
@@ -742,6 +755,7 @@ class GizmoDisc(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Disc", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.01, max_val=10.0),
             InspectorField("color", "Color", FieldType.COLOR),
@@ -792,12 +806,14 @@ class GizmoArc(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Arc", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.01, max_val=10.0),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("thickness", "Thickness", FieldType.FLOAT, min_val=0.1, max_val=10.0),
             InspectorField("show_in_play", "Show in Play", FieldType.BOOL),
             InspectorField("normal", "Normal", FieldType.VEC3),
+            InspectorField("", "Angle", FieldType.HEADER),
             InspectorField("angle_start", "Angle Start", FieldType.FLOAT, min_val=0.0, max_val=360.0),
             InspectorField("angle_end", "Angle End", FieldType.FLOAT, min_val=0.0, max_val=360.0),
         ]
@@ -848,6 +864,7 @@ class GizmoTorus(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Torus", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("major_radius", "Major Radius", FieldType.FLOAT, min_val=0.1, max_val=10.0),
             InspectorField("minor_radius", "Minor Radius", FieldType.FLOAT, min_val=0.01, max_val=5.0),
@@ -904,6 +921,7 @@ class GizmoCone(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Cone", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("radius", "Radius", FieldType.FLOAT, min_val=0.01, max_val=10.0),
             InspectorField("height", "Height", FieldType.FLOAT, min_val=0.1, max_val=10.0),
@@ -957,6 +975,7 @@ class GizmoPyramid(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Pyramid", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("base_size", "Base Size", FieldType.FLOAT, min_val=0.1, max_val=10.0),
             InspectorField("height", "Height", FieldType.FLOAT, min_val=0.1, max_val=10.0),
@@ -1007,6 +1026,7 @@ class GizmoFrustum(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Frustum", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("fov", "FOV", FieldType.FLOAT, min_val=10.0, max_val=120.0),
             InspectorField("aspect", "Aspect", FieldType.FLOAT, min_val=0.1, max_val=3.0),
@@ -1063,6 +1083,7 @@ class GizmoBounds(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Bounds", FieldType.HEADER),
             InspectorField("min_point", "Min", FieldType.VEC3),
             InspectorField("max_point", "Max", FieldType.VEC3),
             InspectorField("color", "Color", FieldType.COLOR),
@@ -1151,6 +1172,7 @@ class GizmoCross(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Cross", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("size", "Size", FieldType.FLOAT, min_val=0.1, max_val=10.0),
             InspectorField("color", "Color", FieldType.COLOR),
@@ -1198,6 +1220,7 @@ class GizmoPoint(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Point", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("size", "Size", FieldType.FLOAT, min_val=0.01, max_val=5.0),
             InspectorField("color", "Color", FieldType.COLOR),
@@ -1245,6 +1268,7 @@ class GizmoPoly(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Poly", FieldType.HEADER),
             InspectorField("points", "Points", FieldType.LIST, element_fields=[ListElementField("point", "Point", FieldType.VEC3)]),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("thickness", "Thickness", FieldType.FLOAT, min_val=0.1, max_val=10.0),
@@ -1301,6 +1325,7 @@ class GizmoBezier(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Bezier", FieldType.HEADER),
             InspectorField("points", "Points", FieldType.LIST, element_fields=[ListElementField("point", "Point", FieldType.VEC3)]),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("thickness", "Thickness", FieldType.FLOAT, min_val=0.1, max_val=10.0),
@@ -1366,6 +1391,7 @@ class GizmoStar(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Star", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("outer_radius", "Outer", FieldType.FLOAT, min_val=0.1, max_val=10.0),
             InspectorField("inner_radius", "Inner", FieldType.FLOAT, min_val=0.01, max_val=10.0),
@@ -1422,6 +1448,7 @@ class GizmoIcon(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Icon", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("icon", "Icon", FieldType.STRING),
             InspectorField("color", "Color", FieldType.COLOR),
@@ -1472,6 +1499,7 @@ class GizmoLabel(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Gizmo Label", FieldType.HEADER),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("text", "Text", FieldType.STRING),
             InspectorField("color", "Color", FieldType.COLOR),

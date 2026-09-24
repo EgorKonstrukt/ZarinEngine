@@ -31,6 +31,7 @@ class DialComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Dial Component", FieldType.HEADER),
             InspectorField("_min_val", "Min", FieldType.INT, min_val=-100000, max_val=100000),
             InspectorField("_max_val", "Max", FieldType.INT, min_val=-100000, max_val=100000),
             InspectorField("_value", "Value", FieldType.INT, min_val=-100000, max_val=100000),

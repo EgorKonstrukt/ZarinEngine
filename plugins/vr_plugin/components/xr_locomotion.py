@@ -20,6 +20,7 @@ class XRSmoothMoveProvider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Smooth Move Provider", FieldType.HEADER),
             InspectorField("enable_strafe", "Enable Strafe", FieldType.BOOL),
             InspectorField("enable_fly", "Enable Fly", FieldType.BOOL),
             InspectorField("thumbstick_deadzone", "Deadzone", FieldType.FLOAT, min_val=0.0, max_val=0.9, step=0.05, decimals=2),
@@ -59,6 +60,7 @@ class XRSnapTurnProvider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Snap Turn Provider", FieldType.HEADER),
             InspectorField("snap_degrees", "Snap Degrees", FieldType.FLOAT, min_val=5.0, max_val=90.0, step=5.0, decimals=1),
             InspectorField("activation_button", "Activation", FieldType.ENUM, enum_options=["Left Thumbstick", "Right Thumbstick"]),
             InspectorField("enable_teleport", "Teleport On Trigger", FieldType.BOOL),
@@ -99,6 +101,7 @@ class XRTeleportationProvider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Teleportation Provider", FieldType.HEADER),
             InspectorField("activation_button", "Activation", FieldType.ENUM, enum_options=["Left Trigger", "Right Trigger"]),
             InspectorField("teleport_height", "Teleport Height", FieldType.FLOAT, min_val=0.0, max_val=3.0, step=0.05, decimals=2),
             InspectorField("snap_to_floor", "Snap To Floor", FieldType.BOOL),

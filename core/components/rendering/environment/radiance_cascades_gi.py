@@ -31,6 +31,7 @@ class RadianceCascadesGI(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Radiance Cascades Gi", FieldType.HEADER),
             InspectorField("enabled", "Enabled", FieldType.BOOL),
             InspectorField("_compute_shader_path", "Compute Shader", FieldType.RESOURCE_PATH,
                            file_filter="Compute (*.compute)"),

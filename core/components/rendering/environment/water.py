@@ -49,6 +49,7 @@ class Water(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Water", FieldType.HEADER),
             InspectorField("material_path", "Water Shader", FieldType.RESOURCE_PATH, file_filter="Shader (*.shader)"),
             InspectorField("surface_type", "Surface Type", FieldType.ENUM, enum_options=["Ocean", "Pond"]),
             InspectorField("infinite_ocean", "Infinite Ocean", FieldType.BOOL),
@@ -70,6 +71,7 @@ class Water(Component):
             InspectorField("normal_strength", "Detail Normal", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("wave_tiling", "Wave Tiling", FieldType.SLIDER, min_val=0.01, max_val=2.0, step=0.01, decimals=3),
             InspectorField("warp_amount", "Domain Warp", FieldType.SLIDER, min_val=0.0, max_val=4.0, step=0.05, decimals=3),
+            InspectorField("", "Surface", FieldType.HEADER),
             InspectorField("detail_speed", "Detail Speed", FieldType.SLIDER, min_val=0.0, max_val=3.0, step=0.01, decimals=3),
             InspectorField("refract_strength", "Refraction Tint", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("fresnel_power", "Fresnel Power", FieldType.SLIDER, min_val=0.5, max_val=8.0, step=0.1, decimals=2),
@@ -78,6 +80,7 @@ class Water(Component):
             InspectorField("shore_fade", "Shore Fade", FieldType.FLOAT, min_val=0.1, max_val=20.0, step=0.1, decimals=2),
             InspectorField("choppiness", "Choppiness", FieldType.SLIDER, min_val=0.0, max_val=2.0, step=0.01, decimals=3),
             InspectorField("caustics", "Caustics", FieldType.SLIDER, min_val=0.0, max_val=2.0, step=0.01, decimals=3),
+            InspectorField("", "Wind", FieldType.HEADER),
             InspectorField("wind_direction", "Wind Direction (deg)", FieldType.FLOAT, min_val=0.0, max_val=360.0, step=1.0, decimals=1),
             InspectorField("wind_speed", "Wind Speed (m/s)", FieldType.FLOAT, min_val=0.0, max_val=60.0, step=0.1, decimals=2),
             InspectorField("wind_turbulence", "Wind Turbulence", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
@@ -89,9 +92,11 @@ class Water(Component):
             InspectorField("detail_scale", "Detail Scale", FieldType.SLIDER, min_val=0.1, max_val=4.0, step=0.01, decimals=3),
             InspectorField("detail_octaves", "Detail Octaves", FieldType.SLIDER, min_val=1.0, max_val=12.0, step=1.0, decimals=0),
             InspectorField("detail_fade", "Detail Fade Dist", FieldType.FLOAT, min_val=20.0, max_val=2000.0, step=10.0, decimals=0),
+            InspectorField("", "Interaction", FieldType.HEADER),
             InspectorField("interaction_enabled", "Object Interaction", FieldType.BOOL),
             InspectorField("interaction_strength", "Interaction Strength", FieldType.SLIDER, min_val=0.0, max_val=8.0, step=0.05, decimals=2),
             InspectorField("interaction_radius", "Interaction Radius", FieldType.SLIDER, min_val=0.1, max_val=4.0, step=0.05, decimals=2),
+            InspectorField("", "Sim", FieldType.HEADER),
             InspectorField("sim_damping", "Wave Damping", FieldType.SLIDER, min_val=0.0, max_val=0.3, step=0.005, decimals=3),
             InspectorField("sim_propagation", "Wave Propagation", FieldType.SLIDER, min_val=2.0, max_val=60.0, step=0.5, decimals=1),
             InspectorField("sim_saturation", "Wave Saturation", FieldType.SLIDER, min_val=0.5, max_val=10.0, step=0.1, decimals=1),

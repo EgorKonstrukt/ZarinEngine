@@ -29,6 +29,7 @@ class TextEditComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Text Edit Component", FieldType.HEADER),
             InspectorField("_read_only", "Read Only", FieldType.BOOL),
             InspectorField("_placeholder_text", "Placeholder", FieldType.STRING),
             InspectorField("_wrap_mode", "Wrap Mode", FieldType.INT, min_val=0, max_val=3),

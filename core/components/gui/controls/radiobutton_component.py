@@ -25,6 +25,7 @@ class RadioButtonComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Radio Button Component", FieldType.HEADER),
             InspectorField("_checked", "Checked", FieldType.BOOL),
         ] + cls._common_inspector_fields()
 

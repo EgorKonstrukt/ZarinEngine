@@ -28,6 +28,7 @@ class TooltipComponent(Component):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Tooltip Component", FieldType.HEADER),
             InspectorField("text", "Tooltip Text", FieldType.STRING),
             InspectorField("_duration", "Duration (sec)", FieldType.FLOAT, min_val=0, max_val=60, step=0.1, decimals=1),
             InspectorField("_rich_text", "Rich Text", FieldType.BOOL),

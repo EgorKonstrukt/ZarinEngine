@@ -392,11 +392,14 @@ class GuiWidgetComponentBase(Component):
     @classmethod
     def _common_inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Content", FieldType.HEADER),
             InspectorField("widget_text", "Text", FieldType.STRING),
             InspectorField("widget_width", "Width", FieldType.FLOAT, min_val=1, max_val=10000),
             InspectorField("widget_height", "Height", FieldType.FLOAT, min_val=1, max_val=10000),
+            InspectorField("", "Layout", FieldType.HEADER),
             InspectorField("_anchor", "Anchor", FieldType.ANCHOR),
             InspectorField("_visible", "Visible", FieldType.BOOL),
+            InspectorField("", "Appearance", FieldType.HEADER),
             InspectorField("_bg_color", "BG Color", FieldType.COLOR),
             InspectorField("_text_color", "Text Color", FieldType.COLOR),
             InspectorField("_border_color", "Border", FieldType.COLOR),

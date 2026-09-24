@@ -26,6 +26,7 @@ class StackedComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Stacked Component", FieldType.HEADER),
             InspectorField("_current_index", "Current Index", FieldType.INT, min_val=0, max_val=1000),
         ] + cls._common_inspector_fields()
 

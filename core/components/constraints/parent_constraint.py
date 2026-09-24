@@ -18,7 +18,9 @@ class ParentConstraint(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Constraint", FieldType.HEADER),
             InspectorField("is_active", "Active", FieldType.BOOL),
+            InspectorField("", "General", FieldType.HEADER),
             InspectorField(
                 "sources",
                 "Sources",
@@ -28,12 +30,15 @@ class ParentConstraint(Component):
                     ListElementField("weight", "Weight", FieldType.FLOAT, 0.0, 1.0, 0.01, 2),
                 ]
             ),
+            InspectorField("", "Position", FieldType.HEADER),
             InspectorField("constrain_position_x", "Constrain Position X", FieldType.BOOL),
             InspectorField("constrain_position_y", "Constrain Position Y", FieldType.BOOL),
             InspectorField("constrain_position_z", "Constrain Position Z", FieldType.BOOL),
+            InspectorField("", "Rotation", FieldType.HEADER),
             InspectorField("constrain_rotation_x", "Constrain Rotation X", FieldType.BOOL),
             InspectorField("constrain_rotation_y", "Constrain Rotation Y", FieldType.BOOL),
             InspectorField("constrain_rotation_z", "Constrain Rotation Z", FieldType.BOOL),
+            InspectorField("", "Scale", FieldType.HEADER),
             InspectorField("constrain_scale_x", "Constrain Scale X", FieldType.BOOL),
             InspectorField("constrain_scale_y", "Constrain Scale Y", FieldType.BOOL),
             InspectorField("constrain_scale_z", "Constrain Scale Z", FieldType.BOOL),

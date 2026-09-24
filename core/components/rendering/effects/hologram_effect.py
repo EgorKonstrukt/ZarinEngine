@@ -19,8 +19,10 @@ class HologramEffect(ObjectEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Hologram Effect", FieldType.HEADER),
             InspectorField("amount", "Amount", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("color", "Color", FieldType.COLOR),
+            InspectorField("", "Scan", FieldType.HEADER),
             InspectorField("scan_density", "Scan Density", FieldType.FLOAT, min_val=1.0, max_val=200.0, step=1.0, decimals=1),
             InspectorField("scan_speed", "Scan Speed", FieldType.FLOAT, min_val=0.0, max_val=20.0, step=0.1, decimals=2),
             InspectorField("flicker", "Flicker", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),

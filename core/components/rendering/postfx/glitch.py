@@ -87,6 +87,7 @@ class Glitch(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Glitch", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=3.0, step=0.05, decimals=3),
             InspectorField("_speed", "Speed", FieldType.FLOAT, min_val=0.0, max_val=20.0, step=0.5, decimals=2),
             InspectorField("_frequency", "Frequency", FieldType.FLOAT, min_val=1.0, max_val=100.0, step=1.0, decimals=1),

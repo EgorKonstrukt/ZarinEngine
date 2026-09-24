@@ -24,6 +24,7 @@ class TextInputComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Text Input Component", FieldType.HEADER),
             InspectorField("_placeholder", "Placeholder", FieldType.STRING),
         ] + cls._common_inspector_fields()
 

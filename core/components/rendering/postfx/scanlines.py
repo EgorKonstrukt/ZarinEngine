@@ -93,6 +93,7 @@ class Scanlines(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Scanlines", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("_frequency", "Frequency", FieldType.FLOAT, min_val=1.0, max_val=500.0, step=1.0, decimals=1),
             InspectorField("_curvature", "Curvature", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=3),

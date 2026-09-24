@@ -122,11 +122,14 @@ class ChartComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Chart Component", FieldType.HEADER),
             InspectorField("_chart_title", "Title", FieldType.STRING),
             InspectorField("_x_label", "X Label", FieldType.STRING),
             InspectorField("_y_label", "Y Label", FieldType.STRING),
+            InspectorField("", "Log", FieldType.HEADER),
             InspectorField("_log_x", "Log X", FieldType.BOOL),
             InspectorField("_log_y", "Log Y", FieldType.BOOL),
+            InspectorField("", "Options", FieldType.HEADER),
             InspectorField("_show_legend", "Legend", FieldType.BOOL),
             InspectorField("_show_toolbar", "Toolbar", FieldType.BOOL),
             InspectorField("_show_sidebar", "Sidebar", FieldType.BOOL),
@@ -134,6 +137,7 @@ class ChartComponent(GuiWidgetComponentBase):
             InspectorField("_crosshair", "Crosshair", FieldType.BOOL),
             InspectorField("_latest_point", "Latest Pt", FieldType.BOOL),
             InspectorField("_origin_axes", "Origin Axes", FieldType.BOOL),
+            InspectorField("", "Grid", FieldType.HEADER),
             InspectorField("_grid_px_x", "Grid X", FieldType.INT, min_val=20, max_val=400),
             InspectorField("_grid_px_y", "Grid Y", FieldType.INT, min_val=20, max_val=400),
         ] + cls._common_inspector_fields()

@@ -27,6 +27,7 @@ class FontComboComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Font Combo Component", FieldType.HEADER),
             InspectorField("_font_filters", "Font Filters", FieldType.INT, min_val=0, max_val=256),
             InspectorField("_sample_text", "Sample Text", FieldType.STRING),
         ] + cls._common_inspector_fields()

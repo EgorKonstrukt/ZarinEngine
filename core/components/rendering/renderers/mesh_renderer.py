@@ -18,13 +18,16 @@ class MeshRenderer(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Materials", FieldType.HEADER),
             InspectorField("materials", "Materials", FieldType.LIST, element_fields=[
                 ListElementField("path", "Material", FieldType.RESOURCE_PATH, file_filter="Material (*.mat)"),
             ]),
             InspectorField("sprite_texture", "Sprite Texture", FieldType.RESOURCE_PATH, file_filter="Textures (*.png *.jpg *.jpeg *.bmp *.tga)"),
+            InspectorField("", "UV", FieldType.HEADER),
             InspectorField("uv_scale", "UV Scale", FieldType.VEC2),
             InspectorField("uv_offset", "UV Offset", FieldType.VEC2),
             InspectorField("uv_scale_by_transform", "UV Scale by Transform", FieldType.BOOL),
+            InspectorField("", "Shadows", FieldType.HEADER),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
             InspectorField("receive_shadows", "Receive Shadows", FieldType.BOOL),
             InspectorField("dynamic_reflections", "Dynamic Reflections", FieldType.BOOL),

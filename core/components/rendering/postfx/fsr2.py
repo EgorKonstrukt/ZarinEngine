@@ -399,6 +399,7 @@ class FidelityFXSuperResolution2(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Fidelity Fx Super Resolution2", FieldType.HEADER),
             InspectorField("_stability", "Temporal Stability", FieldType.FLOAT, min_val=0.0, max_val=0.99, step=0.01, decimals=3),
             InspectorField("_rcas_sharpness", "RCAS Attenuation", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("_disocclusion", "Disocclusion Depth", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.005, decimals=3),

@@ -40,6 +40,7 @@ class RaytracingRenderer(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Raytracing Renderer", FieldType.HEADER),
             InspectorField("enabled", "Enabled", FieldType.BOOL),
             InspectorField("_compute_shader_path", "Compute Shader", FieldType.RESOURCE_PATH, file_filter="Compute (*.compute)"),
             InspectorField("_resolution_scale", "Resolution Scale", FieldType.FLOAT, 0.1, 1.0),
@@ -47,6 +48,7 @@ class RaytracingRenderer(Component):
             InspectorField("_samples_per_pixel", "Samples Per Pixel", FieldType.INT, 1, 16),
             InspectorField("_accumulate", "Accumulate Frames", FieldType.BOOL),
             InspectorField("_show_overlay", "Show Overlay", FieldType.BOOL),
+            InspectorField("", "Heatmap", FieldType.HEADER),
             InspectorField("_heatmap_mode", "Heatmap Mode", FieldType.INT, 0, 2),
             InspectorField("_heatmap_scale", "Heatmap Scale", FieldType.FLOAT, 1.0, 256.0),
         ]

@@ -23,6 +23,7 @@ class Terrain(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Terrain", FieldType.HEADER),
             InspectorField("world_size", "World Size", FieldType.FLOAT),
             InspectorField("material_path", "Material", FieldType.RESOURCE_PATH, file_filter="Materials (*.mat *.zpem)"),
             InspectorField("graph_path", "Terrain Graph", FieldType.RESOURCE_PATH, file_filter="Terrain Graphs (*.zterr)"),

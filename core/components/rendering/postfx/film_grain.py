@@ -71,6 +71,7 @@ class FilmGrain(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Film Grain", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("_size", "Size", FieldType.FLOAT, min_val=0.1, max_val=10.0, step=0.1, decimals=2),
             InspectorField("_luminance_influence", "Luminance Influence", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.05, decimals=3),

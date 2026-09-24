@@ -21,6 +21,7 @@ class NetworkManager(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Network Manager", FieldType.HEADER),
             InspectorField("port", "Port", FieldType.INT, min_val=1024, max_val=65535),
             InspectorField("max_players", "Max Players", FieldType.INT, min_val=1, max_val=64),
             InspectorField("server_name", "Server Name", FieldType.STRING),

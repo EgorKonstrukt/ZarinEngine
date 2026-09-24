@@ -25,12 +25,13 @@ class Transform(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Transform", FieldType.HEADER),
             InspectorField("local_position", "Position", FieldType.VEC3),
             InspectorField("local_euler_angles", "Rotation", FieldType.VEC3),
             InspectorField("local_scale", "Scale", FieldType.VEC3),
         ]
 
-    __slots__ = ("_local_pos", "_local_rot", "_local_scale", "_world_matrix", "_world_target", "_dirty", "_physics_dirty")
+    __slots__ = ("_local_pos", "_local_rot", "_local_scale", "_world_matrix", "_world_target", "_dirty", "_physics_dirty", "_soa")
 
     def __init__(self):
         super().__init__()
@@ -41,6 +42,7 @@ class Transform(Component):
         self._world_target: Mat4 | None = None
         self._dirty: bool = True
         self._physics_dirty: bool = False
+        self._soa: int = -1
 
     def _mark_dirty(self):
         if self._dirty:

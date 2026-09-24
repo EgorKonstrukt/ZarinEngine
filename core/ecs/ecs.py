@@ -569,6 +569,12 @@ class Entity:
                 c._transform = _UNSET
             if sc is not None and getattr(comp, "_dirty", False):
                 sc._dirty_roots.add(comp)
+            if sc is not None:
+                try:
+                    if getattr(comp, "_soa", -1) < 0:
+                        sc._soa_alloc_for(comp)
+                except Exception:
+                    pass
         comp.on_awake()
         return comp
 
@@ -580,6 +586,11 @@ class Entity:
         key = comp._key
         comp.on_destroy()
         self._components.pop(key, None)
+        try:
+            if getattr(comp, "_soa", -1) >= 0 and self._scene is not None:
+                self._scene._soa_release(comp)
+        except Exception:
+            pass
         if not clist:
             del self._type_map[cls]
             self._type_name_map.pop(cls.__name__, None)
@@ -620,6 +631,11 @@ class Entity:
         for comp in clist:
             comp.on_destroy()
             self._components.pop(comp._key, None)
+            try:
+                if getattr(comp, "_soa", -1) >= 0 and sc is not None:
+                    sc._soa_release(comp)
+            except Exception:
+                pass
             if comp._updates:
                 try: upd.remove(comp)
                 except ValueError: pass
@@ -907,6 +923,79 @@ class Scene:
         self._spatial_known_entities: set[str] = set()
         self._roots_cache: list[Entity] = []
         self._roots_cache_valid: bool = False
+        self._soa_world = np.zeros((0, 4, 4), dtype=np.float64)
+        self._soa_cap: int = 0
+        self._soa_free: list = []
+
+    def _soa_ensure(self, need: int):
+        if need <= self._soa_cap:
+            return
+        grown = self._soa_cap if self._soa_cap else 256
+        while grown < need:
+            grown <<= 1
+        fresh = np.zeros((grown, 4, 4), dtype=np.float64)
+        if self._soa_cap:
+            fresh[:self._soa_cap] = self._soa_world
+        self._soa_world = fresh
+        self._soa_cap = grown
+
+    def _soa_alloc_for(self, tr):
+        try:
+            cur = tr._soa
+        except Exception:
+            return -1
+        if cur is not None and cur >= 0 and cur < self._soa_cap:
+            try:
+                self._soa_world[cur] = tr._world_matrix._d
+            except Exception:
+                pass
+            return cur
+        free = self._soa_free
+        if free:
+            idx = free.pop()
+        else:
+            idx = self._soa_cap
+            self._soa_ensure(idx + 1)
+        try:
+            tr._soa = idx
+        except Exception:
+            if free is not None:
+                free.append(idx)
+            return -1
+        try:
+            self._soa_world[idx] = tr._world_matrix._d
+        except Exception:
+            pass
+        return idx
+
+    def _soa_release(self, tr):
+        try:
+            idx = tr._soa
+        except Exception:
+            return
+        if idx is None or idx < 0:
+            return
+        try:
+            tr._soa = -1
+        except Exception:
+            pass
+        try:
+            if idx < self._soa_cap:
+                self._soa_free.append(idx)
+        except Exception:
+            pass
+
+    def _soa_write_world(self, tr):
+        try:
+            idx = tr._soa
+        except Exception:
+            return
+        if idx is None or idx < 0 or idx >= self._soa_cap:
+            return
+        try:
+            self._soa_world[idx] = tr._world_matrix._d
+        except Exception:
+            pass
 
     def _batch_sync_entities(self, entities: dict[str, Entity]):
         idx = self._component_indices

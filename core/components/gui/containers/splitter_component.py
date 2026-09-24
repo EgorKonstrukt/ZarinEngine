@@ -28,6 +28,7 @@ class SplitterComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Splitter Component", FieldType.HEADER),
             InspectorField("_orientation", "Orientation", FieldType.STRING),
             InspectorField("_children_collapsible", "Collapsible", FieldType.BOOL),
             InspectorField("_handle_width", "Handle Width", FieldType.INT, min_val=1, max_val=50),

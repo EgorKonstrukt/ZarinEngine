@@ -92,6 +92,7 @@ class RadialBlur(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Radial Blur", FieldType.HEADER),
             InspectorField("_center", "Center", FieldType.VEC2, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("_strength", "Strength", FieldType.SLIDER, min_val=0.0, max_val=0.5, step=0.001, decimals=4),
             InspectorField("_samples", "Samples", FieldType.INT_SLIDER, min_val=4, max_val=64, step=2),

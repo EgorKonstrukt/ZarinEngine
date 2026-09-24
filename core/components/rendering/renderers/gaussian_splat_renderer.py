@@ -19,6 +19,7 @@ class GaussianSplatRenderer(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Gaussian Splat Renderer", FieldType.HEADER),
             InspectorField("ply_path", "Splat Path", FieldType.RESOURCE_PATH,
                            file_filter="Splats (*.ply *.sog *.ssog)"),
             InspectorField("sh_degree", "SH Degree", FieldType.INT_SLIDER,

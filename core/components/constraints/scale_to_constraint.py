@@ -18,6 +18,7 @@ class ScaleToConstraint(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Scale To Constraint", FieldType.HEADER),
             InspectorField("is_active", "Active", FieldType.BOOL),
             InspectorField(
                 "sources",

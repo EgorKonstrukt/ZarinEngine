@@ -29,6 +29,7 @@ class Bone(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Bone", FieldType.HEADER),
             InspectorField("bone_name", "Bone Name", FieldType.STRING),
             InspectorField("bone_index", "Bone Index", FieldType.INT),
         ]
@@ -65,6 +66,7 @@ class Armature(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Armature", FieldType.HEADER),
             InspectorField("bone_count", "Bone Count", FieldType.INT),
             InspectorField("root_bone_name", "Root Bone", FieldType.STRING),
         ]

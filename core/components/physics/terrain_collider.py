@@ -24,13 +24,16 @@ class TerrainCollider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Collision", FieldType.HEADER),
             InspectorField("layer", "Layer", FieldType.LAYER),
             InspectorField("mask", "Collision Mask", FieldType.LAYER_MASK),
+            InspectorField("", "Terrain", FieldType.HEADER),
             InspectorField("size", "World Size", FieldType.VEC3),
             InspectorField("height_scale", "Height Scale", FieldType.FLOAT),
             InspectorField("resolution", "Resolution", FieldType.INT),
             InspectorField("center", "Center", FieldType.VEC3),
             InspectorField("is_trigger", "Is Trigger", FieldType.BOOL),
+            InspectorField("", "Material", FieldType.HEADER),
             InspectorField("physic_material", "Physic Material", FieldType.ASSET, resource_type="physicmaterial"),
         ]
 

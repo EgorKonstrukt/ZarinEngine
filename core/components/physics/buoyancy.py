@@ -26,12 +26,14 @@ class Buoyancy(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Buoyancy", FieldType.HEADER),
             InspectorField("density", "Object Density", FieldType.FLOAT, min_val=1.0, max_val=20000.0, step=0.1, decimals=2),
             InspectorField("volume", "Override Volume", FieldType.FLOAT, min_val=0.0, max_val=100000.0, step=0.001, decimals=4),
             InspectorField("water_density", "Water Density", FieldType.FLOAT, min_val=1.0, max_val=2000.0, step=0.1, decimals=2),
             InspectorField("linear_drag", "Hydro Drag", FieldType.FLOAT, min_val=0.0, max_val=50.0, step=0.01, decimals=3),
             InspectorField("angular_drag", "Hydro Angular Drag", FieldType.FLOAT, min_val=0.0, max_val=50.0, step=0.01, decimals=3),
             InspectorField("flow_influence", "Flow Influence", FieldType.FLOAT, min_val=0.0, max_val=10.0, step=0.01, decimals=3),
+            InspectorField("", "Options", FieldType.HEADER),
             InspectorField("use_waves", "Use Waves", FieldType.BOOL),
             InspectorField("use_flow", "Use Flow", FieldType.BOOL),
             InspectorField("sample_resolution", "Sample Resolution", FieldType.INT, min_val=2, max_val=24, step=1),

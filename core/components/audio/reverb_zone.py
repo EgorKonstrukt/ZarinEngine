@@ -45,21 +45,27 @@ class ReverbZone(Component):
         if "User" not in options:
             options = options + ["User"]
         return [
+            InspectorField("", "Zone", FieldType.HEADER),
             InspectorField("min_distance", "Min Distance", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("max_distance", "Max Distance", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=1.0, decimals=2),
             InspectorField("preset", "Reverb Preset", FieldType.ENUM, enum_options=options),
+            InspectorField("", "Room", FieldType.HEADER),
             InspectorField("room", "Room", FieldType.FLOAT, min_val=-10000.0, max_val=0.0, step=10.0, decimals=0),
             InspectorField("room_hf", "Room HF", FieldType.FLOAT, min_val=-10000.0, max_val=0.0, step=10.0, decimals=0),
             InspectorField("room_lf", "Room LF", FieldType.FLOAT, min_val=-10000.0, max_val=0.0, step=10.0, decimals=0),
+            InspectorField("", "Decay", FieldType.HEADER),
             InspectorField("decay_time", "Decay Time", FieldType.FLOAT, min_val=0.1, max_val=20.0, step=0.1, decimals=2),
             InspectorField("decay_hf_ratio", "Decay HFRatio", FieldType.FLOAT, min_val=0.1, max_val=2.0, step=0.01, decimals=2),
+            InspectorField("", "Reflections", FieldType.HEADER),
             InspectorField("reflections", "Reflections", FieldType.FLOAT, min_val=-10000.0, max_val=1000.0, step=10.0, decimals=0),
             InspectorField("reflections_delay", "Reflections Delay", FieldType.FLOAT, min_val=0.0, max_val=0.3, step=0.001, decimals=3),
+            InspectorField("", "Reverb", FieldType.HEADER),
             InspectorField("reverb", "Reverb", FieldType.FLOAT, min_val=-10000.0, max_val=2000.0, step=10.0, decimals=0),
             InspectorField("reverb_delay", "Reverb Delay", FieldType.FLOAT, min_val=0.0, max_val=0.1, step=0.001, decimals=3),
             InspectorField("hf_reference", "HFReference", FieldType.FLOAT, min_val=1000.0, max_val=20000.0, step=10.0, decimals=0),
             InspectorField("lf_reference", "LFReference", FieldType.FLOAT, min_val=20.0, max_val=1000.0, step=5.0, decimals=0),
             InspectorField("room_rolloff_factor", "Room Rolloff Factor", FieldType.FLOAT, min_val=0.0, max_val=10.0, step=0.01, decimals=2),
+            InspectorField("", "Mix", FieldType.HEADER),
             InspectorField("diffusion", "Diffusion", FieldType.FLOAT, min_val=0.0, max_val=100.0, step=0.5, decimals=1),
             InspectorField("density", "Density", FieldType.FLOAT, min_val=0.0, max_val=100.0, step=0.5, decimals=1),
         ]

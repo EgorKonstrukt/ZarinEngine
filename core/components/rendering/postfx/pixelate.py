@@ -58,6 +58,7 @@ class Pixelate(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Pixelate", FieldType.HEADER),
             InspectorField("_pixel_size", "Pixel Size", FieldType.FLOAT, min_val=1.0, max_val=256.0, step=1.0, decimals=1),
         ]
 

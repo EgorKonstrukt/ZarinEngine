@@ -100,8 +100,10 @@ def iter_entity_prop_groups(entity) -> list[tuple[str, object, list[tuple[str, s
         else:
             flist = []
         for f in flist:
-            leaf = f.field_type.value if hasattr(f.field_type, "value") else str(f.field_type)
-            leaf = _VEC_LEAVES.get(leaf)
+            ftype = f.field_type.value if hasattr(f.field_type, "value") else str(f.field_type)
+            if ftype == "header":
+                continue
+            leaf = _VEC_LEAVES.get(ftype)
             base = f"{cname}/{f.name}"
             if leaf:
                 entries.append((f.label or f.name, base, tuple(leaf)))

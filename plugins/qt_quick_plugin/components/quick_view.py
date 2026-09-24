@@ -33,10 +33,13 @@ class QuickView(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Qml", FieldType.HEADER),
             InspectorField("qml_text", "QML", FieldType.TEXTAREA),
             InspectorField("qml_file", "QML File", FieldType.RESOURCE_PATH, file_filter="QML (*.qml)"),
+            InspectorField("", "Quick View", FieldType.HEADER),
             InspectorField("width_px", "Width Px", FieldType.INT, min_val=32, max_val=2048, step=1),
             InspectorField("height_px", "Height Px", FieldType.INT, min_val=32, max_val=2048, step=1),
+            InspectorField("", "Size", FieldType.HEADER),
             InspectorField("size_x", "Size X m", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.05, decimals=3),
             InspectorField("size_y", "Size Y m", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.05, decimals=3),
             InspectorField("transparent", "Transparent", FieldType.BOOL),

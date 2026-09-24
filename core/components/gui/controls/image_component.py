@@ -25,6 +25,7 @@ class ImageComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Image Component", FieldType.HEADER),
             InspectorField("_source", "Source", FieldType.RESOURCE_PATH),
         ] + cls._common_inspector_fields()
 

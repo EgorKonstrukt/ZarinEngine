@@ -97,6 +97,7 @@ class FXAA(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Fxaa", FieldType.HEADER),
             InspectorField("_subpix", "Subpixel", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("_reduce", "Reduce", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.001, decimals=3),
             InspectorField("_reduce_min", "Reduce Min", FieldType.FLOAT, min_val=0.0, max_val=0.1, step=0.0001, decimals=4),

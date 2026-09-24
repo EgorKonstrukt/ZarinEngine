@@ -21,6 +21,7 @@ class AudioListener(Component):
     @classmethod
     def _inspector_fields(cls) -> list:
         return [
+            InspectorField("", "Audio Listener", FieldType.HEADER),
             InspectorField("doppler_factor", "Doppler Factor", FieldType.FLOAT, min_val=0.0, max_val=10.0, step=0.01, decimals=2),
             InspectorField("speed_of_sound", "Speed Of Sound", FieldType.FLOAT, min_val=0.1, max_val=10000.0, step=0.1, decimals=1),
         ]

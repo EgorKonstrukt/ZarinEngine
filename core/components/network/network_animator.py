@@ -25,10 +25,12 @@ class NetworkAnimator(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Sync", FieldType.HEADER),
             InspectorField("sync_clip", "Sync Clip", FieldType.BOOL),
             InspectorField("sync_time", "Sync Time", FieldType.BOOL),
             InspectorField("sync_speed", "Sync Speed", FieldType.BOOL),
             InspectorField("sync_playing", "Sync Playing", FieldType.BOOL),
+            InspectorField("", "Network Animator", FieldType.HEADER),
             InspectorField("authority", "Authority", FieldType.ENUM, enum_class=AnimatorAuthority),
             InspectorField("send_rate", "Send Rate", FieldType.FLOAT, min_val=1.0, max_val=30.0),
             InspectorField("param_sync", "Sync Params", FieldType.BOOL),

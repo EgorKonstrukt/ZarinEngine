@@ -20,6 +20,7 @@ class NetworkSpawn(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Network Spawn", FieldType.HEADER),
             InspectorField("spawnable_prefabs", "Spawnable Prefabs", FieldType.LIST, element_fields=[
                 ListElementField("path", "Prefab", FieldType.RESOURCE_PATH, file_filter="Prefab (*.zpep)"),
             ]),

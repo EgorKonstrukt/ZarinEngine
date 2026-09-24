@@ -29,6 +29,7 @@ class ScrollBarComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Scroll Bar Component", FieldType.HEADER),
             InspectorField("_orientation", "Orientation", FieldType.STRING),
             InspectorField("_value", "Value", FieldType.INT, min_val=-100000, max_val=100000),
             InspectorField("_min", "Min", FieldType.INT, min_val=-100000, max_val=100000),

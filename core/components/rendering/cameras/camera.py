@@ -32,11 +32,13 @@ class Camera(CameraBase, Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Projection", FieldType.HEADER),
             InspectorField("fov", "FOV", FieldType.FLOAT, min_val=1.0, max_val=179.0, step=1.0, decimals=1),
             InspectorField("near", "Near", FieldType.FLOAT, min_val=0.001, max_val=100.0, step=0.01),
             InspectorField("far", "Far", FieldType.FLOAT, min_val=0.1, max_val=100000.0, step=1.0, decimals=1),
             InspectorField("projection", "Projection", FieldType.ENUM, enum_class=CameraProjection),
             InspectorField("ortho_size", "Ortho Size", FieldType.FLOAT, min_val=0.001, max_val=1000.0),
+            InspectorField("", "Rendering", FieldType.HEADER),
             InspectorField("depth", "Depth", FieldType.INT, min_val=-100, max_val=100),
             InspectorField("render_scale", "Render Resolution", FieldType.FLOAT, min_val=0.1, max_val=1.0, step=0.05, decimals=2),
             InspectorField("resolution_mode", "Resolution Mode", FieldType.ENUM, enum_class=CameraResolutionMode),

@@ -18,6 +18,7 @@ class NetworkPlayer(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Network Player", FieldType.HEADER),
             InspectorField("player_name", "Player Name", FieldType.STRING),
             InspectorField("player_id", "Player ID", FieldType.INT, min_val=-1, max_val=9999, readonly=True),
             InspectorField("team", "Team", FieldType.INT, min_val=0, max_val=8),

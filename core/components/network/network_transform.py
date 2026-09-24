@@ -28,9 +28,11 @@ class NetworkTransform(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Sync", FieldType.HEADER),
             InspectorField("sync_position", "Sync Position", FieldType.BOOL),
             InspectorField("sync_rotation", "Sync Rotation", FieldType.BOOL),
             InspectorField("sync_scale", "Sync Scale", FieldType.BOOL),
+            InspectorField("", "Network Transform", FieldType.HEADER),
             InspectorField("authority", "Authority", FieldType.ENUM, enum_class=TransformAuthority),
             InspectorField("send_rate", "Send Rate", FieldType.FLOAT, min_val=1.0, max_val=60.0),
             InspectorField("pos_threshold", "Pos Threshold", FieldType.FLOAT, min_val=0.0, max_val=5.0),

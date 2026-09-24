@@ -21,6 +21,7 @@ class Cloud(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Cloud", FieldType.HEADER),
             InspectorField("material_path", "Cloud Material", FieldType.RESOURCE_PATH, file_filter="Shader (*.shader)"),
             InspectorField("coverage", "Coverage", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
             InspectorField("density", "Density", FieldType.SLIDER, min_val=0.0, max_val=2.0, step=0.01, decimals=2),

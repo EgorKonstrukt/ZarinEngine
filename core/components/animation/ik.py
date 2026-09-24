@@ -146,13 +146,16 @@ class TwoBoneIK(_IKBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Bones", FieldType.HEADER),
             InspectorField("root_bone", "Root Bone", FieldType.STRING),
             InspectorField("mid_bone", "Mid Bone", FieldType.STRING),
             InspectorField("tip_bone", "Tip Bone", FieldType.STRING),
+            InspectorField("", "Target", FieldType.HEADER),
             InspectorField("target_entity_id", "Target", FieldType.GAMEOBJECT),
             InspectorField("target_position", "Target Pos", FieldType.VEC3),
             InspectorField("pole_entity_id", "Pole", FieldType.GAMEOBJECT),
             InspectorField("pole_position", "Pole Pos", FieldType.VEC3),
+            InspectorField("", "Solver", FieldType.HEADER),
             InspectorField("bend_positive", "Bend Positive", FieldType.BOOL),
             InspectorField("stretch", "Stretch", FieldType.FLOAT, 0.0, 1.0, 0.01, 2),
             InspectorField("weight", "Weight", FieldType.FLOAT, 0.0, 1.0, 0.01, 2),
@@ -271,6 +274,7 @@ class FABRIKChain(_IKBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Chain", FieldType.HEADER),
             InspectorField("root_bone", "Root Bone", FieldType.STRING),
             InspectorField(
                 "bones",
@@ -281,10 +285,12 @@ class FABRIKChain(_IKBase):
                 ],
             ),
             InspectorField("chain_length", "Chain Length", FieldType.INT),
+            InspectorField("", "Target", FieldType.HEADER),
             InspectorField("target_entity_id", "Target", FieldType.GAMEOBJECT),
             InspectorField("target_position", "Target Pos", FieldType.VEC3),
             InspectorField("pole_entity_id", "Pole", FieldType.GAMEOBJECT),
             InspectorField("pole_position", "Pole Pos", FieldType.VEC3),
+            InspectorField("", "Solver", FieldType.HEADER),
             InspectorField("iterations", "Iterations", FieldType.INT),
             InspectorField("tolerance", "Tolerance", FieldType.FLOAT),
             InspectorField(

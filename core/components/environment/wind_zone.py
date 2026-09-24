@@ -39,11 +39,13 @@ class WindZone(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Wind Zone", FieldType.HEADER),
             InspectorField("mode", "Mode", FieldType.ENUM, enum_options=["Global", "Local"]),
             InspectorField("direction", "Direction (deg)", FieldType.FLOAT, min_val=0.0, max_val=360.0, step=1.0, decimals=1),
             InspectorField("speed", "Wind Speed (m/s)", FieldType.FLOAT, min_val=0.0, max_val=60.0, step=0.1, decimals=2),
             InspectorField("turbulence", "Turbulence", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("turbulence_scale", "Turbulence Scale", FieldType.FLOAT, min_val=0.1, max_val=10.0, step=0.1, decimals=2),
+            InspectorField("", "Gusts", FieldType.HEADER),
             InspectorField("gust_strength", "Gust Strength", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("gust_frequency", "Gust Frequency (Hz)", FieldType.FLOAT, min_val=0.0, max_val=5.0, step=0.01, decimals=3),
             InspectorField("gust_octaves", "Gust Octaves", FieldType.INT, min_val=1, max_val=6, step=1),

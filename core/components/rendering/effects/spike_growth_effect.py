@@ -165,6 +165,7 @@ class SpikeGrowthEffect(ObjectEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Spike Growth Effect", FieldType.HEADER),
             InspectorField("amount", "Amount", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("length", "Spike Length", FieldType.FLOAT, step=0.05, decimals=3),
             InspectorField("radius", "Base Shrink", FieldType.FLOAT, step=0.01, decimals=3),

@@ -27,8 +27,10 @@ class NetworkRigidbody(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Sync", FieldType.HEADER),
             InspectorField("sync_velocity", "Sync Velocity", FieldType.BOOL),
             InspectorField("sync_angular", "Sync Angular", FieldType.BOOL),
+            InspectorField("", "Network Rigidbody", FieldType.HEADER),
             InspectorField("authority", "Authority", FieldType.ENUM, enum_class=RigidbodyAuthority),
             InspectorField("send_rate", "Send Rate", FieldType.FLOAT, min_val=1.0, max_val=60.0),
             InspectorField("velocity_threshold", "Vel Threshold", FieldType.FLOAT, min_val=0.0, max_val=10.0),

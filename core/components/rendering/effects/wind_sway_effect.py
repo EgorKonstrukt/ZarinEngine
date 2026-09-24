@@ -20,6 +20,7 @@ class WindSwayEffect(ObjectEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Wind Sway Effect", FieldType.HEADER),
             InspectorField("amount", "Amount", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("direction", "Wind Direction", FieldType.VEC3, min_val=-1.0, max_val=1.0, step=0.05, decimals=3),
             InspectorField("speed", "Speed", FieldType.FLOAT, min_val=0.0, max_val=20.0, step=0.1, decimals=2),

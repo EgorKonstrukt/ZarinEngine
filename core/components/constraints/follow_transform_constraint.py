@@ -18,6 +18,7 @@ class FollowTransformConstraint(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Follow Transform Constraint", FieldType.HEADER),
             InspectorField("is_active", "Active", FieldType.BOOL),
             InspectorField(
                 "sources",
@@ -28,6 +29,7 @@ class FollowTransformConstraint(Component):
                     ListElementField("weight", "Weight", FieldType.FLOAT, 0.0, 1.0, 0.01, 2),
                 ]
             ),
+            InspectorField("", "Follow", FieldType.HEADER),
             InspectorField("follow_position", "Follow Position", FieldType.BOOL),
             InspectorField("follow_rotation", "Follow Rotation", FieldType.BOOL),
             InspectorField("position_speed", "Position Speed", FieldType.FLOAT, min_val=0.0, max_val=100.0, step=0.5, decimals=2),

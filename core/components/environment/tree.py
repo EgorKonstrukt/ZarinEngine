@@ -567,6 +567,7 @@ class Tree(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Tree", FieldType.HEADER),
             InspectorField("height", "Height", FieldType.FLOAT, min_val=1.0, max_val=100.0, step=0.5, decimals=2),
             InspectorField("trunk_radius", "Trunk Radius", FieldType.FLOAT, min_val=0.01, max_val=3.0, step=0.05, decimals=3),
             InspectorField("trunk_segments", "Trunk Segments", FieldType.INT, min_val=4, max_val=24, step=1),
@@ -579,6 +580,7 @@ class Tree(Component):
             InspectorField("branch_curvature", "Branch Curvature", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=2),
             InspectorField("gnarliness", "Gnarliness", FieldType.SLIDER, min_val=0.0, max_val=2.0, step=0.05, decimals=2),
             InspectorField("gravity", "Gravity Droop", FieldType.SLIDER, min_val=0.0, max_val=3.0, step=0.05, decimals=2),
+            InspectorField("", "Leaves", FieldType.HEADER),
             InspectorField("leaf_size", "Leaf Size", FieldType.FLOAT, min_val=0.05, max_val=1.5, step=0.05, decimals=3),
             InspectorField("leaf_density", "Leaf Density", FieldType.INT, min_val=0, max_val=20, step=1),
             InspectorField("seed", "Seed", FieldType.INT, min_val=0, max_val=999999, step=1),

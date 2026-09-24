@@ -134,6 +134,7 @@ class VoxelizeEffect(ObjectEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Voxelize Effect", FieldType.HEADER),
             InspectorField("amount", "Amount", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("show_base_mesh", "Show Base Mesh", FieldType.BOOL),
             InspectorField("world_grid", "World Grid", FieldType.BOOL),

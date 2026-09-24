@@ -24,6 +24,7 @@ class LabelComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Label Component", FieldType.HEADER),
             InspectorField("_halign", "H Align", FieldType.STRING),
         ] + cls._common_inspector_fields()
 

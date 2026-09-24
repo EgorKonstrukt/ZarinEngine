@@ -23,6 +23,7 @@ class XRRig(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Rig", FieldType.HEADER),
             InspectorField("move_speed", "Move Speed", FieldType.FLOAT, min_val=0.1, max_val=20.0, step=0.1, decimals=2),
             InspectorField("turn_speed", "Turn Speed", FieldType.FLOAT, min_val=1.0, max_val=180.0, step=1.0, decimals=1),
             InspectorField("vert_speed", "Vertical Speed", FieldType.FLOAT, min_val=0.1, max_val=20.0, step=0.1, decimals=2),
@@ -106,6 +107,7 @@ class XRTrackedPoseDriver(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Tracked Pose Driver", FieldType.HEADER),
             InspectorField("pose_source", "Pose Source", FieldType.ENUM,
                            enum_options=["Head", "CenterEye", "LeftEye", "RightEye", "LeftHand", "RightHand"]),
         ]
@@ -141,6 +143,7 @@ class XRController(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Controller", FieldType.HEADER),
             InspectorField("controller_hand", "Hand", FieldType.ENUM, enum_options=["Left", "Right"]),
             InspectorField("model_prefab", "Model Prefab", FieldType.STRING),
             InspectorField("enable_input", "Enable Input", FieldType.BOOL),
@@ -284,6 +287,7 @@ class XRHand(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Hand", FieldType.HEADER),
             InspectorField("hand", "Hand", FieldType.ENUM, enum_options=["Left", "Right"]),
             InspectorField("hand_tracking", "Use Hand Tracking", FieldType.BOOL),
         ]
@@ -323,6 +327,7 @@ class XRCull(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Cull", FieldType.HEADER),
             InspectorField("hide_from_eye", "Hide From Eye View", FieldType.BOOL),
         ]
 

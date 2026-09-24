@@ -30,6 +30,7 @@ class PlainTextComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Plain Text Component", FieldType.HEADER),
             InspectorField("_read_only", "Read Only", FieldType.BOOL),
             InspectorField("_placeholder_text", "Placeholder", FieldType.STRING),
             InspectorField("_tab_stop_width", "Tab Width", FieldType.INT, min_val=8, max_val=200),

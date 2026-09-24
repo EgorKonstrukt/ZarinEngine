@@ -78,6 +78,7 @@ class TrackerAudioSource(AudioSource):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         fields = [
+            InspectorField("", "Tracker Audio Source", FieldType.HEADER),
             InspectorField("clip_path", "Module", FieldType.RESOURCE_PATH,
                            file_filter="Tracker (*.mod *.xm *.s3m *.it)"),
             InspectorField("render_quality", "Render Quality", FieldType.ENUM,
@@ -87,6 +88,7 @@ class TrackerAudioSource(AudioSource):
             if field.name == "clip_path":
                 continue
             fields.append(field)
+        fields.append(InspectorField("", "Info", FieldType.HEADER))
         fields.append(InspectorField("song_length_sec", "Song Length (sec)", FieldType.FLOAT,
                                      readonly=True, decimals=2))
         fields.append(InspectorField("channels_count", "Channels", FieldType.INT, readonly=True))

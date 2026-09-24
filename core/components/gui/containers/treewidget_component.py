@@ -28,6 +28,7 @@ class TreeWidgetComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "Tree Widget Component", FieldType.HEADER),
             InspectorField("_column_count", "Columns", FieldType.INT, min_val=1, max_val=10),
             InspectorField("_header_text", "Header", FieldType.STRING),
             InspectorField("_root_is_decorated", "Decorated", FieldType.BOOL),

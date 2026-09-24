@@ -78,6 +78,7 @@ class ScriptComponent(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Script Component", FieldType.HEADER),
             InspectorField("script_path", "Script", FieldType.RESOURCE_PATH, file_filter="Python Scripts (*.py)"),
         ]
 
@@ -331,6 +332,7 @@ class ScriptComponent(Component):
 
     def _build_fields_from_class(self, cls) -> list[InspectorField]:
         fields = []
+        fields.append(InspectorField("", "Script Variables", FieldType.HEADER))
         try:
             hints = get_type_hints(cls, include_extras=True)
         except Exception:

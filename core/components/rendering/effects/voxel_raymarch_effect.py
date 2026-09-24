@@ -169,6 +169,7 @@ class VoxelRaymarchEffect(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Voxel Raymarch Effect", FieldType.HEADER),
             InspectorField("amount", "Amount", FieldType.SLIDER, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("voxel_size", "Voxel Size", FieldType.FLOAT, step=0.01, decimals=3),
             InspectorField("color", "Voxel Color", FieldType.COLOR),

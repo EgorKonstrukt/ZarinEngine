@@ -18,6 +18,7 @@ class Rigidbody(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Rigidbody", FieldType.HEADER),
             InspectorField("mass", "Mass", FieldType.FLOAT, min_val=0.001, max_val=100000.0),
             InspectorField("drag", "Drag", FieldType.FLOAT, min_val=0.0, max_val=1000.0),
             InspectorField("angular_drag", "Angular Drag", FieldType.FLOAT, min_val=0.0, max_val=1000.0),

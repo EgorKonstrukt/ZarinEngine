@@ -55,6 +55,7 @@ class Animator(Component):
     def _inspector_fields(cls):
         from core.components.inspector_meta import InspectorField, FieldType
         return [
+            InspectorField("", "Animator", FieldType.HEADER),
             InspectorField("controller", "Controller", FieldType.ASSET, resource_type="animcontroller"),
             InspectorField("avatar", "Avatar", FieldType.ASSET, resource_type="animcontroller"),
             InspectorField("apply_root_motion", "Apply Root Motion", FieldType.BOOL),

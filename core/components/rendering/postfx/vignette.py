@@ -68,6 +68,7 @@ class Vignette(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Vignette", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=5.0, step=0.05, decimals=3),
             InspectorField("_smoothness", "Smoothness", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.05, decimals=3),
             InspectorField("_roundness", "Roundness", FieldType.FLOAT, min_val=0.0, max_val=2.0, step=0.05, decimals=3),

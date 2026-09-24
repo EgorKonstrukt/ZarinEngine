@@ -167,11 +167,13 @@ class Bloom(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Bloom", FieldType.HEADER),
             InspectorField("_intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=5.0, step=0.1, decimals=2),
             InspectorField("_threshold", "Threshold", FieldType.FLOAT, min_val=0.0, max_val=5.0, step=0.05, decimals=3),
             InspectorField("_max_color", "Max Color", FieldType.FLOAT, min_val=0.5, max_val=10.0, step=0.1, decimals=2),
             InspectorField("_downsample", "Downsample", FieldType.INT, min_val=1, max_val=8, step=1),
             InspectorField("_diffusion", "Diffusion", FieldType.FLOAT, min_val=0.5, max_val=5.0, step=0.1, decimals=2),
+            InspectorField("", "Dirt", FieldType.HEADER),
             InspectorField("_dirt_texture", "Dirt Texture", FieldType.RESOURCE_PATH, min_val=0.0, max_val=0.0, step=0.0, decimals=0, file_filter="Images (*.png *.jpg *.jpeg *.tga *.bmp)"),
             InspectorField("_dirt_intensity", "Dirt Intensity", FieldType.FLOAT, min_val=0.0, max_val=5.0, step=0.05, decimals=2),
         ]

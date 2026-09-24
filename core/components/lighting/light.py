@@ -74,6 +74,7 @@ class Light(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Light", FieldType.HEADER),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("intensity", "Intensity", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
@@ -406,10 +407,12 @@ class DirectionalLight(Light):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Light", FieldType.HEADER),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("intensity", "Intensity (lux)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=100.0, decimals=1,
                            description="Illuminance in lux. Direct sun 100000, daylight 10000-25000, overcast 1000-10000, sunrise 400, office 500, twilight 10, full moon 0.2"),
             InspectorField("procedural_sky_lighting", "Procedural Sky Lighting", FieldType.BOOL),
+            InspectorField("", "Shadows", FieldType.HEADER),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
         ]
 
@@ -453,10 +456,12 @@ class PointLight(Light):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Light", FieldType.HEADER),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("intensity", "Intensity (lumens)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1,
                            description="Total flux in lumens. Candle 13, desk lamp 300, room ceiling 800, 100W bulb 1600, street 1000-40000, stadium 100000"),
             InspectorField("range", "Range", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
+            InspectorField("", "Shadows", FieldType.HEADER),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
         ]
 
@@ -534,12 +539,15 @@ class SpotLight(Light):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Light", FieldType.HEADER),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("intensity", "Intensity (lumens)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1,
                            description="Total flux in lumens inside the cone. Narrow cones concentrate the same lumens, wide cones spread them. Flashlight 100-1000, street 1000-40000"),
             InspectorField("range", "Range", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
+            InspectorField("", "Spot", FieldType.HEADER),
             InspectorField("spot_angle", "Spot Angle", FieldType.FLOAT, min_val=1.0, max_val=179.0, step=1.0, decimals=1),
             InspectorField("spot_inner_angle", "Inner Angle", FieldType.FLOAT, min_val=0.0, max_val=179.0, step=1.0, decimals=1),
+            InspectorField("", "Shadows", FieldType.HEADER),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
         ]
 
@@ -618,16 +626,19 @@ class AreaLight(Light):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Light", FieldType.HEADER),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("intensity", "Intensity (nits)", FieldType.FLOAT, min_val=0.0, max_val=200000.0, step=10.0, decimals=1,
                            description="Surface brightness in nits (cd per sq m). Monitor 200, office panel 500, overcast sky 2000, softbox 10000. Same nits on a bigger panel lights the scene more"),
             InspectorField("range", "Range", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
+            InspectorField("", "Area", FieldType.HEADER),
             InspectorField("area_type", "Area Type", FieldType.ENUM, enum_class=LightAreaType),
             InspectorField("area_width", "Area Width", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.1, decimals=2),
             InspectorField("area_height", "Area Height", FieldType.FLOAT, min_val=0.01, max_val=100.0, step=0.1, decimals=2),
             InspectorField("area_double_sided", "Double Sided", FieldType.BOOL),
             InspectorField("area_samples", "Samples", FieldType.INT, min_val=1, max_val=64, step=1),
             InspectorField("area_shadow_bias", "Shadow Bias", FieldType.FLOAT, min_val=0.0, max_val=0.1, step=0.001, decimals=4),
+            InspectorField("", "Shadows", FieldType.HEADER),
             InspectorField("cast_shadows", "Cast Shadows", FieldType.BOOL),
         ]
 

@@ -345,6 +345,7 @@ class DynamicCubemaps(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Dynamic Cubemaps", FieldType.HEADER),
             InspectorField("follow_camera", "Follow Camera", FieldType.BOOL),
             InspectorField("resolution", "Resolution", FieldType.INT_SLIDER, 32, 512),
             InspectorField("update_interval", "Update Interval (s)", FieldType.FLOAT, 0.05, 2.0),

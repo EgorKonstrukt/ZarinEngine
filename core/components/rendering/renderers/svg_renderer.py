@@ -18,6 +18,7 @@ class SvgRenderer(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Svg Renderer", FieldType.HEADER),
             InspectorField("svg_path", "SVG File", FieldType.RESOURCE_PATH, file_filter="SVG (*.svg)"),
             InspectorField("color", "Color", FieldType.COLOR),
             InspectorField("flip_x", "Flip X", FieldType.BOOL),

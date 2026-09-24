@@ -23,12 +23,15 @@ class WaterVolume(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Water Volume", FieldType.HEADER),
             InspectorField("mode", "Mode", FieldType.ENUM, enum_options=["Infinite", "Box"]),
             InspectorField("water_level", "Water Level", FieldType.FLOAT, min_val=-10000.0, max_val=10000.0, step=0.01, decimals=3),
             InspectorField("size", "Box Size", FieldType.VEC3, min_val=0.01, max_val=100000.0, step=0.1, decimals=2),
             InspectorField("density", "Water Density", FieldType.FLOAT, min_val=1.0, max_val=2000.0, step=0.1, decimals=2),
+            InspectorField("", "Flow", FieldType.HEADER),
             InspectorField("flow_strength", "Flow Strength", FieldType.FLOAT, min_val=0.0, max_val=50.0, step=0.01, decimals=3),
             InspectorField("flow_direction", "Flow Dir (deg)", FieldType.FLOAT, min_val=0.0, max_val=360.0, step=1.0, decimals=1),
+            InspectorField("", "Waves", FieldType.HEADER),
             InspectorField("wave_amplitude", "Wave Amplitude", FieldType.FLOAT, min_val=0.0, max_val=50.0, step=0.01, decimals=3),
             InspectorField("wave_frequency", "Wave Frequency", FieldType.FLOAT, min_val=0.0, max_val=10.0, step=0.01, decimals=3),
             InspectorField("wave_speed", "Wave Speed", FieldType.FLOAT, min_val=0.0, max_val=10.0, step=0.01, decimals=3),

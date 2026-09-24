@@ -61,6 +61,7 @@ class Animation(Component):
     def _inspector_fields(cls):
         from core.components.inspector_meta import InspectorField, FieldType
         return [
+            InspectorField("", "Animation", FieldType.HEADER),
             InspectorField("clip", "Animation Clip", FieldType.ASSET, resource_type="animclip"),
             InspectorField("play_on_start", "Play on Start", FieldType.BOOL),
             InspectorField("speed", "Speed", FieldType.FLOAT),

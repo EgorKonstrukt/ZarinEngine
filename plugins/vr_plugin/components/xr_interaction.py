@@ -20,6 +20,7 @@ class XRInteractionManager(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Interaction", FieldType.HEADER),
             InspectorField("enable_hover", "Enable Hover", FieldType.BOOL),
             InspectorField("max_raycast_distance", "Max Raycast Distance", FieldType.FLOAT, min_val=1.0, max_val=200.0, step=1.0, decimals=1),
         ]
@@ -56,6 +57,7 @@ class XRBaseInteractor(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Interactor", FieldType.HEADER),
             InspectorField("hand", "Hand", FieldType.ENUM, enum_options=["Left", "Right"]),
             InspectorField("interaction_layers", "Interaction Layers", FieldType.STRING),
             InspectorField("ray_length", "Ray Length", FieldType.FLOAT, min_val=0.5, max_val=100.0, step=0.5, decimals=1),
@@ -155,6 +157,7 @@ class XRDirectInteractor(XRBaseInteractor):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         fields = XRBaseInteractor._inspector_fields()
+        fields.append(InspectorField("", "Direct", FieldType.HEADER))
         fields.append(InspectorField("reach_radius", "Reach Radius", FieldType.FLOAT, min_val=0.05, max_val=2.0, step=0.05, decimals=2))
         return fields
 
@@ -179,6 +182,7 @@ class XRPokeInteractor(XRBaseInteractor):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         fields = XRBaseInteractor._inspector_fields()
+        fields.append(InspectorField("", "XR Poke Interactor", FieldType.HEADER))
         fields.append(InspectorField("poke_radius", "Poke Radius", FieldType.FLOAT, min_val=0.01, max_val=0.5, step=0.01, decimals=2))
         return fields
 
@@ -208,6 +212,7 @@ class XRBaseInteractable(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "XR Base Interactable", FieldType.HEADER),
             InspectorField("interaction_layers", "Interaction Layers", FieldType.STRING),
             InspectorField("select_on_hover", "Select Mode", FieldType.ENUM, enum_options=["Toggle", "Hold"]),
         ]
@@ -253,6 +258,7 @@ class XRGrabInteractable(XRBaseInteractable):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         fields = XRBaseInteractable._inspector_fields()
+        fields.append(InspectorField("", "XR Grab Interactable", FieldType.HEADER))
         fields.append(InspectorField("attach_to_point", "Attach To Controller", FieldType.BOOL))
         fields.append(InspectorField("throw_smoothing", "Throw Smoothing", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.05, decimals=2))
         return fields

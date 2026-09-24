@@ -72,6 +72,7 @@ class Blur(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Blur", FieldType.HEADER),
             InspectorField("_radius", "Radius", FieldType.FLOAT, min_val=0.0, max_val=32.0, step=0.5, decimals=2),
             InspectorField("_iterations", "Iterations", FieldType.INT, min_val=1, max_val=8, step=1),
         ]

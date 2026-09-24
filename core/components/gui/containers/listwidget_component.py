@@ -32,6 +32,7 @@ class ListWidgetComponent(GuiWidgetComponentBase):
     @classmethod
     def _inspector_fields(cls):
         return [
+            InspectorField("", "List Widget Component", FieldType.HEADER),
             InspectorField("_items", "Items", FieldType.LIST),
             InspectorField("_current_index", "Current Index", FieldType.INT, min_val=-1, max_val=100000),
             InspectorField("_selection_mode", "Selection Mode", FieldType.INT, min_val=0, max_val=3),

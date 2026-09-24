@@ -84,6 +84,7 @@ class PaniniProjection(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Panini Projection", FieldType.HEADER),
             InspectorField("_distance", "Distance", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
             InspectorField("_crop_to_fit", "Crop to Fit", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01, decimals=3),
         ]

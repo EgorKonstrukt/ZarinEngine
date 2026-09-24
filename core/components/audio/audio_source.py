@@ -77,11 +77,13 @@ class AudioSource(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Playback", FieldType.HEADER),
             InspectorField("clip_path", "Clip", FieldType.RESOURCE_PATH, file_filter="Audio (*.wav *.mp3 *.ogg *.flac)"),
             InspectorField("volume", "Volume", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01),
             InspectorField("pitch", "Pitch", FieldType.FLOAT, min_val=-3.0, max_val=3.0, step=0.01),
             InspectorField("loop", "Loop", FieldType.BOOL),
             InspectorField("play_on_awake", "Play On Awake", FieldType.BOOL),
+            InspectorField("", "Spatial", FieldType.HEADER),
             InspectorField("spatial_blend", "Spatial Blend", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.01),
             InspectorField("zone_shape", "Zone Shape", FieldType.ENUM, enum_class=AudioZoneShape),
             InspectorField("volume_rolloff", "Volume Rolloff", FieldType.CURVE),
@@ -89,6 +91,7 @@ class AudioSource(Component):
             InspectorField("max_distance", "Max Distance", FieldType.FLOAT, min_val=0.0, max_val=10000.0, step=1.0, decimals=2),
             InspectorField("box_inner_size", "Box Inner Size", FieldType.VEC3, min_val=0.0, max_val=10000.0, step=0.5, decimals=2),
             InspectorField("box_outer_size", "Box Outer Size", FieldType.VEC3, min_val=0.0, max_val=10000.0, step=1.0, decimals=2),
+            InspectorField("", "Fades", FieldType.HEADER),
             InspectorField("offset", "Offset (sec)", FieldType.FLOAT, min_val=0.0, max_val=3600.0, step=0.01, decimals=2),
             InspectorField("fade_in_time", "Fade In Time", FieldType.FLOAT, min_val=0.0, max_val=60.0, step=0.1, decimals=2),
             InspectorField("fade_out_time", "Fade Out Time", FieldType.FLOAT, min_val=0.0, max_val=60.0, step=0.1, decimals=2),

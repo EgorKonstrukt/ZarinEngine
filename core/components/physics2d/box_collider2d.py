@@ -20,11 +20,14 @@ class BoxCollider2D(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Collision", FieldType.HEADER),
             InspectorField("layer", "Layer", FieldType.LAYER),
             InspectorField("mask", "Collision Mask", FieldType.LAYER_MASK),
+            InspectorField("", "Shape", FieldType.HEADER),
             InspectorField("offset", "Offset", FieldType.VEC2),
             InspectorField("size", "Size", FieldType.VEC2),
             InspectorField("is_trigger", "Is Trigger", FieldType.BOOL),
+            InspectorField("", "Material", FieldType.HEADER),
             InspectorField("physic_material", "Physic Material", FieldType.ASSET, resource_type="physicmaterial"),
         ]
 

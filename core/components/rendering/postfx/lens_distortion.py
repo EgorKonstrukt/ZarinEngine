@@ -77,6 +77,7 @@ class LensDistortion(GraphicsEffect):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Lens Distortion", FieldType.HEADER),
             InspectorField("_strength", "Strength", FieldType.FLOAT, min_val=-1.0, max_val=1.0, step=0.05, decimals=3),
             InspectorField("_chromatic", "Chromatic", FieldType.FLOAT, min_val=0.0, max_val=1.0, step=0.05, decimals=3),
             InspectorField("_scale", "Scale", FieldType.FLOAT, min_val=0.5, max_val=1.5, step=0.05, decimals=3),

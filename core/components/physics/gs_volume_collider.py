@@ -226,6 +226,7 @@ class GSVolumeCollider(Component):
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
         return [
+            InspectorField("", "Gs Volume Collider", FieldType.HEADER),
             InspectorField("ply_path", "Splat Path", FieldType.RESOURCE_PATH,
                            file_filter="Splats (*.ply *.sog *.ssog)"),
             InspectorField("voxel_size", "Voxel Size", FieldType.FLOAT,
