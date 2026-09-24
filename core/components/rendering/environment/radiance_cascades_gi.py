@@ -19,7 +19,7 @@ import numpy as np
 from core.components.inspector_meta import FieldType, InspectorField
 from core.ecs.ecs import Component, ComponentRegistry
 from core.foundation.logger import Logger
-from core.shaders.compute_shader import compile_compute_shader
+from core.renderer.compute_shader import compile_compute_shader
 
 
 @ComponentRegistry.register
@@ -46,7 +46,7 @@ class RadianceCascadesGI(Component):
 
     def __init__(self):
         super().__init__()
-        self._compute_shader_path: str = "core/shaders/RadianceCascades.compute"
+        self._compute_shader_path: str = "core/shaders/compute/RadianceCascades.compute"
         self._resolution_scale: float = 0.5
         self._intensity: float = 1.0
         self._step_size: float = 0.5
@@ -90,7 +90,7 @@ class RadianceCascadesGI(Component):
     def deserialize(cls, data: dict) -> RadianceCascadesGI:
         r = cls()
         r.enabled = data.get("enabled", True)
-        r._compute_shader_path = data.get("compute_shader_path", "core/shaders/RadianceCascades.compute")
+        r._compute_shader_path = data.get("compute_shader_path", "core/shaders/compute/RadianceCascades.compute")
         r._resolution_scale = float(data.get("resolution_scale", 0.5))
         r._intensity = float(data.get("intensity", 1.0))
         r._step_size = float(data.get("step_size", 0.5))

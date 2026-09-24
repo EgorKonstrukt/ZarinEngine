@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import numpy as np
 from core.foundation.logger import Logger
-from core.renderer.mesh_data import MeshData, read_shader
+from core.renderer.mesh_data import MeshData, read_shader, read_shader_pair
 from core.renderer.meshes import make_cube_mesh, make_sphere_mesh, make_plane_mesh, make_quad_mesh, make_water_plane, make_water_box
 from core.renderer.grid import GridRenderer
 from core.renderer.gizmo import GizmoRenderer, FATLINE_VERT, FATLINE_FRAG
@@ -40,73 +40,85 @@ class RendererProgramsMixin:
                 self.load_config(get_global_config())
             except Exception:
                 pass
-            default_frag_src = read_shader("default.frag")
+            default_vert_src, default_frag_src = read_shader_pair("default")
             default_frag_src = ShaderManager._inject_area_shadows(default_frag_src)
             self._default_prog = program_with_fallback(
                 self._ctx,
-                vertex_shader=read_shader("default.vert"),
+                vertex_shader=default_vert_src,
                 fragment_shader=default_frag_src,
                 label="default"
             )
+            grid_vert_src, grid_frag_src = read_shader_pair("grid")
             self._grid_prog = self._ctx.program(
-                vertex_shader=read_shader("grid.vert"),
-                fragment_shader=read_shader("grid.frag")
+                vertex_shader=grid_vert_src,
+                fragment_shader=grid_frag_src
             )
+            gizmo_vert_src, gizmo_frag_src = read_shader_pair("gizmo")
             self._gizmo_prog = self._ctx.program(
-                vertex_shader=read_shader("gizmo.vert"),
-                fragment_shader=read_shader("gizmo.frag")
+                vertex_shader=gizmo_vert_src,
+                fragment_shader=gizmo_frag_src
             )
             self._gizmo_fatline_prog = self._ctx.program(
                 vertex_shader=FATLINE_VERT,
                 fragment_shader=FATLINE_FRAG
             )
+            gizmo_solid_vert_src, gizmo_solid_frag_src = read_shader_pair("gizmo_solid")
             self._gizmo_solid_prog = self._ctx.program(
-                vertex_shader=read_shader("gizmo_solid.vert"),
-                fragment_shader=read_shader("gizmo_solid.frag")
+                vertex_shader=gizmo_solid_vert_src,
+                fragment_shader=gizmo_solid_frag_src
             )
             self._wireframe_prog = self._ctx.program(
-                vertex_shader=read_shader("gizmo.vert"),
-                fragment_shader=read_shader("gizmo.frag")
+                vertex_shader=gizmo_vert_src,
+                fragment_shader=gizmo_frag_src
             )
+            outline_vert_src, outline_frag_src = read_shader_pair("outline")
             self._outline_prog = self._ctx.program(
-                vertex_shader=read_shader("outline.vert"),
-                fragment_shader=read_shader("outline.frag")
+                vertex_shader=outline_vert_src,
+                fragment_shader=outline_frag_src
             )
+            shadow_vert_src, shadow_frag_src = read_shader_pair("shadow")
             self._shadow_prog = program_with_fallback(
                 self._ctx,
-                vertex_shader=read_shader("shadow.vert"),
-                fragment_shader=read_shader("shadow.frag"),
+                vertex_shader=shadow_vert_src,
+                fragment_shader=shadow_frag_src,
                 label="shadow"
             )
+            particle_vert_src, particle_frag_src = read_shader_pair("particle_gpu")
             self._particle_prog = program_with_fallback(
                 self._ctx,
-                vertex_shader=read_shader("particle_gpu.vert"),
-                fragment_shader=read_shader("particle.frag"),
+                vertex_shader=particle_vert_src,
+                fragment_shader=particle_frag_src,
                 label="particle_gpu"
             )
+            icon_vert_src, icon_frag_src = read_shader_pair("icon")
             self._icon_prog = self._ctx.program(
-                vertex_shader=read_shader("icon.vert"),
-                fragment_shader=read_shader("icon.frag")
+                vertex_shader=icon_vert_src,
+                fragment_shader=icon_frag_src
             )
+            sprite_vert_src, sprite_frag_src = read_shader_pair("sprite")
             self._sprite_prog = self._ctx.program(
-                vertex_shader=read_shader("sprite.vert"),
-                fragment_shader=read_shader("sprite.frag")
+                vertex_shader=sprite_vert_src,
+                fragment_shader=sprite_frag_src
             )
+            video_vert_src, video_frag_src = read_shader_pair("video")
             self._video_prog = self._ctx.program(
-                vertex_shader=read_shader("video.vert"),
-                fragment_shader=read_shader("video.frag")
+                vertex_shader=video_vert_src,
+                fragment_shader=video_frag_src
             )
+            text_vert_src, text_frag_src = read_shader_pair("text")
             self._text_prog = self._ctx.program(
-                vertex_shader=read_shader("text.vert"),
-                fragment_shader=read_shader("text.frag")
+                vertex_shader=text_vert_src,
+                fragment_shader=text_frag_src
             )
+            overlay_vert_src, overlay_frag_src = read_shader_pair("shadow_overlay")
             self._overlay_prog = self._ctx.program(
-                vertex_shader=read_shader("shadow_overlay.vert"),
-                fragment_shader=read_shader("shadow_overlay.frag")
+                vertex_shader=overlay_vert_src,
+                fragment_shader=overlay_frag_src
             )
+            projector_vert_src, projector_frag_src = read_shader_pair("projector")
             self._projector_prog = self._ctx.program(
-                vertex_shader=read_shader("projector.vert"),
-                fragment_shader=read_shader("projector.frag")
+                vertex_shader=projector_vert_src,
+                fragment_shader=projector_frag_src
             )
             PP_COPY_FRAG = """
 #version 330 core
@@ -118,7 +130,7 @@ void main() {
 }
 """
             self._pp_copy_prog = self._ctx.program(
-                vertex_shader=read_shader("shadow_overlay.vert"),
+                vertex_shader=overlay_vert_src,
                 fragment_shader=PP_COPY_FRAG
             )
             PP_TONEMAP_FRAG = """
@@ -143,7 +155,7 @@ void main() {
 }
 """
             self._pp_tonemap_prog = self._ctx.program(
-                vertex_shader=read_shader("shadow_overlay.vert"),
+                vertex_shader=overlay_vert_src,
                 fragment_shader=PP_TONEMAP_FRAG
             )
             quad_verts = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0], dtype=np.float32)
@@ -166,9 +178,10 @@ void main() {
                 self._quad_ibo
             )
             try:
+                underwater_vert_src, underwater_frag_src = read_shader_pair("underwater")
                 self._underwater_prog = self._ctx.program(
-                    vertex_shader=read_shader("shadow_overlay.vert"),
-                    fragment_shader=read_shader("underwater.frag")
+                    vertex_shader=underwater_vert_src,
+                    fragment_shader=underwater_frag_src
                 )
             except Exception:
                 self._underwater_prog = None
@@ -181,9 +194,10 @@ void main() {
             else:
                 self._underwater_vao = None
             try:
+                caustics_vert_src, caustics_frag_src = read_shader_pair("caustics")
                 self._caustics_prog = self._ctx.program(
-                    vertex_shader=read_shader("shadow_overlay.vert"),
-                    fragment_shader=read_shader("caustics.frag")
+                    vertex_shader=caustics_vert_src,
+                    fragment_shader=caustics_frag_src
                 )
             except Exception:
                 self._caustics_prog = None
@@ -225,7 +239,7 @@ void main() {
 }
 """
             self._velocity_prog = self._ctx.program(
-                vertex_shader=read_shader("shadow_overlay.vert"),
+                vertex_shader=overlay_vert_src,
                 fragment_shader=VELOCITY_FRAG
             )
             self._velocity_vao = self._ctx.vertex_array(
@@ -271,7 +285,7 @@ void main() {
                 self._quad_ibo
             )
             self._shaders = ShaderManager(self._ctx)
-            self._shaders.store("core/shaders/default", self._default_prog)
+            self._shaders.store("core/shaders/internal/Default", self._default_prog)
             self._materials = MaterialManager(self._ctx)
             self._mesh_loader = MeshLoader(self._ctx, self._default_prog, self._outline_prog)
             self._mesh_loader.register_primitives()
@@ -300,7 +314,7 @@ void main() {
             self._init_water_sim()
             self._particles = ParticleRenderer(self._ctx, self._particle_prog)
             self._particles.load_compute_shader(
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), "shaders", "particle.compute")
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), "shaders", "compute", "particle.compute")
             )
             self._sprites = SpriteRendererGL(self._ctx, self._sprite_prog)
             self._sprites.set_texture_loader(self._materials.load_texture)
@@ -331,8 +345,7 @@ void main() {
             return cached
         prog = None
         try:
-            fx_vert = read_shader("object_fx.vert")
-            fx_frag = read_shader("object_fx.frag")
+            fx_vert, fx_frag = read_shader_pair("object_fx")
             fx_frag = ShaderManager._inject_area_shadows(fx_frag)
             fx_frag = ShaderManager._inject_caustics(fx_frag)
             uniforms_block = "\n".join(fx.fx_fragment_uniforms() for fx in fx_list)

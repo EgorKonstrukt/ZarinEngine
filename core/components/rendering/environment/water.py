@@ -108,7 +108,7 @@ class Water(Component):
     def __init__(self):
         super().__init__()
         self._time_origin: float = time.time()
-        self.material_path: str = "core/shaders/Water.shader"
+        self.material_path: str = "core/shaders/materials/Water.shader"
         self.surface_type: str = "Ocean"
         self.infinite_ocean: bool = True
         self.ocean_size: float = 2000.0
@@ -447,7 +447,7 @@ class Water(Component):
     def deserialize(cls, data: dict) -> Water:
         c = cls()
         c.enabled = data.get("enabled", True)
-        c.material_path = data.get("material_path", "core/shaders/Water.shader")
+        c.material_path = data.get("material_path", "core/shaders/materials/Water.shader")
         c.surface_type = data.get("surface_type", "Ocean")
         c.infinite_ocean = data.get("infinite_ocean", True)
         c.ocean_size = data.get("ocean_size", 2000.0)

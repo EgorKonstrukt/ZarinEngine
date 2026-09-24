@@ -18,7 +18,7 @@ from core.components.lighting.light import Light, LightType
 
 from core.maths.math3d import Mat4, Vec3
 from core.foundation.logger import Logger
-from core.shaders.compute_shader import compile_compute_shader
+from core.renderer.compute_shader import compile_compute_shader
 
 _INST_STRIDE = 46
 _MAX_INSTANCES = 256
@@ -55,7 +55,7 @@ class RaytracingRenderer(Component):
 
     def __init__(self):
         super().__init__()
-        self._compute_shader_path: str = "core/shaders/Raytracing.compute"
+        self._compute_shader_path: str = "core/shaders/compute/Raytracing.compute"
         self._resolution_scale: float = 0.5
         self._max_bounces: int = 1
         self._samples_per_pixel: int = 1
@@ -130,7 +130,7 @@ class RaytracingRenderer(Component):
     def deserialize(cls, data: dict) -> RaytracingRenderer:
         r = cls()
         r.enabled = data.get("enabled", True)
-        r._compute_shader_path = data.get("compute_shader_path", "core/shaders/Raytracing.compute")
+        r._compute_shader_path = data.get("compute_shader_path", "core/shaders/compute/Raytracing.compute")
         r._resolution_scale = float(data.get("resolution_scale", 0.5))
         r._samples_per_pixel = int(data.get("samples_per_pixel", 1))
         r._accumulate = data.get("accumulate", False)
@@ -235,7 +235,7 @@ class RaytracingRenderer(Component):
             self._sky_env_tex.repeat_y = False
 
         if self._sky_env_prog is None:
-            env_path = os.path.abspath("core/shaders/SkyEnv.compute")
+            env_path = os.path.abspath("core/shaders/compute/SkyEnv.compute")
             if not os.path.exists(env_path):
                 Logger.error(f"SkyEnv compute shader not found: {env_path}")
                 return False

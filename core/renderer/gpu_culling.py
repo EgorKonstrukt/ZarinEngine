@@ -149,16 +149,15 @@ class GpuCulling:
         self._bounding_ssbo = self._ctx.buffer(reserve=sphere_size)
         self._instance_output_ssbo = self._ctx.buffer(reserve=output_size)
         self._counter_ssbo = self._ctx.buffer(reserve=4)
-        from core.renderer.mesh_data import SHADER_DIR
-        import os
-        path = os.path.join(SHADER_DIR, "cull.comp")
-        if os.path.exists(path):
-            with open(path) as f:
-                src = f.read()
+        from core.renderer.mesh_data import read_compute_source
+        try:
+            src = read_compute_source("cull")
             try:
                 self._compute_shader = self._ctx.compute_shader(src)
             except Exception:
                 self._compute_shader = None
+        except Exception:
+            self._compute_shader = None
 
     def _build_spheres(self, matrices: list[Mat4], bounding_radii: np.ndarray) -> np.ndarray:
         from core._render_utils import compute_bounding_spheres

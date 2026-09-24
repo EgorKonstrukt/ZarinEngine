@@ -87,6 +87,9 @@ def program_with_fallback(ctx: moderngl.Context, vertex_shader: str,
         return None
 
 
+_SHADER_SUBDIRS = ("materials", "internal", "compute", "include", "legacy")
+
+
 def _resolve_shader_path(shader_path: str) -> str:
     if os.path.isabs(shader_path) or os.path.exists(shader_path):
         return shader_path
@@ -95,8 +98,8 @@ def _resolve_shader_path(shader_path: str) -> str:
         os.path.join(_ENGINE_ROOT, "core", "shaders", shader_path),
     ]
     shader_name = os.path.basename(shader_path)
-    if shader_name != shader_path:
-        candidates.append(os.path.join(_ENGINE_ROOT, "core", "shaders", shader_name))
+    for sub in _SHADER_SUBDIRS:
+        candidates.append(os.path.join(_ENGINE_ROOT, "core", "shaders", sub, shader_name))
     for c in candidates:
         if os.path.exists(c):
             return c
@@ -127,6 +130,10 @@ class ShaderManager:
         task_id = self._compile_task(shader_path)
         task_start(task_id, f"Compiling shader {os.path.basename(shader_path)}...", fraction=None)
         try:
+            resolved_shader = _resolve_shader_path(shader_path if shader_path.endswith(".shader") else shader_path + ".shader")
+            if os.path.exists(resolved_shader):
+                self._cache.pop(shader_path, None)
+                return self._compile_shader_file_visit(resolved_shader, set())
             base = os.path.join(SHADER_DIR, shader_path)
             vert_file = f"{base}.vert"
             frag_file = f"{base}.frag"

@@ -49,7 +49,7 @@ class Cloud(Component):
     def __init__(self):
         super().__init__()
         self._time_origin: float = time.time()
-        self.material_path: str = "core/shaders/Clouds.shader"
+        self.material_path: str = "core/shaders/materials/Clouds.shader"
         self.coverage: float = 0.78
         self.density: float = 1.12
         self.speed: float = 0.38
@@ -152,7 +152,7 @@ class Cloud(Component):
     def render_cloud_layer(self, ctx, shaders, view_mat, proj_mat, dir_light, cam_pos, plane_mesh):
         if self.height < 8.0 or self.opacity <= 0.001:
             return
-        cloud_prog = shaders.get_or_compile("core/shaders/CloudLayer.shader") if shaders else None
+        cloud_prog = shaders.get_or_compile("core/shaders/materials/CloudLayer.shader") if shaders else None
         if not cloud_prog:
             return
         if dir_light:
@@ -248,7 +248,7 @@ class Cloud(Component):
     def deserialize(cls, data: dict) -> Cloud:
         c = cls()
         c.enabled = data.get("enabled", True)
-        c.material_path = data.get("material_path", "core/shaders/Clouds.shader")
+        c.material_path = data.get("material_path", "core/shaders/materials/Clouds.shader")
         c.coverage = data.get("coverage", 0.78)
         c.density = data.get("density", 1.12)
         c.speed = data.get("speed", 0.38)

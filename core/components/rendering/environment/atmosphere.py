@@ -14,7 +14,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 from core.foundation.logger import Logger
 
 _SHADERS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))))), "shaders")
+    os.path.abspath(__file__))))), "core", "shaders", "compute")
 _SHADER_PATH = os.path.join(_SHADERS_DIR, "Atmosphere.compute")
 
 _TRANSMITTANCE_W = 128

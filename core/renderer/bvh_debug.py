@@ -3,7 +3,7 @@ import os
 import numpy as np
 import moderngl
 from typing import Optional
-from core.shaders.compute_shader import compile_compute_shader
+from core.renderer.compute_shader import compile_compute_shader
 
 
 class BVHDebugRenderer:
@@ -65,7 +65,7 @@ class BVHDebugRenderer:
 
     def _ensure_progs(self, ctx: moderngl.Context) -> bool:
         if self._prog is None:
-            path = os.path.abspath("core/shaders/BVHDebug.compute")
+            path = os.path.abspath("core/shaders/compute/BVHDebug.compute")
             if not os.path.exists(path):
                 return False
             try:

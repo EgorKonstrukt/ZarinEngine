@@ -641,7 +641,7 @@ class GeometryCacheMixin:
                     ent.add_component(mr)
                 bark_path = tree.material_path
                 if not bark_path:
-                    bark_path = "core/shaders/Tree.shader"
+                    bark_path = "core/shaders/materials/Tree.shader"
                 mr.materials[0]["path"] = bark_path
                 if mesh.sub_mesh_ranges:
                     leaf_path = tree.leaf_material_path

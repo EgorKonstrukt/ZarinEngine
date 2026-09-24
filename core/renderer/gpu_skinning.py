@@ -26,15 +26,10 @@ class GpuSkinning:
         self._try_compile()
     def _try_compile(self):
         try:
-            p = os.path.join(os.path.dirname(os.path.dirname(__file__)), "shaders", "skinning.comp")
-            if not os.path.exists(p):
-                from core.renderer.mesh_data import SHADER_DIR
-                p = os.path.join(SHADER_DIR, "skinning.comp")
-            if os.path.exists(p):
-                with open(p) as f:
-                    src = f.read()
-                self._prog = self._ctx.compute_shader(src)
-                self._ready = self._prog is not None
+            from core.renderer.mesh_data import read_compute_source
+            src = read_compute_source("skinning")
+            self._prog = self._ctx.compute_shader(src)
+            self._ready = self._prog is not None
         except Exception:
             self._ready = False
     def is_ready(self) -> bool:

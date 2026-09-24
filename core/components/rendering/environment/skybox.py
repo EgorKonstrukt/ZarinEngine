@@ -143,7 +143,7 @@ class Skybox(Component):
 
     def __init__(self):
         super().__init__()
-        self.material_path: str = "core/shaders/Skybox.shader"
+        self.material_path: str = "core/shaders/materials/Skybox.shader"
         self.skybox_path: str = ""
         self.show_background: bool = True
         self.affect_environment: bool = True
@@ -283,7 +283,7 @@ class Skybox(Component):
     def deserialize(cls, data: dict) -> Skybox:
         c = cls()
         c.enabled = data.get("enabled", True)
-        c.material_path = data.get("material_path", "core/shaders/Skybox.shader")
+        c.material_path = data.get("material_path", "core/shaders/materials/Skybox.shader")
         c.skybox_path = data.get("skybox_path", "")
         c.show_background = data.get("show_background", True)
         c.affect_environment = data.get("affect_environment", True)

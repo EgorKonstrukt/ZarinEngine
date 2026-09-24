@@ -135,7 +135,7 @@ out vec4 frag_color;
                 self._vox_cube_ibo,
             )
             self._vox_compute = None
-            comp_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "shaders", "voxelize.comp")
+            comp_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "shaders", "legacy", "voxelize.comp")
             if os.path.exists(comp_path):
                 try:
                     with open(comp_path) as f:

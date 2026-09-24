@@ -10,7 +10,7 @@ from typing import Optional
 from core.ecs.ecs import Component, ComponentRegistry
 from core.maths.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
-from core.shaders.nav_pathfinding import NavWorld
+from core.navigation.nav_world import NavWorld
 
 
 _CC_TYPE = None

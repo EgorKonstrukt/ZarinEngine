@@ -606,7 +606,7 @@ class ProceduralSky(Component):
 
     def __init__(self):
         super().__init__()
-        self.material_path: str = "core/shaders/Sky.shader"
+        self.material_path: str = "core/shaders/materials/Sky.shader"
         self.environment_path: str = ""
         self.night_sky_enabled: bool = True
         self.night_exposure: float = 1.0
@@ -1098,7 +1098,7 @@ class ProceduralSky(Component):
     def deserialize(cls, data: dict) -> ProceduralSky:
         c = cls()
         c.enabled = data.get("enabled", True)
-        c.material_path = data.get("material_path", "core/shaders/Sky.shader")
+        c.material_path = data.get("material_path", "core/shaders/materials/Sky.shader")
         c.environment_path = data.get("environment_path", "")
         c.night_sky_enabled = data.get("night_sky_enabled", True)
         c.night_exposure = data.get("night_exposure", 1.0)

@@ -657,7 +657,7 @@ class _PopulateWorker(QThread):
             search_root = assets_dir
         engine_root = _find_engine_root()
         extra_dirs: list[str] = []
-        for sub in ("core/shaders", "editor/shaders"):
+        for sub in ("core/shaders",):
             for base in (self._project_root, engine_root):
                 if not base:
                     continue

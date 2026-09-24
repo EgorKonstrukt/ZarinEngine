@@ -496,8 +496,8 @@ def build():
     if (ROOT / "prefabs").exists():
         NUITKA_OPTIONS.append("--include-data-dir=prefabs=prefabs")
     # Include shaders (needed by renderer)
-    if (ROOT / "editor" / "shaders").exists():
-        NUITKA_OPTIONS.append("--include-data-dir=editor/shaders=editor/shaders")
+    if (ROOT / "core" / "shaders").exists():
+        NUITKA_OPTIONS.append("--include-data-dir=core/shaders=core/shaders")
 
     # Entry module MUST be last вЂ” Nuitka treats everything after it as positional args
     NUITKA_OPTIONS.append(ENTRY)
