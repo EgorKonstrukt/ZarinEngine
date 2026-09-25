@@ -36,29 +36,28 @@ class TerrainGraphCollabBridge(QObject):
         self._cursor_items: dict[str, list] = {}
         self._own_peer_id = ""
         self._sync_requested = False
-
         self._cursor_timer = QTimer(self)
         self._cursor_timer.setInterval(33)
         self._cursor_timer.timeout.connect(self._send_cursor)
         self._last_cursor_pos: Optional[tuple[float, float]] = None
-
         self._remote_queue: deque[tuple[int, dict]] = deque()
         self._remote_lock = threading.Lock()
         self._apply_timer = QTimer(self)
         self._apply_timer.setInterval(0)
         self._apply_timer.timeout.connect(self._process_remote_queue)
-
         self._sync_check_timer = QTimer(self)
         self._sync_check_timer.setInterval(1000)
         self._sync_check_timer.timeout.connect(self._check_sync_on_connect)
-
         self._setup()
         if self._collab:
             self.set_collaboration_manager(self._collab)
 
     def set_collaboration_manager(self, mgr):
         self._collab = mgr
-        self._own_peer_id = mgr.own_peer_id or ""
+        try:
+            self._own_peer_id = mgr.own_peer_id or ""
+        except Exception:
+            self._own_peer_id = ""
         for t in (
             MessageType.GRAPH_NODE_MOVE,
             MessageType.GRAPH_PORT_CONNECT,
@@ -74,15 +73,26 @@ class TerrainGraphCollabBridge(QObject):
         self._cursor_timer.start()
         self._apply_timer.start()
         self._sync_check_timer.start()
-        if mgr.connected:
+        try:
+            connected = bool(mgr.connected)
+        except Exception:
+            connected = False
+        if connected:
             self._sync_requested = True
             self._sync_check_timer.stop()
             self._request_sync()
 
     def _check_sync_on_connect(self):
-        if not self._sync_requested and self._collab and self._collab.connected:
+        try:
+            connected = bool(self._collab and self._collab.connected)
+        except Exception:
+            connected = False
+        if not self._sync_requested and connected:
             self._sync_requested = True
-            self._own_peer_id = self._collab.own_peer_id or ""
+            try:
+                self._own_peer_id = self._collab.own_peer_id or ""
+            except Exception:
+                pass
             self._sync_check_timer.stop()
             self._request_sync()
 
@@ -103,14 +113,31 @@ class TerrainGraphCollabBridge(QObject):
             self._last_cursor_pos = (sp.x(), sp.y())
         return super().eventFilter(obj, event)
 
-    # --- Cursor sending ---
+    def _raw_send(self, msg_type: int, data: dict):
+        collab = self._collab
+        if collab is None:
+            return
+        try:
+            if not collab.connected:
+                return
+        except Exception:
+            return
+        try:
+            sender = getattr(collab, "send_raw", None)
+            if callable(sender):
+                sender(int(msg_type), dict(data))
+                return
+        except Exception:
+            pass
+        try:
+            collab._client.send(int(msg_type), dict(data))
+        except Exception:
+            pass
 
     def _send_cursor(self):
         if self._collab and self._collab.connected and self._last_cursor_pos:
             x, y = self._last_cursor_pos
-            self._collab._client.send(MessageType.GRAPH_CURSOR, {"x": x, "y": y})
-
-    # --- Queue remote operations (called from poll thread) ---
+            self._raw_send(MessageType.GRAPH_CURSOR, {"x": x, "y": y})
 
     def _queue_remote(self, msg_type: int, data: dict):
         with self._remote_lock:
@@ -125,12 +152,15 @@ class TerrainGraphCollabBridge(QObject):
 
     def _request_sync(self):
         if self._collab and self._collab.connected:
-            self._collab._client.send(MessageType.GRAPH_SYNC_REQ, {})
+            self._raw_send(MessageType.GRAPH_SYNC_REQ, {})
 
     def _send_full_sync(self):
         if self._collab and self._collab.connected:
-            session = self._graph.serialize_session()
-            self._collab._client.send(MessageType.GRAPH_SYNC, {"session": session})
+            try:
+                session = self._graph.serialize_session()
+            except Exception:
+                return
+            self._raw_send(MessageType.GRAPH_SYNC, {"session": session})
 
     def _dispatch_remote(self, msg_type: int, data: dict):
         pid = data.get("id", "")
@@ -157,18 +187,16 @@ class TerrainGraphCollabBridge(QObject):
             elif msg_type == MessageType.GRAPH_SYNC_REQ:
                 self._send_full_sync()
         except Exception as e:
-            Logger.warning(f"GraphCollab: remote apply error: {e}")
+            Logger.warning(f"GraphCollab remote apply failed: {e}")
         finally:
             self._suppress = False
-
-    # --- Local signal handlers (send to peers) ---
 
     def _should_send(self):
         return not self._suppress and self._collab and self._collab.connected
 
     def _send(self, msg_type: int, data: dict):
         if self._collab and self._collab.connected:
-            self._collab._client.send(msg_type, data)
+            self._raw_send(msg_type, data)
 
     def _on_node_created(self, node):
         if not self._should_send():
@@ -226,8 +254,6 @@ class TerrainGraphCollabBridge(QObject):
             "prop": prop_name,
             "value": prop_value,
         })
-
-    # --- Remote apply handlers ---
 
     def _apply_node_move(self, data: dict):
         nid = data.get("node_id", "")
@@ -306,8 +332,6 @@ class TerrainGraphCollabBridge(QObject):
         session = data.get("session", {})
         if session:
             self._graph.deserialize_session(session, clear_session=True, clear_undo_stack=True)
-
-    # --- Cursor rendering ---
 
     def _update_cursor_item(self, peer_id: str, peer, x: float, y: float):
         items = self._cursor_items.get(peer_id)

@@ -5,11 +5,23 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import base64
+import hashlib
+import json
+import secrets
 import struct
 import msgpack
 from enum import IntEnum
-
 from core.config.constants import FRAME_HEADER_SIZE, MAX_MESSAGE_SIZE
+
+
+PROTOCOL_VERSION = 2
+CHUNK_SIZE = 256 * 1024
+CHUNK_THRESHOLD = 512 * 1024
+INVITE_PREFIX = "ZARIN1:"
+DEFAULT_RELAY_PORT = 8765
+DEFAULT_DIRECT_PORT = 9876
+
 
 class MessageType(IntEnum):
     JOIN = 1
@@ -77,6 +89,9 @@ class MessageType(IntEnum):
     NET_READY = 109
     NET_KICK = 110
     NET_SNAPSHOT = 111
+    AUTH_FAIL = 210
+    CHUNK = 211
+    ROOM_INFO = 212
 
 
 def make_msg(msg_type: int, data: dict) -> bytes:
@@ -93,3 +108,115 @@ def parse_msg(data: bytes) -> tuple[int, dict]:
     except Exception as e:
         hexdump = data[:64].hex()
         raise ValueError(f"Invalid message payload: {e} (raw: {hexdump})") from e
+
+
+def pack_frame(msg_type: int, data: dict) -> bytes:
+    return make_msg(msg_type, data)
+
+
+def unpack_frame(payload: bytes) -> tuple[int, dict]:
+    return parse_msg(payload)
+
+
+def generate_room_code(length: int = 6) -> str:
+    alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(max(4, int(length))))
+
+
+def normalize_room(room: str) -> str:
+    return "".join(ch for ch in str(room or "").strip().upper() if ch.isalnum())[:24]
+
+
+def hash_password(room: str, password: str) -> str:
+    r = normalize_room(room)
+    p = str(password or "")
+    if not p:
+        return ""
+    return hashlib.sha256((r + "\x00" + p).encode("utf-8")).hexdigest()
+
+
+def verify_password(room: str, password: str, expected: str) -> bool:
+    if not expected:
+        return True
+    if not password and not expected:
+        return True
+    got = hash_password(room, password)
+    return secrets.compare_digest(got, str(expected))
+
+
+def split_chunks(msg_type: int, data: dict) -> list[tuple[int, dict]]:
+    raw = msgpack.packb({"t": int(msg_type), "d": data}, use_bin_type=True)
+    if len(raw) <= CHUNK_THRESHOLD:
+        return [(int(msg_type), dict(data))]
+    transfer_id = secrets.token_hex(8)
+    total = (len(raw) + CHUNK_SIZE - 1) // CHUNK_SIZE
+    out: list[tuple[int, dict]] = []
+    for idx in range(total):
+        part = raw[idx * CHUNK_SIZE:(idx + 1) * CHUNK_SIZE]
+        out.append((int(MessageType.CHUNK), {
+            "cid": transfer_id,
+            "idx": int(idx),
+            "total": int(total),
+            "inner_type": int(msg_type),
+            "part": part,
+        }))
+    return out
+
+
+def normalize_relay_url(url: str) -> str:
+    u = str(url or "").strip()
+    if not u:
+        return ""
+    if "://" not in u:
+        u = "ws://" + u
+    return u.rstrip("/")
+
+
+def is_relay_url(value: str) -> bool:
+    v = str(value or "").strip().lower()
+    return v.startswith("ws://") or v.startswith("wss://")
+
+
+def make_invite(payload: dict) -> str:
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return INVITE_PREFIX + base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def parse_invite(code: str) -> dict:
+    s = str(code or "").strip()
+    if s.startswith(INVITE_PREFIX):
+        s = s[len(INVITE_PREFIX):]
+    pad = "=" * (-len(s) % 4)
+    raw = base64.urlsafe_b64decode((s + pad).encode("ascii"))
+    obj = json.loads(raw.decode("utf-8"))
+    if not isinstance(obj, dict):
+        raise ValueError("bad invite")
+    return obj
+
+
+def build_direct_invite(host: str, port: int, room: str, has_password: bool) -> str:
+    return make_invite({
+        "v": int(PROTOCOL_VERSION),
+        "mode": "direct",
+        "host": str(host),
+        "port": int(port),
+        "room": normalize_room(room),
+        "locked": bool(has_password),
+    })
+
+
+def build_relay_invite(relay: str, room: str, has_password: bool) -> str:
+    return make_invite({
+        "v": int(PROTOCOL_VERSION),
+        "mode": "relay",
+        "relay": normalize_relay_url(relay),
+        "room": normalize_room(room),
+        "locked": bool(has_password),
+    })
+
+
+def estimate_msg_size(msg_type: int, data: dict) -> int:
+    try:
+        return len(msgpack.packb({"t": int(msg_type), "d": data}, use_bin_type=True))
+    except Exception:
+        return 0

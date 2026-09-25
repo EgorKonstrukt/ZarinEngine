@@ -241,7 +241,11 @@ def get_global_config() -> Config:
                 "transform_rate": 20.0,
                 "gizmo_rate": 10.0,
                 "ping_interval": 3.0,
-                "poll_interval": 8
+                "poll_interval": 8,
+                "scene_sync_interval": 2.0,
+                "relay_url": "ws://127.0.0.1:8765",
+                "auto_reconnect": True,
+                "heartbeat_timeout": 30.0
             },
             "undo": {
                 "max_stack": 200

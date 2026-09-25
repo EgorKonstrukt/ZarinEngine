@@ -7,6 +7,7 @@ miniaudio
 #ovphysx
 pynput
 msgpack
+websockets
 cython
 setuptools
 nuitka
