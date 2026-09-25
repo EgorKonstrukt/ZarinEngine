@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 import re
+import select
 import socket
-import struct
 import threading
 import time
 import urllib.request
@@ -224,24 +224,83 @@ def _services_from_device_xml(xml_text: str, base_url: str) -> list[tuple[str, s
     return found
 
 
-def discover_gateways(timeout: float = 2.5, mx: int = 2) -> list[UpnpGateway]:
-    locations: dict[str, dict] = {}
-    sock = None
+def _discovery_sources() -> list[str]:
+    out: list[str] = []
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        _, _, addrs = socket.gethostbyname_ex(socket.gethostname())
+        for a in addrs:
+            if a and not a.startswith("127.") and a not in out:
+                try:
+                    socket.inet_aton(a)
+                    out.append(a)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    s = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2.0)
+        s.connect(("8.8.8.8", 80))
+        ip = str(s.getsockname()[0])
+        if ip and not ip.startswith("127.") and ip not in out:
+            out.append(ip)
+    except Exception:
+        pass
+    finally:
         try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if s is not None:
+                s.close()
+        except Exception:
+            pass
+    return out
+
+
+def _open_discovery_socket(source: str):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    except Exception:
+        pass
+    try:
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+    except Exception:
+        pass
+    if source:
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(source))
         except Exception:
             pass
         try:
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack("b", 2))
+            sock.bind((source, 0))
         except Exception:
-            pass
+            try:
+                sock.bind(("", 0))
+            except Exception:
+                pass
+    else:
         try:
             sock.bind(("", 0))
         except Exception:
             pass
-        sock.settimeout(max(0.5, float(timeout)))
+    sock.setblocking(False)
+    return sock
+
+
+def discover_gateways(timeout: float = 2.5, mx: int = 2) -> list[UpnpGateway]:
+    locations: dict[str, dict] = {}
+    socks: list = []
+    try:
+        sources = _discovery_sources()
+        if not sources:
+            sources = [""]
+        for src in sources:
+            try:
+                socks.append(_open_discovery_socket(src))
+            except Exception:
+                pass
+        if not socks:
+            return []
         for target in SEARCH_TARGETS:
             msg = (
                 "M-SEARCH * HTTP/1.1\r\n"
@@ -252,45 +311,59 @@ def discover_gateways(timeout: float = 2.5, mx: int = 2) -> list[UpnpGateway]:
                 "USER-AGENT: ZarinEngine UPnP\r\n"
                 "\r\n"
             )
-            try:
-                sock.sendto(msg.encode("latin-1"), (SSDP_ADDR, SSDP_PORT))
-            except Exception:
-                pass
+            raw = msg.encode("latin-1")
+            for sock in socks:
+                try:
+                    sock.sendto(raw, (SSDP_ADDR, SSDP_PORT))
+                except Exception:
+                    pass
         deadline = time.time() + max(0.5, float(timeout))
         while time.time() < deadline:
-            try:
-                data, _ = sock.recvfrom(65535)
-            except socket.timeout:
+            remaining = deadline - time.time()
+            if remaining <= 0:
                 break
+            try:
+                ready, _, _ = select.select(socks, [], [], min(remaining, 0.5))
             except Exception:
                 break
-            loc = _parse_ssdp_location(data)
-            if not loc or loc in locations:
+            if not ready:
                 continue
-            try:
-                txt = data.decode("latin-1", errors="ignore")
-            except Exception:
-                txt = ""
-            server = ""
-            st = ""
-            for line in txt.split("\r\n"):
-                if ":" not in line:
+            for sock in ready:
+                try:
+                    data, _ = sock.recvfrom(65535)
+                except Exception:
                     continue
-                k, _, v = line.partition(":")
-                kl = k.strip().lower()
-                if kl == "server":
-                    server = v.strip()
-                elif kl == "st":
-                    st = v.strip()
-            locations[loc] = {"server": server, "st": st}
+                loc = _parse_ssdp_location(data)
+                if not loc or loc in locations:
+                    continue
+                try:
+                    txt = data.decode("latin-1", errors="ignore")
+                except Exception:
+                    txt = ""
+                server = ""
+                st = ""
+                for line in txt.split("\r\n"):
+                    if ":" not in line:
+                        continue
+                    k, _, v = line.partition(":")
+                    kl = k.strip().lower()
+                    if kl == "server":
+                        server = v.strip()
+                    elif kl == "st":
+                        st = v.strip()
+                locations[loc] = {"server": server, "st": st}
+                if len(locations) >= 10:
+                    break
+            if len(locations) >= 10:
+                break
     except Exception:
         pass
     finally:
-        try:
-            if sock is not None:
+        for sock in socks:
+            try:
                 sock.close()
-        except Exception:
-            pass
+            except Exception:
+                pass
     gateways: list[UpnpGateway] = []
     seen_ctrl: set[str] = set()
     for loc, meta in locations.items():
@@ -373,11 +446,12 @@ class UpnpMapper:
                     pass
 
     def _ensure_thread(self):
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._renew_loop, daemon=True)
-        self._thread.start()
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._renew_loop, daemon=True)
+            self._thread.start()
 
     def map_port(self, external: int, internal: Optional[int] = None, protocol: str = "TCP", description: str = "ZarinEngine", try_alternatives: bool = True, timeout: float = 10.0) -> dict:
         proto = str(protocol or "TCP").upper()
@@ -464,6 +538,19 @@ class UpnpMapper:
                 gw.delete_mapping(int(ext), str(proto), timeout=timeout)
             except Exception:
                 pass
+
+    @property
+    def gateway(self) -> Optional[UpnpGateway]:
+        return self._gateway
+
+    def tracked(self) -> list[tuple[int, str]]:
+        with self._lock:
+            return [(int(k[0]), str(k[1])) for k in self._mappings.keys()]
+
+    def forget(self) -> None:
+        with self._lock:
+            self._mappings.clear()
+        self._stop.set()
 
     def snapshot(self) -> dict:
         with self._lock:

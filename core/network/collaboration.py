@@ -642,15 +642,41 @@ class CollaborationManager:
             self._upnp_extras = {}
         except Exception:
             pass
-        if mapper is not None:
-            try:
-                mapper.unmap_all()
-            except Exception:
-                pass
-            try:
-                mapper.close()
-            except Exception:
-                pass
+        if mapper is None:
+            return
+        try:
+            stale = mapper.tracked()
+        except Exception:
+            stale = []
+        try:
+            gw = mapper.gateway
+        except Exception:
+            gw = None
+        try:
+            mapper.forget()
+        except Exception:
+            pass
+        if not stale or gw is None:
+            return
+
+        def _drop():
+            cur = self._upnp
+            skip: set = set()
+            if cur is not None:
+                try:
+                    skip = set(cur.tracked())
+                except Exception:
+                    skip = set()
+            for ext, proto in stale:
+                if (int(ext), str(proto)) in skip:
+                    continue
+                try:
+                    gw.delete_mapping(int(ext), str(proto), timeout=8.0)
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_drop, daemon=True)
+        t.start()
 
     def _run_upnp_map(self, internal_port: int, description: str, main: bool):
         mapper = self._ensure_upnp_mapper()
@@ -708,10 +734,22 @@ class CollaborationManager:
             ext = int((info or {}).get("external", int(port)))
         except Exception:
             ext = int(port)
-        try:
-            mapper.unmap_port(ext, "TCP")
-        except Exception:
-            pass
+
+        def _drop():
+            cur = self._upnp
+            if cur is not None and cur is not mapper:
+                try:
+                    if (int(ext), "TCP") in set(cur.tracked()):
+                        return
+                except Exception:
+                    pass
+            try:
+                mapper.unmap_port(ext, "TCP")
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_drop, daemon=True)
+        t.start()
 
     def refresh_upnp(self) -> None:
         port = 0
