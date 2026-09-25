@@ -224,6 +224,10 @@ class ShadowRenderer:
         self._prev_flat_centers = np.zeros((0, 3), dtype=np.float64)
         self._prev_flat_radii = np.zeros(0, dtype=np.float64)
         self._prev_flat_n: int = 0
+        self._shadow_frame_key = None
+        self._shadow_inst_sel: dict = {}
+        self._flat_moved_key = None
+        self._flat_rebuilt_frame = False
         self._cascade_resolutions: list[int] = [2048, 1024, 1024, 512]
         self._last_light_dir: Optional[Vec3] = None
         self._last_cam_view_hash: int = 0
@@ -238,14 +242,11 @@ class ShadowRenderer:
         self._flat_centers = np.zeros((0, 3), dtype=np.float64)
         self._flat_radii = np.zeros(0, dtype=np.float64)
         self._flat_mats = np.zeros((0, 16), dtype=np.float32)
+        self._flat_mats_f64 = np.zeros((0, 4, 4), dtype=np.float64)
         self._flat_mesh_ids = np.zeros(0, dtype=np.uint64)
         self._flat_out = np.zeros(0, dtype=np.intp)
         self._flat_mesh_map: dict = {}
-        try:
-            import weakref as _wref
-            self._mesh_radius_cache = _wref.WeakKeyDictionary()
-        except Exception:
-            self._mesh_radius_cache = {}
+        self._mesh_radius_cache: dict = {}
         self._instancing_cache: dict[int, bool] = {}
         self._point_proj_cache: dict = {}
         self._spot_proj_cache: dict = {}
@@ -583,6 +584,7 @@ class ShadowRenderer:
         self._flat_centers = np.empty((cap, 3), dtype=np.float64)
         self._flat_radii = np.empty(cap, dtype=np.float64)
         self._flat_mats = np.empty((cap, 16), dtype=np.float32)
+        self._flat_mats_f64 = np.empty((cap, 4, 4), dtype=np.float64)
         self._flat_mesh_ids = np.empty(cap, dtype=np.uint64)
         self._flat_out = np.empty(cap, dtype=np.intp)
         self._flat_cap = cap
@@ -615,13 +617,15 @@ class ShadowRenderer:
                 prepare_shadow_flat(renderable_shadow, self._mesh_radius_cache,
                                     self._flat_centers, self._flat_radii,
                                     self._flat_mats, self._flat_mesh_ids)
+                self._finish_flat_maps(renderable_shadow, n)
             except Exception:
                 self._prepare_flat_numpy(renderable_shadow, n)
         else:
             self._prepare_flat_numpy(renderable_shadow, n)
-        centers = self._flat_centers
-        radii = self._flat_radii
-        mats = self._flat_mats
+        self._flat_n = n
+        return n
+
+    def _finish_flat_maps(self, renderable_shadow: list, n: int):
         ids = self._flat_mesh_ids
         mesh_map: dict = {}
         for i in range(n):
@@ -632,85 +636,91 @@ class ShadowRenderer:
                 except Exception:
                     pass
         self._flat_mesh_map = mesh_map
-        self._flat_n = n
-        return n
 
     def _prepare_flat_numpy(self, renderable_shadow: list, n: int):
         centers = self._flat_centers
         radii = self._flat_radii
         mats = self._flat_mats
+        M = self._flat_mats_f64[:n]
         ids = self._flat_mesh_ids
         rc = self._mesh_radius_cache
         if n == 0:
             return
-        dl = [None] * n
+        if len(rc) > 4096:
+            try:
+                rc.clear()
+            except Exception:
+                pass
+        seen: dict = {}
+        order: list = []
+        code = np.empty(n, dtype=np.intp)
         bad_idx = []
         for i in range(n):
             entry = renderable_shadow[i]
             mesh = entry[0]
-            ids[i] = id(mesh)
+            mid = id(mesh)
+            ids[i] = mid
+            k = seen.get(mid)
+            if k is None:
+                k = len(order)
+                seen[mid] = k
+                order.append(mesh)
+            code[i] = k
             tr = entry[1]
             if tr is None:
                 bad_idx.append(i)
+                try:
+                    M[i] = 0.0
+                except Exception:
+                    pass
                 continue
             try:
-                dl[i] = tr.world_matrix._d
+                M[i] = tr._world_matrix._d
             except Exception:
-                bad_idx.append(i)
-        if len(bad_idx) >= n:
-            centers[:n, 0] = 1e30
-            centers[:n, 1] = 1e30
-            centers[:n, 2] = 1e30
-            radii[:n] = 0.0
-            mats[:n, :] = 0.0
-            return
-        if bad_idx:
-            rows = np.array([i for i in range(n) if dl[i] is not None], dtype=np.intp)
-            M = np.stack([dl[i] for i in rows])
-        else:
-            rows = None
-            M = np.stack(dl)
-        M = np.asarray(M, dtype=np.float64)
-        m = M.shape[0]
-        if rows is None:
-            centers[:n, :] = M[:, 3, :3]
-        else:
-            centers[rows, :] = M[:, 3, :3]
+                try:
+                    M[i] = tr.world_matrix._d
+                except Exception:
+                    bad_idx.append(i)
+                    try:
+                        M[i] = 0.0
+                    except Exception:
+                        pass
+        centers[:n] = M[:, 3, :3]
         col = M[:, :3, :]
-        ms = np.sqrt((col * col).sum(axis=1)).max(axis=1)
-        br = np.empty(m, dtype=np.float64)
-        if rows is None:
-            for j in range(m):
-                mesh = renderable_shadow[j][0]
-                b = rc.get(mesh)
-                if b is None:
-                    try:
-                        b = float(mesh.bounding_radius)
-                    except Exception:
-                        b = 1.0
+        ms = np.sqrt(np.einsum('nca,nca->na', col, col)).max(axis=1)
+        uniq_r = np.empty(len(order), dtype=np.float64)
+        mesh_map: dict = {}
+        for k in range(len(order)):
+            mesh = order[k]
+            try:
+                mesh_map[id(mesh)] = mesh
+            except Exception:
+                pass
+            b = rc.get(mesh)
+            if b is None:
+                try:
+                    b = float(mesh.bounding_radius)
+                except Exception:
+                    b = 1.0
+                try:
                     rc[mesh] = b
-                br[j] = b
-            radii[:n] = ms * br
-            mats[:n, :] = M.astype(np.float32, copy=False).reshape(n, 16)
-        else:
-            for j in range(m):
-                mesh = renderable_shadow[int(rows[j])][0]
-                b = rc.get(mesh)
-                if b is None:
-                    try:
-                        b = float(mesh.bounding_radius)
-                    except Exception:
-                        b = 1.0
-                    rc[mesh] = b
-                br[j] = b
-            radii[rows] = ms * br
-            mats[rows, :] = M.astype(np.float32, copy=False).reshape(m, 16)
-            bi = np.asarray(bad_idx, dtype=np.intp)
-            centers[bi, 0] = 1e30
-            centers[bi, 1] = 1e30
-            centers[bi, 2] = 1e30
-            radii[bi] = 0.0
-            mats[bi, :] = 0.0
+                except Exception:
+                    pass
+            uniq_r[k] = b
+        radii[:n] = ms * uniq_r[code]
+        mats[:n] = M.reshape(n, 16)
+        if bad_idx:
+            try:
+                bi = np.asarray(bad_idx, dtype=np.intp)
+            except Exception:
+                bi = None
+            if bi is not None:
+                centers[bi, 0] = 1e30
+                centers[bi, 1] = 1e30
+                centers[bi, 2] = 1e30
+                radii[bi] = 0.0
+                mats[bi, :] = 0.0
+        self._flat_mesh_map = mesh_map
 
     def _supports_instancing_cached(self, prog) -> bool:
         key = id(prog)
@@ -721,7 +731,31 @@ class ShadowRenderer:
         self._instancing_cache[key] = v
         return v
 
-    def _upload_instanced_mats(self, key: tuple[int, int], mats_slice: np.ndarray) -> moderngl.Buffer:
+    def _remember_inst_sel(self, key, sel):
+        try:
+            fk = self._shadow_frame_key
+            if fk is None or sel is None:
+                return
+            self._shadow_inst_sel[key] = (fk, np.array(sel, dtype=np.intp, copy=True))
+            if len(self._shadow_inst_sel) > 1024:
+                try:
+                    self._shadow_inst_sel.pop(next(iter(self._shadow_inst_sel)))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _upload_instanced_mats(self, key: tuple, mats_slice: np.ndarray, sel=None) -> moderngl.Buffer:
+        try:
+            fk = self._shadow_frame_key
+            if fk is not None and sel is not None:
+                rec = self._shadow_inst_sel.get(key)
+                if rec is not None and rec[0] == fk and rec[1].shape == sel.shape and bool((rec[1] == sel).all()):
+                    cached = self._shadow_inst_vbo.get(key)
+                    if cached is not None:
+                        return cached
+        except Exception:
+            pass
         data = mats_slice.tobytes()
         try:
             prev = self._shadow_inst_vbo_fp.get(key)
@@ -731,6 +765,7 @@ class ShadowRenderer:
             try:
                 cached = self._shadow_inst_vbo.get(key)
                 if cached is not None and cached.size >= len(data):
+                    self._remember_inst_sel(key, sel)
                     return cached
             except Exception:
                 pass
@@ -743,6 +778,7 @@ class ShadowRenderer:
                         self._shadow_inst_vbo_fp[key] = data
                     except Exception:
                         pass
+                    self._remember_inst_sel(key, sel)
                     return cached
             except Exception:
                 pass
@@ -751,12 +787,15 @@ class ShadowRenderer:
             except Exception:
                 pass
             self._shadow_inst_vbo.pop(key, None)
-            vao_del = self._shadow_vao_cache.pop(key, None)
-            if vao_del is not None:
-                try:
-                    vao_del.release()
-                except Exception:
-                    pass
+            try:
+                _vdel = self._shadow_vao_cache.pop((key[0], key[1], id(cached)), None)
+                if _vdel is not None:
+                    try:
+                        _vdel.release()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         vbo = self._ctx.buffer(data)
         if len(self._shadow_inst_vbo) >= 512:
             try:
@@ -764,16 +803,20 @@ class ShadowRenderer:
                 if _k != key:
                     self._shadow_inst_vbo.pop(_k, None)
                     self._shadow_inst_vbo_fp.pop(_k, None)
+                    self._shadow_inst_sel.pop(_k, None)
+                    try:
+                        _vd = self._shadow_vao_cache.pop((_k[0], _k[1], id(_v)), None)
+                        if _vd is not None:
+                            try:
+                                _vd.release()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     try:
                         _v.release()
                     except Exception:
                         pass
-                    _vd = self._shadow_vao_cache.pop(_k, None)
-                    if _vd is not None:
-                        try:
-                            _vd.release()
-                        except Exception:
-                            pass
             except Exception:
                 pass
         self._shadow_inst_vbo[key] = vbo
@@ -781,9 +824,10 @@ class ShadowRenderer:
             self._shadow_inst_vbo_fp[key] = data
         except Exception:
             pass
+        self._remember_inst_sel(key, sel)
         return vbo
 
-    def _build_shadow_instance_vbo(self, key: tuple[int, int],
+    def _build_shadow_instance_vbo(self, key: tuple,
                                    model_matrices) -> moderngl.Buffer:
         if isinstance(model_matrices, np.ndarray):
             return self._upload_instanced_mats(key, np.ascontiguousarray(model_matrices, dtype=np.float32))
@@ -818,23 +862,32 @@ class ShadowRenderer:
             except Exception:
                 pass
             self._shadow_inst_vbo.pop(key, None)
-            vao_del = self._shadow_vao_cache.pop(key, None)
-            if vao_del is not None:
-                try:
-                    vao_del.release()
-                except Exception:
-                    pass
+            try:
+                _vdel = self._shadow_vao_cache.pop((key[0], key[1], id(cached)), None)
+                if _vdel is not None:
+                    try:
+                        _vdel.release()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         vbo = self._ctx.buffer(data)
         self._shadow_inst_vbo[key] = vbo
         return vbo
 
     def _get_shadow_vao(self, prog: moderngl.Program, mesh,
                         instance_vbo: moderngl.Buffer) -> moderngl.VertexArray:
-        key = (id(mesh), id(prog))
-        cached = self._shadow_vao_cache.get(key)
-        if cached is not None:
-            return cached
+        try:
+            vkey = (id(mesh), id(prog), id(instance_vbo))
+        except Exception:
+            vkey = None
+        if vkey is not None:
+            cached = self._shadow_vao_cache.get(vkey)
+            if cached is not None:
+                return cached
         vao = _make_shadow_instanced_vao(self._ctx, prog, mesh, instance_vbo)
+        if vkey is None:
+            return vao
         if len(self._shadow_vao_cache) >= 512:
             try:
                 _k, _v = next(iter(self._shadow_vao_cache.items()))
@@ -845,7 +898,7 @@ class ShadowRenderer:
                     pass
             except Exception:
                 pass
-        self._shadow_vao_cache[key] = vao
+        self._shadow_vao_cache[vkey] = vao
         return vao
 
     def _uniform_names(self, prog: moderngl.Program) -> frozenset:
@@ -940,6 +993,14 @@ class ShadowRenderer:
         if total == 0:
             return
         try:
+            if bool(np.all(vis_mesh == vis_mesh[0])):
+                mesh = mmap.get(int(vis_mesh[0]))
+                if mesh is not None:
+                    yield mesh, vis
+                return
+        except Exception:
+            pass
+        try:
             order = np.argsort(vis_mesh, kind='stable')
             srt = vis_mesh[order]
         except Exception:
@@ -963,7 +1024,7 @@ class ShadowRenderer:
         except Exception:
             return
 
-    def _draw_flat_visible(self, vp: np.ndarray, fbo, resolution: int, visible_count: int):
+    def _draw_flat_visible(self, vp: np.ndarray, fbo, resolution: int, visible_count: int, tag=("g", 0)):
         if visible_count <= 0:
             return
         n = self._flat_n
@@ -989,8 +1050,8 @@ class ShadowRenderer:
                 prog["u_use_instancing"].value = 1
             for mesh, sel in self._iter_flat_groups(vis, vis_mesh, mmap):
                 chunk = mats[sel]
-                key = (id(mesh), prog_id)
-                vbo = self._upload_instanced_mats(key, chunk)
+                key = (id(mesh), prog_id, tag)
+                vbo = self._upload_instanced_mats(key, chunk, sel)
                 vao = self._get_shadow_vao(prog, mesh, vbo)
                 vao.render(instances=int(sel.size))
         else:
@@ -1008,6 +1069,7 @@ class ShadowRenderer:
         self._ctx.enable(moderngl.CULL_FACE)
 
     def render_geometry(self, vp: np.ndarray, fbo, renderable_shadow: list, resolution: int = 1024):
+        self._shadow_frame_key = None
         if _HAS_CYTHON and isinstance(renderable_shadow, list) and len(renderable_shadow) > 32:
             try:
                 self._prepare_flat(renderable_shadow)
@@ -1223,6 +1285,19 @@ class ShadowRenderer:
         self._pending_skinned = skinned_entries or []
         self._pending_scene = scene
         self._skinning_cache = skinning_cache
+        try:
+            _stv = scene._transform_version if scene is not None else -1
+        except Exception:
+            _stv = -1
+        try:
+            _srv = scene._render_version if scene is not None else None
+        except Exception:
+            _srv = None
+        try:
+            self._shadow_frame_key = (_stv, _srv)
+        except Exception:
+            self._shadow_frame_key = None
+        self._flat_rebuilt_frame = False
         if not renderable_shadow:
             self._flat_n = 0
             self._flat_mesh_map = {}
@@ -1234,6 +1309,7 @@ class ShadowRenderer:
         if self._flat_cache_valid(scene, renderable_shadow):
             shadow_groups = self._shadow_groups_cache
         else:
+            self._flat_rebuilt_frame = True
             try:
                 self._prepare_flat(renderable_shadow)
             except Exception:
@@ -1461,19 +1537,28 @@ class ShadowRenderer:
                 scene_moved = True
             elif self._flat_n == 0:
                 scene_moved = False
+            elif not self._flat_rebuilt_frame and self._shadow_frame_key is not None and self._shadow_frame_key == self._flat_moved_key:
+                scene_moved = False
             else:
                 n_now = self._flat_n
                 dc = self._flat_centers[:n_now] - self._prev_flat_centers[:n_now]
                 dr = self._flat_radii[:n_now] - self._prev_flat_radii[:n_now]
                 scene_moved = bool(np.any(np.abs(dc) > 1e-4) or np.any(np.abs(dr) > 1e-5))
+                self._flat_moved_key = self._shadow_frame_key
         except Exception:
             scene_moved = True
-        try:
-            self._prev_flat_centers = self._flat_centers[:self._flat_n].copy()
-            self._prev_flat_radii = self._flat_radii[:self._flat_n].copy()
-            self._prev_flat_n = self._flat_n
-        except Exception:
-            pass
+        if scene_moved:
+            try:
+                self._prev_flat_centers = self._flat_centers[:self._flat_n].copy()
+                self._prev_flat_radii = self._flat_radii[:self._flat_n].copy()
+                self._prev_flat_n = self._flat_n
+            except Exception:
+                pass
+        else:
+            try:
+                self._prev_flat_n = self._flat_n
+            except Exception:
+                pass
         stagger_allowed = (not cam_moved) and (not scene_moved)
         try:
             light_dir_v = Vec3(ld_x, ld_y, ld_z)
@@ -1551,7 +1636,7 @@ class ShadowRenderer:
                                 prog["u_use_instancing"].value = 1
                             for mesh, sel in self._iter_flat_groups(vis, vis_mesh, mmap):
                                 chunk = self._flat_mats[sel]
-                                vbo = self._upload_instanced_mats((id(mesh), prog_id), chunk)
+                                vbo = self._upload_instanced_mats((id(mesh), prog_id, ("d", ci)), chunk, sel)
                                 vao = self._get_shadow_vao(prog, mesh, vbo)
                                 vao.render(instances=int(sel.size))
                         else:
@@ -1780,7 +1865,7 @@ class ShadowRenderer:
             if supports_instancing:
                 for mesh, sel in self._iter_flat_groups(vis, vis_mesh, mmap):
                     chunk = self._flat_mats[sel]
-                    vbo = self._upload_instanced_mats((id(mesh), prog_id), chunk)
+                    vbo = self._upload_instanced_mats((id(mesh), prog_id, ("p", slot, face_idx)), chunk, sel)
                     vao = self._get_shadow_vao(prog, mesh, vbo)
                     vao.render(instances=int(sel.size))
             else:
@@ -1845,7 +1930,7 @@ class ShadowRenderer:
             cnt = 0
         if cnt > 0:
             try:
-                self._draw_flat_visible(vp, self._spot_shadow_fbos[slot], self._spot_shadow_resolution, cnt)
+                self._draw_flat_visible(vp, self._spot_shadow_fbos[slot], self._spot_shadow_resolution, cnt, ("s", slot))
                 self._maybe_render_skinned(vp, self._spot_shadow_fbos[slot], self._spot_shadow_resolution)
             except Exception:
                 pass
@@ -1941,16 +2026,16 @@ class ShadowRenderer:
                 return
             self._area_light_vp_back = bvp
             self._has_area_shadow_back = True
-            self._draw_area_shadow_side(bvp, lp_x, lp_y, lp_z, lr2, self._area_shadow_fbo_back)
+            self._draw_area_shadow_side(bvp, lp_x, lp_y, lp_z, lr2, self._area_shadow_fbo_back, ("a", 1))
 
-    def _draw_area_shadow_side(self, vp, px: float, py: float, pz: float, lr2: float, fbo) -> bool:
+    def _draw_area_shadow_side(self, vp, px: float, py: float, pz: float, lr2: float, fbo, tag=("a", 0)) -> bool:
         try:
             cnt = self._cull_flat_range_count(vp, px, py, pz, lr2, 0.0)
         except Exception:
             cnt = 0
         if cnt > 0:
             try:
-                self._draw_flat_visible(vp, fbo, self._area_shadow_resolution, cnt)
+                self._draw_flat_visible(vp, fbo, self._area_shadow_resolution, cnt, tag)
                 self._maybe_render_skinned(vp, fbo, self._area_shadow_resolution)
             except Exception:
                 pass
@@ -2037,7 +2122,7 @@ class ShadowRenderer:
                 cnt = 0
             if cnt > 0:
                 try:
-                    self._draw_flat_visible(vp, self._projector_shadow_fbos[i], self._shadow_resolution, cnt)
+                    self._draw_flat_visible(vp, self._projector_shadow_fbos[i], self._shadow_resolution, cnt, ("j", i))
                 except Exception:
                     pass
             else:
@@ -2383,8 +2468,13 @@ class ShadowRenderer:
                 pass
         self._shadow_inst_vbo.clear()
         self._shadow_inst_vbo_fp.clear()
+        self._shadow_inst_sel.clear()
         self._shadow_vao_cache.clear()
         self._prog_member_cache.clear()
+        self._shadow_frame_key = None
+        self._flat_moved_key = None
+        self._flat_rebuilt_frame = False
+        self._flat_rebuilt_frame = False
         if self._skinned_bone_ssbo is not None:
             try:
                 self._skinned_bone_ssbo.release()

@@ -14,8 +14,21 @@ from core.components.inspector_meta import FieldType, InspectorField
 from core.foundation.logger import Logger
 
 _SHADERS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))))), "core", "shaders", "compute")
+    os.path.dirname(os.path.abspath(__file__)))))), "core", "shaders", "compute")
 _SHADER_PATH = os.path.join(_SHADERS_DIR, "Atmosphere.compute")
+
+
+def _resolve_atmosphere_source() -> Optional[str]:
+    try:
+        with open(_SHADER_PATH) as _f:
+            return _f.read()
+    except Exception:
+        pass
+    try:
+        from core.renderer.mesh_data import read_compute_source
+        return read_compute_source("atmosphere")
+    except Exception:
+        return None
 
 _TRANSMITTANCE_W = 128
 _TRANSMITTANCE_H = 32
@@ -49,18 +62,24 @@ def _quant_color(v) -> tuple:
 
 
 def _compile_atmosphere_compute(ctx: moderngl.Context) -> Optional[moderngl.ComputeShader]:
-    if not os.path.exists(_SHADER_PATH):
+    src = _resolve_atmosphere_source()
+    if not src:
         Logger.error(f"Atmosphere compute shader not found: {_SHADER_PATH}")
         return None
     try:
-        with open(_SHADER_PATH) as f:
-            src = f.read()
         start = src.find("GLSLPROGRAM")
-        end = src.find("ENDGLSL", start)
-        if start < 0 or end < 0:
+        if start >= 0:
+            end = src.find("ENDGLSL", start)
+            if end < 0:
+                Logger.error("Invalid Atmosphere.compute: no GLSLPROGRAM/ENDGLSL")
+                return None
+            body = src[start + len("GLSLPROGRAM"):end].strip()
+        else:
+            body = src.strip()
+        if not body:
             Logger.error("Invalid Atmosphere.compute: no GLSLPROGRAM/ENDGLSL")
             return None
-        return ctx.compute_shader(src[start + len("GLSLPROGRAM"):end].strip())
+        return ctx.compute_shader(body)
     except Exception as e:
         Logger.error(f"Failed to compile Atmosphere.compute: {e}")
         return None
