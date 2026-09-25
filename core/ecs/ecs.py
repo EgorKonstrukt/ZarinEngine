@@ -927,6 +927,7 @@ class Scene:
         self._soa_cap: int = 0
         self._soa_free: list = []
         self._soa_used: int = 0
+        self._soa_epoch: int = 0
 
     def _soa_ensure(self, need: int):
         if need <= self._soa_cap:
@@ -954,10 +955,12 @@ class Scene:
         free = self._soa_free
         if free:
             idx = free.pop()
+            self._soa_epoch += 1
         else:
             idx = self._soa_used
             self._soa_used = idx + 1
             self._soa_ensure(idx + 1)
+            self._soa_epoch += 1
         try:
             tr._soa = idx
         except Exception:
@@ -984,8 +987,38 @@ class Scene:
         try:
             if idx < self._soa_cap:
                 self._soa_free.append(idx)
+                self._soa_epoch += 1
         except Exception:
             pass
+
+    def _soa_sync_one(self, tr):
+        try:
+            slot = tr._soa
+        except Exception:
+            return
+        if slot is None or slot < 0 or slot >= self._soa_cap:
+            return
+        try:
+            self._soa_world[slot] = tr._world_matrix._d
+        except Exception:
+            pass
+
+    def _soa_sync_many(self, transforms):
+        world = self._soa_world
+        cap = self._soa_cap
+        for tr in transforms:
+            try:
+                if tr._dirty:
+                    continue
+                slot = tr._soa
+            except Exception:
+                continue
+            if slot is None or slot < 0 or slot >= cap:
+                continue
+            try:
+                world[slot] = tr._world_matrix._d
+            except Exception:
+                pass
 
     def _soa_write_world(self, tr):
         try:
@@ -1167,6 +1200,7 @@ class Scene:
                 flat[0]._update_world_matrix()
             elif bf is not None:
                 bf(flat)
+                self._soa_sync_many(flat)
             else:
                 for t in flat:
                     t._update_world_matrix()
@@ -1225,6 +1259,7 @@ class Scene:
                         t._update_world_matrix()
                 elif bft is not None:
                     bft(hier)
+                    self._soa_sync_many(hier)
                 else:
                     for t in hier:
                         t._update_world_matrix()
@@ -1327,6 +1362,11 @@ class Scene:
         idx = self._component_indices
         for c in e._components.values():
             c.on_destroy()
+            try:
+                if getattr(c, "_soa", -1) >= 0:
+                    self._soa_release(c)
+            except Exception:
+                pass
         for comp_type, clist in e._type_map.items():
             comp_name = comp_type.__name__
             s = idx.get(comp_name)

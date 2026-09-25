@@ -84,6 +84,11 @@ class Armature(Component):
         self._skin_mat: Optional[np.ndarray] = None
         self._inv_cache: Optional[np.ndarray] = None
         self._inv_cache_key: int = 0
+        self._bone_slots: Optional[np.ndarray] = None
+        self._bone_slots_epoch: int = -1
+        self._bone_slots_scene = None
+        self._bone_slots_ids: tuple = ()
+        self._bone_offsets_f64: Optional[np.ndarray] = None
 
     def setup(self, skeleton) -> None:
         if isinstance(skeleton, dict):
@@ -102,6 +107,11 @@ class Armature(Component):
             if self.bone_parents[idx] < 0:
                 self.root_bone_name = name
                 break
+        self._bone_slots = None
+        self._bone_slots_epoch = -1
+        self._bone_slots_scene = None
+        self._bone_slots_ids = ()
+        self._bone_offsets_f64 = None
 
     def create_bone_entities(self, scene, root_entity) -> None:
         from core.components import Transform
@@ -219,10 +229,99 @@ class Armature(Component):
             out.append((off @ rel).astype(np.float32))
         return out
 
+    def _soa_bone_offsets(self) -> Optional[np.ndarray]:
+        cur = self._bone_offsets_f64
+        if cur is not None and len(cur) == len(self.bone_offset_matrices):
+            return cur
+        try:
+            stacked = np.stack([np.asarray(m, dtype=np.float64).reshape(4, 4) for m in self.bone_offset_matrices])
+        except Exception:
+            return None
+        self._bone_offsets_f64 = stacked
+        return stacked
+
+    def _soa_bone_slots(self, scene) -> Optional[np.ndarray]:
+        try:
+            ids = tuple(self.bone_entity_ids)
+        except Exception:
+            return None
+        if not ids or scene is None:
+            return None
+        try:
+            epoch = scene._soa_epoch
+            cap = scene._soa_cap
+        except Exception:
+            return None
+        cached = self._bone_slots
+        if (cached is not None and self._bone_slots_scene is scene
+                and self._bone_slots_epoch == epoch
+                and self._bone_slots_ids == ids and len(cached) == len(ids)):
+            return cached
+        slots = np.empty(len(ids), dtype=np.intp)
+        for i, bid in enumerate(ids):
+            slot = -1
+            if bid:
+                try:
+                    ent = scene.get_entity(bid)
+                except Exception:
+                    ent = None
+                if ent is not None:
+                    try:
+                        tr = ent.transform
+                    except Exception:
+                        tr = None
+                    if tr is not None and not getattr(tr, "_dirty", False):
+                        try:
+                            s = tr._soa
+                        except Exception:
+                            s = -1
+                        if s is not None and 0 <= s < cap:
+                            slot = int(s)
+                        else:
+                            return None
+                    else:
+                        return None
+            slots[i] = slot
+        if bool((slots < 0).any()):
+            return None
+        self._bone_slots = slots
+        self._bone_slots_epoch = epoch
+        self._bone_slots_scene = scene
+        self._bone_slots_ids = ids
+        return slots
+
+    def _soa_skinning(self, scene, renderer_world: Mat4) -> Optional[tuple[np.ndarray, int]]:
+        slots = self._soa_bone_slots(scene)
+        if slots is None:
+            return None
+        try:
+            world = scene._soa_world
+            cap = scene._soa_cap
+        except Exception:
+            return None
+        if int(slots.max()) >= cap:
+            return None
+        off = self._soa_bone_offsets()
+        if off is None or len(off) != len(slots):
+            return None
+        try:
+            inv = renderer_world.inverted()._d
+            rel = np.ascontiguousarray(world[slots]) @ inv
+            skin = off @ rel
+            return skin.reshape(len(slots), 16).astype(np.float32), int(len(slots))
+        except Exception:
+            return None
+
     def compute_skinning_buffer(self, scene, renderer_world: Mat4) -> tuple[np.ndarray, int]:
         n = len(self.bone_offset_matrices)
         if n == 0:
             return np.empty((0, 16), dtype=np.float32), 0
+        try:
+            soa = self._soa_skinning(scene, renderer_world)
+        except Exception:
+            soa = None
+        if soa is not None:
+            return soa
         if _HAS_SKINNING_CY:
             flat, n_bones, new_inv_cache, new_inv_key = compute_skinning_buffer_cy(
                 self.bone_offset_matrices, self.bone_entity_ids,
@@ -235,11 +334,7 @@ class Armature(Component):
             self._skin_flat_size = n
             self._skin_mat = np.empty((4, 4), dtype=np.float32)
         flat = self._skin_flat
-        wm_id = id(renderer_world._d.ctypes.data)
-        if wm_id != self._inv_cache_key:
-            self._inv_cache = renderer_world.inverted()._d
-            self._inv_cache_key = wm_id
-        inv_d = self._inv_cache
+        inv_d = renderer_world.inverted()._d
         skin_mat = self._skin_mat
         bone_offsets = self.bone_offset_matrices
         bone_ids = self.bone_entity_ids

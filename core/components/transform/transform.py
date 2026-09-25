@@ -101,6 +101,17 @@ class Transform(Component):
                     push(ct)
         scene._spatial_dirty = True
         scene._transform_version_pending = True
+    def _soa_sync_self(self):
+        if self._dirty:
+            return
+        ent = self._entity
+        sc = ent._scene if ent is not None else None
+        if sc is None:
+            return
+        try:
+            sc._soa_sync_one(self)
+        except Exception:
+            pass
     def _update_world_matrix(self):
         if not self._dirty:
             return
@@ -112,10 +123,12 @@ class Transform(Component):
         if parent is None:
             if _batch_flat is not None:
                 _batch_flat([self])
+                self._soa_sync_self()
                 return
             local = self._build_local_matrix()
             self._world_matrix._d[:, :] = local._d
             self._dirty = False
+            self._soa_sync_self()
             return
         chain = [self]
         chain_append = chain.append
@@ -139,6 +152,8 @@ class Transform(Component):
             if not has_target:
                 chain.reverse()
                 _batch_from_transforms(chain)
+                for node in chain:
+                    node._soa_sync_self()
                 return
         for node in reversed(chain):
             if node._world_target is not None:
@@ -152,9 +167,11 @@ class Transform(Component):
                 if pt is not None:
                     np.matmul(local._d, pt._world_matrix._d, out=node._world_matrix._d)
                     node._dirty = False
+                    node._soa_sync_self()
                     continue
             node._world_matrix._d[:, :] = local._d
             node._dirty = False
+            node._soa_sync_self()
 
     def _resolve_world_target(self):
         ent = self._entity
@@ -179,6 +196,7 @@ class Transform(Component):
         self._world_matrix._d[:, :] = self._world_target._d
         self._world_target = None
         self._dirty = False
+        self._soa_sync_self()
     def _build_local_matrix(self) -> Mat4:
         lr = self._local_rot
         r = mat4_from_quaternion(lr._x, lr._y, lr._z, lr._w)
@@ -480,6 +498,8 @@ class Transform(Component):
                     t._update_world_matrix()
             else:
                 bft(transforms)
+                for t in transforms:
+                    t._soa_sync_self()
             return
         for t in transforms:
             t._update_world_matrix()
