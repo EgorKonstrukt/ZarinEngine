@@ -111,10 +111,20 @@ def _make_shadow_instanced_vao(ctx: moderngl.Context, prog: moderngl.Program,
         attrs = ('in_position',)
     else:
         n_verts = len(mesh.vertices) // 3 if len(mesh.vertices) > 0 else 0
-        data = np.zeros((n_verts, 3), dtype=np.float32)
+        if n_verts <= 0:
+            raise ValueError("empty mesh")
+        data = np.zeros((n_verts, 8), dtype=np.float32)
         data[:, 0:3] = mesh.vertices.reshape(-1, 3)
         vbo = ctx.buffer(data.tobytes())
-        fmt = '3f'
+        try:
+            if getattr(mesh, '_vbo', None) is None:
+                mesh._vbo = vbo
+            else:
+                vbo.release()
+                vbo = mesh._vbo
+        except Exception:
+            pass
+        fmt = '3f 3x4 2x4'
         attrs = ('in_position',)
     content = [
         (vbo, fmt, *attrs),
@@ -231,7 +241,11 @@ class ShadowRenderer:
         self._flat_mesh_ids = np.zeros(0, dtype=np.uint64)
         self._flat_out = np.zeros(0, dtype=np.intp)
         self._flat_mesh_map: dict = {}
-        self._mesh_radius_cache: dict = {}
+        try:
+            import weakref as _wref
+            self._mesh_radius_cache = _wref.WeakKeyDictionary()
+        except Exception:
+            self._mesh_radius_cache = {}
         self._instancing_cache: dict[int, bool] = {}
         self._point_proj_cache: dict = {}
         self._spot_proj_cache: dict = {}
@@ -744,6 +758,24 @@ class ShadowRenderer:
                 except Exception:
                     pass
         vbo = self._ctx.buffer(data)
+        if len(self._shadow_inst_vbo) >= 512:
+            try:
+                _k, _v = next(iter(self._shadow_inst_vbo.items()))
+                if _k != key:
+                    self._shadow_inst_vbo.pop(_k, None)
+                    self._shadow_inst_vbo_fp.pop(_k, None)
+                    try:
+                        _v.release()
+                    except Exception:
+                        pass
+                    _vd = self._shadow_vao_cache.pop(_k, None)
+                    if _vd is not None:
+                        try:
+                            _vd.release()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         self._shadow_inst_vbo[key] = vbo
         try:
             self._shadow_inst_vbo_fp[key] = data
@@ -803,6 +835,16 @@ class ShadowRenderer:
         if cached is not None:
             return cached
         vao = _make_shadow_instanced_vao(self._ctx, prog, mesh, instance_vbo)
+        if len(self._shadow_vao_cache) >= 512:
+            try:
+                _k, _v = next(iter(self._shadow_vao_cache.items()))
+                self._shadow_vao_cache.pop(_k, None)
+                try:
+                    _v.release()
+                except Exception:
+                    pass
+            except Exception:
+                pass
         self._shadow_vao_cache[key] = vao
         return vao
 

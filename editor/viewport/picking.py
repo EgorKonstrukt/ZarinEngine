@@ -205,6 +205,7 @@ def _world_aabb_of(entity, only_expanded: bool = False) -> tuple | None:
 
 _mesh_lookup_cache: dict[tuple[int, int], dict] = {}
 _MESH_LOOKUP_SENTINEL = object()
+_MESH_LOOKUP_MAX = 8
 
 
 def _resolve_mesh_key(meshes, prefix: str):
@@ -240,6 +241,8 @@ def _get_mesh_for(entity, mesh_name: str, mesh_path: str):
     cache = _mesh_lookup_cache.get(sig)
     if cache is None:
         cache = {}
+        if len(_mesh_lookup_cache) >= _MESH_LOOKUP_MAX:
+            _mesh_lookup_cache.pop(next(iter(_mesh_lookup_cache)))
         _mesh_lookup_cache[sig] = cache
     if mesh_path:
         key = cache.get(("p", mesh_path))

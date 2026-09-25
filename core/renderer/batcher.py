@@ -32,6 +32,11 @@ def resolve_normal_matrix(cache: dict, ent_id: int, model_d) -> np.ndarray:
         nm = mat4_normal_matrix(model_d)
     except Exception:
         nm = np.eye(3, dtype=np.float32).T
+    if len(cache) >= 4096:
+        try:
+            cache.pop(next(iter(cache)))
+        except Exception:
+            cache.clear()
     cache[ent_id] = (key, nm)
     return nm
 
@@ -60,6 +65,8 @@ def _make_instanced_vao(ctx: moderngl.Context, prog: moderngl.Program,
     ibo = getattr(mesh, '_ibo', None)
     if vbo is None:
         n_verts = len(mesh.vertices) // 3 if len(mesh.vertices) > 0 else 0
+        if n_verts <= 0:
+            raise ValueError("empty mesh")
         data = np.zeros((n_verts, 8), dtype=np.float32)
         data[:, 0:3] = mesh.vertices.reshape(-1, 3)
         if len(mesh.normals) == len(mesh.vertices):
@@ -67,14 +74,39 @@ def _make_instanced_vao(ctx: moderngl.Context, prog: moderngl.Program,
         if len(mesh.uvs) * 3 == len(mesh.vertices) * 2:
             data[:, 6:8] = mesh.uvs.reshape(-1, 2)
         vbo = ctx.buffer(data.tobytes())
+        try:
+            if getattr(mesh, '_vbo', None) is None:
+                mesh._vbo = vbo
+            else:
+                vbo.release()
+                vbo = mesh._vbo
+        except Exception:
+            pass
     content = [
         (vbo, '3f 3f 2f', 'in_position', 'in_normal', 'in_uv'),
     ]
     if "in_color" in prog:
         n_verts = len(mesh.vertices) // 3 if len(mesh.vertices) > 0 else vbo.size // 32
         if n_verts > 0:
-            col = ctx.buffer(np.full((n_verts, 4), 1.0, dtype=np.float32).tobytes())
-            content.append((col, '4f', 'in_color'))
+            col_vbo = getattr(mesh, '_color_vbo', None)
+            need = n_verts * 16
+            if col_vbo is not None:
+                try:
+                    if col_vbo.size != need:
+                        try:
+                            col_vbo.release()
+                        except Exception:
+                            pass
+                        col_vbo = None
+                except Exception:
+                    col_vbo = None
+            if col_vbo is None:
+                col_vbo = ctx.buffer(np.full((n_verts, 4), 1.0, dtype=np.float32).tobytes())
+                try:
+                    mesh._color_vbo = col_vbo
+                except Exception:
+                    pass
+            content.append((col_vbo, '4f', 'in_color'))
     if _supports_instancing(prog):
         content.append((instance_vbo, '4f 4f 4f 4f /i',
                         'in_model0', 'in_model1', 'in_model2', 'in_model3'))

@@ -926,6 +926,7 @@ class Scene:
         self._soa_world = np.zeros((0, 4, 4), dtype=np.float64)
         self._soa_cap: int = 0
         self._soa_free: list = []
+        self._soa_used: int = 0
 
     def _soa_ensure(self, need: int):
         if need <= self._soa_cap:
@@ -954,7 +955,8 @@ class Scene:
         if free:
             idx = free.pop()
         else:
-            idx = self._soa_cap
+            idx = self._soa_used
+            self._soa_used = idx + 1
             self._soa_ensure(idx + 1)
         try:
             tr._soa = idx

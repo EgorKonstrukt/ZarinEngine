@@ -34,7 +34,23 @@ except ImportError:
 _inflight_lock = threading.Lock()
 _inflight: dict[str, Future] = {}
 _mem_cache_lock = threading.Lock()
-_mem_cache: dict[str, MeshImportData] = {}
+from collections import OrderedDict as _MemOrderedDict
+_mem_cache: dict[str, MeshImportData] = _MemOrderedDict()
+_MEM_CACHE_MAX = 12
+
+
+def _mem_cache_store(path: str, entry) -> None:
+    _mem_cache[path] = entry
+    _mem_cache.move_to_end(path)
+    while len(_mem_cache) > _MEM_CACHE_MAX:
+        _mem_cache.popitem(last=False)
+
+
+def _mem_cache_touch(path: str) -> None:
+    try:
+        _mem_cache.move_to_end(path)
+    except KeyError:
+        pass
 
 if sys.platform == "win32":
     _ASSIMP_LIB_NAME = "assimp-vc143-mt.dll"
@@ -1057,6 +1073,7 @@ def load_mesh(path: str, import_settings: Optional[dict] = None) -> Optional[Mes
     with _mem_cache_lock:
         cached = _mem_cache.get(path)
         if cached is not None and cached[0] == _sig:
+            _mem_cache_touch(path)
             return cached[1]
 
     eng = None
@@ -1158,7 +1175,7 @@ def load_mesh(path: str, import_settings: Optional[dict] = None) -> Optional[Mes
         if prof: prof.stop("load_mesh")
         if data is not None and len(data.vertices) > 0:
             with _mem_cache_lock:
-                _mem_cache[path] = (_sig, data)
+                _mem_cache_store(path, (_sig, data))
         return data
     except Exception:
         if prof: prof.stop("load_mesh")
@@ -1325,6 +1342,7 @@ def load_obj(path: str, import_settings: Optional[dict] = None) -> Optional[Mesh
     with _mem_cache_lock:
         cached = _mem_cache.get(path)
         if cached is not None and cached[0] == _sig:
+            _mem_cache_touch(path)
             return cached[1]
 
     eng = None
@@ -1350,7 +1368,7 @@ def load_obj(path: str, import_settings: Optional[dict] = None) -> Optional[Mesh
         if prof: prof.stop("load_obj")
     if data is not None and len(data.vertices) > 0:
         with _mem_cache_lock:
-            _mem_cache[path] = (_sig, data)
+            _mem_cache_store(path, (_sig, data))
     return data
 
 

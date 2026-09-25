@@ -146,22 +146,12 @@ def _load_mesh_data(path: str) -> Optional[dict]:
     center = verts.mean(axis=0)
     radius = float(np.max(np.linalg.norm(verts - center, axis=1)))
     if len(data.indices) == 0:
-        result = {"verts": verts, "edges": [], "edge_verts_np": np.empty((0, 2, 3), dtype=np.float32),
+        result = {"verts": verts,
                   "mins": mins, "maxs": maxs, "num_verts": len(verts), "center": center, "radius": radius,
                   "indices": indices, "import_scale": scale}
         _mesh_data.set(cache_key, result)
         return result
-    idxs = data.indices
-    edges_set = set()
-    for i in range(0, len(idxs), 3):
-        if i + 2 >= len(idxs):
-            break
-        a, b, c = int(idxs[i]), int(idxs[i+1]), int(idxs[i+2])
-        for ia, ib in ((a, b), (b, c), (c, a)):
-            edges_set.add((ia, ib) if ia < ib else (ib, ia))
-    edge_indices = np.array(list(edges_set), dtype=np.int32)
-    edge_verts_np = verts[edge_indices]
-    result = {"verts": verts, "edge_verts_np": edge_verts_np,
+    result = {"verts": verts,
               "mins": mins, "maxs": maxs, "num_verts": len(verts), "center": center, "radius": radius,
               "indices": indices, "import_scale": scale}
     _mesh_data.set(cache_key, result)

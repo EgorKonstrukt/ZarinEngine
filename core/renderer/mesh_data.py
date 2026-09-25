@@ -348,7 +348,7 @@ class MeshData:
         if self.vertices.size == 0:
             self._up_vbo = b""
             self._up_ibo = b""
-            self._up_outline = b""
+            self._up_outline = None
             self._up_bone = None
             self._up_color = None
             return
@@ -359,7 +359,7 @@ class MeshData:
         cols = self.colors
         n_verts = self.vertices.size // 3
         self._up_color = cols.astype(np.float32, copy=False).tobytes() if cols.size == n_verts * 4 else None
-        self._up_outline = self.vertices.astype(np.float32, copy=False).tobytes()
+        self._up_outline = None
 
     def _consume_upload_bytes(self) -> None:
         self._up_vbo = None
@@ -578,19 +578,37 @@ class MeshData:
 
     def release(self):
         if self._vbo:
-            self._vbo.release()
+            try:
+                self._vbo.release()
+            except Exception:
+                pass
         if self._ibo:
-            self._ibo.release()
+            try:
+                self._ibo.release()
+            except Exception:
+                pass
         if self._bone_vbo:
-            self._bone_vbo.release()
+            try:
+                self._bone_vbo.release()
+            except Exception:
+                pass
             self._bone_vbo = None
         if self._color_vbo:
-            self._color_vbo.release()
+            try:
+                self._color_vbo.release()
+            except Exception:
+                pass
             self._color_vbo = None
         if self._outline_vao:
-            self._outline_vao.release()
+            try:
+                self._outline_vao.release()
+            except Exception:
+                pass
         if self._outline_vbo:
-            self._outline_vbo.release()
+            try:
+                self._outline_vbo.release()
+            except Exception:
+                pass
         for v in self._vao_cache.values():
             if v:
                 try:
@@ -602,3 +620,9 @@ class MeshData:
         self._vbo = None
         self._ibo = None
         self._outline_vao = None
+        self._outline_vbo = None
+        self._up_vbo = None
+        self._up_ibo = None
+        self._up_bone = None
+        self._up_color = None
+        self._up_outline = None

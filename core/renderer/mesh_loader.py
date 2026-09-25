@@ -137,9 +137,9 @@ class MeshLoader:
             verts = verts - center
             m.vertices = verts.flatten()
         if flip_uvs and len(m.uvs) > 0:
-            uvs_arr = m.uvs.reshape(-1, 2)
-            uvs_arr[:, 1] = 1.0 - uvs_arr[:, 1]
-            m.uvs = uvs_arr.flatten()
+            m.uvs = np.array(m.uvs, dtype=np.float32, copy=True).reshape(-1, 2)
+            m.uvs[:, 1] = 1.0 - m.uvs[:, 1]
+            m.uvs = np.ascontiguousarray(m.uvs.reshape(-1), dtype=np.float32)
         m.vertices = np.ascontiguousarray(m.vertices, dtype=np.float32)
         if len(m.indices) > 0:
             m.indices = np.ascontiguousarray(m.indices, dtype=np.uint32)
@@ -229,10 +229,10 @@ class MeshLoader:
         if import_data is None or len(import_data.vertices) == 0:
             return None
         m = MeshData()
-        m.vertices = import_data.vertices.copy()
-        m.normals = import_data.normals.copy()
-        m.uvs = import_data.uvs.copy()
-        m.indices = import_data.indices.copy()
+        m.vertices = np.ascontiguousarray(import_data.vertices, dtype=np.float32)
+        m.normals = np.ascontiguousarray(import_data.normals, dtype=np.float32)
+        m.uvs = np.ascontiguousarray(import_data.uvs, dtype=np.float32)
+        m.indices = np.ascontiguousarray(import_data.indices, dtype=np.uint32)
         m.is_error_mesh = import_data.is_error_mesh
         m.sub_mesh_ranges = list(getattr(import_data, 'sub_mesh_ranges', []))
         m.sub_mesh_names = list(getattr(import_data, 'sub_mesh_names', []))
@@ -240,17 +240,17 @@ class MeshLoader:
             m.has_skeleton = True
             m.bone_names = list(import_data.bone_names)
             m.bone_parents = list(import_data.bone_parents)
-            m.bone_offset_matrices = [np.array(x, dtype=np.float32) for x in import_data.bone_offset_matrices]
-            m.bone_bind_local = [np.array(x, dtype=np.float32) for x in import_data.bone_bind_local]
-            m.bone_indices = np.array(import_data.bone_indices, dtype=np.int32).copy()
-            m.bone_weights = np.array(import_data.bone_weights, dtype=np.float32).copy()
+            m.bone_offset_matrices = [np.ascontiguousarray(x, dtype=np.float32) for x in import_data.bone_offset_matrices]
+            m.bone_bind_local = [np.ascontiguousarray(x, dtype=np.float32) for x in import_data.bone_bind_local]
+            m.bone_indices = np.ascontiguousarray(import_data.bone_indices, dtype=np.int32)
+            m.bone_weights = np.ascontiguousarray(import_data.bone_weights, dtype=np.float32)
         blend_names = list(getattr(import_data, 'blendshape_names', []) or [])
         if blend_names:
             m.blendshape_names = blend_names
             m.blendshape_index = {n: i for i, n in enumerate(blend_names)}
-            m.blendshape_vert_indices = [np.array(x, dtype=np.int32, copy=True) for x in getattr(import_data, 'blendshape_indices', [])]
-            m.blendshape_pos_deltas = [np.array(x, dtype=np.float32, copy=True).reshape(-1, 3) for x in getattr(import_data, 'blendshape_positions', [])]
-            m.blendshape_nrm_deltas = [np.array(x, dtype=np.float32, copy=True).reshape(-1, 3) for x in getattr(import_data, 'blendshape_normals', [])]
+            m.blendshape_vert_indices = [np.ascontiguousarray(x, dtype=np.int32) for x in getattr(import_data, 'blendshape_indices', [])]
+            m.blendshape_pos_deltas = [np.ascontiguousarray(x, dtype=np.float32).reshape(-1, 3) for x in getattr(import_data, 'blendshape_positions', [])]
+            m.blendshape_nrm_deltas = [np.ascontiguousarray(x, dtype=np.float32).reshape(-1, 3) for x in getattr(import_data, 'blendshape_normals', [])]
         return m
 
     def _load_async(self, key: str, file_path: str, cache_key: str,
@@ -435,6 +435,11 @@ class MeshLoader:
             m._vao = m._vao_cache.get(id(self._default_prog))
             if m._outline_vbo is not None and self._outline_prog:
                 m._create_outline_vao(self._outline_prog)
+            elif self._outline_prog is not None and m.vertices.size > 0:
+                try:
+                    m.build_outline_vao(self._ctx, self._outline_prog)
+                except Exception:
+                    pass
         except Exception:
             self._cancel_upload_session(cache_key)
             try:

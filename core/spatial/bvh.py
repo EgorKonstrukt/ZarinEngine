@@ -970,12 +970,37 @@ except ImportError:
     _raycast_mod = None
 
 
-_BVH_CACHE: dict[str, BVH | Future | None] = {}
+_BVH_CACHE_MAX = 32
+
+
+class _BvhLru(dict):
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        while len(self) > _BVH_CACHE_MAX:
+            oldest = next(iter(self))
+            if oldest == key:
+                break
+            old = self.pop(oldest)
+            try:
+                from concurrent.futures import Future as _Fut
+                if isinstance(old, _Fut):
+                    old.cancel()
+            except Exception:
+                pass
+
+
+_BVH_CACHE: dict[str, BVH | Future | None] = _BvhLru()
 _BVH_LOCK = threading.Lock()
 _BVH_CACHE_RUNTIME_VERSION: int = _BVH_CACHE_VERSION
 _bvh_none_logged: set[str] = set()
 _BVH_FAILED: dict[str, float] = {}
 _BVH_FAIL_BACKOFF = 5.0
+
+
+def _bvh_cache_store(key: str, value) -> None:
+    _BVH_CACHE[key] = value
+    if len(_bvh_none_logged) > 512:
+        _bvh_none_logged.clear()
 
 
 def _bvh_cache_key(vertices: np.ndarray, indices: np.ndarray) -> str:

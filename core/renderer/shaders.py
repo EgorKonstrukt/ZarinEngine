@@ -132,8 +132,15 @@ class ShaderManager:
         try:
             resolved_shader = _resolve_shader_path(shader_path if shader_path.endswith(".shader") else shader_path + ".shader")
             if os.path.exists(resolved_shader):
-                self._cache.pop(shader_path, None)
-                return self._compile_shader_file_visit(resolved_shader, set())
+                prog = self._compile_shader_file_visit(resolved_shader, set())
+                old = self._cache.get(shader_path)
+                if old is not None and old is not prog:
+                    try:
+                        old.release()
+                    except Exception:
+                        pass
+                self._cache[shader_path] = prog
+                return prog
             base = os.path.join(SHADER_DIR, shader_path)
             vert_file = f"{base}.vert"
             frag_file = f"{base}.frag"
@@ -178,6 +185,8 @@ class ShaderManager:
             if norm in visited:
                 return None
             visited.add(norm)
+            if shader_path in self._cache:
+                return self._cache[shader_path]
             try:
                 with open(resolved, "r", encoding="utf-8") as f:
                     text = f.read()
