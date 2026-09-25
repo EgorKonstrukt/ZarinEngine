@@ -18,6 +18,12 @@ try:
 except ImportError:
     _HAS_SKINNING_CY = False
 
+try:
+    from core._skinning import soa_skin_compose as _soa_skin_cy
+    _HAS_SOA_CY = True
+except ImportError:
+    _HAS_SOA_CY = False
+
 
 @ComponentRegistry.register
 class Bone(Component):
@@ -89,6 +95,7 @@ class Armature(Component):
         self._bone_slots_scene = None
         self._bone_slots_ids: tuple = ()
         self._bone_offsets_f64: Optional[np.ndarray] = None
+        self._soa_scratch: Optional[tuple] = None
 
     def setup(self, skeleton) -> None:
         if isinstance(skeleton, dict):
@@ -112,6 +119,7 @@ class Armature(Component):
         self._bone_slots_scene = None
         self._bone_slots_ids = ()
         self._bone_offsets_f64 = None
+        self._soa_scratch = None
 
     def create_bone_entities(self, scene, root_entity) -> None:
         from core.components import Transform
@@ -290,6 +298,21 @@ class Armature(Component):
         self._bone_slots_ids = ids
         return slots
 
+    def _soa_scratch_for(self, n: int) -> Optional[tuple]:
+        cur = self._soa_scratch
+        if cur is not None and cur[0].shape[0] == n:
+            return cur
+        try:
+            w16 = np.empty((n, 16), dtype=np.float64)
+            rel = np.empty((n, 4, 4), dtype=np.float64)
+            skin = np.empty((n, 4, 4), dtype=np.float64)
+            flat = np.empty((n, 16), dtype=np.float32)
+        except Exception:
+            return None
+        bufs = (w16, rel, skin, flat)
+        self._soa_scratch = bufs
+        return bufs
+
     def _soa_skinning(self, scene, renderer_world: Mat4) -> Optional[tuple[np.ndarray, int]]:
         slots = self._soa_bone_slots(scene)
         if slots is None:
@@ -304,11 +327,27 @@ class Armature(Component):
         off = self._soa_bone_offsets()
         if off is None or len(off) != len(slots):
             return None
+        bufs = self._soa_scratch_for(len(slots))
+        if bufs is None:
+            return None
         try:
-            inv = renderer_world.inverted()._d
-            rel = np.ascontiguousarray(world[slots]) @ inv
-            skin = off @ rel
-            return skin.reshape(len(slots), 16).astype(np.float32), int(len(slots))
+            w16, rel, skin, flat = bufs
+            inv_d = np.ascontiguousarray(renderer_world.inverted()._d, dtype=np.float64)
+            if _HAS_SOA_CY:
+                try:
+                    if (world.dtype == np.float64 and world.flags.c_contiguous
+                            and world.ndim == 3 and world.shape[1] == 4 and world.shape[2] == 4
+                            and off.dtype == np.float64 and off.flags.c_contiguous
+                            and inv_d.shape == (4, 4)):
+                        _soa_skin_cy(world, slots, off, inv_d, rel, flat)
+                        return flat, int(len(slots))
+                except Exception:
+                    pass
+            np.take(world.reshape(-1, 16), slots, axis=0, out=w16)
+            np.matmul(w16.reshape(-1, 4, 4), inv_d, out=rel)
+            np.matmul(off, rel, out=skin)
+            flat[:] = skin.reshape(-1, 16)
+            return flat, int(len(slots))
         except Exception:
             return None
 

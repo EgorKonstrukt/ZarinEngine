@@ -126,6 +126,46 @@ def compute_skinning_buffer_cy(
     return flat, n, inv_cache, inv_cache_key
 
 
+def soa_skin_compose(
+    np.ndarray[DTYPE_t, ndim=3] world,
+    np.ndarray[np.intp_t, ndim=1] slots,
+    np.ndarray[DTYPE_t, ndim=3] off,
+    np.ndarray[DTYPE_t, ndim=2] inv,
+    np.ndarray[DTYPE_t, ndim=3] rel,
+    np.ndarray[F32_t, ndim=2] out,
+):
+    cdef int n = slots.shape[0]
+    cdef int i, r, c, k
+    cdef long s, b, o
+    cdef DTYPE_t acc
+    cdef DTYPE_t* W = &world[0, 0, 0]
+    cdef DTYPE_t* O = &off[0, 0, 0]
+    cdef DTYPE_t* R = &rel[0, 0, 0]
+    cdef DTYPE_t* IV = &inv[0, 0]
+    cdef F32_t* OU = &out[0, 0]
+    if n == 0:
+        return out
+    for i in range(n):
+        s = slots[i] * 16
+        b = i * 16
+        for r in range(4):
+            for c in range(4):
+                acc = 0
+                for k in range(4):
+                    acc += W[s + r * 4 + k] * IV[k * 4 + c]
+                R[b + r * 4 + c] = acc
+    for i in range(n):
+        b = i * 16
+        o = i * 16
+        for r in range(4):
+            for c in range(4):
+                acc = 0
+                for k in range(4):
+                    acc += O[b + r * 4 + k] * R[b + k * 4 + c]
+                OU[o + r * 4 + c] = <F32_t>acc
+    return out
+
+
 def batch_normal_matrices_cy(list entries, dict cache):
     cdef int n = len(entries)
     cdef int i, eid
