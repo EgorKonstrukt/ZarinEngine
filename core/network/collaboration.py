@@ -21,6 +21,10 @@ from core.foundation.logger import Logger
 from core.network.protocol import MessageType, PROTOCOL_VERSION, CHUNK_SIZE, CHUNK_THRESHOLD, normalize_room, normalize_relay_url, is_relay_url, generate_room_code, hash_password, make_invite, parse_invite, build_direct_invite, build_relay_invite, estimate_msg_size
 from core.network.server import CollabServer
 from core.network.client import CollabClient
+try:
+    from core.network.upnp import UpnpMapper
+except Exception:
+    UpnpMapper = None
 from core.ecs.ecs import Scene, Entity, ComponentRegistry
 from core.config.config import get_global_config
 
@@ -211,7 +215,8 @@ class RemotePeer:
 class CollabSettings:
     __slots__ = ("cursor_interval", "camera_interval", "transform_interval",
                  "gizmo_interval", "ping_interval", "poll_interval", "scene_sync_interval",
-                 "relay_url", "auto_reconnect", "heartbeat_timeout")
+                 "relay_url", "auto_reconnect", "heartbeat_timeout",
+                 "upnp_enabled", "upnp_lease")
 
     def __init__(self):
         self.cursor_interval: float = 1.0 / 30.0
@@ -224,6 +229,8 @@ class CollabSettings:
         self.relay_url: str = "ws://127.0.0.1:8765"
         self.auto_reconnect: bool = True
         self.heartbeat_timeout: float = 30.0
+        self.upnp_enabled: bool = True
+        self.upnp_lease: int = 3600
 
 
 class CollaborationManager:
@@ -294,6 +301,11 @@ class CollaborationManager:
         self._reconnect_next = 0.0
         self._manual_stop = False
         self._last_status = False
+        self._upnp = None
+        self._upnp_lock = threading.Lock()
+        self._upnp_status: dict = {"state": "idle", "external_ip": "", "external_port": 0, "internal_port": 0, "error": "", "gateway": ""}
+        self._upnp_extras: dict = {}
+        self._on_upnp_status: Optional[Callable] = None
 
     @property
     def current_tab(self) -> str:
@@ -520,6 +532,10 @@ class CollaborationManager:
                 pass
 
     def _stop_server_only(self):
+        try:
+            self._clear_upnp_mappings()
+        except Exception:
+            pass
         srv = self._server
         lp = self._server_loop
         th = self._server_thread
@@ -559,7 +575,162 @@ class CollaborationManager:
             except Exception:
                 pass
 
-    def start_server(self, host: str = "0.0.0.0", port: int = 9876, password: str = "", room: str = "", max_clients: int = 32):
+    @property
+    def upnp_status(self) -> dict:
+        with self._upnp_lock:
+            return dict(self._upnp_status)
+
+    @property
+    def upnp_external_ip(self) -> str:
+        with self._upnp_lock:
+            return str(self._upnp_status.get("external_ip", ""))
+
+    @property
+    def upnp_mapped(self) -> bool:
+        with self._upnp_lock:
+            return str(self._upnp_status.get("state", "")) == "mapped"
+
+    def set_on_upnp_status(self, cb: Callable):
+        self._on_upnp_status = cb
+
+    def set_upnp_enabled(self, enabled: bool):
+        try:
+            self.settings.upnp_enabled = bool(enabled)
+        except Exception:
+            pass
+        if not enabled:
+            self._clear_upnp_mappings()
+            with self._upnp_lock:
+                self._upnp_status = {"state": "disabled", "external_ip": "", "external_port": 0, "internal_port": 0, "error": "", "gateway": ""}
+            self._upnp_notify()
+
+    def _upnp_notify(self):
+        cb = self._on_upnp_status
+        if cb is None:
+            return
+        try:
+            snap = self.upnp_status
+        except Exception:
+            return
+        try:
+            cb(snap)
+        except Exception:
+            pass
+
+    def _upnp_set(self, **kwargs):
+        with self._upnp_lock:
+            self._upnp_status.update(kwargs)
+        self._upnp_notify()
+
+    def _ensure_upnp_mapper(self):
+        if UpnpMapper is None:
+            return None
+        if self._upnp is None:
+            try:
+                self._upnp = UpnpMapper(lease=int(self.settings.upnp_lease))
+            except Exception:
+                try:
+                    self._upnp = UpnpMapper()
+                except Exception:
+                    return None
+        return self._upnp
+
+    def _clear_upnp_mappings(self):
+        mapper = self._upnp
+        self._upnp = None
+        try:
+            self._upnp_extras = {}
+        except Exception:
+            pass
+        if mapper is not None:
+            try:
+                mapper.unmap_all()
+            except Exception:
+                pass
+            try:
+                mapper.close()
+            except Exception:
+                pass
+
+    def _run_upnp_map(self, internal_port: int, description: str, main: bool):
+        mapper = self._ensure_upnp_mapper()
+        if mapper is None:
+            if main:
+                self._upnp_set(state="failed", error="unavailable")
+            return
+        if main:
+            self._upnp_set(state="discovering", internal_port=int(internal_port), error="")
+        try:
+            res = mapper.map_port(int(internal_port), int(internal_port), "TCP", str(description), try_alternatives=True, timeout=12.0)
+        except Exception as e:
+            if main:
+                self._upnp_set(state="failed", error=str(e)[:120])
+            return
+        if main:
+            if res.get("ok"):
+                self._upnp_set(state="mapped", external_ip=str(res.get("external_ip", "")), external_port=int(res.get("external", internal_port)), internal_port=int(internal_port), error="", gateway=str(mapper.snapshot().get("gateway", "")))
+            else:
+                self._upnp_set(state="failed", external_ip="", external_port=0, error=str(res.get("error", "map_failed"))[:120])
+        else:
+            try:
+                with self._upnp_lock:
+                    self._upnp_extras[int(internal_port)] = {"external": int(res.get("external", internal_port)), "ok": bool(res.get("ok")), "error": str(res.get("error", ""))}
+            except Exception:
+                pass
+
+    def _start_upnp_for_port(self, port: int, description: str, main: bool):
+        use = False
+        try:
+            use = bool(self.settings.upnp_enabled)
+        except Exception:
+            use = True
+        if not use or UpnpMapper is None:
+            if main:
+                with self._upnp_lock:
+                    self._upnp_status = {"state": "disabled", "external_ip": "", "external_port": 0, "internal_port": int(port), "error": "", "gateway": ""}
+            return
+        t = threading.Thread(target=self._run_upnp_map, args=(int(port), str(description), bool(main)), daemon=True)
+        t.start()
+
+    def map_extra_port(self, port: int, description: str = "ZarinEngine") -> None:
+        self._start_upnp_for_port(int(port), str(description or "ZarinEngine"), False)
+
+    def unmap_extra_port(self, port: int) -> None:
+        mapper = self._upnp
+        if mapper is None:
+            return
+        try:
+            with self._upnp_lock:
+                info = self._upnp_extras.pop(int(port), None)
+        except Exception:
+            info = None
+        try:
+            ext = int((info or {}).get("external", int(port)))
+        except Exception:
+            ext = int(port)
+        try:
+            mapper.unmap_port(ext, "TCP")
+        except Exception:
+            pass
+
+    def refresh_upnp(self) -> None:
+        port = 0
+        try:
+            port = int(self._direct_port)
+        except Exception:
+            port = 0
+        if self._server is None or not port:
+            return
+        use = False
+        try:
+            use = bool(self.settings.upnp_enabled)
+        except Exception:
+            use = False
+        if not use:
+            return
+        self._start_upnp_for_port(port, f"ZarinEngine-Collab-{port}", True)
+
+    def start_server(self, host: str = "0.0.0.0", port: int = 9876, password: str = "", room: str = "", max_clients: int = 32, use_upnp: Optional[bool] = None):
         self._manual_stop = False
         self._stop_link_only()
         self._stop_server_only()
@@ -599,6 +770,17 @@ class CollaborationManager:
             pass
         self._start_asset_watcher()
         Logger.info(f"Collab server started on {host}:{port}")
+        try:
+            if use_upnp is not None:
+                self.settings.upnp_enabled = bool(use_upnp)
+            bind_all = str(host or "") in ("0.0.0.0", "", "::", "0:0:0:0:0:0:0:0")
+            if bind_all:
+                self._start_upnp_for_port(int(port), f"ZarinEngine-Collab-{int(port)}", True)
+            else:
+                with self._upnp_lock:
+                    self._upnp_status = {"state": "disabled", "external_ip": "", "external_port": 0, "internal_port": int(port), "error": "bound_to_localhost", "gateway": ""}
+        except Exception:
+            pass
 
     def connect(self, host: str = "127.0.0.1", port: int = 9876, name: str = "User", password: str = "", room: str = ""):
         keep_host = self._server is not None
@@ -694,15 +876,28 @@ class CollaborationManager:
         self._client = client
         client.connect(self._relay_url, self._room, self._own_name, password=self._password)
 
-    def create_invite(self) -> str:
+    def create_invite(self, public: bool = True) -> str:
         locked = bool(self._password)
         if self._mode == "relay" and self._room:
             return build_relay_invite(self._relay_url or str(self.settings.relay_url), self._room, locked)
+        if bool(public):
+            try:
+                snap = self.upnp_status
+            except Exception:
+                snap = {}
+            if str(snap.get("state", "")) == "mapped" and str(snap.get("external_ip", "")):
+                try:
+                    return build_direct_invite(str(snap["external_ip"]), int(snap.get("external_port", self._direct_port)), self._room, locked)
+                except Exception:
+                    pass
         host = self._direct_host
         if host in ("0.0.0.0", "", "0:0:0:0:0:0:0:0"):
             ips = get_lan_ips()
             host = ips[0] if ips else "127.0.0.1"
         return build_direct_invite(host, int(self._direct_port), self._room, locked)
+
+    def create_lan_invite(self) -> str:
+        return self.create_invite(public=False)
 
     def join_invite(self, code: str, name: str, password: str = "") -> bool:
         try:
@@ -733,6 +928,15 @@ class CollaborationManager:
     def stop(self):
         self._manual_stop = True
         self._mode = "none"
+        try:
+            self._clear_upnp_mappings()
+        except Exception:
+            pass
+        try:
+            with self._upnp_lock:
+                self._upnp_status = {"state": "idle", "external_ip": "", "external_port": 0, "internal_port": 0, "error": "", "gateway": ""}
+        except Exception:
+            pass
         self._stop_asset_watcher()
         self._stop_link_only()
         self._stop_server_only()
@@ -751,6 +955,10 @@ class CollaborationManager:
         Logger.info("Collab stopped")
 
     def shutdown(self):
+        try:
+            self._clear_upnp_mappings()
+        except Exception:
+            pass
         try:
             self._manual_stop = True
         except Exception:
@@ -1590,6 +1798,8 @@ class CollaborationManager:
             s.relay_url = str(cfg.get("collab.relay_url", s.relay_url))
             s.auto_reconnect = bool(cfg.get("collab.auto_reconnect", True))
             s.heartbeat_timeout = float(cfg.get("collab.heartbeat_timeout", 30.0))
+            s.upnp_enabled = bool(cfg.get("collab.upnp_enabled", True))
+            s.upnp_lease = int(cfg.get("collab.upnp_lease", 3600))
         except Exception:
             pass
 
@@ -1610,6 +1820,8 @@ class CollaborationManager:
             cfg.set("collab.relay_url", str(s.relay_url))
             cfg.set("collab.auto_reconnect", bool(s.auto_reconnect))
             cfg.set("collab.heartbeat_timeout", float(s.heartbeat_timeout))
+            cfg.set("collab.upnp_enabled", bool(s.upnp_enabled))
+            cfg.set("collab.upnp_lease", int(s.upnp_lease))
             cfg.save()
         except Exception:
             pass

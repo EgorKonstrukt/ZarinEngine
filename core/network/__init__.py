@@ -16,6 +16,15 @@ except Exception:
     RelayServer = None
     RelayClient = None
 
+try:
+    from core.network.upnp import UpnpGateway, UpnpMapper, discover_gateways, get_external_ip as upnp_external_ip, UPNP_AVAILABLE
+except Exception:
+    UpnpGateway = None
+    UpnpMapper = None
+    discover_gateways = None
+    upnp_external_ip = None
+    UPNP_AVAILABLE = False
+
 __all__ = [
     "MessageType", "make_msg", "parse_msg", "FRAME_HEADER_SIZE",
     "PROTOCOL_VERSION", "CHUNK_SIZE",
@@ -25,5 +34,6 @@ __all__ = [
     "CollabServer", "CollabClient", "CollaborationManager",
     "get_lan_ips", "get_public_ip",
     "RelayServer", "RelayClient",
+    "UpnpGateway", "UpnpMapper", "discover_gateways", "upnp_external_ip", "UPNP_AVAILABLE",
     "Transport", "GameServer", "GameClient", "get_transport",
 ]

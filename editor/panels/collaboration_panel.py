@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Optional
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QPushButton, QLineEdit, QSpinBox,
-                              QListWidget, QListWidgetItem, QFrame,
+                              QListWidget, QListWidgetItem, QFrame, QCheckBox,
                               QProgressBar, QMessageBox, QFileDialog, QApplication)
 from PyQt6.QtCore import Qt, QTimer
 import qtawesome as qta
@@ -21,6 +21,7 @@ class CollaborationPanel(QDockWidget):
         self._engine = engine
         self._collab: Optional = None
         self._relay_server = None
+        self._relay_port = 8765
         self._setup_ui()
         self._update_timer = QTimer(self)
         self._update_timer.timeout.connect(self._refresh_peers)
@@ -38,6 +39,10 @@ class CollaborationPanel(QDockWidget):
             pass
         try:
             self._relay_input.setText(str(getattr(mgr.settings, "relay_url", "ws://127.0.0.1:8765")))
+        except Exception:
+            pass
+        try:
+            self._upnp_check.setChecked(bool(getattr(mgr.settings, "upnp_enabled", True)))
         except Exception:
             pass
 
@@ -135,6 +140,16 @@ class CollaborationPanel(QDockWidget):
         self._connect_btn.setStyleSheet("QPushButton { background: #2e7d32; }")
         self._connect_btn.clicked.connect(self._on_connect)
         layout.addWidget(self._connect_btn)
+        upnp_row = QHBoxLayout()
+        self._upnp_check = QCheckBox("UPnP port forwarding (auto)")
+        self._upnp_check.setChecked(True)
+        self._upnp_check.toggled.connect(self._on_upnp_toggle)
+        upnp_row.addWidget(self._upnp_check)
+        layout.addLayout(upnp_row)
+        self._upnp_label = QLabel("UPnP: idle")
+        self._upnp_label.setStyleSheet("font-size: 9px;")
+        self._upnp_label.setWordWrap(True)
+        layout.addWidget(self._upnp_label)
         net_title = QLabel("Internet (relay, no port forwarding)")
         net_title.setStyleSheet("font-size: 10px; font-weight: bold;")
         layout.addWidget(net_title)
@@ -246,6 +261,43 @@ class CollaborationPanel(QDockWidget):
         except Exception:
             return ""
 
+    def _on_upnp_toggle(self, checked: bool):
+        if not self._collab:
+            return
+        try:
+            self._collab.set_upnp_enabled(bool(checked))
+        except Exception:
+            pass
+        if checked:
+            try:
+                self._collab.refresh_upnp()
+            except Exception:
+                pass
+        self._update_upnp_label()
+
+    def _update_upnp_label(self):
+        if not self._collab:
+            return
+        try:
+            snap = self._collab.upnp_status
+        except Exception:
+            return
+        try:
+            state = str(snap.get("state", "idle"))
+            if state == "mapped":
+                self._upnp_label.setText(f"UPnP: {snap.get('external_ip', '')}:{snap.get('external_port', '')} mapped")
+            elif state == "discovering":
+                self._upnp_label.setText("UPnP: discovering router...")
+            elif state == "failed":
+                err = str(snap.get("error", ""))[:60]
+                self._upnp_label.setText(f"UPnP: failed ({err}), use relay")
+            elif state == "disabled":
+                self._upnp_label.setText("UPnP: off")
+            else:
+                self._upnp_label.setText("UPnP: idle")
+        except Exception:
+            pass
+
     def _on_host(self):
         if not self._collab:
             return
@@ -255,7 +307,11 @@ class CollaborationPanel(QDockWidget):
         room = self._common_room()
         password = self._common_password()
         try:
-            self._collab.start_server(host, port, password=password, room=room)
+            use_upnp = bool(self._upnp_check.isChecked())
+        except Exception:
+            use_upnp = True
+        try:
+            self._collab.start_server(host, port, password=password, room=room, use_upnp=use_upnp)
             self._collab.connect("127.0.0.1", port, name, password=password, room=room or self._collab.room)
         except Exception:
             pass
@@ -341,6 +397,15 @@ class CollaborationPanel(QDockWidget):
                     self._relay_server_btn.setChecked(False)
                     return
                 self._relay_server_btn.setText(" Stop Relay Server")
+                try:
+                    self._relay_port = int(port)
+                except Exception:
+                    pass
+                try:
+                    if self._collab is not None:
+                        self._collab.map_extra_port(int(port), "ZarinEngine-Relay")
+                except Exception:
+                    pass
             except Exception:
                 self._relay_server = None
                 self._relay_server_btn.setChecked(False)
@@ -351,6 +416,11 @@ class CollaborationPanel(QDockWidget):
             except Exception:
                 pass
             self._relay_server = None
+            try:
+                if self._collab is not None:
+                    self._collab.unmap_extra_port(int(getattr(self, "_relay_port", 8765)))
+            except Exception:
+                pass
             self._relay_server_btn.setText(" Start Relay Server")
 
     def _on_copy_invite(self):
@@ -438,6 +508,10 @@ class CollaborationPanel(QDockWidget):
         if not self._collab:
             return
         self._update_status()
+        try:
+            self._update_upnp_label()
+        except Exception:
+            pass
         try:
             self._peer_list.clear()
         except Exception:

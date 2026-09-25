@@ -245,7 +245,9 @@ def get_global_config() -> Config:
                 "scene_sync_interval": 2.0,
                 "relay_url": "ws://127.0.0.1:8765",
                 "auto_reconnect": True,
-                "heartbeat_timeout": 30.0
+                "heartbeat_timeout": 30.0,
+                "upnp_enabled": True,
+                "upnp_lease": 3600
             },
             "undo": {
                 "max_stack": 200
