@@ -767,7 +767,24 @@ class InspectorPanel(QDockWidget):
         shader_lbl.setWordWrap(True)
         shader_lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         shader_rl.addWidget(shader_lbl, 0)
+        def _store_shader(p: str) -> str:
+            if p and os.path.isabs(p):
+                try:
+                    from core.assets.material import _project_root as _eng_root
+                    norm = os.path.normpath(p)
+                    eng = os.path.normpath(_eng_root())
+                    if norm == eng or norm.startswith(eng + os.sep):
+                        return os.path.relpath(norm, eng).replace("\\", "/")
+                    root = self._engine.project_root if self._engine else os.getcwd()
+                    if root:
+                        proj = os.path.normpath(os.path.abspath(root))
+                        if norm == proj or norm.startswith(proj + os.sep):
+                            return os.path.relpath(norm, proj).replace("\\", "/")
+                except Exception:
+                    pass
+            return p
         def _on_shader_pick(p):
+            p = _store_shader(p)
             mat.shader_path = p
             mat.load_shader_properties(p, self._engine.project_root)
             props.clear()

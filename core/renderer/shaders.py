@@ -91,15 +91,17 @@ _SHADER_SUBDIRS = ("materials", "internal", "compute", "include", "legacy")
 
 
 def _resolve_shader_path(shader_path: str) -> str:
-    if os.path.isabs(shader_path) or os.path.exists(shader_path):
+    if os.path.exists(shader_path):
         return shader_path
+    shader_name = os.path.basename(shader_path)
+    for sub in _SHADER_SUBDIRS:
+        c = os.path.join(_ENGINE_ROOT, "core", "shaders", sub, shader_name)
+        if os.path.exists(c):
+            return c
     candidates = [
         os.path.join(_ENGINE_ROOT, shader_path),
         os.path.join(_ENGINE_ROOT, "core", "shaders", shader_path),
     ]
-    shader_name = os.path.basename(shader_path)
-    for sub in _SHADER_SUBDIRS:
-        candidates.append(os.path.join(_ENGINE_ROOT, "core", "shaders", sub, shader_name))
     for c in candidates:
         if os.path.exists(c):
             return c

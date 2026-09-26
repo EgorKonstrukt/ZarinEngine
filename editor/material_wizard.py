@@ -92,10 +92,11 @@ def _collect_shaders(project_root: str) -> list[tuple[str, str]]:
                     shaders.append((f, full))
             break
     for d in dirs_to_scan:
-        for f in os.listdir(d):
-            if f.endswith(".shader"):
-                full = os.path.normpath(os.path.join(d, f))
-                shaders.append((f, full))
+        for root, _, files in os.walk(d):
+            for f in files:
+                if f.endswith(".shader"):
+                    full = os.path.normpath(os.path.join(root, f))
+                    shaders.append((f, full))
     seen = set()
     unique = []
     for name, path in shaders:
@@ -638,10 +639,22 @@ class MaterialWizardDialog(QDialog):
             return name.replace("_", " ").replace("-", " ").title()
         return "Material"
 
+    def _store_shader_path(self, shader_path: str) -> str:
+        if shader_path and os.path.isabs(shader_path):
+            norm = os.path.normpath(shader_path)
+            if self._project_root:
+                proj = os.path.normpath(os.path.abspath(self._project_root))
+                if norm == proj or norm.startswith(proj + os.sep):
+                    return os.path.relpath(norm, proj).replace("\\", "/")
+            eng = os.path.normpath(_project_root())
+            if norm == eng or norm.startswith(eng + os.sep):
+                return os.path.relpath(norm, eng).replace("\\", "/")
+        return shader_path
+
     def _create_material(self, name: str, shader_path: str, texture_map: dict[str, str]) -> Material:
         mat = Material(name)
-        mat.shader_path = shader_path
-        mat.load_shader_properties(shader_path, self._project_root)
+        mat.shader_path = self._store_shader_path(shader_path)
+        mat.load_shader_properties(mat.shader_path, self._project_root)
 
         for prop in mat._shader_properties:
             if prop.name not in mat.properties:

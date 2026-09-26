@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 import os
 import numpy as np
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from core.foundation.plugin_manager import PluginBase
 from core.foundation.logger import Logger
 from core.physics import PhysicsProcess, PhysicsScene

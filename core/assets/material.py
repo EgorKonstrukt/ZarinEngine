@@ -196,20 +196,25 @@ class Material:
 
     @staticmethod
     def _resolve_shader_path(shader_path: str, project_root: str) -> str:
-        if os.path.isabs(shader_path):
+        if os.path.isabs(shader_path) and os.path.exists(shader_path):
             return shader_path
         candidates = []
-        if project_root:
+        if not os.path.isabs(shader_path) and project_root:
             candidates.append(os.path.normpath(os.path.join(project_root, shader_path)))
         engine_root = _project_root()
-        candidates.append(os.path.normpath(os.path.join(engine_root, shader_path)))
-        candidates.append(os.path.normpath(os.path.join(engine_root, "core", "shaders", shader_path)))
+        if not os.path.isabs(shader_path):
+            candidates.append(os.path.normpath(os.path.join(engine_root, shader_path)))
+            candidates.append(os.path.normpath(os.path.join(engine_root, "core", "shaders", shader_path)))
         shader_name = os.path.basename(shader_path)
         for sub in ("materials", "internal", "compute", "include", "legacy"):
             candidates.append(os.path.normpath(os.path.join(engine_root, "core", "shaders", sub, shader_name)))
         for c in candidates:
             if os.path.exists(c):
+                if os.path.isabs(shader_path):
+                    Logger.warning(f"Shader path '{shader_path}' not found, remapped to '{c}'")
                 return c
+        if os.path.isabs(shader_path):
+            return shader_path
         return candidates[0] if candidates else shader_path
 
     def load_shader_properties(self, shader_path: str, project_root: str = "") -> bool:
