@@ -370,7 +370,15 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
     cull_str = f"{st['culled_visible']}/{cull_total}"
     if cull_total > 0:
         cull_str += f" ({100.0 * st['culled_visible'] / cull_total:.0f}%)"
-    fill_mts = st['triangles'] * m['fps'] / 1e6
+    fill_mpx = 0.0
+    try:
+        _res = str(timings.get('res', ''))
+        if 'x' in _res:
+            _rw, _rh = _res.lower().split('x')
+            fill_mpx = float(_rw) * float(_rh) * m['fps'] / 1e6
+    except Exception:
+        fill_mpx = 0.0
+    tri_mts = st['triangles'] * m['fps'] / 1e6
     frame_kvs = [
         ("FPS", f"{m['fps']:.1f}", "FPS"),
         ("1%", f"{m['p1_fps']:.1f}", "1%"),
@@ -397,7 +405,8 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
             ("Draw", f"{st['draw_calls']}", "Draw"),
             ("Tris", f"{_fmt_count(st['triangles'])}", "Tris"),
             ("Verts", f"{_fmt_count(st['vertices'])}", "Verts"),
-            ("Fill", f"{fill_mts:.0f}MT/s", "Fill"),
+            ("Fill", f"{fill_mpx:.0f}MP/s", "Fill"),
+            ("Tris/s", f"{tri_mts:.0f}MT/s", "Tris"),
             ("Cull", cull_str, "Cull"),
         ]),
         ("h", "Batches"),
