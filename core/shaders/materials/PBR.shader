@@ -190,23 +190,21 @@ Shader "Zarin/PBR"
             uniform int u_light_count;
             uniform vec3 u_ambient;
             uniform int u_shadow_light_index;
-            uniform sampler2D u_shadow_map_0;
-            uniform sampler2D u_shadow_map_1;
-            uniform sampler2D u_shadow_map_2;
-uniform sampler2D u_shadow_map_3;
+uniform sampler2D u_cascade_atlas;
+uniform vec4 u_cascade_rects[4];
             uniform mat4 u_light_space_matrices[CASCADE_COUNT];
             uniform float u_cascade_splits[CASCADE_COUNT];
             uniform float u_shadow_bias;
             uniform float u_shadow_normal_bias;
             uniform float u_shadow_slope_scale;
             uniform int u_cascade_count;
-            uniform sampler2D u_point_shadow_maps[MAX_POINT_SHADOWS * 6];
+            uniform sampler2D u_point_shadow_atlas;
             uniform mat4 u_point_shadow_vps[MAX_POINT_SHADOWS * 6];
             uniform vec3 u_point_shadow_light_positions[MAX_POINT_SHADOWS];
             uniform float u_point_shadow_light_ranges[MAX_POINT_SHADOWS];
             uniform int u_point_shadow_count;
             uniform int u_point_shadow_light_indices[MAX_POINT_SHADOWS];
-            uniform sampler2D u_spot_shadow_maps[MAX_SPOT_SHADOWS];
+            uniform sampler2D u_spot_shadow_atlas;
             uniform mat4 u_spot_shadow_vps[MAX_SPOT_SHADOWS];
             uniform int u_spot_shadow_count;
             uniform int u_spot_shadow_light_indices[MAX_SPOT_SHADOWS];
@@ -294,7 +292,8 @@ uniform sampler2D u_shadow_map_3;
                 return n;
             }
 
-            float compute_shadow_improved() {
+                        float sample_shadow_atlas_improved(sampler2D atlas_map, vec2 origin, vec2 span, vec3 proj_coords, float bias);
+float compute_shadow_improved() {
                 if (u_cascade_count <= 0) return 1.0;
                 int cascade_idx = 0;
                 float frag_depth = abs(v_view_pos.z);
@@ -312,13 +311,43 @@ uniform sampler2D u_shadow_map_3;
                 proj_coords = proj_coords * 0.5 + 0.5;
                 if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
                 float bias = (u_shadow_bias + u_shadow_slope_scale * slope) * cascade_scale;
-                if (cascade_idx == 0) return sample_shadow_improved(u_shadow_map_0, proj_coords, bias);
-                else if (cascade_idx == 1) return sample_shadow_improved(u_shadow_map_1, proj_coords, bias);
-                else if (cascade_idx == 2) return sample_shadow_improved(u_shadow_map_2, proj_coords, bias);
-    return sample_shadow_improved(u_shadow_map_3, proj_coords, bias);
+                if (cascade_idx == 0) return sample_shadow_atlas_improved(u_cascade_atlas, u_cascade_rects[0].xy, u_cascade_rects[0].zw, proj_coords, bias);
+                else if (cascade_idx == 1) return sample_shadow_atlas_improved(u_cascade_atlas, u_cascade_rects[1].xy, u_cascade_rects[1].zw, proj_coords, bias);
+                else if (cascade_idx == 2) return sample_shadow_atlas_improved(u_cascade_atlas, u_cascade_rects[2].xy, u_cascade_rects[2].zw, proj_coords, bias);
+    return sample_shadow_atlas_improved(u_cascade_atlas, u_cascade_rects[3].xy, u_cascade_rects[3].zw, proj_coords, bias);
             }
 
-            float compute_point_shadow_for_light(int li) {
+                        float sample_shadow_atlas_improved(sampler2D atlas_map, vec2 origin, vec2 span, vec3 proj_coords, float bias) {
+                float current_depth = proj_coords.z - bias;
+                float result = 0.0;
+                vec2 texel_size = 1.0 / vec2(textureSize(atlas_map, 0));
+                float radius = 1.5;
+                float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+                float ca = cos(rot);
+                float sa = sin(rot);
+                for (int i = 0; i < POISSON_SAMPLES; i++) {
+                    vec2 o = poisson_disk[i];
+                    vec2 ro = vec2(o.x * ca - o.y * sa, o.x * sa + o.y * ca);
+                    vec2 uv = origin + clamp(proj_coords.xy + ro * texel_size * radius, vec2(0.001), vec2(0.999)) * span;
+                    float pcf_depth = texture(atlas_map, uv).r;
+                    result += (current_depth > pcf_depth) ? 1.0 : 0.0;
+                }
+                float lit = 1.0 - result / float(POISSON_SAMPLES);
+                return smoothstep(0.08, 0.92, lit);
+            }
+            float fallback_point_shadow(int li, int face, vec3 proj_coords, float bias) {
+                vec2 grid = vec2(6.0, float(MAX_POINT_SHADOWS));
+                vec2 origin = vec2(float(face), float(li)) / grid;
+                vec2 span = vec2(1.0) / grid;
+                return sample_shadow_atlas_improved(u_point_shadow_atlas, origin, span, proj_coords, bias);
+            }
+            float fallback_spot_shadow(int li, vec3 proj_coords, float bias) {
+                vec2 grid = vec2(float(MAX_SPOT_SHADOWS), 1.0);
+                vec2 origin = vec2(float(li), 0.0) / grid;
+                vec2 span = vec2(1.0) / grid;
+                return sample_shadow_atlas_improved(u_spot_shadow_atlas, origin, span, proj_coords, bias);
+            }
+float compute_point_shadow_for_light(int li) {
                 vec3 SN = shadow_receiver_normal_pbr();
                 vec3 toL = u_point_shadow_light_positions[li] - v_world_pos;
                 float dlen = max(length(toL), 1e-4);
@@ -337,7 +366,7 @@ uniform sampler2D u_shadow_map_3;
                 proj_coords = proj_coords * 0.5 + 0.5;
                 if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
                 float bias = u_shadow_bias + u_shadow_slope_scale * slope;
-                return sample_shadow_improved(u_point_shadow_maps[base + face], proj_coords, bias);
+                return fallback_point_shadow(li, face, proj_coords, bias);
             }
 
             float compute_spot_shadow_for_light(int li) {
@@ -348,7 +377,7 @@ uniform sampler2D u_shadow_map_3;
                 proj_coords = proj_coords * 0.5 + 0.5;
                 if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
                 float bias = u_shadow_bias + u_shadow_slope_scale * 0.5;
-                return sample_shadow_improved(u_spot_shadow_maps[li], proj_coords, bias);
+                return fallback_spot_shadow(li, proj_coords, bias);
             }
 
             #define PBR_AREA_SHADOWS
@@ -913,23 +942,21 @@ uniform sampler2D u_shadow_map_3;
             uniform int u_light_count;
             uniform vec3 u_ambient;
             uniform int u_shadow_light_index;
-            uniform sampler2D u_shadow_map_0;
-            uniform sampler2D u_shadow_map_1;
-            uniform sampler2D u_shadow_map_2;
-uniform sampler2D u_shadow_map_3;
+uniform sampler2D u_cascade_atlas;
+uniform vec4 u_cascade_rects[4];
             uniform mat4 u_light_space_matrices[CASCADE_COUNT];
             uniform float u_cascade_splits[CASCADE_COUNT];
             uniform float u_shadow_bias;
             uniform float u_shadow_normal_bias;
             uniform float u_shadow_slope_scale;
             uniform int u_cascade_count;
-            uniform sampler2D u_point_shadow_maps[MAX_POINT_SHADOWS * 6];
+            uniform sampler2D u_point_shadow_atlas;
             uniform mat4 u_point_shadow_vps[MAX_POINT_SHADOWS * 6];
             uniform vec3 u_point_shadow_light_positions[MAX_POINT_SHADOWS];
             uniform float u_point_shadow_light_ranges[MAX_POINT_SHADOWS];
             uniform int u_point_shadow_count;
             uniform int u_point_shadow_light_indices[MAX_POINT_SHADOWS];
-            uniform sampler2D u_spot_shadow_maps[MAX_SPOT_SHADOWS];
+            uniform sampler2D u_spot_shadow_atlas;
             uniform mat4 u_spot_shadow_vps[MAX_SPOT_SHADOWS];
             uniform int u_spot_shadow_count;
             uniform int u_spot_shadow_light_indices[MAX_SPOT_SHADOWS];
@@ -1054,43 +1081,36 @@ mat4 fallback_spot_vp(int li) {
     else if (li == 2) return u_spot_shadow_vps[2];
     else return u_spot_shadow_vps[3];
 }
-float fallback_point_shadow(int li, int face, vec3 proj_coords, float bias) {
-    if (li == 0) {
-                if (face == 0) return sample_shadow_improved(u_point_shadow_maps[0], proj_coords, bias);
-                else if (face == 1) return sample_shadow_improved(u_point_shadow_maps[1], proj_coords, bias);
-                else if (face == 2) return sample_shadow_improved(u_point_shadow_maps[2], proj_coords, bias);
-                else if (face == 3) return sample_shadow_improved(u_point_shadow_maps[3], proj_coords, bias);
-                else if (face == 4) return sample_shadow_improved(u_point_shadow_maps[4], proj_coords, bias);
-        else return sample_shadow_improved(u_point_shadow_maps[5], proj_coords, bias);
-    } else if (li == 1) {
-                if (face == 0) return sample_shadow_improved(u_point_shadow_maps[6], proj_coords, bias);
-                else if (face == 1) return sample_shadow_improved(u_point_shadow_maps[7], proj_coords, bias);
-                else if (face == 2) return sample_shadow_improved(u_point_shadow_maps[8], proj_coords, bias);
-                else if (face == 3) return sample_shadow_improved(u_point_shadow_maps[9], proj_coords, bias);
-                else if (face == 4) return sample_shadow_improved(u_point_shadow_maps[10], proj_coords, bias);
-        else return sample_shadow_improved(u_point_shadow_maps[11], proj_coords, bias);
-    } else if (li == 2) {
-                if (face == 0) return sample_shadow_improved(u_point_shadow_maps[12], proj_coords, bias);
-                else if (face == 1) return sample_shadow_improved(u_point_shadow_maps[13], proj_coords, bias);
-                else if (face == 2) return sample_shadow_improved(u_point_shadow_maps[14], proj_coords, bias);
-                else if (face == 3) return sample_shadow_improved(u_point_shadow_maps[15], proj_coords, bias);
-                else if (face == 4) return sample_shadow_improved(u_point_shadow_maps[16], proj_coords, bias);
-        else return sample_shadow_improved(u_point_shadow_maps[17], proj_coords, bias);
-    } else {
-                if (face == 0) return sample_shadow_improved(u_point_shadow_maps[18], proj_coords, bias);
-                else if (face == 1) return sample_shadow_improved(u_point_shadow_maps[19], proj_coords, bias);
-                else if (face == 2) return sample_shadow_improved(u_point_shadow_maps[20], proj_coords, bias);
-                else if (face == 3) return sample_shadow_improved(u_point_shadow_maps[21], proj_coords, bias);
-                else if (face == 4) return sample_shadow_improved(u_point_shadow_maps[22], proj_coords, bias);
-        else return sample_shadow_improved(u_point_shadow_maps[23], proj_coords, bias);
-    }
-}
-float fallback_spot_shadow(int li, vec3 proj_coords, float bias) {
-    if (li == 0) return sample_shadow_improved(u_spot_shadow_maps[0], proj_coords, bias);
-    else if (li == 1) return sample_shadow_improved(u_spot_shadow_maps[1], proj_coords, bias);
-    else if (li == 2) return sample_shadow_improved(u_spot_shadow_maps[2], proj_coords, bias);
-    else return sample_shadow_improved(u_spot_shadow_maps[3], proj_coords, bias);
-}
+            float sample_shadow_atlas_improved(sampler2D atlas_map, vec2 origin, vec2 span, vec3 proj_coords, float bias) {
+                float current_depth = proj_coords.z - bias;
+                float result = 0.0;
+                vec2 texel_size = 1.0 / vec2(textureSize(atlas_map, 0));
+                float radius = 1.5;
+                float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+                float ca = cos(rot);
+                float sa = sin(rot);
+                for (int i = 0; i < POISSON_SAMPLES; i++) {
+                    vec2 o = poisson_disk[i];
+                    vec2 ro = vec2(o.x * ca - o.y * sa, o.x * sa + o.y * ca);
+                    vec2 uv = origin + clamp(proj_coords.xy + ro * texel_size * radius, vec2(0.001), vec2(0.999)) * span;
+                    float pcf_depth = texture(atlas_map, uv).r;
+                    result += (current_depth > pcf_depth) ? 1.0 : 0.0;
+                }
+                float lit = 1.0 - result / float(POISSON_SAMPLES);
+                return smoothstep(0.08, 0.92, lit);
+            }
+            float fallback_point_shadow(int li, int face, vec3 proj_coords, float bias) {
+                vec2 grid = vec2(6.0, float(MAX_POINT_SHADOWS));
+                vec2 origin = vec2(float(face), float(li)) / grid;
+                vec2 span = vec2(1.0) / grid;
+                return sample_shadow_atlas_improved(u_point_shadow_atlas, origin, span, proj_coords, bias);
+            }
+            float fallback_spot_shadow(int li, vec3 proj_coords, float bias) {
+                vec2 grid = vec2(float(MAX_SPOT_SHADOWS), 1.0);
+                vec2 origin = vec2(float(li), 0.0) / grid;
+                vec2 span = vec2(1.0) / grid;
+                return sample_shadow_atlas_improved(u_spot_shadow_atlas, origin, span, proj_coords, bias);
+            }
 float compute_shadow_improved() {
                 if (u_cascade_count <= 0) return 1.0;
                 int cascade_idx = 0;
@@ -1109,10 +1129,10 @@ float compute_shadow_improved() {
                 proj_coords = proj_coords * 0.5 + 0.5;
                 if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
                 float bias = (u_shadow_bias + u_shadow_slope_scale * slope) * cascade_scale;
-                if (cascade_idx == 0) return sample_shadow_improved(u_shadow_map_0, proj_coords, bias);
-                else if (cascade_idx == 1) return sample_shadow_improved(u_shadow_map_1, proj_coords, bias);
-                else if (cascade_idx == 2) return sample_shadow_improved(u_shadow_map_2, proj_coords, bias);
-    return sample_shadow_improved(u_shadow_map_3, proj_coords, bias);
+                if (cascade_idx == 0) return sample_shadow_atlas_improved(u_cascade_atlas, u_cascade_rects[0].xy, u_cascade_rects[0].zw, proj_coords, bias);
+                else if (cascade_idx == 1) return sample_shadow_atlas_improved(u_cascade_atlas, u_cascade_rects[1].xy, u_cascade_rects[1].zw, proj_coords, bias);
+                else if (cascade_idx == 2) return sample_shadow_atlas_improved(u_cascade_atlas, u_cascade_rects[2].xy, u_cascade_rects[2].zw, proj_coords, bias);
+    return sample_shadow_atlas_improved(u_cascade_atlas, u_cascade_rects[3].xy, u_cascade_rects[3].zw, proj_coords, bias);
             }
 
             float compute_point_shadow_for_light(int li) {

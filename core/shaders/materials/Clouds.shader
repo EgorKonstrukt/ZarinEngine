@@ -82,10 +82,8 @@ Shader "Zarin/Clouds"
             uniform vec2 u_viewport_size;
             uniform sampler2D u_depth_tex;
             uniform int u_has_depth;
-            uniform sampler2D u_shadow_map_0;
-            uniform sampler2D u_shadow_map_1;
-            uniform sampler2D u_shadow_map_2;
-uniform sampler2D u_shadow_map_3;
+uniform sampler2D u_cascade_atlas;
+uniform vec4 u_cascade_rects[4];
             uniform mat4 u_light_space_matrices[CASCADE_COUNT];
             uniform float u_cascade_splits[CASCADE_COUNT];
             uniform float u_shadow_bias;
@@ -213,6 +211,41 @@ uniform sampler2D u_shadow_map_3;
                 }
                 return 1.0 - result / weight_sum;
             }
+            float sample_shadow_tiled(sampler2D atlas_map, vec2 origin, vec2 span, vec3 proj_coords)
+            {
+                float slope_bias = clamp(fwidth(proj_coords.z) * 2.0, 0.0, 0.01);
+                float bias = u_shadow_bias + slope_bias;
+                float current_depth = proj_coords.z - bias;
+                float result = 0.0;
+                vec2 texel_size = 1.0 / vec2(textureSize(atlas_map, 0));
+                float radius = 1.25;
+                float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+                float ca = cos(rot);
+                float sa = sin(rot);
+                float weight_sum = 0.0;
+                for (int x = -1; x <= 1; x++)
+                {
+                    for (int y = -1; y <= 1; y++)
+                    {
+                        float weight = 1.0;
+                        if (x == 0)
+                        {
+                            weight += 1.0;
+                        }
+                        if (y == 0)
+                        {
+                            weight += 1.0;
+                        }
+                        vec2 o = vec2(float(x), float(y));
+                        vec2 ro = vec2(o.x * ca - o.y * sa, o.x * sa + o.y * ca);
+                        vec2 uv = origin + clamp(proj_coords.xy + ro * texel_size * radius, vec2(0.001), vec2(0.999)) * span;
+                        float pcf_depth = texture(atlas_map, uv).r;
+                        result += (current_depth > pcf_depth ? 1.0 : 0.0) * weight;
+                        weight_sum += weight;
+                    }
+                }
+                return 1.0 - result / weight_sum;
+            }
             float compute_directional_shadow(vec3 world_pos)
             {
                 if (u_cascade_count <= 0)
@@ -238,17 +271,17 @@ uniform sampler2D u_shadow_map_3;
                 }
                 if (cascade_idx == 0)
                 {
-                    return sample_shadow(u_shadow_map_0, proj_coords);
+                    return sample_shadow_tiled(u_cascade_atlas, u_cascade_rects[0].xy, u_cascade_rects[0].zw, proj_coords);
                 }
                 if (cascade_idx == 1)
                 {
-                    return sample_shadow(u_shadow_map_1, proj_coords);
+                    return sample_shadow_tiled(u_cascade_atlas, u_cascade_rects[1].xy, u_cascade_rects[1].zw, proj_coords);
                 }
                 if (cascade_idx == 2)
                 {
-                    return sample_shadow(u_shadow_map_2, proj_coords);
+                    return sample_shadow_tiled(u_cascade_atlas, u_cascade_rects[2].xy, u_cascade_rects[2].zw, proj_coords);
                 }
-                return sample_shadow(u_shadow_map_3, proj_coords);
+                return sample_shadow_tiled(u_cascade_atlas, u_cascade_rects[3].xy, u_cascade_rects[3].zw, proj_coords);
             }
             vec3 cloud_color(float density, float phase, float shadow, float top_light)
             {

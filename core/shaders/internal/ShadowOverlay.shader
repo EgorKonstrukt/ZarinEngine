@@ -46,21 +46,19 @@ void main() {
 uniform sampler2D u_scene_color;
 uniform sampler2D u_depth_tex;
 uniform mat4 u_inv_vp;
-uniform sampler2D u_shadow_map_0;
-uniform sampler2D u_shadow_map_1;
-uniform sampler2D u_shadow_map_2;
-uniform sampler2D u_shadow_map_3;
+uniform sampler2D u_cascade_atlas;
+uniform vec4 u_cascade_rects[4];
 uniform mat4 u_light_space_matrices[CASCADE_COUNT];
 uniform float u_cascade_splits[CASCADE_COUNT];
 uniform int u_cascade_count;
 uniform float u_shadow_bias;
 uniform mat4 u_view;
-uniform sampler2D u_point_shadow_maps[MAX_POINT_SHADOWS * 6];
+uniform sampler2D u_point_shadow_atlas;
 uniform mat4 u_point_shadow_vps[MAX_POINT_SHADOWS * 6];
 uniform vec3 u_point_shadow_light_positions[MAX_POINT_SHADOWS];
 uniform float u_point_shadow_light_ranges[MAX_POINT_SHADOWS];
 uniform int u_point_shadow_count;
-uniform sampler2D u_spot_shadow_maps[MAX_SPOT_SHADOWS];
+uniform sampler2D u_spot_shadow_atlas;
 uniform mat4 u_spot_shadow_vps[MAX_SPOT_SHADOWS];
 uniform int u_spot_shadow_count;
 in vec2 v_uv;
@@ -98,6 +96,7 @@ float sample_shadow(sampler2D shadow_map, vec3 proj_coords) {
     float lit = 1.0 - result / weight_sum;
     return smoothstep(0.12, 0.88, lit);
 }
+float sample_shadow_tiled(sampler2D atlas_map, vec2 origin, vec2 span, vec3 proj_coords);
 float compute_directional_shadow(vec3 world_pos) {
     if (u_cascade_count <= 0) return 1.0;
     int cascade_idx = 0;
@@ -110,47 +109,55 @@ float compute_directional_shadow(vec3 world_pos) {
     vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
     proj_coords = proj_coords * 0.5 + 0.5;
     if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
-    if (cascade_idx == 0) return sample_shadow(u_shadow_map_0, proj_coords);
-    else if (cascade_idx == 1) return sample_shadow(u_shadow_map_1, proj_coords);
-    else if (cascade_idx == 2) return sample_shadow(u_shadow_map_2, proj_coords);
-    return sample_shadow(u_shadow_map_3, proj_coords);
+    if (cascade_idx == 0) return sample_shadow_tiled(u_cascade_atlas, u_cascade_rects[0].xy, u_cascade_rects[0].zw, proj_coords);
+    else if (cascade_idx == 1) return sample_shadow_tiled(u_cascade_atlas, u_cascade_rects[1].xy, u_cascade_rects[1].zw, proj_coords);
+    else if (cascade_idx == 2) return sample_shadow_tiled(u_cascade_atlas, u_cascade_rects[2].xy, u_cascade_rects[2].zw, proj_coords);
+    return sample_shadow_tiled(u_cascade_atlas, u_cascade_rects[3].xy, u_cascade_rects[3].zw, proj_coords);
+}
+float sample_shadow_tiled(sampler2D atlas_map, vec2 origin, vec2 span, vec3 proj_coords) {
+    float slope_bias = clamp(fwidth(proj_coords.z) * 2.0, 0.0, 0.01);
+    float bias = u_shadow_bias + slope_bias;
+    float current_depth = proj_coords.z - bias;
+    float result = 0.0;
+    vec2 texel_size = 1.0 / vec2(textureSize(atlas_map, 0));
+    float radius = 1.0;
+    float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+    float ca = cos(rot);
+    float sa = sin(rot);
+    float weight_sum = 0.0;
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            float weight = 1.0;
+            if (x == 0)
+            {
+                weight += 1.0;
+            }
+            if (y == 0)
+            {
+                weight += 1.0;
+            }
+            vec2 o = vec2(float(x), float(y));
+            vec2 ro = vec2(o.x * ca - o.y * sa, o.x * sa + o.y * ca);
+            vec2 uv = origin + clamp(proj_coords.xy + ro * texel_size * radius, vec2(0.001), vec2(0.999)) * span;
+            float pcf_depth = texture(atlas_map, uv).r;
+            result += (current_depth > pcf_depth ? 1.0 : 0.0) * weight;
+            weight_sum += weight;
+        }
+    }
+    float lit = 1.0 - result / weight_sum;
+    return smoothstep(0.12, 0.88, lit);
 }
 float fallback_point_shadow(int li, int face, vec3 proj_coords) {
-    if (li == 0) {
-        if (face == 0) return sample_shadow(u_point_shadow_maps[0], proj_coords);
-        else if (face == 1) return sample_shadow(u_point_shadow_maps[1], proj_coords);
-        else if (face == 2) return sample_shadow(u_point_shadow_maps[2], proj_coords);
-        else if (face == 3) return sample_shadow(u_point_shadow_maps[3], proj_coords);
-        else if (face == 4) return sample_shadow(u_point_shadow_maps[4], proj_coords);
-        else return sample_shadow(u_point_shadow_maps[5], proj_coords);
-    } else if (li == 1) {
-        if (face == 0) return sample_shadow(u_point_shadow_maps[6], proj_coords);
-        else if (face == 1) return sample_shadow(u_point_shadow_maps[7], proj_coords);
-        else if (face == 2) return sample_shadow(u_point_shadow_maps[8], proj_coords);
-        else if (face == 3) return sample_shadow(u_point_shadow_maps[9], proj_coords);
-        else if (face == 4) return sample_shadow(u_point_shadow_maps[10], proj_coords);
-        else return sample_shadow(u_point_shadow_maps[11], proj_coords);
-    } else if (li == 2) {
-        if (face == 0) return sample_shadow(u_point_shadow_maps[12], proj_coords);
-        else if (face == 1) return sample_shadow(u_point_shadow_maps[13], proj_coords);
-        else if (face == 2) return sample_shadow(u_point_shadow_maps[14], proj_coords);
-        else if (face == 3) return sample_shadow(u_point_shadow_maps[15], proj_coords);
-        else if (face == 4) return sample_shadow(u_point_shadow_maps[16], proj_coords);
-        else return sample_shadow(u_point_shadow_maps[17], proj_coords);
-    } else {
-        if (face == 0) return sample_shadow(u_point_shadow_maps[18], proj_coords);
-        else if (face == 1) return sample_shadow(u_point_shadow_maps[19], proj_coords);
-        else if (face == 2) return sample_shadow(u_point_shadow_maps[20], proj_coords);
-        else if (face == 3) return sample_shadow(u_point_shadow_maps[21], proj_coords);
-        else if (face == 4) return sample_shadow(u_point_shadow_maps[22], proj_coords);
-        else return sample_shadow(u_point_shadow_maps[23], proj_coords);
-    }
+    vec2 grid = vec2(6.0, float(MAX_POINT_SHADOWS));
+    vec2 origin = vec2(float(face), float(li)) / grid;
+    vec2 span = vec2(1.0) / grid;
+    return sample_shadow_tiled(u_point_shadow_atlas, origin, span, proj_coords);
 }
 float fallback_spot_shadow(int li, vec3 proj_coords) {
-    if (li == 0) return sample_shadow(u_spot_shadow_maps[0], proj_coords);
-    else if (li == 1) return sample_shadow(u_spot_shadow_maps[1], proj_coords);
-    else if (li == 2) return sample_shadow(u_spot_shadow_maps[2], proj_coords);
-    else return sample_shadow(u_spot_shadow_maps[3], proj_coords);
+    vec2 grid = vec2(float(MAX_SPOT_SHADOWS), 1.0);
+    vec2 origin = vec2(float(li), 0.0) / grid;
+    vec2 span = vec2(1.0) / grid;
+    return sample_shadow_tiled(u_spot_shadow_atlas, origin, span, proj_coords);
 }
 float compute_point_shadow_pass(vec3 world_pos) {
     if (u_point_shadow_count <= 0) return 1.0;

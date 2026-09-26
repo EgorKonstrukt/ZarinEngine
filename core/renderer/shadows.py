@@ -323,6 +323,27 @@ class ShadowRenderer:
                     pass
         except Exception:
             pass
+    def _clear_atlas_tile(self, fbo, rect):
+        try:
+            prog = getattr(self, '_tile_clear_prog', None)
+            if prog is None:
+                prog = self._ctx.program(
+                    vertex_shader='#version 330 core\nvoid main() { vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); gl_Position = vec4(p * 2.0 - 1.0, 1.0, 1.0); }',
+                    fragment_shader='#version 330 core\nvoid main() {}')
+                self._tile_clear_prog = prog
+                self._tile_clear_vao = self._ctx.vertex_array(prog, [])
+            fbo.use()
+            self._ctx.viewport = (rect[0], rect[1], rect[2], rect[3])
+            self._ctx.enable(moderngl.DEPTH_TEST)
+            self._ctx.depth_func = '>='
+            self._tile_clear_vao.render(moderngl.TRIANGLES, vertices=3)
+            self._ctx.depth_func = '<'
+        except Exception:
+            try:
+                self._ctx.depth_func = '<'
+            except Exception:
+                pass
+
     def _create_csm_resources(self):
         self._ensure_context()
         for sm in self._shadow_maps:
@@ -338,31 +359,48 @@ class ShadowRenderer:
         self._shadow_maps = []
         self._shadow_fbos = []
         self._cascade_valid = [False, False, False, False]
+        self._cascade_tile_x = [0, 0, 0, 0]
+        self._cascade_tile_res = [0, 0, 0, 0]
+        self._cascade_atlas_w = 1
+        self._cascade_atlas_h = 1
         base = self._shadow_resolution
+        _tile_res = []
         for i in range(self._cascade_count):
             res = self._cascade_resolutions[i] if i < len(self._cascade_resolutions) else base
-            res = min(res, base)
+            _tile_res.append(min(res, base))
+        _w = sum(_tile_res)
+        _h = max(_tile_res) if _tile_res else base
+        if _w <= 0 or _h <= 0:
+            return
+        try:
+            tex = self._ctx.depth_texture((_w, _h))
+        except Exception:
             try:
-                tex = self._ctx.depth_texture((res, res))
+                import time
+                time.sleep(0.01)
+                tex = self._ctx.depth_texture((_w, _h))
             except Exception:
-                try:
-                    import time
-                    time.sleep(0.01)
-                    tex = self._ctx.depth_texture((res, res))
-                except Exception:
-                    continue
-            tex.repeat_x = False
-            tex.repeat_y = False
+                return
+        tex.repeat_x = False
+        tex.repeat_y = False
+        try:
+            fbo = self._ctx.framebuffer(depth_attachment=tex)
+        except Exception:
             try:
-                fbo = self._ctx.framebuffer(depth_attachment=tex)
+                tex.release()
             except Exception:
-                try:
-                    tex.release()
-                except Exception:
-                    pass
-                continue
-            self._shadow_maps.append(tex)
-            self._shadow_fbos.append(fbo)
+                pass
+            return
+        self._shadow_maps.append(tex)
+        self._shadow_fbos.append(fbo)
+        _x = 0
+        for i, res in enumerate(_tile_res):
+            if i < 4:
+                self._cascade_tile_x[i] = _x
+                self._cascade_tile_res[i] = res
+            _x += res
+        self._cascade_atlas_w = _w
+        self._cascade_atlas_h = _h
 
     def _create_point_shadow_resources(self):
         self._ensure_context()
@@ -379,23 +417,22 @@ class ShadowRenderer:
         self._point_shadow_maps = []
         self._point_shadow_fbos = []
         res = self._point_shadow_resolution
-        for _ in range(MAX_POINT_SHADOWS * 6):
+        try:
+            tex = self._ctx.depth_texture((res * 6, res * MAX_POINT_SHADOWS))
+        except Exception:
+            return
+        tex.repeat_x = False
+        tex.repeat_y = False
+        try:
+            fbo = self._ctx.framebuffer(depth_attachment=tex)
+        except Exception:
             try:
-                tex = self._ctx.depth_texture((res, res))
+                tex.release()
             except Exception:
-                continue
-            tex.repeat_x = False
-            tex.repeat_y = False
-            try:
-                fbo = self._ctx.framebuffer(depth_attachment=tex)
-            except Exception:
-                try:
-                    tex.release()
-                except Exception:
-                    pass
-                continue
-            self._point_shadow_maps.append(tex)
-            self._point_shadow_fbos.append(fbo)
+                pass
+            return
+        self._point_shadow_maps.append(tex)
+        self._point_shadow_fbos.append(fbo)
 
     def _create_spot_shadow_resources(self):
         self._ensure_context()
@@ -412,23 +449,22 @@ class ShadowRenderer:
         self._spot_shadow_maps = []
         self._spot_shadow_fbos = []
         res = self._spot_shadow_resolution
-        for _ in range(MAX_SPOT_SHADOWS):
+        try:
+            tex = self._ctx.depth_texture((res * MAX_SPOT_SHADOWS, res))
+        except Exception:
+            return
+        tex.repeat_x = False
+        tex.repeat_y = False
+        try:
+            fbo = self._ctx.framebuffer(depth_attachment=tex)
+        except Exception:
             try:
-                tex = self._ctx.depth_texture((res, res))
+                tex.release()
             except Exception:
-                continue
-            tex.repeat_x = False
-            tex.repeat_y = False
-            try:
-                fbo = self._ctx.framebuffer(depth_attachment=tex)
-            except Exception:
-                try:
-                    tex.release()
-                except Exception:
-                    pass
-                continue
-            self._spot_shadow_maps.append(tex)
-            self._spot_shadow_fbos.append(fbo)
+                pass
+            return
+        self._spot_shadow_maps.append(tex)
+        self._spot_shadow_fbos.append(fbo)
 
     def _create_projector_shadow_resources(self):
         self._ensure_context()
@@ -1024,7 +1060,8 @@ class ShadowRenderer:
         except Exception:
             return
 
-    def _draw_flat_visible(self, vp: np.ndarray, fbo, resolution: int, visible_count: int, tag=("g", 0)):
+    def _draw_flat_visible(self, vp: np.ndarray, fbo, resolution: int, visible_count: int, tag=("g", 0),
+                             viewport=None, clear=True):
         if visible_count <= 0:
             return
         n = self._flat_n
@@ -1035,9 +1072,13 @@ class ShadowRenderer:
         supports_instancing = self._supports_instancing_cached(prog)
         names = self._uniform_names(prog)
         use_inst = "u_use_instancing" in names
-        fbo.clear(depth=1.0)
+        if clear:
+            try:
+                fbo.clear(depth=1.0)
+            except Exception:
+                pass
         fbo.use()
-        self._ctx.viewport = (0, 0, resolution, resolution)
+        self._ctx.viewport = viewport if viewport is not None else (0, 0, resolution, resolution)
         self._ctx.enable(moderngl.DEPTH_TEST)
         self._ctx.depth_mask = True
         self._ctx.disable(moderngl.CULL_FACE)
@@ -1234,14 +1275,14 @@ class ShadowRenderer:
             self._skinned_bone_ssbo.write(flat.tobytes())
         self._skinned_bone_ssbo.bind_to_storage_buffer(6)
 
-    def _maybe_render_skinned(self, vp: np.ndarray, fbo, resolution: int):
+    def _maybe_render_skinned(self, vp: np.ndarray, fbo, resolution: int, viewport=None):
         if not self._pending_skinned:
             return
         if self._pending_scene is None:
             return
         prog = self._prog
         fbo.use()
-        fbo.viewport = (0, 0, resolution, resolution)
+        fbo.viewport = viewport if viewport is not None else (0, 0, resolution, resolution)
         self._ctx.enable(moderngl.DEPTH_TEST)
         self._ctx.depth_mask = True
         self._ctx.disable(moderngl.CULL_FACE)
@@ -1350,6 +1391,12 @@ class ShadowRenderer:
             cam_z = 0.0
         if not self._point_shadow_maps:
             self._create_point_shadow_resources()
+        try:
+            if self._point_shadow_fbos:
+                self._point_shadow_fbos[0].use()
+                self._point_shadow_fbos[0].clear(depth=1.0)
+        except Exception:
+            pass
         if flags.get('point', True):
             pc = []
             for l, lt in lights:
@@ -1377,6 +1424,12 @@ class ShadowRenderer:
                 self._point_shadow_light_indices[slot] = -1
         if not self._spot_shadow_maps:
             self._create_spot_shadow_resources()
+        try:
+            if self._spot_shadow_fbos:
+                self._spot_shadow_fbos[0].use()
+                self._spot_shadow_fbos[0].clear(depth=1.0)
+        except Exception:
+            pass
         if flags.get('spot', True):
             sc = []
             for l, lt in lights:
@@ -1619,9 +1672,9 @@ class ShadowRenderer:
                 except Exception:
                     cnt = 0
                 try:
-                    self._shadow_fbos[ci].clear(depth=1.0)
-                    self._shadow_fbos[ci].use()
-                    self._ctx.viewport = (0, 0, res, res)
+                    self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
+                    self._shadow_fbos[0].use()
+                    self._ctx.viewport = (self._cascade_tile_x[ci], 0, res, res)
                     if first_cascade:
                         self._ctx.enable(moderngl.DEPTH_TEST)
                         self._ctx.depth_mask = True
@@ -1654,7 +1707,7 @@ class ShadowRenderer:
                 except Exception:
                     pass
                 try:
-                    self._maybe_render_skinned(self._vp_f32_buf, self._shadow_fbos[ci], res)
+                    self._maybe_render_skinned(self._vp_f32_buf, self._shadow_fbos[0], res, (self._cascade_tile_x[ci], 0, res, res))
                 except Exception:
                     pass
                 near_z = splits[ci]
@@ -1667,9 +1720,9 @@ class ShadowRenderer:
             else:
                 culled = shadow_groups
             if culled:
-                self._shadow_fbos[ci].clear(depth=1.0)
-                self._shadow_fbos[ci].use()
-                self._ctx.viewport = (0, 0, res, res)
+                self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
+                self._shadow_fbos[0].use()
+                self._ctx.viewport = (self._cascade_tile_x[ci], 0, res, res)
                 if first_cascade:
                     self._ctx.enable(moderngl.DEPTH_TEST)
                     self._ctx.depth_mask = True
@@ -1695,11 +1748,11 @@ class ShadowRenderer:
                             mesh.render(prog)
             else:
                 try:
-                    self._shadow_fbos[ci].clear(depth=1.0)
+                    self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
                 except Exception:
                     pass
             try:
-                self._maybe_render_skinned(self._vp_f32_buf, self._shadow_fbos[ci], res)
+                self._maybe_render_skinned(self._vp_f32_buf, self._shadow_fbos[0], res, (self._cascade_tile_x[ci], 0, res, res))
             except Exception:
                 pass
             near_z = splits[ci]
@@ -1822,20 +1875,17 @@ class ShadowRenderer:
         prog_id = id(prog)
         mmap = self._flat_mesh_map
         base = slot * 6
-        self._ctx.viewport = (0, 0, shadow_res, shadow_res)
+        try:
+            self._point_shadow_fbos[0].use()
+        except Exception:
+            return
         self._ctx.enable(moderngl.DEPTH_TEST)
         self._ctx.depth_mask = True
         self._ctx.disable(moderngl.CULL_FACE)
         if use_inst:
             prog["u_use_instancing"].value = 1 if supports_instancing else 0
         for face_idx in range(6):
-            try:
-                fbo = self._point_shadow_fbos[base + face_idx]
-                fbo.use()
-                fbo.clear(depth=1.0)
-            except Exception:
-                pass
-        for face_idx in range(6):
+            self._ctx.viewport = (face_idx * shadow_res, slot * shadow_res, shadow_res, shadow_res)
             dx, dy, dz = _POINT_FACE_DIRS[face_idx]
             ux, uy, uz = _POINT_FACE_UPS[face_idx]
             try:
@@ -1854,11 +1904,6 @@ class ShadowRenderer:
             try:
                 vis = self._flat_out[:cnt]
                 vis_mesh = self._flat_mesh_ids[:self._flat_n][vis]
-            except Exception:
-                continue
-            try:
-                fbo = self._point_shadow_fbos[base + face_idx]
-                fbo.use()
             except Exception:
                 continue
             prog["u_light_vp"].write(vp.tobytes())
@@ -1906,13 +1951,6 @@ class ShadowRenderer:
         spot_fov = max(float(getattr(spot_light, 'spot_angle', 30.0)) * 2.0, 1.0)
         lr2 = light_range * light_range
         if self._flat_n == 0:
-            try:
-                fbo = self._spot_shadow_fbos[slot]
-                fbo.use()
-                self._ctx.viewport = (0, 0, self._spot_shadow_resolution, self._spot_shadow_resolution)
-                fbo.clear(depth=1.0)
-            except Exception:
-                pass
             return
         proj_d = self._spot_proj(spot_fov, light_range)
         try:
@@ -1930,16 +1968,10 @@ class ShadowRenderer:
             cnt = 0
         if cnt > 0:
             try:
-                self._draw_flat_visible(vp, self._spot_shadow_fbos[slot], self._spot_shadow_resolution, cnt, ("s", slot))
-                self._maybe_render_skinned(vp, self._spot_shadow_fbos[slot], self._spot_shadow_resolution)
-            except Exception:
-                pass
-        else:
-            try:
-                fbo = self._spot_shadow_fbos[slot]
-                fbo.use()
-                self._ctx.viewport = (0, 0, self._spot_shadow_resolution, self._spot_shadow_resolution)
-                fbo.clear(depth=1.0)
+                _res = self._spot_shadow_resolution
+                _tile = (slot * _res, 0, _res, _res)
+                self._draw_flat_visible(vp, self._spot_shadow_fbos[0], _res, cnt, ("s", slot), _tile, False)
+                self._maybe_render_skinned(vp, self._spot_shadow_fbos[0], _res, _tile)
             except Exception:
                 pass
 
@@ -2221,7 +2253,7 @@ class ShadowRenderer:
     def set_uniforms(self, prog):
         names = self._uniform_names(prog)
         has_csm = self._cascade_splits[self._cascade_count - 1] > 0.0
-        if has_csm and "u_cascade_count" in names and len(self._shadow_maps) >= self._cascade_count:
+        if has_csm and "u_cascade_count" in names and len(self._shadow_maps) >= 1:
             prog["u_cascade_count"].value = self._cascade_count
             if "u_light_space_matrices" in names:
                 try:
@@ -2237,15 +2269,26 @@ class ShadowRenderer:
                     prog["u_cascade_splits"].write(self._cascade_splits_bytes)
                 except Exception:
                     pass
-            for ci in range(self._cascade_count):
-                tex_unit = 3 + ci
+            try:
+                self._shadow_maps[0].use(28)
+            except Exception:
+                pass
+            if "u_cascade_atlas" in names:
+                prog["u_cascade_atlas"].value = 28
+            if "u_cascade_rects" in names:
                 try:
-                    self._shadow_maps[ci].use(tex_unit)
+                    _W = float(getattr(self, '_cascade_atlas_w', 1) or 1)
+                    _H = float(getattr(self, '_cascade_atlas_h', 1) or 1)
+                    _tx = getattr(self, '_cascade_tile_x', [0, 0, 0, 0])
+                    _tr = getattr(self, '_cascade_tile_res', [0, 0, 0, 0])
+                    _rects = np.zeros(16, dtype=np.float32)
+                    for _i in range(4):
+                        _rx = float(_tx[_i]) if _i < len(_tx) else 0.0
+                        _rr = float(_tr[_i]) if _i < len(_tr) else 0.0
+                        _rects[_i * 4:(_i + 1) * 4] = (_rx / _W, 0.0, _rr / _W, _rr / _H)
+                    prog["u_cascade_rects"].write(_rects.tobytes())
                 except Exception:
-                    continue
-                si = f"u_shadow_map_{ci}"
-                if si in names:
-                    prog[si].value = tex_unit
+                    pass
         else:
             if "u_cascade_count" in names:
                 prog["u_cascade_count"].value = 0
@@ -2264,18 +2307,12 @@ class ShadowRenderer:
                     prog["u_point_shadow_vps"].write(self._point_vps_bytes)
                 except Exception:
                     pass
-            point_units = [0] * (MAX_POINT_SHADOWS * 6)
-            for slot in range(self._point_shadow_count):
-                base = slot * 6
-                for fi in range(6):
-                    tex_unit = 7 + base + fi
-                    try:
-                        self._point_shadow_maps[base + fi].use(tex_unit)
-                    except Exception:
-                        pass
-                    point_units[base + fi] = tex_unit
-            if "u_point_shadow_maps" in names:
-                prog["u_point_shadow_maps"].value = point_units
+            if "u_point_shadow_atlas" in names:
+                try:
+                    self._point_shadow_maps[0].use(29)
+                except Exception:
+                    pass
+                prog["u_point_shadow_atlas"].value = 29
             if "u_point_shadow_light_positions" in names:
                 try:
                     if not self._point_pos_bytes:
@@ -2309,16 +2346,12 @@ class ShadowRenderer:
                     prog["u_spot_shadow_vps"].write(self._spot_vps_bytes)
                 except Exception:
                     pass
-            spot_units = [0] * MAX_SPOT_SHADOWS
-            for slot in range(self._spot_shadow_count):
-                tex_unit = 7 + MAX_POINT_SHADOWS * 6 + slot
+            if "u_spot_shadow_atlas" in names:
                 try:
-                    self._spot_shadow_maps[slot].use(tex_unit)
+                    self._spot_shadow_maps[0].use(30)
                 except Exception:
                     pass
-                spot_units[slot] = tex_unit
-            if "u_spot_shadow_maps" in names:
-                prog["u_spot_shadow_maps"].value = spot_units
+                prog["u_spot_shadow_atlas"].value = 30
             if "u_spot_shadow_light_indices" in names:
                 try:
                     if not self._spot_idx_bytes:
