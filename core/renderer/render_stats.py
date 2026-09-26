@@ -59,6 +59,20 @@ VALUE_COLORS = {
     "GPU": QColor(200, 200, 200),
     "GL": QColor(200, 200, 200),
     "MRays": QColor(255, 200, 100),
+    "Opq": QColor(180, 255, 200),
+    "Trn": QColor(180, 220, 255),
+    "MeshQ": QColor(255, 255, 150),
+    "Comp": QColor(255, 200, 200),
+    "Bodies": QColor(150, 255, 200),
+    "Fixed": QColor(150, 200, 255),
+    "Pt": QColor(255, 220, 150),
+    "Spot": QColor(255, 220, 150),
+    "Casc": QColor(255, 200, 150),
+    "ShRes": QColor(255, 200, 150),
+    "PostFX": QColor(220, 180, 255),
+    "Cache": QColor(200, 200, 200),
+    "DPR": QColor(180, 200, 255),
+    "RS": QColor(180, 200, 255),
 }
 
 
@@ -313,6 +327,105 @@ def collect_render_stats(engine, renderer) -> dict:
         except Exception:
             pass
     st['rt_rays_per_frame'] = getattr(renderer, '_rt_rays_per_frame', 0)
+    st['opaque_draws'] = getattr(renderer, '_opaque_draws', 0) or 0
+    st['trans_draws'] = getattr(renderer, '_trans_draws', 0) or 0
+    st['render_scale'] = float(getattr(renderer, '_render_scale', 1.0) or 1.0)
+    st['exposure'] = float(getattr(renderer, '_exposure', 0.0) or 0.0)
+    st['frame_no'] = int(getattr(renderer, '_render_count', 0) or 0)
+    st['fixed_steps'] = int(getattr(engine, '_fixed_steps_last', 0) or 0)
+    st['fixed_accum_ms'] = float(getattr(engine, '_fixed_accum', 0.0) or 0.0) * 1000.0
+    st['bodies'] = 0
+    try:
+        _pm = getattr(engine, '_plugin_manager', None)
+        _plugins = _pm.get_all() if _pm is not None else []
+        for _pp in _plugins:
+            _pscn = getattr(_pp, 'physics_scene', None)
+            if _pscn is None:
+                continue
+            try:
+                _solver = getattr(_pscn, '_solver', None)
+                if _solver is not None:
+                    st['bodies'] = int(_solver.body_count())
+                else:
+                    st['bodies'] = len(getattr(_pscn, '_entity_to_body', {}) or {})
+            except Exception:
+                try:
+                    st['bodies'] = len(getattr(_pscn, '_entity_to_body', {}) or {})
+                except Exception:
+                    st['bodies'] = 0
+            break
+    except Exception:
+        st['bodies'] = 0
+    st['shadow_pt'] = 0
+    st['shadow_spot'] = 0
+    try:
+        _sh = getattr(renderer, '_shadows', None)
+        if _sh is not None:
+            st['shadow_pt'] = int(getattr(_sh, '_point_shadow_count', 0) or 0)
+            st['shadow_spot'] = int(getattr(_sh, '_spot_shadow_count', 0) or 0)
+    except Exception:
+        pass
+    st['shadow_casc'] = int(getattr(renderer, '_cascade_count', 0) or 0)
+    st['shadow_res'] = int(getattr(renderer, '_shadow_resolution', 0) or 0)
+    st['shadow_dist'] = float(getattr(renderer, '_shadow_distance', 0.0) or 0.0)
+    st['mesh_pending'] = 0
+    st['mesh_built'] = 0
+    try:
+        _ml = getattr(renderer, '_mesh_loader', None)
+        if _ml is not None:
+            st['mesh_pending'] = int(getattr(_ml, '_pending_async_loads', 0) or 0)
+            st['mesh_built'] = int(getattr(_ml, '_built_count', 0) or 0)
+    except Exception:
+        pass
+    st['postfx'] = 0
+    try:
+        from core.components.rendering.postfx.graphics_effect import GraphicsEffect
+        _nfx = 0
+        for _fx in list(GraphicsEffect._registry):
+            try:
+                if _fx.enabled and _fx.entity is not None and _fx.entity.active:
+                    _nfx += 1
+            except Exception:
+                continue
+        st['postfx'] = _nfx
+    except Exception:
+        pass
+    st['components'] = 0
+    try:
+        if scene is not None:
+            try:
+                _ents = scene.get_all_entities()
+            except Exception:
+                _ents = getattr(scene, '_entities', None) or []
+            _nc = 0
+            _iter = _ents.values() if isinstance(_ents, dict) else _ents
+            for _e in _iter:
+                try:
+                    _nc += len(getattr(_e, '_components', {}) or {})
+                except Exception:
+                    continue
+            st['components'] = _nc
+    except Exception:
+        pass
+    st['shader_progs'] = 0
+    st['cached_tex'] = 0
+    try:
+        _sm = getattr(renderer, '_shaders', None)
+        if _sm is not None:
+            st['shader_progs'] = len(getattr(_sm, '_cache', {}) or {})
+    except Exception:
+        pass
+    try:
+        _nt = 0
+        for _holder in (getattr(renderer, '_icons', None), getattr(renderer, '_particles', None)):
+            if _holder is not None:
+                try:
+                    _nt += len(getattr(_holder, '_textures', {}) or {})
+                except Exception:
+                    continue
+        st['cached_tex'] = _nt
+    except Exception:
+        pass
     st.update(collect_expensive_stats())
     return st
 
@@ -366,6 +479,13 @@ def compute_frame_metrics(frame_times_ms) -> dict:
 
 
 def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
+    for _k, _v in (('opaque_draws', 0), ('trans_draws', 0), ('mesh_pending', 0),
+                   ('mesh_built', 0), ('shadow_pt', 0), ('shadow_spot', 0),
+                   ('shadow_casc', 0), ('shadow_res', 0), ('shadow_dist', 0.0),
+                   ('bodies', 0), ('fixed_steps', 0), ('fixed_accum_ms', 0.0),
+                   ('postfx', 0), ('shader_progs', 0), ('cached_tex', 0),
+                   ('components', 0), ('render_scale', 1.0)):
+        st.setdefault(_k, _v)
     cull_total = st['culled_total']
     cull_str = f"{st['culled_visible']}/{cull_total}"
     if cull_total > 0:
@@ -403,6 +523,8 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
         ("h", "Scene"),
         ("kv", [
             ("Draw", f"{st['draw_calls']}", "Draw"),
+            ("Opq", f"{st['opaque_draws']}", "Opq"),
+            ("Trn", f"{st['trans_draws']}", "Trn"),
             ("Tris", f"{_fmt_count(st['triangles'])}", "Tris"),
             ("Verts", f"{_fmt_count(st['vertices'])}", "Verts"),
             ("Fill", f"{fill_mpx:.0f}MP/s", "Fill"),
@@ -414,6 +536,26 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
             ("Batches", f"{st['batches']}", "Batches"),
             ("Inst", f"{_fmt_count(st['instanced'])}", "Inst"),
             ("Particles", f"{_fmt_count(st['particles'])}", "Particles"),
+            ("MeshQ", f"{st['mesh_pending']}/{st['mesh_built']}", "MeshQ"),
+        ]),
+        ("h", "Shadows"),
+        ("kv", [
+            ("Pt", f"{st['shadow_pt']}", "Pt"),
+            ("Spot", f"{st['shadow_spot']}", "Spot"),
+            ("Casc", f"{st['shadow_casc']}", "Casc"),
+            ("Res", f"{st['shadow_res']}", "ShRes"),
+            ("Dist", f"{st['shadow_dist']:.0f}", "ShRes"),
+        ]),
+        ("h", "Sim"),
+        ("kv", [
+            ("Bodies", f"{st['bodies']}", "Bodies"),
+            ("Fixed", f"{st['fixed_steps']}st/{st['fixed_accum_ms']:.0f}ms", "Fixed"),
+            ("PostFX", f"{st['postfx']}", "PostFX"),
+        ]),
+        ("h", "Cache"),
+        ("kv", [
+            ("Shaders", f"{st['shader_progs']}", "Cache"),
+            ("Tex", f"{st['cached_tex']}", "Cache"),
         ]),
         ("h", "Gizmo"),
         ("kv", [
@@ -436,6 +578,7 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
             ("TPS", f"{st['tps']:.0f}", "TPS"),
             ("TS", f"{st['time_scale']:.2f}", "TS"),
             ("Entities", f"{st['entities']}", "Entities"),
+            ("Comp", f"{st['components']}", "Comp"),
             ("DSP", f"{st['dsp_load']:.0f}%", "DSP"),
             ("Sounds", f"{st['active_sounds']}/{st['total_sounds']}", "Sounds"),
         ]),
@@ -444,6 +587,8 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
             ("GPU", _short_gpu(st['gl_renderer']), "GPU"),
             ("GL", st['gl_version'].split()[0] if st['gl_version'] else "?", "GL"),
             ("Res", timings['res'], "Res"),
+            ("DPR", f"{float(timings.get('dpr', 1.0) or 1.0):.2f}", "DPR"),
+            ("RS", f"{st['render_scale']:.2f}", "RS"),
         ]),
     ]
 

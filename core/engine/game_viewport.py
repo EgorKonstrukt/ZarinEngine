@@ -294,9 +294,10 @@ class GameViewport(QOpenGLWidget):
                 'render_ms': self._last_render_ms or 0.0,
                 'gizmo_ms': 0.0,
                 'overlay_ms': 0.0,
-                'paint_ms': self._last_paint_full_ms or 0.0,
-                'res': f"{fw}x{fh}",
-            }
+            'paint_ms': self._last_paint_full_ms or 0.0,
+            'res': f"{fw}x{fh}",
+            'dpr': float(self.devicePixelRatio() or 1.0),
+        }
             rows = build_stats_rows(m, st, timings)
             draw_stats_panel(painter, rows, self._frame_times_ms, _SPIKE_LOG)
             painter.restore()

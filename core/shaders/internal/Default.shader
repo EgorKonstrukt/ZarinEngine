@@ -257,6 +257,43 @@ float compute_shadow() {
     else shadow = sample_shadow(u_shadow_map_3, proj_coords, bias);
     return mix(1.0, shadow, fade);
 }
+float fallback_point_shadow(int li, int face, vec3 proj_coords, float bias) {
+    if (li == 0) {
+        if (face == 0) return sample_shadow(u_point_shadow_maps[0], proj_coords, bias);
+        else if (face == 1) return sample_shadow(u_point_shadow_maps[1], proj_coords, bias);
+        else if (face == 2) return sample_shadow(u_point_shadow_maps[2], proj_coords, bias);
+        else if (face == 3) return sample_shadow(u_point_shadow_maps[3], proj_coords, bias);
+        else if (face == 4) return sample_shadow(u_point_shadow_maps[4], proj_coords, bias);
+        else return sample_shadow(u_point_shadow_maps[5], proj_coords, bias);
+    } else if (li == 1) {
+        if (face == 0) return sample_shadow(u_point_shadow_maps[6], proj_coords, bias);
+        else if (face == 1) return sample_shadow(u_point_shadow_maps[7], proj_coords, bias);
+        else if (face == 2) return sample_shadow(u_point_shadow_maps[8], proj_coords, bias);
+        else if (face == 3) return sample_shadow(u_point_shadow_maps[9], proj_coords, bias);
+        else if (face == 4) return sample_shadow(u_point_shadow_maps[10], proj_coords, bias);
+        else return sample_shadow(u_point_shadow_maps[11], proj_coords, bias);
+    } else if (li == 2) {
+        if (face == 0) return sample_shadow(u_point_shadow_maps[12], proj_coords, bias);
+        else if (face == 1) return sample_shadow(u_point_shadow_maps[13], proj_coords, bias);
+        else if (face == 2) return sample_shadow(u_point_shadow_maps[14], proj_coords, bias);
+        else if (face == 3) return sample_shadow(u_point_shadow_maps[15], proj_coords, bias);
+        else if (face == 4) return sample_shadow(u_point_shadow_maps[16], proj_coords, bias);
+        else return sample_shadow(u_point_shadow_maps[17], proj_coords, bias);
+    } else {
+        if (face == 0) return sample_shadow(u_point_shadow_maps[18], proj_coords, bias);
+        else if (face == 1) return sample_shadow(u_point_shadow_maps[19], proj_coords, bias);
+        else if (face == 2) return sample_shadow(u_point_shadow_maps[20], proj_coords, bias);
+        else if (face == 3) return sample_shadow(u_point_shadow_maps[21], proj_coords, bias);
+        else if (face == 4) return sample_shadow(u_point_shadow_maps[22], proj_coords, bias);
+        else return sample_shadow(u_point_shadow_maps[23], proj_coords, bias);
+    }
+}
+float fallback_spot_shadow(int li, vec3 proj_coords, float bias) {
+    if (li == 0) return sample_shadow(u_spot_shadow_maps[0], proj_coords, bias);
+    else if (li == 1) return sample_shadow(u_spot_shadow_maps[1], proj_coords, bias);
+    else if (li == 2) return sample_shadow(u_spot_shadow_maps[2], proj_coords, bias);
+    else return sample_shadow(u_spot_shadow_maps[3], proj_coords, bias);
+}
 float compute_point_shadow_for_light(int li) {
     vec3 N = shadow_receiver_normal();
     vec3 toL = u_point_shadow_light_positions[li] - v_world_pos;
@@ -280,7 +317,7 @@ float compute_point_shadow_for_light(int li) {
     proj_coords = proj_coords * 0.5 + 0.5;
     if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
     float bias = u_shadow_bias + u_shadow_slope_scale * slope;
-    return sample_shadow(u_point_shadow_maps[base + face], proj_coords, bias);
+    return fallback_point_shadow(li, face, proj_coords, bias);
 }
 float compute_spot_shadow_for_light(int li) {
     vec3 N = shadow_receiver_normal();
@@ -290,7 +327,7 @@ float compute_spot_shadow_for_light(int li) {
     proj_coords = proj_coords * 0.5 + 0.5;
     if (proj_coords.x < 0.0 || proj_coords.x > 1.0 || proj_coords.y < 0.0 || proj_coords.y > 1.0 || proj_coords.z < 0.0 || proj_coords.z > 1.0) return 1.0;
     float bias = u_shadow_bias + u_shadow_slope_scale * 0.5;
-    return sample_shadow(u_spot_shadow_maps[li], proj_coords, bias);
+    return fallback_spot_shadow(li, proj_coords, bias);
 }
 // @SHADOW_INCLUDE
 vec3 ibl_contribution(vec3 N, vec3 V, vec3 albedo, float roughness, float metallic) {

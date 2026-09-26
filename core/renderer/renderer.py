@@ -111,6 +111,8 @@ class Renderer(RendererConfigMixin, RendererProgramsMixin, VoxelPassMixin, Objec
         self._selection_outline_color: list[float] = [0.8, 0.5, 0.1, 1.0]
         self._selection_outline_thickness: float = 0.03
         self._draw_calls: int = 0
+        self._opaque_draws: int = 0
+        self._trans_draws: int = 0
         self._triangles_drawn: int = 0
         self._vertices_drawn: int = 0
         self._particle_count: int = 0

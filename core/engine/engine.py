@@ -36,6 +36,7 @@ class Engine:
         self._time_scale: float = 1.0
         self._fixed_dt: float = 0.02
         self._fixed_accum: float = 0.0
+        self._fixed_steps_last: int = 0
         self._last_time: float = 0.0
         self._frame_count: int = 0
         self._fps: float = 0.0
@@ -483,9 +484,12 @@ class Engine:
         if not self._play_mode: return
         dt = self.tick_begin()
         MAX_FIXED_STEPS = 5
+        _steps = 0
         for _ in range(MAX_FIXED_STEPS):
             if not self.tick_fixed_step():
                 break
+            _steps += 1
+        self._fixed_steps_last = _steps
         self.tick_update(dt)
 
     def tick_begin(self) -> float:

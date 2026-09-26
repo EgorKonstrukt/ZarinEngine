@@ -70,6 +70,7 @@ def draw_stats_overlay(vp, painter):
         'overlay_ms': getattr(vp, '_last_overlay_ms', 0.0) or 0.0,
         'paint_ms': getattr(vp, '_last_paint_full_ms', 0.0) or 0.0,
         'res': f"{fw}x{fh}",
+        'dpr': float(getattr(vp, 'devicePixelRatio', lambda: 1.0)() or 1.0),
     }
     rows = build_stats_rows(m, st, timings)
     draw_stats_panel(painter, rows, vp._frame_times_ms, _SPIKE_LOG)

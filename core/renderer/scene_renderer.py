@@ -511,6 +511,8 @@ class SceneRendererMixin:
                         pass
                     elif len(opaque_entries) > 64 and getattr(self, "_triangles_drawn", 0) > 500000:
                         self._sort_opaque_front_first(opaque_entries, cam_pos)
+        self._opaque_draws = 0
+        self._trans_draws = 0
         for _is_trans_phase, _phase_entries in ((False, opaque_entries), (True, transparent_entries)):
             if not _phase_entries:
                 continue
@@ -540,6 +542,13 @@ class SceneRendererMixin:
                     dynamic_cubemaps=dynamic_cubemaps,
                     sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=_all_vis)
                 _stats_groups.append(groups)
+                try:
+                    if _is_trans_phase:
+                        self._trans_draws = self._batcher.draw_calls if self._batcher else 0
+                    else:
+                        self._opaque_draws = self._batcher.draw_calls if self._batcher else 0
+                except Exception:
+                    pass
                 try:
                     if not _is_trans_phase and not transparent_entries and renderable is snap.renderable and not fx_renderable:
                         _lu = getattr(self, "_last_uniq", None)
@@ -1022,9 +1031,15 @@ class SceneRendererMixin:
             prof.start("render_stats")
         skybox_call = 1 if (self._skybox_enabled and self._skybox_cube) else 0
         if self._batcher:
-            self._draw_calls = self._batcher.draw_calls + skybox_call
+            self._draw_calls = self._opaque_draws + self._trans_draws + skybox_call
         else:
             self._draw_calls = len(renderable) + skybox_call
+            try:
+                _nt = len(transparent_entries) if transparent_entries else 0
+            except Exception:
+                _nt = 0
+            self._trans_draws = _nt
+            self._opaque_draws = len(renderable) - _nt
         self._triangles_drawn = 0
         self._vertices_drawn = 0
         counted_mesh_ids: set[int] = set()
