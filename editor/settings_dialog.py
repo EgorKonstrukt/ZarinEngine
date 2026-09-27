@@ -249,7 +249,7 @@ _FIELD_RANGES = {
     "camera.zoom_smooth_speed": (0.1, 50.0),
     "camera.speed_boost_mult": (1.0, 20.0),
     "camera.speed_boost_ramp_time": (0.1, 10.0),
-    "rendering.target_fps": (0, 360),
+    "rendering.target_fps": (0, 10000),
     "rendering.show_grid": None,
     "rendering.grid_size": (0.1, 100.0),
     "rendering.grid_world_size": (10.0, 10000.0),

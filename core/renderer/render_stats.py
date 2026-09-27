@@ -462,12 +462,12 @@ def compute_frame_metrics(frame_times_ms) -> dict:
         max_ms = s[0]
         min_ms = s[-1]
     val = {
-        'fps': 1000.0 / max(avg_ms, 0.1),
-        'avg_fps': 1000.0 / max(avg_ms, 0.1),
-        'max_fps': 1000.0 / max(max_ms, 0.1),
-        'min_fps': 1000.0 / max(min_ms, 0.1),
-        'p1_fps': 1000.0 / max(p1_ms, 0.1),
-        'p01_fps': 1000.0 / max(p01_ms, 0.1),
+        'fps': 1000.0 / max(avg_ms, 0.01),
+        'avg_fps': 1000.0 / max(avg_ms, 0.01),
+        'max_fps': 1000.0 / max(max_ms, 0.01),
+        'min_fps': 1000.0 / max(min_ms, 0.01),
+        'p1_fps': 1000.0 / max(p1_ms, 0.01),
+        'p01_fps': 1000.0 / max(p01_ms, 0.01),
         'frame_ms': frame_times_ms[-1],
         'avg_ms': avg_ms,
         'p1_ms': p1_ms,

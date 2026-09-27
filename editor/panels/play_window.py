@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt, QTimer, QEvent, QPoint
 from PyQt6.QtGui import QSurfaceFormat, QKeyEvent, QMouseEvent, QWheelEvent, QCursor, QGuiApplication
 from core.input.input_system import Input
 from core.foundation.logger import Logger
+from core.engine.frame_pacer import FramePacer, needs_software_pacing, normalize_target_fps, timer_interval_ms
 if TYPE_CHECKING:
     from core.engine.engine import Engine
     from core.gui.canvas import GuiCanvas
@@ -32,6 +33,7 @@ class PlayViewport(QOpenGLWidget):
         self._cursor_blank: bool = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
+        self._pacer = FramePacer()
         self._throttle_mode = "editor"
         self._throttle_step = 2
         try:
@@ -80,12 +82,14 @@ class PlayViewport(QOpenGLWidget):
             if not vsync and (tgt <= 0 or tgt == 60):
                 self._timer.setTimerType(Qt.TimerType.PreciseTimer)
                 self._timer.setInterval(0)
+                self._pacer.set_target(0)
             else:
                 if tgt <= 0:
                     tgt = 60
-                tgt = max(1, min(360, tgt))
+                tgt = normalize_target_fps(tgt)
                 self._timer.setTimerType(Qt.TimerType.PreciseTimer if not vsync else Qt.TimerType.CoarseTimer)
-                self._timer.setInterval(max(1, int(1000.0 / tgt)))
+                self._timer.setInterval(timer_interval_ms(tgt))
+                self._pacer.set_target(tgt if needs_software_pacing(tgt) else 0)
             if not self._timer.isActive():
                 self._timer.start()
             else:
@@ -206,6 +210,8 @@ class PlayViewport(QOpenGLWidget):
 
     def _tick(self):
         if self._engine.play_mode and self.isVisible():
+            if not self._pacer.should_run():
+                return
             from core.input.input_manager import InputManager
             im = InputManager.instance()
             im.set_surface_size(self.width(), self.height())

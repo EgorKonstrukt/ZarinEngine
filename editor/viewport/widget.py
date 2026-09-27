@@ -26,6 +26,7 @@ from PyQt6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent, QSurfaceFormat
 
 from core.maths.math3d import Vec3, Mat4, Quat
 from core.foundation.logger import Logger
+from core.engine.frame_pacer import FramePacer, needs_software_pacing, normalize_target_fps, timer_interval_ms
 from editor.scene_camera import SceneCamera
 from core.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
 from core.gizmo.api import GizmosManager, set_gizmos
@@ -290,6 +291,7 @@ class SceneViewport(QOpenGLWidget):
         self._grid_step: float = 10.0
         self._vsync_enabled: bool = True
         self._target_fps: int = 60
+        self._pacer = FramePacer()
         self._init_format()
         self._stats_enabled: bool = True
         self._audio_viz_enabled: bool = False
@@ -402,14 +404,17 @@ class SceneViewport(QOpenGLWidget):
     def _apply_config(self):
         if self._vsync_enabled:
             self._render_timer.stop()
+            self._pacer.set_target(0)
         else:
             self._render_timer.setTimerType(Qt.TimerType.PreciseTimer)
             tgt = int(self._target_fps) if self._target_fps else 0
             if tgt <= 0 or tgt == 60:
                 self._render_timer.setInterval(0)
+                self._pacer.set_target(0)
             else:
-                tgt = max(1, min(360, tgt))
-                self._render_timer.setInterval(max(1, int(1000.0 / tgt)))
+                tgt = normalize_target_fps(tgt)
+                self._render_timer.setInterval(timer_interval_ms(tgt))
+                self._pacer.set_target(tgt if needs_software_pacing(tgt) else 0)
             if self.isVisible():
                 self._render_timer.start()
 
@@ -453,6 +458,8 @@ class SceneViewport(QOpenGLWidget):
 
     def _on_render_tick(self):
         if not self._vsync_enabled and self.isVisible():
+            if not self._pacer.should_run():
+                return
             self.update()
 
     def _report_block(self, gap_raw, now):
