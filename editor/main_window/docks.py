@@ -22,6 +22,7 @@ DOCK_ICONS = {
     "ConsoleDock": "fa5s.terminal",
     "ProfilerDock": "fa5s.chart-bar",
     "PluginManagerDock": "fa5s.puzzle-piece",
+    "PackageManagerDock": "fa5s.box-open",
     "ProjectDock": "fa5s.folder-open",
     "PlayDock": "fa5s.play",
     "TerminalDock": "fa5s.window-maximize",
@@ -47,6 +48,7 @@ from editor.inspector import InspectorPanel
 from editor.panels.console_panel import ConsolePanel
 from editor.panels.profiler_panel import ProfilerPanel
 from editor.panels.plugin_manager_panel import PluginManagerPanel
+from editor.panels.package_manager_panel import PackageManagerPanel
 from editor.panels.project_panel import ProjectPanel
 
 from editor.panels.play_window import PlayDockPanel
@@ -180,6 +182,14 @@ def register_default_docks(mw):
         QDockWidget.DockWidgetFeature.DockWidgetFloatable |
         QDockWidget.DockWidgetFeature.DockWidgetClosable)
     register_dock(mw, mw._plugin_mgr, Qt.DockWidgetArea.LeftDockWidgetArea)
+    mw._package_mgr = PackageManagerPanel(mw)
+    mw._package_mgr.setObjectName("PackageManagerDock")
+    mw._package_mgr.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+    mw._package_mgr.setFeatures(
+        QDockWidget.DockWidgetFeature.DockWidgetMovable |
+        QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+    register_dock(mw, mw._package_mgr, Qt.DockWidgetArea.LeftDockWidgetArea)
     _assets_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "assets"))
     mw._project = ProjectPanel(mw._engine, _assets_root, mw)
     mw._project.load_config(get_global_config())
@@ -416,6 +426,7 @@ def add_all_docks(mw):
     mw.addDockWidget(area, mw._terminal)
     mw.addDockWidget(area, mw._undo_history)
     mw.addDockWidget(area, mw._plugin_mgr)
+    mw.addDockWidget(area, mw._package_mgr)
     mw.addDockWidget(area, mw._collab_panel)
     mw.addDockWidget(area, mw._mesh_editor)
     mw.addDockWidget(area, mw._terrain_editor)
@@ -431,6 +442,7 @@ def add_all_docks(mw):
                         mw._play_dock, mw._gui_editor,
                         mw._console, mw._profiler, mw._project,
                         mw._terminal, mw._undo_history, mw._plugin_mgr,
+                        mw._package_mgr,
                         mw._collab_panel, mw._mesh_editor, mw._terrain_editor, mw._animation,
                         mw._animator, mw._scripts, mw._script_editor, mw._tracemalloc,
                         mw._time_travel, mw._vcs):
@@ -461,6 +473,7 @@ def build_dock_layout(mw):
     undo = _by_exact("UndoHistoryDock")
     profiler = _by_exact("ProfilerDock")
     plugin_mgr = _by_exact("PluginManagerDock")
+    package_mgr = _by_exact("PackageManagerDock")
     play = _by_exact("PlayDock")
     gui = _by_exact("GuiEditorDock")
     mesh = _by_exact("MeshEditorDock")
@@ -510,7 +523,7 @@ def build_dock_layout(mw):
                 mw.tabifyDockWidget(top_order[0], top_order[i])
     if project is not None or tracker is not None:
         bottom_anchor = tracker or project
-        bottom_order = [d for d in [tracker, project, animation, zarinmcp, plugin_mgr, profiler, vr] if d is not None]
+        bottom_order = [d for d in [tracker, project, animation, zarinmcp, plugin_mgr, package_mgr, profiler, vr] if d is not None]
         if bottom_anchor is not None and len(bottom_order) > 1:
             for i in range(len(bottom_order)):
                 if bottom_order[i] is not bottom_anchor:
