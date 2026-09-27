@@ -43,32 +43,7 @@ class TrackerMusicPlugin(PluginBase):
         if patcher is not None:
             self.patches.adopt(patcher)
         try:
-            from . import renderer as _r  # noqa: F401
-        except Exception:
-            pass
-        self._warmup_fastmix()
-
-    def _warmup_fastmix(self):
-        # Compile fastmix in the background once so the first WAV render
-        # doesn't pay the MSVC build cost on the audio/UI thread.
-        try:
-            from .fastmix_loader import get_fastmix
-            if get_fastmix() is not None:
-                return
-        except Exception:
-            return
-        try:
-            import threading
-
-            def _build():
-                try:
-                    from .fastmix_loader import ensure_fastmix
-                    ensure_fastmix(auto_build=True, timeout=600)
-                except Exception:
-                    pass
-
-            threading.Thread(target=_build, name="tracker-fastmix-build",
-                             daemon=True).start()
+            from . import renderer as _r
         except Exception:
             pass
 

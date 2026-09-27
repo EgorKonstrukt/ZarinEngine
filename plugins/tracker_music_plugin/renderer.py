@@ -14,29 +14,34 @@ import shutil
 import numpy as np
 
 try:
-    from .fastmix_loader import ensure_fastmix as _ensure_fastmix_impl
-    from .fastmix_loader import get_fastmix as _get_fastmix_impl
-except Exception:  # pragma: no cover - standalone / broken package layout
-    _ensure_fastmix_impl = None
-    _get_fastmix_impl = None
+    from . import fastmix as _fastmix_prefetched
+except Exception:
+    _fastmix_prefetched = None
 
 
-def _get_fastmix():
+def _load_fastmix():
+    if _fastmix_prefetched is not None:
+        return _fastmix_prefetched
     try:
-        if _get_fastmix_impl is not None:
-            return _get_fastmix_impl()
+        import os as _os
+        from core.foundation.plugin_cython import import_extension as _import_extension
+        return _import_extension(
+            __package__ or "",
+            "fastmix",
+            _os.path.dirname(_os.path.abspath(__file__)),
+        )
+    except Exception:
+        return None
+
+
+def _build_fastmix_once():
+    try:
+        import os as _os
+        from core.foundation.plugin_cython import ensure_extensions as _ensure_extensions
+        _ensure_extensions(_os.path.dirname(_os.path.abspath(__file__)), background=False)
     except Exception:
         pass
     return None
-
-
-def _ensure_fastmix():
-    try:
-        if _ensure_fastmix_impl is not None:
-            return _ensure_fastmix_impl(auto_build=True)
-    except Exception:
-        pass
-    return _get_fastmix()
 
 _NTSC_SR = 8287.0
 _AMIGA_CLOCK = 3546894.6
@@ -144,16 +149,19 @@ class TrackerSoftwareRenderer:
     def _fastmix_mod(self):
         if self._fastmix is not None:
             return self._fastmix
+        mod = _load_fastmix()
+        if mod is not None:
+            self._fastmix = mod
+            return mod
         if self._fastmix_tried:
             return None
-        mod = _get_fastmix()
-        if mod is None:
-            # One blocking build attempt per renderer (worker thread).
-            # Subsequent renders reuse the compiled module.
-            mod = _ensure_fastmix()
-        self._fastmix = mod
         self._fastmix_tried = True
-        return mod
+        _build_fastmix_once()
+        mod = _load_fastmix()
+        if mod is not None:
+            self._fastmix = mod
+            return mod
+        return None
 
     @staticmethod
     def db_to_gain(db: float) -> float:

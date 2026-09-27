@@ -1638,6 +1638,11 @@ class PluginManager:
             manifest = _read_package_manifest(dirpath)
             if manifest and not self._gate_or_defer("package", dirpath, manifest):
                 return
+            try:
+                from core.foundation.plugin_cython import ensure_extensions as _ensure_pyx
+                _ensure_pyx(dirpath, background=True)
+            except Exception:
+                pass
             canon = "plugins." + basename
             mod = None
             try:
