@@ -215,6 +215,7 @@ _vram = (0.0, 0.0)
 _vram_t = 0.0
 _vram_busy = False
 _frame_metrics_cache: dict = {"key": None, "val": None}
+_stats_adv_cache: dict = {}
 _gl_info_cache = ["", "", 0.0]
 
 
@@ -598,6 +599,15 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
     if fnt.family() != _STATS_FONT.family() or fnt.pointSize() != _STATS_FONT.pointSize():
         painter.setFont(_STATS_FONT)
     fm = QFontMetrics(_STATS_FONT)
+    adv_cache = _stats_adv_cache
+    def adv(text: str) -> int:
+        hit = adv_cache.get(text)
+        if hit is None:
+            hit = fm.horizontalAdvance(text)
+            if len(adv_cache) > 2048:
+                adv_cache.clear()
+            adv_cache[text] = hit
+        return hit
     padding = 6
     line_h = 15
     sections = []
@@ -612,7 +622,7 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
     seg_widths = []
     for hdr, kvs in sections:
         seg = f"{hdr}: " + "  |  ".join(f"{lab}: {val}" for lab, val, _ in kvs)
-        seg_widths.append(fm.horizontalAdvance(seg))
+        seg_widths.append(adv(seg))
     max_w = max(seg_widths, default=0) + padding * 2
     max_w = max(max_w, 480)
     view_w = painter.device().width()
@@ -645,25 +655,25 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
         cx = x + padding
         hs = hdr + ": "
         painter.setPen(header_color)
-        painter.drawText(QRect(cx, cy, fm.horizontalAdvance(hs), line_h),
+        painter.drawText(QRect(cx, cy, adv(hs), line_h),
                          Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, hs)
-        cx += fm.horizontalAdvance(hs)
+        cx += adv(hs)
         for ki, (lab, val, key) in enumerate(kvs):
             lab_s = lab + ": "
             painter.setPen(label_color)
-            painter.drawText(QRect(cx, cy, fm.horizontalAdvance(lab_s), line_h),
+            painter.drawText(QRect(cx, cy, adv(lab_s), line_h),
                              Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, lab_s)
-            cx += fm.horizontalAdvance(lab_s)
+            cx += adv(lab_s)
             painter.setPen(VALUE_COLORS.get(key, text_color))
-            painter.drawText(QRect(cx, cy, fm.horizontalAdvance(val), line_h),
+            painter.drawText(QRect(cx, cy, adv(val), line_h),
                              Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, val)
-            cx += fm.horizontalAdvance(val)
+            cx += adv(val)
             if ki < len(kvs) - 1:
                 painter.setPen(QColor(100, 100, 100))
                 sep = " | "
-                painter.drawText(QRect(cx, cy, fm.horizontalAdvance(sep), line_h),
+                painter.drawText(QRect(cx, cy, adv(sep), line_h),
                                  Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, sep)
-                cx += fm.horizontalAdvance(sep)
+                cx += adv(sep)
         if i < len(sections) - 1:
             painter.setPen(QPen(QColor(255, 255, 255, 24), 1))
             painter.drawLine(x + padding, cy + line_h - 3, int(x + max_w - padding), cy + line_h - 3)

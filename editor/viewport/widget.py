@@ -361,6 +361,8 @@ class SceneViewport(QOpenGLWidget):
         self._cursor_label_cache: tuple = ("", "", "")
         self._throttle_mode: str = "editor"
         self._throttle_step: int = 2
+        self._throttle_next_t: float = 0.0
+        self._throttle_armed: bool = False
         self._block_watch = _BlockWatch()
         self._last_block_log: float = 0.0
         from editor.viewport.toolbar import setup_toolbar
@@ -460,6 +462,28 @@ class SceneViewport(QOpenGLWidget):
         if not self._vsync_enabled and self.isVisible():
             if not self._pacer.should_run():
                 return
+            self.update()
+
+    def _display_quantum(self) -> float:
+        try:
+            scr = self.screen()
+            rate = float(scr.refreshRate()) if scr is not None else 0.0
+        except Exception:
+            rate = 0.0
+        if rate < 20.0 or rate > 1000.0:
+            rate = 60.0
+        return 1.0 / rate
+
+    def _play_throttle_wait(self, step: int) -> float:
+        now = time.perf_counter()
+        if self._throttle_next_t <= 0.0 or now >= self._throttle_next_t:
+            self._throttle_next_t = now + max(2, step) * self._display_quantum()
+            return 0.0
+        return self._throttle_next_t - now
+
+    def _throttle_resume(self):
+        self._throttle_armed = False
+        if self.isVisible():
             self.update()
 
     def _report_block(self, gap_raw, now):
@@ -625,6 +649,8 @@ class SceneViewport(QOpenGLWidget):
         super().hideEvent(event)
         self._render_timer.stop()
         self._collab_timer.stop()
+        self._throttle_next_t = 0.0
+        self._throttle_armed = False
         try:
             self._block_watch.stop()
         except Exception:
@@ -854,6 +880,8 @@ class SceneViewport(QOpenGLWidget):
     def _on_play_stop(self, data=None):
         self._gizmos_api.clear()
         self._cached_overlay_state = None
+        self._throttle_next_t = 0.0
+        self._throttle_armed = False
 
     def resizeGL(self, w: int, h: int):
         dpr = self.devicePixelRatio()
@@ -907,11 +935,17 @@ class SceneViewport(QOpenGLWidget):
                 pd = getattr(mw, '_play_dock', None) if mw is not None else None
                 if pd is not None and pd.isVisible():
                     step = getattr(self, '_throttle_step', 2)
-                    self._throttle_count = getattr(self, '_throttle_count', 0) + 1
-                    if self._throttle_count % step:
-                        if self._vsync_enabled and self.isVisible():
-                            self.update()
+                    try:
+                        step = max(2, int(step))
+                    except Exception:
+                        step = 2
+                    wait = self._play_throttle_wait(step)
+                    if wait > 0.0:
+                        if not self._throttle_armed and self.isVisible():
+                            self._throttle_armed = True
+                            QTimer.singleShot(max(1, int(wait * 1000.0)), self._throttle_resume)
                         return
+                    self._throttle_armed = False
         eng = self._engine
         if not self._in_update:
             dt = now - self._last_frame_time
