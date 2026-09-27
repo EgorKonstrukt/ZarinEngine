@@ -8,5 +8,5 @@
   "entry": "tracker_music_plugin/__init__.py",
   "module": "tracker_music_plugin",
   "dependencies": ["numpy"],
-  "exclude": ["__pycache__", "*.pyc", "*.pyo", ".pytest_cache"]
+  "exclude": ["__pycache__", "*.pyc", "*.pyo", ".pytest_cache", "build", "*.c", "*.pyd", "*.so"]
 }

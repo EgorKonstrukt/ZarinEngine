@@ -83,6 +83,10 @@ def program_with_fallback(ctx: moderngl.Context, vertex_shader: str,
         Logger.warning(f"Shader '{label}' compiled with 330 fallback")
         return prog
     except Exception as e:
+        for _src in (vertex_shader, fragment_shader, geometry_shader):
+            if _src and re.search(r'\bbuffer\s+\w+\s*\{', _src):
+                Logger.warning(f"Shader '{label}' requires OpenGL 4.3+ storage buffers, feature unavailable")
+                return None
         Logger.error(f"Failed to compile shader '{label}': {e}", e)
         return None
 

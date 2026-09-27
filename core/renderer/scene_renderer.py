@@ -742,9 +742,12 @@ class SceneRendererMixin:
         if self._grid and self._grid.show:
             if prof:
                 prof.start("render_grid")
-            if "u_scene_color" in self._grid_prog:
-                self._grid_prog["u_scene_color"] = 12
-                self._scene_color_tex.use(12)
+            if "u_bg_lum" in self._grid_prog:
+                try:
+                    _cc = self._clear_color or [0.18, 0.18, 0.18]
+                    self._grid_prog["u_bg_lum"].value = float(_cc[0]) * 0.299 + float(_cc[1]) * 0.587 + float(_cc[2]) * 0.114
+                except Exception:
+                    pass
             if "u_viewport_size" in self._grid_prog:
                 self._grid_prog["u_viewport_size"].value = (float(viewport_w), float(viewport_h))
             self._ctx.enable(moderngl.BLEND)

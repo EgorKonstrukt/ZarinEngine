@@ -6,11 +6,37 @@
 
 from __future__ import annotations
 
+import functools
 import math
 import os
 import shutil
 
 import numpy as np
+
+try:
+    from .fastmix_loader import ensure_fastmix as _ensure_fastmix_impl
+    from .fastmix_loader import get_fastmix as _get_fastmix_impl
+except Exception:  # pragma: no cover - standalone / broken package layout
+    _ensure_fastmix_impl = None
+    _get_fastmix_impl = None
+
+
+def _get_fastmix():
+    try:
+        if _get_fastmix_impl is not None:
+            return _get_fastmix_impl()
+    except Exception:
+        pass
+    return None
+
+
+def _ensure_fastmix():
+    try:
+        if _ensure_fastmix_impl is not None:
+            return _ensure_fastmix_impl(auto_build=True)
+    except Exception:
+        pass
+    return _get_fastmix()
 
 _NTSC_SR = 8287.0
 _AMIGA_CLOCK = 3546894.6
@@ -40,11 +66,11 @@ def _note_to_midi(note_str: str) -> int | None:
     return (octave + 1) * 12 + idx
 
 
+@functools.lru_cache(maxsize=2048)
 def _parse_effect(effect: str) -> tuple[str, int] | None:
     if not effect:
         return None
     cmd = effect[0]
-    arg = 0
     try:
         arg = int(effect[1:], 16)
     except ValueError:
@@ -101,12 +127,33 @@ class TrackerSoftwareRenderer:
         self.channel_gains: list[float] = []
         self.master_gain: float = 1.0
         self._arange_cache: dict[int, np.ndarray] = {}
+        self._idx_cache: dict[int, np.ndarray] = {}
+        self._tmp_cache: dict[int, np.ndarray] = {}
+        self._xp_cache: dict[int, np.ndarray] = {}
+        self._wave_cache: dict[int, np.ndarray] = {}
+        self._loop_cache: dict[int, tuple[int, int, int]] = {}
+        self._fastmix = None
+        self._fastmix_tried = False
         self.playback_map: list[tuple] = []
         self.meter_peaks: list[list[float]] = []
         self.meter_block_sec: float = self.METER_BLOCK_SEC
         self._meter_block: list[float] = []
         self._meter_blocks: list[list[float]] = []
         self._meter_cursor: int = 0
+
+    def _fastmix_mod(self):
+        if self._fastmix is not None:
+            return self._fastmix
+        if self._fastmix_tried:
+            return None
+        mod = _get_fastmix()
+        if mod is None:
+            # One blocking build attempt per renderer (worker thread).
+            # Subsequent renders reuse the compiled module.
+            mod = _ensure_fastmix()
+        self._fastmix = mod
+        self._fastmix_tried = True
+        return mod
 
     @staticmethod
     def db_to_gain(db: float) -> float:
@@ -185,6 +232,11 @@ class TrackerSoftwareRenderer:
         self.meter_peaks = []
         self.meter_block_sec = self.METER_BLOCK_SEC
         self.playback_map = []
+        # Per-render sample caches: song objects are not mutated mid-render,
+        # so id() keying is safe and converts each distinct waveform once
+        # instead of once per triggered note.
+        self._wave_cache.clear()
+        self._loop_cache.clear()
 
     def get_playback_map(self) -> list[tuple]:
         return list(self.playback_map)
@@ -415,8 +467,9 @@ class TrackerSoftwareRenderer:
         tick_frames = int(round(self.sample_rate * 2.5 / bpm))
         if tick_frames < 1:
             tick_frames = 1
-        left_chunks = []
-        right_chunks = []
+        row_frames = tick_frames * max(1, int(speed))
+        l_all = np.zeros(row_frames, dtype=np.float32)
+        r_all = np.zeros(row_frames, dtype=np.float32)
         for tick in range(speed):
             for ch in range(pat.n_channels):
                 v = self.voices[ch]
@@ -430,11 +483,9 @@ class TrackerSoftwareRenderer:
                         self._start_voice(song, v, period, inst, ch)
                 if v.cut_tick == tick:
                     v.vol = 0.0
-            l, r = self._mix_tick(tick_frames)
-            left_chunks.append(l)
-            right_chunks.append(r)
-        l_all = np.concatenate(left_chunks) if left_chunks else np.zeros(1, dtype=np.float32)
-        r_all = np.concatenate(right_chunks) if right_chunks else np.zeros(1, dtype=np.float32)
+            off = tick * tick_frames
+            self._mix_tick_into(l_all[off:off + tick_frames],
+                                r_all[off:off + tick_frames])
         return ((l_all, r_all), speed)
 
     def _sample_for_instrument(self, song, inst_idx: int):
@@ -459,6 +510,10 @@ class TrackerSoftwareRenderer:
         return int(getattr(smp, "volume", 64) or 64)
 
     def _sample_wave(self, smp) -> np.ndarray:
+        key = id(smp)
+        hit = self._wave_cache.get(key)
+        if hit is not None:
+            return hit
         try:
             raw = smp.waveform
             if getattr(smp, "is_16bit", False):
@@ -467,9 +522,19 @@ class TrackerSoftwareRenderer:
                 arr = np.asarray(raw, dtype=np.float32) / 128.0
         except Exception:
             arr = np.zeros(1, dtype=np.float32)
-        return np.ascontiguousarray(arr, dtype=np.float32)
+        arr = np.ascontiguousarray(arr, dtype=np.float32)
+        # Guard against empty waveforms (old code used zeros(1) fallback only
+        # on exception; keep a valid non-empty array for the mixer).
+        if arr.size == 0:
+            arr = np.zeros(1, dtype=np.float32)
+        self._wave_cache[key] = arr
+        return arr
 
     def _sample_loop(self, smp) -> tuple[int, int, int]:
+        key = id(smp)
+        hit = self._loop_cache.get(key)
+        if hit is not None:
+            return hit
         start = int(getattr(smp, "repeat_point", 0) or 0)
         length = int(getattr(smp, "repeat_len", 0) or 0)
         mode = 1
@@ -482,7 +547,9 @@ class TrackerSoftwareRenderer:
             start = n
             end = n
             mode = 0
-        return start, end, mode
+        out = (start, end, mode)
+        self._loop_cache[key] = out
+        return out
 
     def _start_voice(self, song, v: _Voice, period: str, inst: int, ch: int, retrig: bool = False):
         smp = self._sample_for_instrument(song, inst)
@@ -707,71 +774,266 @@ class TrackerSoftwareRenderer:
         return math.sin(phase)
 
     def _mix_one(self, v: _Voice, n: int) -> np.ndarray:
+        # Compatibility wrapper: fast NumPy path (single interp, no temps).
         if not v.active or len(v.wave) == 0 or v.vol <= 0.0:
             return np.zeros(n, dtype=np.float32)
         freq = v.freq
         if freq <= 0:
             return np.zeros(n, dtype=np.float32)
+        ar = self._arange(n)
+        idx_buf = self._idx_buf(n)
+        return self._render_voice_numpy(v, n, ar, idx_buf)
+
+    def _arange(self, n: int) -> np.ndarray:
         ar = self._arange_cache.get(n)
         if ar is None:
             ar = np.arange(n, dtype=np.float64)
             self._arange_cache[n] = ar
-        t = v.pos + freq / self.sample_rate * ar
+        return ar
+
+    def _idx_buf(self, n: int) -> np.ndarray:
+        buf = self._idx_cache.get(n)
+        if buf is None:
+            buf = np.empty(n, dtype=np.float64)
+            self._idx_cache[n] = buf
+        return buf
+
+    def _tmp_buf(self, n: int) -> np.ndarray:
+        buf = self._tmp_cache.get(n)
+        if buf is None:
+            buf = np.empty(n, dtype=np.float32)
+            self._tmp_cache[n] = buf
+        return buf
+
+    def _xp_for(self, wlen: int) -> np.ndarray:
+        xp = self._xp_cache.get(wlen)
+        if xp is None:
+            xp = np.arange(wlen, dtype=np.float64)
+            self._xp_cache[wlen] = xp
+        return xp
+
+    def _render_voice_numpy(self, v: _Voice, n: int, ar: np.ndarray,
+                            idx_buf: np.ndarray) -> np.ndarray:
+        """Mono render of one voice (vol applied), NumPy fallback.
+
+        Uses a single np.interp C pass + in-place scaling. Loop wrapping is
+        done in-place in idx_buf for the steady-state case.
+        """
         wave = v.wave
-        nlen = len(wave)
-        loop_start = v.loop_start
-        loop_end = v.loop_end
-        mode = v.loop_mode
-        if mode == 0 or loop_start >= loop_end:
-            idx = np.clip(t, 0, nlen - 1)
-        else:
-            span = loop_end - loop_start
-            rel = np.mod(t - loop_start, span)
-            tmod = loop_start + rel
-            head = np.clip(t, 0, loop_start)
-            idx = np.where(t < loop_start, head, tmod)
+        wlen = int(len(wave))
+        step = float(v.freq) / float(self.sample_rate)
+        pos = float(v.pos)
+        vol = float(v.vol)
+        ls = int(v.loop_start)
+        le = int(v.loop_end)
+        mode = int(v.loop_mode)
+        if wlen == 0:
+            return np.zeros(n, dtype=np.float32)
+        if mode == 0 or le <= ls:
+            np.multiply(ar, step, out=idx_buf)
+            idx_buf += pos
+            mono = np.interp(idx_buf, self._xp_for(wlen), wave).astype(
+                np.float32, copy=False)
+            if vol != 1.0:
+                mono *= vol
+            return mono
+        span = le - ls
+        if span <= 1:
+            np.multiply(ar, step, out=idx_buf)
+            idx_buf += pos
+            mono = np.interp(idx_buf, self._xp_for(wlen), wave).astype(
+                np.float32, copy=False)
+            if vol != 1.0:
+                mono *= vol
+            return mono
+        if pos >= ls:
+            np.multiply(ar, step, out=idx_buf)
+            idx_buf += pos
+            idx_buf -= ls
+            np.mod(idx_buf, span, out=idx_buf)
             if mode == 2:
-                tri = np.minimum(rel, span - rel)
-                idx = np.where(t < loop_start, head, loop_start + tri)
-            idx = np.clip(idx, 0, nlen - 1.0)
+                # Triangular ping-pong, matches legacy minimum() mapping.
+                tri = np.minimum(idx_buf, span - idx_buf)
+                idx_buf = ls + tri
+            else:
+                idx_buf += ls
+            mono = np.interp(idx_buf, self._xp_for(wlen), wave).astype(
+                np.float32, copy=False)
+            if vol != 1.0:
+                mono *= vol
+            return mono
+        # Rare head case (first tick, pos < loop_start): exact legacy mapping.
+        t = pos + step * ar
+        rel = np.mod(t - ls, span)
+        tmod = ls + rel
+        head = np.clip(t, 0, ls)
+        idx = np.where(t < ls, head, tmod)
+        if mode == 2:
+            tri = np.minimum(rel, span - rel)
+            idx = np.where(t < ls, head, ls + tri)
+        idx = np.clip(idx, 0, wlen - 1.0)
         i0 = np.floor(idx).astype(np.int64)
         frac = idx - i0
-        i1 = np.minimum(i0 + 1, nlen - 1)
-        return (wave[i0] * (1.0 - frac) + wave[i1] * frac).astype(np.float32) * v.vol
+        i1 = np.minimum(i0 + 1, wlen - 1)
+        return (wave[i0] * (1.0 - frac) + wave[i1] * frac).astype(
+            np.float32) * vol
 
     def _mix_tick(self, n: int) -> tuple[np.ndarray, np.ndarray]:
         n = max(1, n)
         left = np.zeros(n, dtype=np.float32)
         right = np.zeros(n, dtype=np.float32)
+        self._mix_tick_into(left, right)
+        return left, right
+
+    def _mix_tick_into(self, left: np.ndarray, right: np.ndarray) -> None:
+        n = int(len(left))
+        if n == 0:
+            return
         gains = self.channel_gains
+        fm = self._fastmix_mod()
+        if fm is not None:
+            try:
+                for ch, v in enumerate(self.voices):
+                    if not v.active:
+                        continue
+                    wlen = int(len(v.wave))
+                    freq = float(v.freq)
+                    if wlen == 0 or freq <= 0.0:
+                        continue
+                    vol = float(v.vol)
+                    g = gains[ch] if ch < len(gains) else 1.0
+                    vol_gain = vol * float(g)
+                    if vol_gain <= 0.0:
+                        # Silent but still advancing (matches legacy).
+                        v.pos += freq * n / self.sample_rate
+                        if v.pos >= wlen:
+                            if v.loop_mode != 0 and v.loop_start < v.loop_end:
+                                span = v.loop_end - v.loop_start
+                                if span > 0:
+                                    v.pos = v.loop_start + (
+                                        (v.pos - v.loop_start) % span)
+                                else:
+                                    v.active = False
+                            else:
+                                v.active = False
+                        continue
+                    pan = int(v.pan)
+                    lg = math.sqrt(max(0.0, (255.0 - pan) / 255.0))
+                    rg = math.sqrt(max(0.0, pan / 255.0))
+                    try:
+                        peak = float(fm.mix_add_voice(
+                            v.wave, float(v.pos), freq / float(self.sample_rate),
+                            float(vol_gain), int(v.loop_start), int(v.loop_end),
+                            int(v.loop_mode), float(lg), float(rg),
+                            left, right))
+                    except Exception:
+                        # Fall through to NumPy for this voice on any
+                        # unexpected buffer-layout issue.
+                        peak = self._mix_voice_numpy_into(
+                            v, n, left, right, vol_gain, lg, rg)
+                    if len(self._meter_block) <= ch:
+                        self._meter_block.extend(
+                            [0.0] * (ch + 1 - len(self._meter_block)))
+                    if peak > self._meter_block[ch]:
+                        self._meter_block[ch] = peak
+                    v.pos += freq * n / self.sample_rate
+                    if v.pos >= wlen:
+                        if v.loop_mode != 0 and v.loop_start < v.loop_end:
+                            span = v.loop_end - v.loop_start
+                            if span > 0:
+                                v.pos = v.loop_start + (
+                                    (v.pos - v.loop_start) % span)
+                            else:
+                                v.active = False
+                        else:
+                            v.active = False
+                self._meter_advance(n)
+                return
+            except Exception:
+                pass
+        # ---- Pure-NumPy fallback (no Cython) ----
+        ar = self._arange(n)
+        idx_buf = self._idx_buf(n)
+        tmp = self._tmp_buf(n)
+        abs_buf = tmp
         for ch, v in enumerate(self.voices):
             if not v.active:
                 continue
-            mono = self._mix_one(v, n)
+            wlen = int(len(v.wave))
+            freq = float(v.freq)
+            if wlen == 0 or freq <= 0.0 or float(v.vol) <= 0.0:
+                v.pos += freq * n / self.sample_rate if freq > 0 else 0.0
+                if v.pos >= wlen and wlen > 0:
+                    if v.loop_mode != 0 and v.loop_start < v.loop_end:
+                        span = v.loop_end - v.loop_start
+                        if span > 0:
+                            v.pos = v.loop_start + (
+                                (v.pos - v.loop_start) % span)
+                        else:
+                            v.active = False
+                    else:
+                        v.active = False
+                continue
+            mono = self._render_voice_numpy(v, n, ar, idx_buf)
             g = gains[ch] if ch < len(gains) else 1.0
             if g != 1.0:
-                mono = mono * g
-            if len(self._meter_block) <= ch:
-                self._meter_block.extend([0.0] * (ch + 1 - len(self._meter_block)))
+                mono = mono * float(g)
             try:
-                peak = float(np.abs(mono).max()) if len(mono) else 0.0
+                np.abs(mono, out=abs_buf)
+                peak = float(abs_buf.max()) if n else 0.0
             except Exception:
                 peak = 0.0
+            if len(self._meter_block) <= ch:
+                self._meter_block.extend(
+                    [0.0] * (ch + 1 - len(self._meter_block)))
             if peak > self._meter_block[ch]:
                 self._meter_block[ch] = peak
-            pan = v.pan
-            lg = np.sqrt(max(0.0, (255.0 - pan) / 255.0))
-            rg = np.sqrt(max(0.0, pan / 255.0))
-            left += mono * lg
-            right += mono * rg
-            v.pos += v.freq * n / self.sample_rate
-            if v.pos >= len(v.wave):
+            pan = int(v.pan)
+            lg = math.sqrt(max(0.0, (255.0 - pan) / 255.0))
+            rg = math.sqrt(max(0.0, pan / 255.0))
+            np.multiply(mono, np.float32(lg), out=tmp)
+            left += tmp
+            np.multiply(mono, np.float32(rg), out=tmp)
+            right += tmp
+            v.pos += freq * n / self.sample_rate
+            if v.pos >= wlen:
                 if v.loop_mode != 0 and v.loop_start < v.loop_end:
-                    v.pos = v.loop_start + ((v.pos - v.loop_start) % (v.loop_end - v.loop_start))
+                    span = v.loop_end - v.loop_start
+                    if span > 0:
+                        v.pos = v.loop_start + ((v.pos - v.loop_start) % span)
+                    else:
+                        v.active = False
                 else:
                     v.active = False
         self._meter_advance(n)
-        return left, right
+
+    def _mix_voice_numpy_into(self, v: _Voice, n: int, left: np.ndarray,
+                              right: np.ndarray, vol_gain: float,
+                              lg: float, rg: float) -> float:
+        ar = self._arange(n)
+        idx_buf = self._idx_buf(n)
+        tmp = self._tmp_buf(n)
+        mono = self._render_voice_numpy(v, n, ar, idx_buf)
+        if vol_gain != float(v.vol):
+            # _render_voice_numpy applied v.vol; adjust to vol_gain.
+            try:
+                base_vol = float(v.vol)
+            except Exception:
+                base_vol = 1.0
+            if base_vol != 0.0:
+                mono = mono * (vol_gain / base_vol)
+            else:
+                mono = mono * 0.0
+        try:
+            np.abs(mono, out=tmp)
+            peak = float(tmp.max()) if n else 0.0
+        except Exception:
+            peak = 0.0
+        np.multiply(mono, np.float32(lg), out=tmp)
+        left += tmp
+        np.multiply(mono, np.float32(rg), out=tmp)
+        right += tmp
+        return peak
 
     def _meter_advance(self, n: int):
         block_frames = max(1, int(self.sample_rate * self.METER_BLOCK_SEC))

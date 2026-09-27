@@ -16,6 +16,8 @@ __pycache__/
 *.prev
 *.bak
 core/pyx/*.c
+plugins/tracker_music_plugin/fastmix.c
+plugins/tracker_music_plugin/build/
 
 # IDE
 .vscode/

@@ -53,18 +53,21 @@ uniform float u_grid_step_major;
 uniform float u_grid_step_super;
 uniform float u_grid_2d;
 uniform float u_grid_opacity;
-uniform sampler2D u_scene_color;
+uniform float u_bg_lum;
 uniform vec2 u_viewport_size;
 
 float grid_line(vec2 pos, float spacing, float width) {
     vec2 p = pos / spacing;
     vec2 fw = max(fwidth(p), vec2(1e-5));
     vec2 c = abs(fract(p) - 0.5) / fw;
-    return 1.0 - smoothstep(0.0, width, min(c.x, c.y));
+    float line = 1.0 - smoothstep(0.0, width, min(c.x, c.y));
+    float dens = max(fw.x, fw.y);
+    float lod = 1.0 - smoothstep(0.75, 2.0, dens);
+    return line * lod;
 }
 
 void main() {
-    vec2 uv = gl_FragCoord.xy / u_viewport_size;
+    float bg_lum = u_bg_lum;
 
     vec2 pos;
     vec2 cam;
@@ -86,8 +89,6 @@ void main() {
     float major = grid_line(pos, spacing * u_grid_step_major, 2.5) * u_grid_alpha_major;
     float super = grid_line(pos, spacing * u_grid_step_super, 4.0) * u_grid_alpha_super;
 
-    vec3 bg = texture(u_scene_color, uv).rgb;
-    float bg_lum = dot(bg, vec3(0.299, 0.587, 0.114));
     float dark_mix = smoothstep(0.25, 0.65, bg_lum);
 
     vec3 grid_base;
