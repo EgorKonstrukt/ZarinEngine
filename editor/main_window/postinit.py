@@ -22,6 +22,14 @@ def _register_scene_tab(mw):
         mw._scene_tab_manager.add_tab(name, path=path, scene=mw._engine.scene)
 
 
+def _restore_or_register(mw) -> bool:
+    from editor.main_window.state import restore_tabs
+    if restore_tabs(mw):
+        return True
+    _register_scene_tab(mw)
+    return False
+
+
 def post_init(mw):
     try:
         from PyQt6.QtWidgets import QApplication
@@ -41,8 +49,17 @@ def post_init(mw):
                 switch_project(mw, project_path)
                 QTimer.singleShot(0, lambda: initial_dock_sizes(mw))
                 QTimer.singleShot(100, lambda: load_renderer_config(mw))
-                QTimer.singleShot(200, lambda: _register_scene_tab(mw))
+                QTimer.singleShot(200, lambda: _restore_or_register(mw))
                 return
+        if _restore_or_register(mw):
+            mw._hierarchy.refresh()
+            QTimer.singleShot(0, lambda: initial_dock_sizes(mw))
+            if mw._viewport.renderer:
+                mw._viewport.renderer.load_config(get_global_config())
+            else:
+                QTimer.singleShot(100, lambda: load_renderer_config(mw))
+            Logger.info("Zarin Engine Editor started. Welcome!")
+            return
         SplashScreen.show_message("Creating sample scene...")
         scene = mw._engine.new_scene("SampleScene")
         from core.components import Transform, MeshFilter, MeshRenderer, DirectionalLight, Camera

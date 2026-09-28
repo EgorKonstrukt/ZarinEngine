@@ -429,7 +429,13 @@ def register(registry, engine):
             scenes = _get_project_scenes(engine)
             return {"message": "Provide a path. Available scenes:", "scenes": scenes}
         full = os.path.join(engine.project_root, path) if not os.path.isabs(path) else path
-        scene = run_on_main_thread(lambda: engine.load_scene(full))
+        mw = engine.get_main_window()
+        mgr = getattr(mw, '_scene_tab_manager', None) if mw is not None else None
+        if mgr is not None:
+            from editor.main_window.handlers import load_scene_in_tab
+            scene = run_on_main_thread(lambda: load_scene_in_tab(mw, full))
+        else:
+            scene = run_on_main_thread(lambda: engine.load_scene(full))
         if scene is None:
             return {"error": f"Failed to load scene: {path}"}
         return {"message": f"Loaded scene '{scene.name}'"}
@@ -445,7 +451,12 @@ def register(registry, engine):
         },
     )
     def scene_new(name="NewScene"):
-        run_on_main_thread(lambda: engine.new_scene(name))
+        mw = engine.get_main_window()
+        mgr = getattr(mw, '_scene_tab_manager', None) if mw is not None else None
+        if mgr is not None:
+            run_on_main_thread(lambda: mgr.add_tab(name))
+        else:
+            run_on_main_thread(lambda: engine.new_scene(name))
         return {"message": f"Created new scene '{name}'"}
 
     @registry.tool(

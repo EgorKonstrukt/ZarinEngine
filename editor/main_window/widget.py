@@ -65,7 +65,7 @@ from editor.main_window.menu import setup_menu
 from editor.main_window.toolbar import setup_toolbar
 from editor.main_window.statusbar import setup_statusbar
 from editor.main_window.connections import connect_signals
-from editor.main_window.state import restore_camera, save_state, restore_script_tabs
+from editor.main_window.state import restore_camera, save_state
 from editor.main_window.postinit import post_init, initial_dock_sizes
 from editor.main_window.project import switch_project, open_project_manager, open_project_browse
 from editor.main_window.handlers import (
@@ -122,7 +122,7 @@ class EditorMainWindow(QMainWindow):
         connect_signals(self)
         restore_camera(self)
         if not self._layout_restored:
-            save_state(self)
+            save_state(self, include_tabs=False)
         engine.on("scene_loaded", lambda s: on_scene_loaded(self, s))
         self._setup_engine_events()
         QTimer.singleShot(0, lambda: post_init(self))
@@ -175,15 +175,6 @@ class EditorMainWindow(QMainWindow):
             sw.collab_cursor_changed.connect(lambda path, pos, anchor, end: collab.send_script_cursor(path, pos, anchor, end))
             sw.collab_ops_ready.connect(lambda path, ops: collab.send_script_ops(path, ops))
             collab.set_on_remote_script_ops(lambda pid, data: sw.apply_remote_ops(data.get("path", ""), data.get("ops", [])))
-
-        saved_paths = restore_script_tabs(self)
-        if saved_paths:
-            for path in saved_paths:
-                sw.open_script(path)
-            if sw._tabs.count() > 0:
-                first = sw._tabs.widget(0)
-                if first and not first._file_path:
-                    sw._tabs.removeTab(0)
 
     def _on_script_tab_opened(self, path: str):
         sw = self._script_editor._script_widget

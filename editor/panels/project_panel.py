@@ -1300,6 +1300,7 @@ class ProjectPanel(QDockWidget):
     def __init__(self, engine: Engine, project_root: str = "assets", parent=None):
         super().__init__("Project", parent)
         self._engine = engine
+        self._open_scene_callback = None
         self._project_root = os.path.abspath(project_root)
         self._thumb_size = 64
         self._icon_provider = QFileIconProvider()
@@ -2571,6 +2572,13 @@ class ProjectPanel(QDockWidget):
         except Exception:
             return False
 
+    def _open_scene_file(self, path: str):
+        cb = getattr(self, '_open_scene_callback', None)
+        if cb is not None:
+            cb(path)
+        else:
+            self._engine.load_scene_async(path)
+
     def _open_path(self, path: str):
         pane = self._active_pane()
         if os.path.isdir(path):
@@ -2580,7 +2588,7 @@ class ProjectPanel(QDockWidget):
                 return
             ext = os.path.splitext(path)[1].lower()
             if ext == ".zpes":
-                self._engine.load_scene_async(path)
+                self._open_scene_file(path)
             elif ext == ".zpep":
                 self.file_double_clicked.emit(path)
             elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
@@ -2737,7 +2745,7 @@ class ProjectPanel(QDockWidget):
                 return
             ext = os.path.splitext(path)[1].lower()
             if ext == ".zpes":
-                self._engine.load_scene_async(path)
+                self._open_scene_file(path)
             elif ext == ".zpep":
                 self.file_double_clicked.emit(path)
             elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
@@ -2833,7 +2841,7 @@ class ProjectPanel(QDockWidget):
                 ext = os.path.splitext(path)[1].lower() if path else ""
                 if ext == ".zpes":
                     act = QAction("Open Scene", self)
-                    act.triggered.connect(lambda: self._engine.load_scene_async(path))
+                    act.triggered.connect(lambda: self._open_scene_file(path))
                     menu.addAction(act)
                 elif ext == ".zpep":
                     act = QAction("Instantiate Prefab", self)
@@ -2927,7 +2935,7 @@ class ProjectPanel(QDockWidget):
         if not os.path.isdir(path):
             ext = os.path.splitext(path)[1].lower()
             if ext == ".zpes":
-                actions.append(("Open Scene", lambda: self._engine.load_scene_async(path)))
+                actions.append(("Open Scene", lambda: self._open_scene_file(path)))
             elif ext == ".zpep":
                 actions.append(("Instantiate Prefab", lambda: self._instantiate_prefab(path)))
             elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
@@ -3893,7 +3901,7 @@ class CLASSNAME:
             return
         ext = os.path.splitext(path)[1].lower()
         if ext == ".zpes":
-            self._engine.load_scene_async(path)
+            self._open_scene_file(path)
         elif ext == ".zpep":
             self.file_double_clicked.emit(path)
         elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):

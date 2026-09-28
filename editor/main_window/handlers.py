@@ -803,6 +803,35 @@ def open_scene(mw):
         _do_open_scene(mw, path)
 
 
+def open_scene_in_tab(mw, path: str):
+    mgr = getattr(mw, '_scene_tab_manager', None)
+    if mgr is not None and path:
+        want = os.path.normcase(os.path.normpath(path))
+        for name in mgr.tab_names:
+            info = mgr.get_tab_info(name)
+            if info and info.path and os.path.normcase(os.path.normpath(info.path)) == want:
+                mgr.switch_to_tab(name)
+                return
+    _do_open_scene(mw, path)
+
+
+def load_scene_in_tab(mw, path: str):
+    mgr = getattr(mw, '_scene_tab_manager', None)
+    if mgr is not None and path:
+        want = os.path.normcase(os.path.normpath(path))
+        for name in mgr.tab_names:
+            info = mgr.get_tab_info(name)
+            if info and info.path and os.path.normcase(os.path.normpath(info.path)) == want:
+                mgr.switch_to_tab(name)
+                return mw._engine.scene
+    scene = mw._engine.load_scene(path)
+    if scene is None or mgr is None:
+        return scene
+    tab_name = os.path.splitext(os.path.basename(path))[0]
+    mgr.add_tab(tab_name, path=path, scene=scene)
+    return scene
+
+
 def _confirm_discard_dirty(mw) -> bool:
     if mw._engine.scene and mw._engine.scene.dirty:
         reply = QMessageBox.question(mw, "Unsaved Changes", "Save current scene?",

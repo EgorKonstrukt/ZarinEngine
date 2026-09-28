@@ -14,6 +14,7 @@ from PyQt6.QtGui import QPixmap, QPainter, QColor, QBrush, QIcon
 from PyQt6.QtWidgets import QTabBar, QMessageBox
 
 from core.ecs.ecs import Scene
+from core.foundation.logger import Logger
 from core.maths.math3d import Vec3
 
 try:
@@ -93,6 +94,7 @@ class SceneTabManager(QObject):
         self._tab_names: list[str] = []
         self._active_tab: Optional[str] = None
         self._switching = False
+        self._restoring = False
 
         tab_bar.currentChanged.connect(self._on_tab_changed)
         tab_bar.tabCloseRequested.connect(self._on_tab_close_requested)
@@ -101,6 +103,12 @@ class SceneTabManager(QObject):
         tab_bar.setMovable(True)
         tab_bar.setDrawBase(False)
         tab_bar.setExpanding(False)
+
+    def begin_restore(self):
+        self._restoring = True
+
+    def end_restore(self):
+        self._restoring = False
 
     def add_script_tab(self, path: str, title: str) -> int:
         pos = len(self._tab_names)
@@ -173,6 +181,8 @@ class SceneTabManager(QObject):
         self._tab_bar.setTabData(idx, tab_name)
         self._tab_bar.setTabIcon(idx, self._get_zarin_icon())
         self._tab_bar.setCurrentIndex(idx)
+        if not self._restoring and not self._switching and self._active_tab != tab_name:
+            self._on_tab_changed(idx)
         self.tab_added.emit(tab_name)
         return tab_name
 
@@ -190,7 +200,10 @@ class SceneTabManager(QObject):
             return
         idx = self._scene_tab_idx(tab_name)
         if idx >= 0:
-            self._tab_bar.setCurrentIndex(idx)
+            if idx == self._tab_bar.currentIndex() and self._active_tab != tab_name:
+                self._on_tab_changed(idx)
+            else:
+                self._tab_bar.setCurrentIndex(idx)
 
     def tab_name_at(self, idx: int) -> Optional[str]:
         data = self._tab_bar.tabData(idx)
@@ -246,7 +259,7 @@ class SceneTabManager(QObject):
             info.play_mode = self._engine.play_mode
 
     def _on_tab_changed(self, idx: int):
-        if self._switching:
+        if self._switching or self._restoring:
             return
         if self.is_script_tab(idx):
             self._save_current_to_tab()
@@ -279,8 +292,20 @@ class SceneTabManager(QObject):
             if info is None:
                 return
 
+            previous_tab = self._active_tab
+            previous_scene = self._engine.scene if self._engine else None
             self._active_tab = target
-            self._load_scene(info)
+            try:
+                self._load_scene(info)
+            except Exception as e:
+                Logger.error(f"Failed to load scene tab '{target}': {e}", e)
+                self._active_tab = previous_tab
+                if self._engine is not None:
+                    try:
+                        self._engine._scene = previous_scene
+                    except Exception as e2:
+                        Logger.error(f"Failed to roll back scene: {e2}", e2)
+                return
             self.tab_switched.emit(target)
         finally:
             self._switching = False
@@ -360,7 +385,10 @@ class SceneTabManager(QObject):
             if self._engine.scene:
                 self._engine._plugin_manager.notify_scene_unloaded(self._engine.scene)
             from core.components.rendering.postfx.graphics_effect import GraphicsEffect
-            GraphicsEffect.cleanup_registry()
+            try:
+                GraphicsEffect.cleanup_registry()
+            except Exception as e:
+                Logger.error(f"GraphicsEffect cleanup failed: {e}", e)
             self._engine._scene = info.scene
             self._engine._plugin_manager.notify_scene_loaded(info.scene)
         self._engine._emit_event("scene_loaded", info.scene)

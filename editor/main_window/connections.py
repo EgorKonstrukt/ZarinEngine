@@ -34,6 +34,7 @@ from editor.main_window.handlers import (
     on_import_model,
     on_file_selected,
     on_project_file_double_clicked,
+    open_scene_in_tab,
     on_open_prefab_editor,
     on_undo_history_navigated,
 )
@@ -72,6 +73,7 @@ def connect_signals(mw):
     mw._project.import_model_requested.connect(lambda p: on_import_model(mw, p))
     mw._project.file_selected.connect(lambda p: on_file_selected(mw, p))
     mw._project.file_double_clicked.connect(lambda p: on_project_file_double_clicked(mw, p))
+    mw._project._open_scene_callback = lambda p: open_scene_in_tab(mw, p)
     mw._hierarchy.select_prefab_asset.connect(lambda p: on_file_selected(mw, p))
     mw._hierarchy.open_prefab_editor.connect(lambda p: on_open_prefab_editor(mw, p))
     mw._inspector.open_prefab_editor.connect(lambda p: on_open_prefab_editor(mw, p))
