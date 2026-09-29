@@ -921,19 +921,6 @@ void main() {
     def render_meshes(self, meshes: list[tuple], vp_mat: Mat4, cam_pos=None):
         if not self._solid_prog or not meshes:
             return
-        _origin = origin_for(cam_pos) if cam_pos is not None else None
-        try:
-            _ox = float(_origin[0]) if _origin is not None else 0.0
-            _oy = float(_origin[1]) if _origin is not None else 0.0
-            _oz = float(_origin[2]) if _origin is not None else 0.0
-        except Exception:
-            _ox = 0.0; _oy = 0.0; _oz = 0.0
-        try:
-            _sp = self._solid_prog
-            if "u_mvp" in self._names(_sp):
-                _sp["u_mvp"].write(shifted_vp(vp_mat, _origin).to_f32().tobytes())
-        except Exception:
-            pass
         for verts, indices, colors in meshes:
             if not verts or not indices or len(indices) < 3:
                 continue
@@ -943,7 +930,7 @@ void main() {
             v_data = np.empty((n, 7), dtype=np.float32)
             for i in range(n):
                 v = verts[i]
-                v_data[i, 0] = v.x - _ox; v_data[i, 1] = v.y - _oy; v_data[i, 2] = v.z - _oz
+                v_data[i, 0] = v.x; v_data[i, 1] = v.y; v_data[i, 2] = v.z
                 c = colors[i] if i < len(colors) else [1, 1, 1, 1]
                 v_data[i, 3] = c[0]; v_data[i, 4] = c[1]; v_data[i, 5] = c[2]
                 v_data[i, 6] = c[3] if len(c) > 3 else 1.0
