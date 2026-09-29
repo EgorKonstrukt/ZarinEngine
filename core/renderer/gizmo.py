@@ -9,6 +9,7 @@ import numpy as np
 import moderngl
 from typing import Optional
 from core.maths.math3d import Vec3, Mat4
+from core.renderer.origin import origin_for, relativize_chunk_f32, relativize_positions, shifted_vp
 from core.renderer.precision import apply_precision
 from core.renderer.shaders import program_with_fallback
 from core.renderer.gpu_primitives import (
@@ -339,13 +340,14 @@ class GizmoRenderer:
         self._solid_vbo_cap = vcap
         self._solid_ibo_cap = icap
 
-    def render_lines(self, lines, vp_mat: Mat4, fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0):
+    def render_lines(self, lines, vp_mat: Mat4, fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0, cam_pos=None):
         if not self._fatline_prog or not lines:
             return
         desired_pixels = max(1.0, float(self._line_width) * 1.5 * thickness_multiplier)
+        _origin = origin_for(cam_pos) if cam_pos is not None else None
         if isinstance(lines, tuple) and len(lines) == 3 and all(isinstance(a, np.ndarray) for a in lines):
             starts_np, ends_np, colors_np = lines
-            self._render_lines_np(starts_np, ends_np, colors_np, vp_mat, fw, fh, desired_pixels)
+            self._render_lines_np(starts_np, ends_np, colors_np, vp_mat, fw, fh, desired_pixels, None, cam_pos)
             return
         color_groups: dict = {}
         for start, end, color in lines:
@@ -363,7 +365,7 @@ class GizmoRenderer:
         self._ctx.disable(moderngl.DEPTH_TEST)
         prog = self._fatline_prog
         names = self._names(prog)
-        vp_f32 = vp_mat.to_f32()
+        vp_f32 = shifted_vp(vp_mat, _origin).to_f32()
         if "u_mvp" in names:
             prog["u_mvp"].write(vp_f32.tobytes())
         ndc_x = desired_pixels / max(1.0, float(fw))
@@ -375,6 +377,12 @@ class GizmoRenderer:
         strip_t = _STRIP_T
         strip_s = _STRIP_S
         try:
+            _ox = float(_origin[0]) if _origin is not None else 0.0
+            _oy = float(_origin[1]) if _origin is not None else 0.0
+            _oz = float(_origin[2]) if _origin is not None else 0.0
+        except Exception:
+            _ox = 0.0; _oy = 0.0; _oz = 0.0
+        try:
             for color_key, segs in color_groups.items():
                 alpha_val = float(color_key[3]) if len(color_key) > 3 else 1.0
                 if alpha_val <= 0.001:
@@ -383,8 +391,8 @@ class GizmoRenderer:
                 n_verts = n_segs * 6
                 pts = np.empty((n_segs, 6), dtype=np.float32)
                 for i, (s, e) in enumerate(segs):
-                    pts[i, 0] = s.x; pts[i, 1] = s.y; pts[i, 2] = s.z
-                    pts[i, 3] = e.x; pts[i, 4] = e.y; pts[i, 5] = e.z
+                    pts[i, 0] = s.x - _ox; pts[i, 1] = s.y - _oy; pts[i, 2] = s.z - _oz
+                    pts[i, 3] = e.x - _ox; pts[i, 4] = e.y - _oy; pts[i, 5] = e.z - _oz
                 starts_arr = np.repeat(pts[:, :3], 6, axis=0)
                 ends_arr = np.repeat(pts[:, 3:], 6, axis=0)
                 ts_arr = np.tile(_STRIP_T, n_segs)
@@ -412,7 +420,7 @@ class GizmoRenderer:
 
     def _render_lines_np(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
                           vp_mat: Mat4, fw: int, fh: int, desired_pixels: float,
-                          dash_opts: Optional[dict] = None):
+                          dash_opts: Optional[dict] = None, cam_pos=None):
         n_segs = starts.shape[0]
         if n_segs == 0:
             return
@@ -427,7 +435,8 @@ class GizmoRenderer:
         self._ctx.disable(moderngl.DEPTH_TEST)
         prog = self._fatline_prog
         names = self._names(prog)
-        vp_f32 = vp_mat.to_f32()
+        _origin = origin_for(cam_pos) if cam_pos is not None else None
+        vp_f32 = shifted_vp(vp_mat, _origin).to_f32()
         if "u_mvp" in names:
             prog["u_mvp"].write(vp_f32.tobytes())
         ndc_x = desired_pixels / max(1.0, float(fw))
@@ -444,10 +453,12 @@ class GizmoRenderer:
         elif "u_dash_enabled" in names:
             prog["u_dash_enabled"] = False
         self._ensure_fatline_capacity(n_verts)
+        _rs = relativize_positions(starts, _origin)
+        _re = relativize_positions(ends, _origin)
         sv = self._fs_starts[:n_verts].reshape(-1, 6, 3)
-        sv[:] = starts[:, None, :]
+        sv[:] = _rs[:, None, :]
         ev = self._fs_ends[:n_verts].reshape(-1, 6, 3)
-        ev[:] = ends[:, None, :]
+        ev[:] = _re[:, None, :]
         tv = self._fs_t[:n_verts].reshape(-1, 6)
         tv[:] = _STRIP_T[None, :]
         sidev = self._fs_side[:n_verts].reshape(-1, 6)
@@ -533,22 +544,24 @@ class GizmoRenderer:
         mesh.vao = new_vao
         mesh.instance_vbo = new_buf
 
-    def render_instanced(self, mesh: GpuMesh, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int):
+    def render_instanced(self, mesh: GpuMesh, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int, cam_pos=None):
         if not self._instanced_initialized or mesh.instance_vbo is None:
             return
         self._stat_instances += num_instances
         self._stat_draws += 1
         prog = self._instanced_prog
-        vp_f32 = vp_mat.to_f32()
+        _origin = origin_for(cam_pos) if cam_pos is not None else None
+        vp_f32 = shifted_vp(vp_mat, _origin).to_f32()
         if "u_mvp" in self._names(prog):
             prog["u_mvp"].write(vp_f32.tobytes())
         data_size = num_instances * mesh.instance_stride
         if data_size > 0:
             self._ensure_inst_solid_capacity(mesh, num_instances)
-            if instance_data.flags.c_contiguous:
-                mesh.instance_vbo.write(memoryview(instance_data)[:data_size])
+            _idata = relativize_chunk_f32(instance_data, _origin)
+            if _idata.flags.c_contiguous:
+                mesh.instance_vbo.write(memoryview(_idata)[:data_size])
             else:
-                mesh.instance_vbo.write(instance_data[:data_size].tobytes())
+                mesh.instance_vbo.write(_idata[:data_size].tobytes())
             self._stat_upload_bytes += data_size
             self._stat_upload_full += 1
         try:
@@ -664,7 +677,14 @@ void main() {
         self._stat_draws += 1
         prog = self._inst_line_prog
         names = self._names(prog)
-        vp_f32 = vp_mat.to_f32()
+        _origin = origin_for(cam_pos) if cam_pos is not None else None
+        try:
+            _ox = float(_origin[0]) if _origin is not None else 0.0
+            _oy = float(_origin[1]) if _origin is not None else 0.0
+            _oz = float(_origin[2]) if _origin is not None else 0.0
+        except Exception:
+            _ox = 0.0; _oy = 0.0; _oz = 0.0
+        vp_f32 = shifted_vp(vp_mat, _origin).to_f32()
         if "u_mvp" in names:
             prog["u_mvp"].write(vp_f32.tobytes())
         desired_pixels = max(1.0, float(self._line_width) * 1.5 * thickness_multiplier)
@@ -675,14 +695,15 @@ void main() {
         if "u_thickness_ndc_y" in names:
             prog["u_thickness_ndc_y"] = float(ndc_y)
         if "u_camera_pos" in names:
-            prog["u_camera_pos"].write(np.array([cam_pos.x, cam_pos.y, cam_pos.z], dtype=np.float32).tobytes())
+            prog["u_camera_pos"].write(np.array([cam_pos.x - _ox, cam_pos.y - _oy, cam_pos.z - _oz], dtype=np.float32).tobytes())
         data_size = num_instances * mesh.instance_stride
         if data_size > 0:
             self._ensure_inst_line_capacity(mesh, num_instances)
-            if instance_data.flags.c_contiguous:
-                mesh.instance_vbo.write(memoryview(instance_data)[:data_size])
+            _idata = relativize_chunk_f32(instance_data, _origin)
+            if _idata.flags.c_contiguous:
+                mesh.instance_vbo.write(memoryview(_idata)[:data_size])
             else:
-                mesh.instance_vbo.write(instance_data[:data_size].tobytes())
+                mesh.instance_vbo.write(_idata[:data_size].tobytes())
             self._stat_upload_bytes += data_size
             self._stat_upload_full += 1
         try:
@@ -758,29 +779,34 @@ void main() {
 
     def render_raw_lines(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
                          vp_mat: Mat4, fw: int, fh: int, desired_pixels: float,
-                         dash_opts: Optional[dict] = None, dirty: bool = True):
+                         dash_opts: Optional[dict] = None, dirty: bool = True, cam_pos=None):
         n = starts.shape[0]
         if n == 0:
             return
         self._ensure_rawline_prog()
         if self._raw_line_prog is None:
-            self._render_lines_np(starts, ends, colors, vp_mat, fw, fh, desired_pixels, dash_opts)
+            self._render_lines_np(starts, ends, colors, vp_mat, fw, fh, desired_pixels, dash_opts, cam_pos)
             return
         grew = self._ensure_rawline_capacity(n)
         if grew:
             dirty = True
         self._stat_lines += n
         self._stat_draws += 1
+        _origin = origin_for(cam_pos) if cam_pos is not None else None
+        _rs = relativize_positions(starts, _origin)
+        _re = relativize_positions(ends, _origin)
+        if _origin is not None:
+            dirty = True
         if dirty:
-            if (starts.flags.c_contiguous and ends.flags.c_contiguous and colors.ndim == 2
+            if (_rs.flags.c_contiguous and _re.flags.c_contiguous and colors.ndim == 2
                     and colors.shape[1] >= 4 and colors.flags.c_contiguous):
-                s_arr = starts
-                e_arr = ends
+                s_arr = np.ascontiguousarray(_rs, dtype=np.float32)
+                e_arr = np.ascontiguousarray(_re, dtype=np.float32)
                 c_arr = colors[:, :4]
             else:
                 fs = self._fs_starts[:n]
-                fs[:] = starts
-                self._fs_ends[:n] = ends
+                fs[:] = _rs
+                self._fs_ends[:n] = _re
                 fc = self._fs_colors4[:n]
                 if colors.shape[1] >= 4:
                     fc[:] = colors[:, :4]
@@ -801,7 +827,7 @@ void main() {
                 self._stat_upload_bytes += n * (12 + 12 + 16)
                 self._stat_upload_full += 1
                 self._rl_refresh_shadow(s_arr, e_arr, c_arr)
-        self._draw_rawlines(n, vp_mat, fw, fh, desired_pixels, dash_opts)
+        self._draw_rawlines(n, vp_mat, fw, fh, desired_pixels, dash_opts, cam_pos)
 
     def _rl_refresh_shadow(self, s_arr: np.ndarray, e_arr: np.ndarray, c_arr: np.ndarray):
         n = s_arr.shape[0]
@@ -860,7 +886,7 @@ void main() {
         return True
 
     def _draw_rawlines(self, n: int, vp_mat: Mat4, fw: int, fh: int, desired_pixels: float,
-                       dash_opts: Optional[dict]):
+                       dash_opts: Optional[dict], cam_pos=None):
         try:
             old_cull = bool(self._ctx.cull_face)
         except Exception:
@@ -869,7 +895,7 @@ void main() {
         self._ctx.disable(moderngl.DEPTH_TEST)
         prog = self._raw_line_prog
         names = self._names(prog)
-        vp_f32 = vp_mat.to_f32()
+        vp_f32 = shifted_vp(vp_mat, origin_for(cam_pos) if cam_pos is not None else None).to_f32()
         if "u_mvp" in names:
             prog["u_mvp"].write(vp_f32.tobytes())
         ndc_x = desired_pixels / max(1.0, float(fw))
@@ -892,9 +918,22 @@ void main() {
             self._ctx.disable(moderngl.CULL_FACE)
         self._ctx.enable(moderngl.DEPTH_TEST)
 
-    def render_meshes(self, meshes: list[tuple], vp_mat: Mat4):
+    def render_meshes(self, meshes: list[tuple], vp_mat: Mat4, cam_pos=None):
         if not self._solid_prog or not meshes:
             return
+        _origin = origin_for(cam_pos) if cam_pos is not None else None
+        try:
+            _ox = float(_origin[0]) if _origin is not None else 0.0
+            _oy = float(_origin[1]) if _origin is not None else 0.0
+            _oz = float(_origin[2]) if _origin is not None else 0.0
+        except Exception:
+            _ox = 0.0; _oy = 0.0; _oz = 0.0
+        try:
+            _sp = self._solid_prog
+            if "u_mvp" in self._names(_sp):
+                _sp["u_mvp"].write(shifted_vp(vp_mat, _origin).to_f32().tobytes())
+        except Exception:
+            pass
         for verts, indices, colors in meshes:
             if not verts or not indices or len(indices) < 3:
                 continue
@@ -904,7 +943,7 @@ void main() {
             v_data = np.empty((n, 7), dtype=np.float32)
             for i in range(n):
                 v = verts[i]
-                v_data[i, 0] = v.x; v_data[i, 1] = v.y; v_data[i, 2] = v.z
+                v_data[i, 0] = v.x - _ox; v_data[i, 1] = v.y - _oy; v_data[i, 2] = v.z - _oz
                 c = colors[i] if i < len(colors) else [1, 1, 1, 1]
                 v_data[i, 3] = c[0]; v_data[i, 4] = c[1]; v_data[i, 5] = c[2]
                 v_data[i, 6] = c[3] if len(c) > 3 else 1.0
@@ -923,13 +962,14 @@ void main() {
         except:
             pass
 
-    def render_mesh_np(self, v_data: np.ndarray, idx_arr: np.ndarray, vp_mat: Mat4):
+    def render_mesh_np(self, v_data: np.ndarray, idx_arr: np.ndarray, vp_mat: Mat4, cam_pos=None):
         prog = self._solid_prog
         if not prog:
             return
         self._stat_mesh_verts += v_data.shape[0]
         self._stat_draws += 1
-        vp_f32 = vp_mat.to_f32()
+        _origin = origin_for(cam_pos) if cam_pos is not None else None
+        vp_f32 = shifted_vp(vp_mat, _origin).to_f32()
         if "u_mvp" in self._names(prog):
             prog["u_mvp"].write(vp_f32.tobytes())
         self._ctx.disable(moderngl.CULL_FACE)
@@ -938,7 +978,17 @@ void main() {
         n = v_data.shape[0]
         if n > self._solid_vbo_cap or n_idx > self._solid_ibo_cap:
             self._build_solid_buffers(n, n_idx)
-        self._solid_vbo.write(v_data.tobytes())
+        _vd = v_data
+        if _origin is not None:
+            try:
+                _vd = np.ascontiguousarray(v_data, dtype=np.float64).copy()
+                _vd[:, 0] -= float(_origin[0])
+                _vd[:, 1] -= float(_origin[1])
+                _vd[:, 2] -= float(_origin[2])
+                _vd = np.ascontiguousarray(_vd.astype(np.float32))
+            except Exception:
+                _vd = v_data
+        self._solid_vbo.write(_vd.tobytes())
         self._solid_ibo.write(idx_arr.tobytes())
         self._stat_upload_bytes += len(v_data) * 28 + len(idx_arr) * 4
         self._stat_upload_full += 1
@@ -949,7 +999,7 @@ void main() {
         except:
             pass
 
-    def render_wireframe_box(self, center: Vec3, size: Vec3, color: list[float], vp_mat: Mat4):
+    def render_wireframe_box(self, center: Vec3, size: Vec3, color: list[float], vp_mat: Mat4, cam_pos=None):
         h = Vec3(size.x * 0.5, size.y * 0.5, size.z * 0.5)
         corners = [
             Vec3(center.x - h.x, center.y - h.y, center.z - h.z),
@@ -963,7 +1013,7 @@ void main() {
         ]
         edges = [(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,5),(2,6),(3,7)]
         lines = [(corners[a], corners[b], color) for a, b in edges]
-        self.render_lines(lines, vp_mat)
+        self.render_lines(lines, vp_mat, cam_pos=cam_pos)
 
     def release(self):
         for buf_name in ('_fatline_vbo_start', '_fatline_vbo_end', '_fatline_vbo_t', '_fatline_vbo_side', '_fatline_vbo_color',

@@ -119,7 +119,7 @@ def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
                 pass
     pipe.flush_and_render(vp, vp_mat, fw=fw, fh=fh)
     if meshes:
-        vp._renderer.render_gizmo_meshes(meshes, vp_mat)
+        vp._renderer.render_gizmo_meshes(meshes, vp_mat, cam_pos=cam_pos)
 
 
 _BOX_EDGE_IDXS = np.array([
@@ -167,16 +167,16 @@ def _render_corner_spheres_np(vp, vp_mat, corners, radius, color):
     cverts, cidx = cache
     nv = cverts.shape[0]
     nc = len(corners)
-    corner_pts = np.array([[c.x, c.y, c.z] for c in corners], dtype=np.float32)
-    all_verts = corner_pts[:, None, :] + cverts[None, :, :] * radius
+    corner_pts = np.array([[c.x, c.y, c.z] for c in corners], dtype=np.float64)
+    all_verts = corner_pts[:, None, :] + cverts[None, :, :].astype(np.float64) * float(radius)
     all_verts = all_verts.reshape(-1, 3)
     n_total = nc * nv
     all_idx = np.tile(cidx, nc) + np.repeat(np.arange(nc, dtype=np.int32) * nv, len(cidx))
-    v_data = np.empty((n_total, 7), dtype=np.float32)
+    v_data = np.empty((n_total, 7), dtype=np.float64)
     v_data[:, :3] = all_verts
     v_data[:, 3] = color[0]; v_data[:, 4] = color[1]
     v_data[:, 5] = color[2]; v_data[:, 6] = color[3]
-    vp._renderer.render_gizmo_mesh_np(v_data, np.asarray(all_idx, dtype=np.uint32), vp_mat)
+    vp._renderer.render_gizmo_mesh_np(v_data, np.asarray(all_idx, dtype=np.uint32), vp_mat, cam_pos=vp._cam.position if vp._cam else None)
 
 
 def _fast_aggregate_bounds(vp, entities):
@@ -505,7 +505,7 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state, fw: in
             colors_arr[:, 0] = color[0]; colors_arr[:, 1] = color[1]
             colors_arr[:, 2] = color[2]; colors_arr[:, 3] = color[3]
             dash_opts = {'dash_length': 0.3, 'gap_length': 0.15, 'time': time_s * 1.5}
-            vp._renderer.render_gizmo_arrays(starts, ends, colors_arr, vp_mat, fw, fh, thickness_multiplier=1.5, dash_opts=dash_opts)
+            vp._renderer.render_gizmo_arrays(starts, ends, colors_arr, vp_mat, fw, fh, thickness_multiplier=1.5, dash_opts=dash_opts, cam_pos=cam_pos)
             cx = float(cur_min[0]); cy = float(cur_min[1]); cz = float(cur_min[2])
             dx = float(cur_max[0]); dy = float(cur_max[1]); dz = float(cur_max[2])
             verts_3d = [
@@ -698,7 +698,7 @@ def _render_entity_bounds(vp, vp_mat, time_s, dt, entities, color, state, fw: in
     colors_arr[:, 0] = color[0]; colors_arr[:, 1] = color[1]
     colors_arr[:, 2] = color[2]; colors_arr[:, 3] = color[3]
     dash_opts = {'dash_length': 0.3, 'gap_length': 0.15, 'time': time_s * 1.5}
-    vp._renderer.render_gizmo_arrays(starts, ends, colors_arr, vp_mat, fw, fh, thickness_multiplier=1.5, dash_opts=dash_opts)
+    vp._renderer.render_gizmo_arrays(starts, ends, colors_arr, vp_mat, fw, fh, thickness_multiplier=1.5, dash_opts=dash_opts, cam_pos=cam_pos)
     cx = float(cur_min[0]); cy = float(cur_min[1]); cz = float(cur_min[2])
     dx = float(cur_max[0]); dy = float(cur_max[1]); dz = float(cur_max[2])
     verts_3d = [

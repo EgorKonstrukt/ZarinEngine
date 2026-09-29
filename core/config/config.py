@@ -314,18 +314,6 @@ def get_global_config() -> Config:
                      "engine.python_jit", "engine.python_optimize", "engine.python_unbuffered",
                      "engine.python_no_bytecode"]:
             _global_config.mark_restart(_rk)
-        try:
-            _raw_cfg = {}
-            with open(path, "r", encoding="utf-8") as _rf:
-                _raw_cfg = json.load(_rf)
-            _raw_rendering = _raw_cfg.get("rendering", {})
-            if isinstance(_raw_rendering, dict) and bool(_raw_rendering.get("high_precision", False)):
-                if "high_precision_rtc" not in _raw_rendering:
-                    _global_config.set("rendering.high_precision_rtc", True, notify=False)
-                if "high_precision_gpu" not in _raw_rendering:
-                    _global_config.set("rendering.high_precision_gpu", True, notify=False)
-        except Exception:
-            pass
     return _global_config
 def get_project_config(project_path: str) -> Config:
     global _project_config

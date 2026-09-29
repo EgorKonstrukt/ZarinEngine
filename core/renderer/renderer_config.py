@@ -82,11 +82,11 @@ class RendererConfigMixin:
         except Exception:
             pass
         try:
-            new_rtc = bool(config.get("rendering.high_precision_rtc", config.get("rendering.high_precision", getattr(self, "_rtc_enabled", False))))
+            new_rtc = bool(config.get("rendering.high_precision_rtc", getattr(self, "_rtc_enabled", False)))
         except Exception:
             new_rtc = bool(getattr(self, "_rtc_enabled", False))
         try:
-            new_gpu = bool(config.get("rendering.high_precision_gpu", config.get("rendering.high_precision", getattr(self, "_gpu_double_enabled", False))))
+            new_gpu = bool(config.get("rendering.high_precision_gpu", getattr(self, "_gpu_double_enabled", False)))
         except Exception:
             new_gpu = bool(getattr(self, "_gpu_double_enabled", False))
         old_rtc = bool(getattr(self, "_rtc_enabled", False))

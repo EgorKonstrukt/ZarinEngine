@@ -19,18 +19,18 @@ class GizmoPassMixin:
     def render_gizmo_lines(self, lines, vp_mat: Mat4, cam_pos: Optional[Vec3] = None,
                            fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0):
         if self._gizmo:
-            self._gizmo.render_lines(lines, vp_mat, fw, fh, thickness_multiplier)
+            self._gizmo.render_lines(lines, vp_mat, fw, fh, thickness_multiplier, cam_pos)
 
 
     def render_gizmo_arrays(self, starts: np.ndarray, ends: np.ndarray, colors: np.ndarray,
                              vp_mat: Mat4, fw: int = 1920, fh: int = 1080, thickness_multiplier: float = 1.0,
-                             dash_opts: Optional[dict] = None, dirty: bool = True):
+                             dash_opts: Optional[dict] = None, dirty: bool = True, cam_pos: Optional[Vec3] = None):
         if self._gizmo:
             desired_pixels = max(1.0, float(self._line_width) * 1.5 * thickness_multiplier)
-            self._gizmo.render_raw_lines(starts, ends, colors, vp_mat, fw, fh, desired_pixels, dash_opts, dirty)
+            self._gizmo.render_raw_lines(starts, ends, colors, vp_mat, fw, fh, desired_pixels, dash_opts, dirty, cam_pos)
 
 
-    def render_instanced_gizmo(self, mesh_type: str, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int):
+    def render_instanced_gizmo(self, mesh_type: str, instance_data: np.ndarray, vp_mat: Mat4, num_instances: int, cam_pos: Optional[Vec3] = None):
         if not self._gizmo:
             return
         mesh_map = {
@@ -42,17 +42,17 @@ class GizmoPassMixin:
         }
         mesh = mesh_map.get(mesh_type)
         if mesh is not None:
-            self._gizmo.render_instanced(mesh, instance_data, vp_mat, num_instances)
+            self._gizmo.render_instanced(mesh, instance_data, vp_mat, num_instances, cam_pos)
 
 
-    def render_gizmo_meshes(self, meshes: list[tuple], vp_mat: Mat4):
+    def render_gizmo_meshes(self, meshes: list[tuple], vp_mat: Mat4, cam_pos: Optional[Vec3] = None):
         if self._gizmo:
-            self._gizmo.render_meshes(meshes, vp_mat)
+            self._gizmo.render_meshes(meshes, vp_mat, cam_pos)
 
 
-    def render_gizmo_mesh_np(self, v_data: np.ndarray, idx_arr: np.ndarray, vp_mat: Mat4):
+    def render_gizmo_mesh_np(self, v_data: np.ndarray, idx_arr: np.ndarray, vp_mat: Mat4, cam_pos: Optional[Vec3] = None):
         if self._gizmo:
-            self._gizmo.render_mesh_np(v_data, idx_arr, vp_mat)
+            self._gizmo.render_mesh_np(v_data, idx_arr, vp_mat, cam_pos)
 
 
     def render_instanced_gizmo_lines(self, shape_type: str, instance_data: np.ndarray,
@@ -65,6 +65,6 @@ class GizmoPassMixin:
                                                 vp_mat, fw, fh, thickness_multiplier, cam_pos)
 
 
-    def render_wireframe_box(self, center: Vec3, size: Vec3, color: list[float], vp_mat: Mat4):
+    def render_wireframe_box(self, center: Vec3, size: Vec3, color: list[float], vp_mat: Mat4, cam_pos: Optional[Vec3] = None):
         if self._gizmo:
-            self._gizmo.render_wireframe_box(center, size, color, vp_mat)
+            self._gizmo.render_wireframe_box(center, size, color, vp_mat, cam_pos)

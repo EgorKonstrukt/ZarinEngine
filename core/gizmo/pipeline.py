@@ -95,7 +95,7 @@ class GizmoPipeline:
         cam_pos = vp._cam.position if vp._cam else Vec3(0, 0, 0)
 
         def render_func(s, e, c, mult=1.0):
-            vp._renderer.render_gizmo_arrays(s, e, c, vp_mat, fw, fh, thickness_multiplier=mult)
+            vp._renderer.render_gizmo_arrays(s, e, c, vp_mat, fw, fh, thickness_multiplier=mult, cam_pos=cam_pos)
 
         self._render_via(render_func, time_s)
 

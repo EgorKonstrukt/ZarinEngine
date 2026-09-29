@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 
-HIGH_PRECISION_KEY = "rendering.high_precision"
 RTC_KEY = "rendering.high_precision_rtc"
 GPU_DOUBLE_KEY = "rendering.high_precision_gpu"
 
@@ -41,7 +40,7 @@ def _get_enabled(enabled=None):
         cfg = get_global_config()
         if cfg is None:
             return False
-        return bool(cfg.get(GPU_DOUBLE_KEY, cfg.get(HIGH_PRECISION_KEY, False)))
+        return bool(cfg.get(GPU_DOUBLE_KEY, False))
     except Exception:
         return False
 
@@ -58,7 +57,7 @@ def is_rtc_enabled(enabled=None):
         cfg = get_global_config()
         if cfg is None:
             return False
-        return bool(cfg.get(RTC_KEY, cfg.get(HIGH_PRECISION_KEY, False)))
+        return bool(cfg.get(RTC_KEY, False))
     except Exception:
         return False
 
