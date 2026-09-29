@@ -16,6 +16,7 @@ import numpy as np
 
 from core.foundation.logger import Logger
 from core.foundation.progress import notify_error, task_complete, task_start
+from core.renderer.precision import apply_precision
 
 
 def compile_compute_shader(ctx: moderngl.Context, source: str,
@@ -24,6 +25,10 @@ def compile_compute_shader(ctx: moderngl.Context, source: str,
     task_id = f"compute:{title_hint}"
     task_start(task_id, f"Compiling compute {label}...", fraction=None)
     try:
+        try:
+            source = apply_precision(source)
+        except Exception:
+            pass
         return ctx.compute_shader(source)
     except moderngl.Error as e:
         Logger.error(f"Failed to compile compute shader '{label}': {e}", e)

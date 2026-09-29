@@ -36,12 +36,16 @@ class RendererProgramsMixin:
     def initialize(self):
         try:
             try:
+                from core.renderer.precision import install_precision_hooks
+                install_precision_hooks()
+            except Exception:
+                pass
+            try:
                 from core.config.config import get_global_config
                 self.load_config(get_global_config())
             except Exception:
                 pass
             default_vert_src, default_frag_src = read_shader_pair("default")
-            default_frag_src = ShaderManager._inject_area_shadows(default_frag_src)
             self._default_prog = program_with_fallback(
                 self._ctx,
                 vertex_shader=default_vert_src,
@@ -49,32 +53,44 @@ class RendererProgramsMixin:
                 label="default"
             )
             grid_vert_src, grid_frag_src = read_shader_pair("grid")
-            self._grid_prog = self._ctx.program(
+            self._grid_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=grid_vert_src,
-                fragment_shader=grid_frag_src
+                fragment_shader=grid_frag_src,
+                label="grid"
             )
             gizmo_vert_src, gizmo_frag_src = read_shader_pair("gizmo")
-            self._gizmo_prog = self._ctx.program(
+            self._gizmo_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=gizmo_vert_src,
-                fragment_shader=gizmo_frag_src
+                fragment_shader=gizmo_frag_src,
+                label="gizmo"
             )
-            self._gizmo_fatline_prog = self._ctx.program(
+            self._gizmo_fatline_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=FATLINE_VERT,
-                fragment_shader=FATLINE_FRAG
+                fragment_shader=FATLINE_FRAG,
+                label="gizmo_fatline"
             )
             gizmo_solid_vert_src, gizmo_solid_frag_src = read_shader_pair("gizmo_solid")
-            self._gizmo_solid_prog = self._ctx.program(
+            self._gizmo_solid_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=gizmo_solid_vert_src,
-                fragment_shader=gizmo_solid_frag_src
+                fragment_shader=gizmo_solid_frag_src,
+                label="gizmo_solid"
             )
-            self._wireframe_prog = self._ctx.program(
+            self._wireframe_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=gizmo_vert_src,
-                fragment_shader=gizmo_frag_src
+                fragment_shader=gizmo_frag_src,
+                label="wireframe"
             )
             outline_vert_src, outline_frag_src = read_shader_pair("outline")
-            self._outline_prog = self._ctx.program(
+            self._outline_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=outline_vert_src,
-                fragment_shader=outline_frag_src
+                fragment_shader=outline_frag_src,
+                label="outline"
             )
             shadow_vert_src, shadow_frag_src = read_shader_pair("shadow")
             self._shadow_prog = program_with_fallback(
@@ -91,34 +107,46 @@ class RendererProgramsMixin:
                 label="particle_gpu"
             )
             icon_vert_src, icon_frag_src = read_shader_pair("icon")
-            self._icon_prog = self._ctx.program(
+            self._icon_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=icon_vert_src,
-                fragment_shader=icon_frag_src
+                fragment_shader=icon_frag_src,
+                label="icon"
             )
             sprite_vert_src, sprite_frag_src = read_shader_pair("sprite")
-            self._sprite_prog = self._ctx.program(
+            self._sprite_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=sprite_vert_src,
-                fragment_shader=sprite_frag_src
+                fragment_shader=sprite_frag_src,
+                label="sprite"
             )
             video_vert_src, video_frag_src = read_shader_pair("video")
-            self._video_prog = self._ctx.program(
+            self._video_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=video_vert_src,
-                fragment_shader=video_frag_src
+                fragment_shader=video_frag_src,
+                label="video"
             )
             text_vert_src, text_frag_src = read_shader_pair("text")
-            self._text_prog = self._ctx.program(
+            self._text_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=text_vert_src,
-                fragment_shader=text_frag_src
+                fragment_shader=text_frag_src,
+                label="text"
             )
             overlay_vert_src, overlay_frag_src = read_shader_pair("shadow_overlay")
-            self._overlay_prog = self._ctx.program(
+            self._overlay_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=overlay_vert_src,
-                fragment_shader=overlay_frag_src
+                fragment_shader=overlay_frag_src,
+                label="shadow_overlay"
             )
             projector_vert_src, projector_frag_src = read_shader_pair("projector")
-            self._projector_prog = self._ctx.program(
+            self._projector_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=projector_vert_src,
-                fragment_shader=projector_frag_src
+                fragment_shader=projector_frag_src,
+                label="projector"
             )
             PP_COPY_FRAG = """
 #version 330 core
@@ -129,9 +157,11 @@ void main() {
     frag_color = vec4(texture(u_input_tex, v_uv).rgb, 1.0);
 }
 """
-            self._pp_copy_prog = self._ctx.program(
+            self._pp_copy_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=overlay_vert_src,
-                fragment_shader=PP_COPY_FRAG
+                fragment_shader=PP_COPY_FRAG,
+                label="pp_copy"
             )
             PP_TONEMAP_FRAG = """
 #version 330 core
@@ -154,9 +184,11 @@ void main() {
     frag_color = vec4(color, 1.0);
 }
 """
-            self._pp_tonemap_prog = self._ctx.program(
+            self._pp_tonemap_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=overlay_vert_src,
-                fragment_shader=PP_TONEMAP_FRAG
+                fragment_shader=PP_TONEMAP_FRAG,
+                label="pp_tonemap"
             )
             quad_verts = np.array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0], dtype=np.float32)
             quad_indices = np.array([0, 1, 2, 0, 2, 3], dtype=np.int32)
@@ -179,9 +211,11 @@ void main() {
             )
             try:
                 underwater_vert_src, underwater_frag_src = read_shader_pair("underwater")
-                self._underwater_prog = self._ctx.program(
+                self._underwater_prog = program_with_fallback(
+                    self._ctx,
                     vertex_shader=underwater_vert_src,
-                    fragment_shader=underwater_frag_src
+                    fragment_shader=underwater_frag_src,
+                    label="underwater"
                 )
             except Exception:
                 self._underwater_prog = None
@@ -195,9 +229,11 @@ void main() {
                 self._underwater_vao = None
             try:
                 caustics_vert_src, caustics_frag_src = read_shader_pair("caustics")
-                self._caustics_prog = self._ctx.program(
+                self._caustics_prog = program_with_fallback(
+                    self._ctx,
                     vertex_shader=caustics_vert_src,
-                    fragment_shader=caustics_frag_src
+                    fragment_shader=caustics_frag_src,
+                    label="caustics"
                 )
             except Exception:
                 self._caustics_prog = None
@@ -238,9 +274,11 @@ void main() {
     frag_velocity = velocity;
 }
 """
-            self._velocity_prog = self._ctx.program(
+            self._velocity_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=overlay_vert_src,
-                fragment_shader=VELOCITY_FRAG
+                fragment_shader=VELOCITY_FRAG,
+                label="velocity"
             )
             self._velocity_vao = self._ctx.vertex_array(
                 self._velocity_prog,
@@ -275,9 +313,11 @@ void main() {
     frag_velocity = vel;
 }
 """
-            self._velocity_geom_prog = self._ctx.program(
+            self._velocity_geom_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=VELOCITY_GEOM_VERT,
-                fragment_shader=VELOCITY_GEOM_FRAG
+                fragment_shader=VELOCITY_GEOM_FRAG,
+                label="velocity_geom"
             )
             self._projector_vao = self._ctx.vertex_array(
                 self._projector_prog,
@@ -346,8 +386,6 @@ void main() {
         prog = None
         try:
             fx_vert, fx_frag = read_shader_pair("object_fx")
-            fx_frag = ShaderManager._inject_area_shadows(fx_frag)
-            fx_frag = ShaderManager._inject_caustics(fx_frag)
             uniforms_block = "\n".join(fx.fx_fragment_uniforms() for fx in fx_list)
             main_block = "\n".join(fx.fx_fragment_snippet() for fx in fx_list)
             fx_frag = fx_frag.replace("// @FX_UNIFORMS", uniforms_block)

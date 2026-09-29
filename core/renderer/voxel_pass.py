@@ -11,6 +11,8 @@ import os
 import numpy as np
 import moderngl
 from core.foundation.logger import Logger
+from core.renderer.precision import apply_precision
+from core.renderer.shaders import program_with_fallback
 
 
 class VoxelPassMixin:
@@ -117,9 +119,11 @@ out vec4 frag_color;
 
     def _init_voxel_instancing(self):
         try:
-            self._vox_prog = self._ctx.program(
+            self._vox_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=self._VOXEL_INST_VERT,
                 fragment_shader=self._VOXEL_INST_FRAG,
+                label="voxel_inst"
             )
             cube_data, cube_idx = self._build_voxel_cube()
             self._vox_cube_vbo = self._ctx.buffer(cube_data.tobytes())
@@ -140,6 +144,10 @@ out vec4 frag_color;
                 try:
                     with open(comp_path) as f:
                         src = f.read()
+                    try:
+                        src = apply_precision(src)
+                    except Exception:
+                        pass
                     self._vox_compute = self._ctx.compute_shader(src)
                 except Exception as e:
                     Logger.error(f"Voxel compute shader failed: {e}", e)

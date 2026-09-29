@@ -20,6 +20,7 @@ from core.components.inspector_meta import FieldType, InspectorField
 from core.ecs.ecs import Component, ComponentRegistry
 from core.foundation.logger import Logger
 from core.assets.compute_shader import compile_compute_shader
+from core.renderer.shaders import program_with_fallback
 
 
 @ComponentRegistry.register
@@ -130,7 +131,8 @@ class RadianceCascadesGI(Component):
             self._program = prog
 
         if self._fullscreen_prog is None:
-            self._fullscreen_prog = ctx.program(
+            self._fullscreen_prog = program_with_fallback(
+                ctx,
                 vertex_shader="""
                 #version 330 core
                 in vec2 in_position;
@@ -150,6 +152,7 @@ class RadianceCascadesGI(Component):
                     frag_color = texture(u_tex, v_uv);
                 }
                 """,
+                label="radiance_fullscreen"
             )
 
         if self._fullscreen_quad is None:

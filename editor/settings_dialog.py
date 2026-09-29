@@ -119,6 +119,7 @@ FIELD_TOOLTIPS = {
     "rendering.tick_rate": "Game logic update rate (ticks per second)",
     "rendering.fixed_tick_rate": "Physics fixed update rate (ticks per second)",
     "rendering.max_lights": "Maximum number of dynamic lights",
+    "rendering.high_precision": "Use 64-bit double precision in all shaders",
     "rendering.play_viewport_throttle": "Play mode dual-viewport throttle: editor, game, or off",
     "rendering.play_viewport_throttle_step": "Play mode throttle rate (render every Nth frame)",
     "gizmo.handle_size": "Gizmo handle size in world units",

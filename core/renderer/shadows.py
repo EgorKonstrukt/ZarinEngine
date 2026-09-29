@@ -14,6 +14,7 @@ from core.components.lighting.light import Light, LightType, LightAreaType
 from core.components.rendering.renderers.mesh_filter import MeshFilter
 from core.components.rendering.renderers.mesh_renderer import MeshRenderer
 from core.renderer.mesh_data import MeshData
+from core.renderer.shaders import program_with_fallback
 
 _INSTANCE_ATTRS = ("in_model0", "in_model1", "in_model2", "in_model3")
 MAX_POINT_SHADOWS = 4
@@ -327,9 +328,11 @@ class ShadowRenderer:
         try:
             prog = getattr(self, '_tile_clear_prog', None)
             if prog is None:
-                prog = self._ctx.program(
+                prog = program_with_fallback(
+                    self._ctx,
                     vertex_shader='#version 330 core\nvoid main() { vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); gl_Position = vec4(p * 2.0 - 1.0, 1.0, 1.0); }',
-                    fragment_shader='#version 330 core\nvoid main() {}')
+                    fragment_shader='#version 330 core\nvoid main() {}',
+                    label="tile_clear")
                 self._tile_clear_prog = prog
                 self._tile_clear_vao = self._ctx.vertex_array(prog, [])
             fbo.use()

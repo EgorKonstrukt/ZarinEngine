@@ -11,6 +11,7 @@ import numpy as np
 import moderngl
 from typing import Optional, Any
 from core.maths.math3d import Vec3
+from core.renderer.precision import apply_precision
 from core.components.rendering.particles.particle_force_field import FORCE_FIELD_DTYPE, FORCE_FIELD_SSBO_SIZE, MAX_FORCE_FIELDS
 
 
@@ -42,6 +43,10 @@ class ParticleRenderer:
             if glsl_start < 0 or glsl_end < 0:
                 return False
             source = src[glsl_start + len("GLSLPROGRAM"):glsl_end].strip()
+            try:
+                source = apply_precision(source)
+            except Exception:
+                pass
             if self._compute_prog:
                 self._compute_prog.release()
             self._compute_prog = self._ctx.compute_shader(source)

@@ -15,6 +15,7 @@ from typing import Optional
 from core.assets.ply_loader import load_ply_gaussian_splat, SH_C0, _parse_header, _ply_type
 from core.assets.sog_loader import load_gaussian_splat, splat_exists
 from core.renderer.mesh_data import read_shader_pair
+from core.renderer.shaders import program_with_fallback
 from core.foundation.logger import Logger
 from core.foundation.progress import task_start, task_update, task_complete, notify_error
 
@@ -386,9 +387,11 @@ class GaussianSplatRenderer:
         vert_src = None
         try:
             vert_src, frag_src = read_shader_pair("gaussian_splat")
-            self._prog = self._ctx.program(
+            self._prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=vert_src,
                 fragment_shader=frag_src,
+                label="gaussian_splat"
             )
             self._vao = self._ctx.vertex_array(self._prog, [])
         except Exception as e:

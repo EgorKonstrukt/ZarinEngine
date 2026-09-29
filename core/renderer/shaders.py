@@ -15,6 +15,7 @@ import moderngl
 from core.foundation.logger import Logger
 from core.foundation.progress import notify_error, task_complete, task_start
 from core.renderer.mesh_data import SHADER_DIR
+from core.renderer.precision import apply_precision
 
 _ENGINE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -60,19 +61,54 @@ def downgrade_to_330(src: str) -> str:
 def program_with_fallback(ctx: moderngl.Context, vertex_shader: str,
                            fragment_shader: str, geometry_shader: str | None = None,
                            label: str = "shader") -> moderngl.Program | None:
+    orig_v = vertex_shader
+    orig_f = fragment_shader
+    orig_g = geometry_shader
     try:
-        if geometry_shader is not None:
-            return ctx.program(vertex_shader=vertex_shader,
-                               fragment_shader=fragment_shader,
-                               geometry_shader=geometry_shader)
-        return ctx.program(vertex_shader=vertex_shader,
-                           fragment_shader=fragment_shader)
+        vert_p = apply_precision(vertex_shader) if vertex_shader is not None else None
+    except Exception:
+        vert_p = vertex_shader
+    try:
+        frag_p = apply_precision(fragment_shader) if fragment_shader is not None else None
+    except Exception:
+        frag_p = fragment_shader
+    try:
+        geom_p = apply_precision(geometry_shader) if geometry_shader is not None else None
+    except Exception:
+        geom_p = geometry_shader
+    first_err = None
+    try:
+        if geom_p is not None:
+            return ctx.program(vertex_shader=vert_p,
+                               fragment_shader=frag_p,
+                               geometry_shader=geom_p)
+        return ctx.program(vertex_shader=vert_p,
+                           fragment_shader=frag_p)
+    except Exception as e_first:
+        first_err = e_first
+    try:
+        if geom_p is not None and (vert_p != orig_v or frag_p != orig_f or geom_p != orig_g):
+            try:
+                if orig_g is not None:
+                    return ctx.program(vertex_shader=orig_v,
+                                       fragment_shader=orig_f,
+                                       geometry_shader=orig_g)
+                return ctx.program(vertex_shader=orig_v,
+                                   fragment_shader=orig_f)
+            except Exception:
+                pass
+        elif vert_p != orig_v or frag_p != orig_f:
+            try:
+                return ctx.program(vertex_shader=orig_v,
+                                   fragment_shader=orig_f)
+            except Exception:
+                pass
     except Exception:
         pass
     try:
-        vert_fb = downgrade_to_330(vertex_shader)
-        frag_fb = downgrade_to_330(fragment_shader)
-        geom_fb = downgrade_to_330(geometry_shader) if geometry_shader is not None else None
+        vert_fb = downgrade_to_330(orig_v)
+        frag_fb = downgrade_to_330(orig_f)
+        geom_fb = downgrade_to_330(orig_g) if orig_g is not None else None
         if geom_fb is not None:
             prog = ctx.program(vertex_shader=vert_fb,
                                fragment_shader=frag_fb,
@@ -85,9 +121,14 @@ def program_with_fallback(ctx: moderngl.Context, vertex_shader: str,
     except Exception as e:
         for _src in (vertex_shader, fragment_shader, geometry_shader):
             if _src and re.search(r'\bbuffer\s+\w+\s*\{', _src):
+                if first_err is not None:
+                    Logger.warning(f"Shader '{label}' high-precision attempt: {first_err}")
                 Logger.warning(f"Shader '{label}' requires OpenGL 4.3+ storage buffers, feature unavailable")
                 return None
-        Logger.error(f"Failed to compile shader '{label}': {e}", e)
+        if first_err is not None:
+            Logger.error(f"Failed to compile shader '{label}': {e} | high-precision attempt: {first_err}", e)
+        else:
+            Logger.error(f"Failed to compile shader '{label}': {e}", e)
         return None
 
 
@@ -212,6 +253,14 @@ class ShaderManager:
                 vert_src = self._inject_uv_override(vert_src)
                 frag_src = self._inject_area_shadows(frag_src)
                 frag_src = self._inject_caustics(frag_src)
+                try:
+                    vert_src = apply_precision(vert_src)
+                except Exception:
+                    pass
+                try:
+                    frag_src = apply_precision(frag_src)
+                except Exception:
+                    pass
                 try:
                     prog = self._ctx.program(vertex_shader=vert_src,
                                              fragment_shader=frag_src)
@@ -359,6 +408,25 @@ mat3 _resolve_normal_matrix() {
         return None
 
     @staticmethod
+    def _inject_block(src: str, marker: str, include_src: str | None, missing_text: str) -> str:
+        if marker not in src:
+            return src
+        if include_src is None:
+            replacement = missing_text
+        else:
+            replacement = include_src
+            if not replacement.endswith("\n"):
+                replacement = replacement + "\n"
+        lines = src.splitlines(True)
+        out = []
+        for line in lines:
+            if line.strip() == marker:
+                out.append(replacement)
+            else:
+                out.append(line)
+        return "".join(out)
+
+    @staticmethod
     def _inject_area_shadows(src: str) -> str:
         marker = "// @SHADOW_INCLUDE"
         if marker not in src:
@@ -366,8 +434,7 @@ mat3 _resolve_normal_matrix() {
         include_src = ShaderManager._read_include("area_shadows.glsl")
         if include_src is None:
             Logger.warning("Failed to read area_shadows.glsl")
-            return src.replace(marker, "// area shadows include failed to load")
-        return src.replace(marker, include_src)
+        return ShaderManager._inject_block(src, marker, include_src, "// area shadows include failed to load\n")
 
     @staticmethod
     def _inject_caustics(src: str) -> str:
@@ -377,8 +444,7 @@ mat3 _resolve_normal_matrix() {
         include_src = ShaderManager._read_include("caustics.glsl")
         if include_src is None:
             Logger.warning("Failed to read caustics.glsl")
-            return src.replace(marker, "// caustics include failed to load")
-        return src.replace(marker, include_src)
+        return ShaderManager._inject_block(src, marker, include_src, "// caustics include failed to load\n")
 
     def store(self, key: str, prog: moderngl.Program):
         self._cache[key] = prog

@@ -4,6 +4,7 @@ import numpy as np
 import moderngl
 from typing import Optional
 from core.assets.compute_shader import compile_compute_shader
+from core.renderer.shaders import program_with_fallback
 
 
 class BVHDebugRenderer:
@@ -83,7 +84,8 @@ class BVHDebugRenderer:
                 return False
         if self._line_prog is None:
             try:
-                self._line_prog = ctx.program(
+                self._line_prog = program_with_fallback(
+                    ctx,
                     vertex_shader="""
                     #version 330 core
                     in vec4 in_position;
@@ -102,6 +104,7 @@ class BVHDebugRenderer:
                         frag_color = v_color;
                     }
                     """,
+                    label="bvh_line"
                 )
             except Exception:
                 return False

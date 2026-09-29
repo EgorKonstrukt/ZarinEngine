@@ -13,6 +13,7 @@ import moderngl
 from core.foundation.logger import Logger
 from core.maths.math3d import Mat4, Vec3
 from core.renderer.mesh_data import MeshData, read_shader_pair
+from core.renderer.shaders import program_with_fallback
 from core.renderer.meshes import make_cube_mesh, make_sphere_mesh, make_plane_mesh, make_quad_mesh, make_water_plane, make_water_box
 
 
@@ -23,9 +24,11 @@ class WaterPassMixin:
     def _init_water_sim(self):
         try:
             water_sim_vert, _ = read_shader_pair("shadow_overlay")
-            self._water_sim_prog = self._ctx.program(
+            self._water_sim_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=water_sim_vert,
                 fragment_shader=self._load_water_sim_frag(),
+                label="water_sim"
             )
         except Exception as e:
             Logger.error(f"Failed to init water sim: {e}", e)

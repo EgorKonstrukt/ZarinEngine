@@ -195,6 +195,7 @@ def get_global_config() -> Config:
                 "play_viewport_throttle": "editor",
                 "play_viewport_throttle_step": 2,
                 "bvh_build_mode": "fast",
+                "high_precision": False,
             },
             "gizmo": {
                 "handle_size": 0.1,

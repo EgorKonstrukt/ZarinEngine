@@ -81,6 +81,46 @@ class RendererConfigMixin:
             self._skybox_enabled = config.get("rendering.show_skybox", self._skybox_enabled)
         except Exception:
             pass
+        try:
+            new_hp = bool(config.get("rendering.high_precision", getattr(self, "_high_precision", False)))
+        except Exception:
+            new_hp = bool(getattr(self, "_high_precision", False))
+        old_hp = bool(getattr(self, "_high_precision", False))
+        self._high_precision = new_hp
+        if new_hp != old_hp:
+            try:
+                if getattr(self, "_shaders", None) is not None:
+                    try:
+                        self._shaders.release()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                self._prog_member_cache.clear()
+            except Exception:
+                pass
+            try:
+                fx_cache = getattr(self, "_fx_prog_cache", None)
+                if fx_cache is not None:
+                    fx_cache.clear()
+            except Exception:
+                pass
+            try:
+                from core.components.rendering.postfx.graphics_effect import GraphicsEffect
+                GraphicsEffect.clear_res_caches()
+            except Exception:
+                pass
+            if bool(getattr(self, "_initialized", False)):
+                try:
+                    self.release()
+                except Exception:
+                    pass
+                try:
+                    self.initialize()
+                except Exception:
+                    pass
+                return
 
 
     def _apply_shadow_system_state(self, update: bool = True) -> bool:
@@ -325,3 +365,63 @@ class RendererConfigMixin:
     @property
     def effects_enabled(self) -> bool:
         return not self._effects_disabled
+
+
+    @property
+    def high_precision(self) -> bool:
+        return bool(getattr(self, "_high_precision", False))
+
+
+    @high_precision.setter
+    def high_precision(self, v: bool):
+        self.set_high_precision(v)
+
+
+    def set_high_precision(self, enabled: bool):
+        flag = bool(enabled)
+        if bool(getattr(self, "_high_precision", False)) == flag:
+            return
+        self._high_precision = flag
+        try:
+            from core.config.config import get_global_config
+            cfg = get_global_config()
+            if cfg is not None:
+                cfg.set("rendering.high_precision", flag, notify=False)
+                try:
+                    cfg.save()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_shaders", None) is not None:
+                try:
+                    self._shaders.release()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            self._prog_member_cache.clear()
+        except Exception:
+            pass
+        try:
+            fx_cache = getattr(self, "_fx_prog_cache", None)
+            if fx_cache is not None:
+                fx_cache.clear()
+        except Exception:
+            pass
+        try:
+            from core.components.rendering.postfx.graphics_effect import GraphicsEffect
+            GraphicsEffect.clear_res_caches()
+        except Exception:
+            pass
+        if bool(getattr(self, "_initialized", False)):
+            try:
+                self.release()
+            except Exception:
+                pass
+            try:
+                self.initialize()
+            except Exception:
+                pass

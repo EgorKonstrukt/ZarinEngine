@@ -9,6 +9,8 @@ import numpy as np
 import moderngl
 from typing import Optional
 from core.maths.math3d import Vec3, Mat4
+from core.renderer.precision import apply_precision
+from core.renderer.shaders import program_with_fallback
 from core.renderer.gpu_primitives import (
     GpuMesh, make_cone_mesh, make_cylinder_mesh,
     make_cube_mesh, make_quad_mesh, make_circle_ring_mesh, make_instance_vao,
@@ -254,8 +256,8 @@ class GizmoRenderer:
             return
         try:
             self._instanced_prog = self._ctx.program(
-                vertex_shader=INSTANCED_VERT,
-                fragment_shader=INSTANCED_FRAG
+                vertex_shader=apply_precision(INSTANCED_VERT),
+                fragment_shader=apply_precision(INSTANCED_FRAG)
             )
         except Exception:
             self._instanced_prog = None
@@ -581,7 +583,7 @@ class GizmoRenderer:
         if self._inst_line_prog is not None:
             return
         try:
-            self._inst_line_prog = self._ctx.program(
+            self._inst_line_prog = program_with_fallback(self._ctx,
                 vertex_shader="""
 #version 330 core
 layout(location = 0) in vec3 a_unit_start;
@@ -632,6 +634,7 @@ void main() {
     fragColor = vec4(v_color.rgb * fade, v_color.a * fade);
 }
 """,
+                label="gizmo_inst_line"
             )
         except Exception:
             self._inst_line_prog = None
@@ -699,9 +702,11 @@ void main() {
         if self._raw_line_prog is not None:
             return
         try:
-            self._raw_line_prog = self._ctx.program(
+            self._raw_line_prog = program_with_fallback(
+                self._ctx,
                 vertex_shader=RAWLINES_VERT,
-                fragment_shader=RAWLINES_FRAG
+                fragment_shader=RAWLINES_FRAG,
+                label="gizmo_rawline"
             )
         except Exception:
             self._raw_line_prog = None

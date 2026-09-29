@@ -11,6 +11,7 @@ import numpy as np
 import moderngl
 from typing import Optional, Any
 from core.foundation.logger import Logger
+from core.renderer.precision import apply_precision
 
 # Shader directory relative to project root or executable.
 # Shaders live in core/shaders, sorted by kind:
@@ -66,7 +67,7 @@ def _resolve_shader_file(name: str) -> str:
 def read_shader(name: str) -> str:
     path = _resolve_shader_file(name)
     with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+        return apply_precision(f.read())
 
 
 def _to_pascal(base: str) -> str:
@@ -101,7 +102,14 @@ def read_shader_pair(base: str) -> tuple[str, str]:
                 text = f.read()
             split = _split_shader_block(text)
             if split is not None:
-                return split
+                vert_src, frag_src = split
+                try:
+                    from core.renderer.shaders import ShaderManager
+                    frag_src = ShaderManager._inject_area_shadows(frag_src)
+                    frag_src = ShaderManager._inject_caustics(frag_src)
+                except Exception:
+                    pass
+                return (vert_src, frag_src)
     vert_name: str | None = None
     frag_name: str | None = None
     if base == "particle_gpu":
@@ -126,8 +134,8 @@ def read_compute_source(base: str) -> str:
                     split_start += len("GLSLPROGRAM")
                     split_end = text.find("ENDGLSL", split_start)
                     if split_end >= 0:
-                        return text[split_start:split_end].strip()
-            return text
+                        return apply_precision(text[split_start:split_end].strip())
+            return apply_precision(text)
     return read_shader(f"{base}.comp")
 
 
@@ -458,7 +466,7 @@ class MeshData:
         self._vao = self._vao_cache.get(id(program))
 
     def _build_vao_for_program(self, program: moderngl.Program):
-        if self._ctx is None or self._vbo is None:
+        if program is None or self._ctx is None or self._vbo is None:
             return
         key = id(program)
         if key in self._vao_cache:
@@ -549,7 +557,7 @@ class MeshData:
         self._create_outline_vao(program)
 
     def _create_outline_vao(self, program: moderngl.Program):
-        if self._outline_vbo is None or self._ctx is None:
+        if program is None or self._outline_vbo is None or self._ctx is None:
             return
         try:
             if self._outline_vao is not None:
