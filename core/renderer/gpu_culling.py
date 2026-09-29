@@ -61,17 +61,23 @@ class GpuStorage:
         self._world_mat_ssbo = self._ctx.buffer(reserve=mat_size)
 
     def upload_world_matrices(self, matrices: list[Mat4],
-                               bounding_radii: np.ndarray, version: int):
+                               bounding_radii: np.ndarray, version: int,
+                               origin=None):
         if len(matrices) == 0:
             return
         self._last_upload_version = version
         self.ensure_capacity(len(matrices))
         try:
+            from core.renderer.origin import relativize_models
+            rel_mats = relativize_models(matrices, origin)
+        except Exception:
+            rel_mats = matrices
+        try:
             from core._render_utils import batch_mat4_to_f32_flat
-            flat = batch_mat4_to_f32_flat(matrices)
+            flat = batch_mat4_to_f32_flat(rel_mats)
             self._world_mat_ssbo.write(flat.tobytes())
         except ImportError:
-            self._world_mat_ssbo.write(Mat4.batch_to_f32(matrices).tobytes())
+            self._world_mat_ssbo.write(Mat4.batch_to_f32(rel_mats).tobytes())
         if self._culling is not None and bounding_radii.shape[0] == len(matrices):
             self._culling.upload_bounding(matrices, bounding_radii)
 

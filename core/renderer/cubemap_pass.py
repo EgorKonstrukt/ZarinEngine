@@ -13,6 +13,7 @@ import moderngl
 from core.engine.engine import Engine
 from core.foundation.logger import Logger
 from core.maths.math3d import Mat4, Vec3
+from core.renderer.origin import origin_for, relativize_model_f32
 
 
 class CubemapPassMixin:
@@ -66,7 +67,7 @@ class CubemapPassMixin:
                             p = self._shaders.get_or_compile(shader_path if shader_path else "") or prog
                             self._set_scene_uniforms(p, view_f32, proj_f32, cam_pos, lights, disable_shadows=True)
                             names = self._uniform_names(p)
-                            model_f32 = wm.to_f32()
+                            model_f32 = relativize_model_f32(wm, origin_for(cam_pos))
                             if "u_model" in names:
                                 p["u_model"].write(model_f32.tobytes())
                             nm = np.eye(3, dtype=np.float32).T

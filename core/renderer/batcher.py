@@ -7,6 +7,7 @@ from typing import Optional
 from collections import defaultdict, OrderedDict
 from core.maths.math3d import Mat4
 from core.renderer.gpu_culling import WORLD_MATRIX_BINDING, INDEX_BINDING
+from core.renderer.origin import origin_for, relativize_model_f32, relativize_models
 
 _INSTANCE_ATTRS = ("in_model0", "in_model1", "in_model2", "in_model3")
 
@@ -294,13 +295,13 @@ class RenderBatcher:
         self._index_buf_capacity = needed + 64
         return self._index_buf
 
-    def patch_shared_vbo_single(self, idx: int, mat) -> bool:
+    def patch_shared_vbo_single(self, idx: int, mat, origin=None) -> bool:
         try:
             vbo = self._shared_inst_vbo
             if vbo is None:
                 return False
             try:
-                f32 = mat.to_f32()
+                f32 = relativize_model_f32(mat, origin)
             except Exception:
                 return False
             try:
@@ -401,7 +402,7 @@ class RenderBatcher:
         frustum_planes = None
         if not skip_cull:
             frustum_planes = self._get_frustum_planes(view_f32, proj_f32)
-        skip_up = skip_inst_upload and len(groups) == 1
+        skip_up = skip_inst_upload and len(groups) == 1 and origin_for(cam_pos) is None
         for key, group in groups.items():
             _, _, mesh, _, mat, prog, _, _ = group[0]
             dyn_ref = key[5] if len(key) > 5 else False
@@ -517,7 +518,7 @@ class RenderBatcher:
                 bounding_radii = np.full(len(model_mats), mesh.bounding_radius,
                                          dtype=np.float64)
                 gpu_storage.upload_world_matrices(model_mats, bounding_radii,
-                                                  self._gpu_version)
+                                                  self._gpu_version, origin_for(cam_pos))
                 indices = np.arange(len(model_mats), dtype=np.uint32)
                 idx_buf = self._ensure_index_buffer(len(indices))
                 idx_buf.write(indices.tobytes())
@@ -527,7 +528,7 @@ class RenderBatcher:
                     prog["u_use_instancing"].value = 2
         else:
             if not skip_upload:
-                model_mats = [item[6] for item in group]
+                model_mats = relativize_models([item[6] for item in group], origin_for(cam_pos))
                 self._write_shared_vbo(model_mats)
             if "u_use_instancing" in names:
                 prog["u_use_instancing"].value = 1
@@ -607,7 +608,7 @@ class RenderBatcher:
             bounding_radii = np.full(n, mesh.bounding_radius, dtype=np.float64)
             self._gpu_version += 1
             gpu_storage.upload_world_matrices(model_mats, bounding_radii,
-                                              self._gpu_version)
+                                              self._gpu_version, origin_for(cam_pos))
             world_ssbo = gpu_storage.get_world_matrix_ssbo()
             if world_ssbo is None:
                 return False
@@ -680,7 +681,7 @@ class RenderBatcher:
             set_scene_uniforms_fn(prog, view_f32, proj_f32, cam_pos, lights,
                                   disable_shadows=disable_shadows)
         model = wm
-        model_f32 = model.to_f32()
+        model_f32 = relativize_model_f32(model, origin_for(cam_pos))
         if "u_model" in names:
             prog["u_model"].write(model_f32)
         nm = resolve_normal_matrix(normal_cache, ent._id, model._d)

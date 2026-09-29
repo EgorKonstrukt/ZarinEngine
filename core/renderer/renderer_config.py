@@ -82,12 +82,18 @@ class RendererConfigMixin:
         except Exception:
             pass
         try:
-            new_hp = bool(config.get("rendering.high_precision", getattr(self, "_high_precision", False)))
+            new_rtc = bool(config.get("rendering.high_precision_rtc", config.get("rendering.high_precision", getattr(self, "_rtc_enabled", False))))
         except Exception:
-            new_hp = bool(getattr(self, "_high_precision", False))
-        old_hp = bool(getattr(self, "_high_precision", False))
-        self._high_precision = new_hp
-        if new_hp != old_hp:
+            new_rtc = bool(getattr(self, "_rtc_enabled", False))
+        try:
+            new_gpu = bool(config.get("rendering.high_precision_gpu", config.get("rendering.high_precision", getattr(self, "_gpu_double_enabled", False))))
+        except Exception:
+            new_gpu = bool(getattr(self, "_gpu_double_enabled", False))
+        old_rtc = bool(getattr(self, "_rtc_enabled", False))
+        old_gpu = bool(getattr(self, "_gpu_double_enabled", False))
+        self._rtc_enabled = new_rtc
+        self._gpu_double_enabled = new_gpu
+        if new_rtc != old_rtc or new_gpu != old_gpu:
             try:
                 if getattr(self, "_shaders", None) is not None:
                     try:
@@ -368,31 +374,64 @@ class RendererConfigMixin:
 
 
     @property
-    def high_precision(self) -> bool:
-        return bool(getattr(self, "_high_precision", False))
+    def rtc_enabled(self) -> bool:
+        return bool(getattr(self, "_rtc_enabled", False))
 
 
-    @high_precision.setter
-    def high_precision(self, v: bool):
-        self.set_high_precision(v)
+    @rtc_enabled.setter
+    def rtc_enabled(self, v: bool):
+        self.set_rtc_enabled(v)
 
 
-    def set_high_precision(self, enabled: bool):
+    @property
+    def gpu_double_enabled(self) -> bool:
+        return bool(getattr(self, "_gpu_double_enabled", False))
+
+
+    @gpu_double_enabled.setter
+    def gpu_double_enabled(self, v: bool):
+        self.set_gpu_double_enabled(v)
+
+
+    def set_rtc_enabled(self, enabled: bool):
         flag = bool(enabled)
-        if bool(getattr(self, "_high_precision", False)) == flag:
+        if bool(getattr(self, "_rtc_enabled", False)) == flag:
             return
-        self._high_precision = flag
+        self._rtc_enabled = flag
         try:
             from core.config.config import get_global_config
             cfg = get_global_config()
             if cfg is not None:
-                cfg.set("rendering.high_precision", flag, notify=False)
+                cfg.set("rendering.high_precision_rtc", flag, notify=False)
                 try:
                     cfg.save()
                 except Exception:
                     pass
         except Exception:
             pass
+        self._rebuild_precision_programs()
+
+
+    def set_gpu_double_enabled(self, enabled: bool):
+        flag = bool(enabled)
+        if bool(getattr(self, "_gpu_double_enabled", False)) == flag:
+            return
+        self._gpu_double_enabled = flag
+        try:
+            from core.config.config import get_global_config
+            cfg = get_global_config()
+            if cfg is not None:
+                cfg.set("rendering.high_precision_gpu", flag, notify=False)
+                try:
+                    cfg.save()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self._rebuild_precision_programs()
+
+
+    def _rebuild_precision_programs(self):
         try:
             if getattr(self, "_shaders", None) is not None:
                 try:

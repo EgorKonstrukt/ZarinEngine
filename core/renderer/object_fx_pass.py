@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 import numpy as np
 from core.foundation.logger import Logger
+from core.renderer.origin import origin_for, relativize_model_f32
 from core.components.rendering.effects.object_effect import ObjectEffect
 from core.components.rendering.effects.voxelize_effect import VoxelizeEffect
 
@@ -77,7 +78,7 @@ void main() {
                 wm = entry[4]
                 try:
                     mat = self._materials.load_material(mr.get_material_path(0))
-                    model_f32 = wm.to_f32()
+                    model_f32 = relativize_model_f32(wm, origin_for(cam_pos))
                     if "u_model" in prog:
                         prog["u_model"].write(model_f32.tobytes())
                     nm = np.eye(3, dtype=np.float32).T

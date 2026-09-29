@@ -11,6 +11,7 @@ import time
 import moderngl
 from core.components import LightType, LightAreaType
 from core.components.lighting import Light, Projector
+from core.renderer.origin import origin_for, relativize_view_bytes
 from core.renderer.types import RenderMode
 
 
@@ -20,14 +21,20 @@ class SceneUniformsMixin:
 
     def _set_scene_uniforms(self, prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=False):
         names = self._uniform_names(prog)
+        origin = origin_for(cam_pos)
+        try:
+            ox = float(origin[0]); oy = float(origin[1]); oz = float(origin[2])
+        except Exception:
+            origin = None
+            ox = 0.0; oy = 0.0; oz = 0.0
         if "u_view" in names:
-            prog["u_view"].write(view_f32.tobytes())
+            prog["u_view"].write(relativize_view_bytes(view_f32, origin))
         if "u_proj" in names:
             prog["u_proj"].write(proj_f32.tobytes())
         if "u_camera_pos" in names:
             buf = self._vec3_buf_a
             ca = cam_pos.to_array()
-            buf[0] = ca[0]; buf[1] = ca[1]; buf[2] = ca[2]
+            buf[0] = ca[0] - ox; buf[1] = ca[1] - oy; buf[2] = ca[2] - oz
             prog["u_camera_pos"].write(buf.tobytes())
         if "u_time" in names:
             prog["u_time"].value = time.time()
@@ -97,7 +104,7 @@ class SceneUniformsMixin:
             fwd = lt.forward
             if unames["position"] in names:
                 buf = self._vec3_buf_a
-                buf[0] = pos.x; buf[1] = pos.y; buf[2] = pos.z
+                buf[0] = pos.x - ox; buf[1] = pos.y - oy; buf[2] = pos.z - oz
                 prog[unames["position"]].write(buf.tobytes())
             if unames["direction"] in names:
                 buf = self._vec3_buf_b
@@ -138,7 +145,7 @@ class SceneUniformsMixin:
             if unames["area_double_sided"] in names:
                 prog[unames["area_double_sided"]].value = 1.0 if l.area_double_sided else 0.0
         if not disable_shadows:
-            self._shadows.set_uniforms(prog)
+            self._shadows.set_uniforms(prog, origin)
 
         if "_WindDir" in names or "_WindInfluence" in names or "_WindStrength" in names:
             try:

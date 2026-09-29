@@ -14,6 +14,7 @@ from core.components.lighting.light import Light, LightType, LightAreaType
 from core.components.rendering.renderers.mesh_filter import MeshFilter
 from core.components.rendering.renderers.mesh_renderer import MeshRenderer
 from core.renderer.mesh_data import MeshData
+from core.renderer.origin import shift_pos_bytes, shift_vp_bytes
 from core.renderer.shaders import program_with_fallback
 
 _INSTANCE_ATTRS = ("in_model0", "in_model1", "in_model2", "in_model3")
@@ -2253,7 +2254,7 @@ class ShadowRenderer:
         except Exception:
             pass
 
-    def set_uniforms(self, prog):
+    def set_uniforms(self, prog, origin=None):
         names = self._uniform_names(prog)
         has_csm = self._cascade_splits[self._cascade_count - 1] > 0.0
         if has_csm and "u_cascade_count" in names and len(self._shadow_maps) >= 1:
@@ -2262,7 +2263,7 @@ class ShadowRenderer:
                 try:
                     if not self._cascade_matrices_bytes:
                         self._cache_uniform_bytes()
-                    prog["u_light_space_matrices"].write(self._cascade_matrices_bytes)
+                    prog["u_light_space_matrices"].write(shift_vp_bytes(self._cascade_matrices_bytes, origin))
                 except Exception:
                     pass
             if "u_cascade_splits" in names:
@@ -2307,7 +2308,7 @@ class ShadowRenderer:
                 try:
                     if not self._point_vps_bytes:
                         self._cache_uniform_bytes()
-                    prog["u_point_shadow_vps"].write(self._point_vps_bytes)
+                    prog["u_point_shadow_vps"].write(shift_vp_bytes(self._point_vps_bytes, origin))
                 except Exception:
                     pass
             if "u_point_shadow_atlas" in names:
@@ -2320,7 +2321,7 @@ class ShadowRenderer:
                 try:
                     if not self._point_pos_bytes:
                         self._cache_uniform_bytes()
-                    prog["u_point_shadow_light_positions"].write(self._point_pos_bytes)
+                    prog["u_point_shadow_light_positions"].write(shift_pos_bytes(self._point_pos_bytes, origin))
                 except Exception:
                     pass
             if "u_point_shadow_light_ranges" in names:
@@ -2346,7 +2347,7 @@ class ShadowRenderer:
                 try:
                     if not self._spot_vps_bytes:
                         self._cache_uniform_bytes()
-                    prog["u_spot_shadow_vps"].write(self._spot_vps_bytes)
+                    prog["u_spot_shadow_vps"].write(shift_vp_bytes(self._spot_vps_bytes, origin))
                 except Exception:
                     pass
             if "u_spot_shadow_atlas" in names:
@@ -2377,7 +2378,7 @@ class ShadowRenderer:
                 try:
                     if not self._area_vp_bytes:
                         self._cache_uniform_bytes()
-                    prog["u_area_light_vp"].write(self._area_vp_bytes)
+                    prog["u_area_light_vp"].write(shift_vp_bytes(self._area_vp_bytes, origin))
                 except Exception:
                     pass
             if "u_area_light_size" in names:
@@ -2407,7 +2408,7 @@ class ShadowRenderer:
                 try:
                     if not self._area_vp_back_bytes:
                         self._cache_uniform_bytes()
-                    prog["u_area_light_vp_back"].write(self._area_vp_back_bytes)
+                    prog["u_area_light_vp_back"].write(shift_vp_bytes(self._area_vp_back_bytes, origin))
                 except Exception:
                     pass
             if "u_area_shadow_back" in names:

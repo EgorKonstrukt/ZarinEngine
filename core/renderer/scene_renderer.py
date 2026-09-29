@@ -22,6 +22,7 @@ from core.renderer.types import RenderMode
 from core.renderer.mesh_data import MeshData, read_shader
 from core.renderer.batcher import RenderBatcher, resolve_normal_matrix
 from core.renderer.culling import cpu_frustum_cull
+from core.renderer.origin import origin_for, relativize_model_f32
 from core.renderer.render_items import _TAAU_JITTER
 from core.renderer.render_snapshot import _RenderSnapshot
 
@@ -468,11 +469,11 @@ class SceneRendererMixin:
                                             continue
                                         if isinstance(_pi, list):
                                             for _q in _pi:
-                                                if not self._batcher.patch_shared_vbo_single(int(_q), _wm):
+                                                if not self._batcher.patch_shared_vbo_single(int(_q), _wm, origin_for(cam_pos)):
                                                     _ok_p = False
                                                     break
                                         else:
-                                            if not self._batcher.patch_shared_vbo_single(int(_pi), _wm):
+                                            if not self._batcher.patch_shared_vbo_single(int(_pi), _wm, origin_for(cam_pos)):
                                                 _ok_p = False
                                                 break
                                     if _ok_p:
@@ -644,7 +645,7 @@ class SceneRendererMixin:
                             except Exception:
                                 pass
                         model = wm
-                        model_f32 = model.to_f32()
+                        model_f32 = relativize_model_f32(model, origin_for(cam_pos))
                         if "u_model" in names:
                             prog["u_model"].write(model_f32.tobytes())
                         nm = resolve_normal_matrix(self._normal_cache, ent._id, model._d)
@@ -660,7 +661,7 @@ class SceneRendererMixin:
                         self._set_scene_uniforms(prog, view_f32, proj_f32, cam_pos, lights, disable_shadows=not mr.receive_shadows)
                         names = self._uniform_names(prog)
                         model = wm
-                        model_f32 = model.to_f32()
+                        model_f32 = relativize_model_f32(model, origin_for(cam_pos))
                         if "u_model" in names:
                             prog["u_model"].write(model_f32.tobytes())
                         if "u_normal_matrix" in names:

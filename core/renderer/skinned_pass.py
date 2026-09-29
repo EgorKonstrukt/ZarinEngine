@@ -11,6 +11,7 @@ import numpy as np
 import moderngl
 from core.engine.engine import Engine
 from core.renderer.batcher import RenderBatcher, resolve_normal_matrix
+from core.renderer.origin import origin_for, relativize_model_f32
 
 
 class SkinnedPassMixin:
@@ -120,7 +121,7 @@ class SkinnedPassMixin:
                 skinning_set = False
             names = self._uniform_names(prog)
             if "u_model" in names:
-                model_f32 = wm.to_f32()
+                model_f32 = relativize_model_f32(wm, origin_for(cam_pos))
                 prog["u_model"].write(model_f32.tobytes())
             nm = resolve_normal_matrix(self._normal_cache, ent._id, wm._d)
             if "u_normal_matrix" in names:

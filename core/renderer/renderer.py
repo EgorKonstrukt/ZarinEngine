@@ -85,7 +85,8 @@ class Renderer(RendererConfigMixin, RendererProgramsMixin, VoxelPassMixin, Objec
         self._scene_depth_tex: Optional[moderngl.Texture] = None
         self._scene_fbo_size: tuple = (0, 0)
         self._initialized: bool = False
-        self._high_precision: bool = False
+        self._rtc_enabled: bool = False
+        self._gpu_double_enabled: bool = False
         self._render_mode: RenderMode = RenderMode.SHADED
         self._max_lights: int = 8
         self._light_uniforms = [

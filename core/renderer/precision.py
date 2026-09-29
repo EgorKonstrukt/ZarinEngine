@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 
 HIGH_PRECISION_KEY = "rendering.high_precision"
+RTC_KEY = "rendering.high_precision_rtc"
+GPU_DOUBLE_KEY = "rendering.high_precision_gpu"
 
 _MARK = "ZARIN_HIGH_PRECISION"
 
@@ -39,13 +41,26 @@ def _get_enabled(enabled=None):
         cfg = get_global_config()
         if cfg is None:
             return False
-        return bool(cfg.get(HIGH_PRECISION_KEY, False))
+        return bool(cfg.get(GPU_DOUBLE_KEY, cfg.get(HIGH_PRECISION_KEY, False)))
     except Exception:
         return False
 
 
-def is_high_precision_enabled(enabled=None):
+def is_gpu_double_enabled(enabled=None):
     return _get_enabled(enabled)
+
+
+def is_rtc_enabled(enabled=None):
+    if enabled is not None:
+        return bool(enabled)
+    try:
+        from core.config.config import get_global_config
+        cfg = get_global_config()
+        if cfg is None:
+            return False
+        return bool(cfg.get(RTC_KEY, cfg.get(HIGH_PRECISION_KEY, False)))
+    except Exception:
+        return False
 
 
 def _has_mark(src):
