@@ -876,8 +876,9 @@ def _do_open_scene(mw, path):
                 scene = Scene.deserialize(data, ComponentRegistry)
                 scene.embedded_resources = data.get("embedded_resources", {})
                 scene.path = path
-                scene.mark_clean()
                 tab_name = os.path.splitext(os.path.basename(path))[0]
+                scene.name = tab_name
+                scene.mark_clean()
                 mw._scene_tab_manager.add_tab(tab_name, path=path, scene=scene)
             except Exception as e:
                 Logger.error(f"Error opening scene: {e}", e)

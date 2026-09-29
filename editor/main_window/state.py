@@ -205,11 +205,12 @@ def _load_scene_file(eng, path: str):
     scene = Scene.deserialize(data, ComponentRegistry)
     scene.embedded_resources = embedded
     scene.path = path
+    scene.name = os.path.splitext(os.path.basename(path))[0]
     scene.mark_clean()
     return scene
 
 
-def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str):
+def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str, entry_name: str):
     from core.ecs.ecs import Scene, ComponentRegistry
     from core.ecs.embedded_resources import extract_embedded_resources
     with open(snapshot_path, "r", encoding="utf-8") as f:
@@ -221,6 +222,9 @@ def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str):
     scene.embedded_resources = embedded
     if scene_path:
         scene.path = scene_path
+        scene.name = os.path.splitext(os.path.basename(scene_path))[0]
+    elif entry_name:
+        scene.name = entry_name
     scene.mark_dirty()
     return scene
 
@@ -312,7 +316,7 @@ def restore_tabs(mw) -> bool:
                     snapshot_path = os.path.join(_session_dir(), os.path.basename(snapshot))
                     if os.path.isfile(snapshot_path) and _snapshot_usable(snapshot_path, scene_path):
                         try:
-                            scene = _load_scene_snapshot(eng, snapshot_path, scene_path)
+                            scene = _load_scene_snapshot(eng, snapshot_path, scene_path, name)
                         except Exception as e:
                             Logger.error(f"Failed to restore scene snapshot: {e}")
                             scene = None

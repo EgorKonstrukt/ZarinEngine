@@ -247,12 +247,14 @@ class Engine:
             self._scene = Scene.deserialize(data, self._component_registry)
             self._scene.embedded_resources = embedded
             self._scene.path = path
+            self._scene.name = os.path.splitext(os.path.basename(path))[0]
             self._scene.mark_clean()
             self._plugin_manager.notify_scene_loaded(self._scene)
             Logger.info(f"Scene loaded: {path}")
             self._emit_event("scene_loaded", self._scene)
         except Exception as e:
             Logger.error(f"Failed to load scene '{path}': {e}", e)
+            return None
         finally:
             task_complete(task_id)
         if callable(on_done):
@@ -368,6 +370,7 @@ class Engine:
                 self._scene = Scene.deserialize(data, self._component_registry)
                 self._scene.embedded_resources = embedded
                 self._scene.path = path
+                self._scene.name = os.path.splitext(os.path.basename(path))[0]
                 self._scene.mark_clean()
                 self._plugin_manager.notify_scene_loaded(self._scene)
                 Logger.info(f"Scene loaded: {path}")
