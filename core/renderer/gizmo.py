@@ -978,16 +978,19 @@ void main() {
         n = v_data.shape[0]
         if n > self._solid_vbo_cap or n_idx > self._solid_ibo_cap:
             self._build_solid_buffers(n, n_idx)
-        _vd = v_data
+        try:
+            _vd = np.ascontiguousarray(v_data, dtype=np.float32)
+        except Exception:
+            _vd = v_data
         if _origin is not None:
             try:
-                _vd = np.ascontiguousarray(v_data, dtype=np.float64).copy()
-                _vd[:, 0] -= float(_origin[0])
-                _vd[:, 1] -= float(_origin[1])
-                _vd[:, 2] -= float(_origin[2])
-                _vd = np.ascontiguousarray(_vd.astype(np.float32))
+                _w = np.ascontiguousarray(v_data, dtype=np.float64).copy()
+                _w[:, 0] -= float(_origin[0])
+                _w[:, 1] -= float(_origin[1])
+                _w[:, 2] -= float(_origin[2])
+                _vd = np.ascontiguousarray(_w.astype(np.float32))
             except Exception:
-                _vd = v_data
+                pass
         self._solid_vbo.write(_vd.tobytes())
         self._solid_ibo.write(idx_arr.tobytes())
         self._stat_upload_bytes += len(v_data) * 28 + len(idx_arr) * 4
