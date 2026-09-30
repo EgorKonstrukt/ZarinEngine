@@ -8,15 +8,35 @@ from __future__ import annotations
 
 def compute_usages(text: str, lines: list[str]) -> dict[int, str]:
     out: dict[int, str] = {}
+    if len(text) > 500000 or len(lines) > 6000:
+        return out
     defs: dict[str, list[int]] = {}
     for idx, ln in enumerate(lines):
+        if len(ln) < 6:
+            continue
         s = ln.strip()
         if s.startswith("class "):
             name = s[6:].split(":")[0].split("(")[0].strip()
             if name:
+                if len(defs) > 300:
+                    break
                 defs.setdefault(name, []).append(idx)
+    if not defs:
+        return out
+    import re as _re
+    try:
+        pat = _re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+        counts: dict[str, int] = {}
+        for m in pat.finditer(text):
+            w = m.group(0)
+            if w in defs:
+                counts[w] = counts.get(w, 0) + 1
+                if len(counts) > 2000:
+                    break
+    except Exception:
+        return out
     for name, lst in defs.items():
-        cnt = text.count(name) - len(lst)
+        cnt = counts.get(name, 0) - len(lst)
         if cnt < 0:
             cnt = 0
         for li in lst:
@@ -31,17 +51,39 @@ def compute_usages(text: str, lines: list[str]) -> dict[int, str]:
 
 def compute_complexity(lines: list[str]) -> dict[int, str]:
     out: dict[int, str] = {}
+    if len(lines) > 6000:
+        return out
+    count = 0
     for idx, ln in enumerate(lines):
+        if len(ln) < 4:
+            continue
         s = ln.strip()
         if not s.startswith("def "):
             continue
+        count += 1
+        if count > 250:
+            break
         branches = 0
-        for kw in (" if ", " for ", " while ", " try:", " except", " and ", " or ", " with "):
-            if kw in ln:
-                branches += 1
+        if " if " in ln:
+            branches += 1
+        if " for " in ln:
+            branches += 1
+        if " while " in ln:
+            branches += 1
+        if " try:" in ln:
+            branches += 1
+        if " except" in ln:
+            branches += 1
+        if " and " in ln:
+            branches += 1
+        if " or " in ln:
+            branches += 1
         depth = len(ln) - len(ln.lstrip())
         j = idx + 1
-        while j < len(lines) and j < idx + 80:
+        end = idx + 60
+        if end > len(lines):
+            end = len(lines)
+        while j < end:
             lj = lines[j]
             if lj.strip() == "":
                 j += 1
@@ -49,9 +91,11 @@ def compute_complexity(lines: list[str]) -> dict[int, str]:
             d2 = len(lj) - len(lj.lstrip())
             if d2 <= depth:
                 break
-            for kw in ("if ", "for ", "while ", "try:", "except", " and ", " or "):
-                if kw in lj:
+            if lj.startswith(" " * (depth + 4)) or lj.startswith("\t"):
+                if "if " in lj or "for " in lj or "while " in lj or "try:" in lj or "except" in lj:
                     branches += 1
+                    if branches > 12:
+                        break
             j += 1
         pct = min(92, 12 + branches * 7)
         unit = chr(37)

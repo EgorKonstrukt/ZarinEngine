@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 
+import re
+
 from .theme import Theme
 
 try:
@@ -54,11 +56,14 @@ class PythonHighlighter(QSyntaxHighlighter):
         link.setForeground(QColor(*Theme.link))
         link.setFontUnderline(True)
         self._formats["link"] = link
-        self._keywords = set(KEYWORDS)
-        self._builtins = set(BUILTINS)
-        self._constants = set(CONSTANTS)
-        self._exceptions = set(EXCEPTIONS)
+        self._keywords = frozenset(KEYWORDS)
+        self._builtins = frozenset(BUILTINS)
+        self._constants = frozenset(CONSTANTS)
+        self._exceptions = frozenset(EXCEPTIONS)
         self._hash = chr(35)
+        self._word_re = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+        self._number_re = re.compile(r"\b(?:0[xXoObB][A-Za-z0-9_]+|\d[\d._]*(?:[eE][+-]?\d+)?)\b")
+        self._def_re = re.compile(r"\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
 
     def highlightBlock(self, text):
         self.setCurrentBlockState(0)
@@ -77,113 +82,124 @@ class PythonHighlighter(QSyntaxHighlighter):
         self._scan(text, start)
 
     def _scan(self, text, start):
-        i = start
         n = len(text)
-        expect_def = False
+        if start >= n:
+            return
         h = self._hash
-        while i < n:
-            c = text[i]
-            if c.isspace():
-                i += 1
-                continue
-            if c == h:
-                self.setFormat(i, n - i, self._formats["comment"])
-                rest = text[i:]
-                k = rest.find("https:")
+        segments: list[tuple[int, int]] = []
+        pos = start
+        while pos < n:
+            ch = text[pos]
+            if ch == h:
+                self.setFormat(pos, n - pos, self._formats["comment"])
+                k = text.find("https:", pos)
                 if k >= 0:
-                    a = i + k
-                    b = a
+                    b = k
                     while b < n and not text[b].isspace():
                         b += 1
-                    self.setFormat(a, b - a, self._formats["link"])
+                    self.setFormat(k, b - k, self._formats["link"])
                 return
-            if text.startswith('"""', i) or text.startswith("'''", i):
-                d = text[i:i + 3]
-                st = 1 if d == '"""' else 2
-                e = text.find(d, i + 3)
-                if e == -1:
-                    self.setFormat(i, n - i, self._formats["string"])
-                    self.setCurrentBlockState(st)
-                    return
-                self.setFormat(i, e + 3 - i, self._formats["string"])
-                i = e + 3
-                expect_def = False
-                continue
-            if c == '"' or c == "'":
-                q = c
-                j = i + 1
+            if ch == '"' or ch == "'":
+                if text.startswith('"""', pos) or text.startswith("'''", pos):
+                    d = text[pos:pos + 3]
+                    st = 1 if d == '"""' else 2
+                    e = text.find(d, pos + 3)
+                    if e == -1:
+                        self.setFormat(pos, n - pos, self._formats["string"])
+                        self.setCurrentBlockState(st)
+                        return
+                    self.setFormat(pos, e + 3 - pos, self._formats["string"])
+                    pos = e + 3
+                    continue
+                q = ch
+                j = pos + 1
                 while j < n:
-                    if text[j] == "\\":
+                    c2 = text[j]
+                    if c2 == "\\":
                         j += 2
                         continue
-                    if text[j] == q:
+                    if c2 == q:
                         j += 1
                         break
                     j += 1
-                self.setFormat(i, j - i, self._formats["string"])
-                i = j
-                expect_def = False
+                self.setFormat(pos, j - pos, self._formats["string"])
+                pos = j
                 continue
-            if c == "@":
-                j = i + 1
-                while j < n and (text[j].isalnum() or text[j] in "._"):
-                    j += 1
-                if j > i + 1:
-                    self.setFormat(i, j - i, self._formats["decorator"])
-                    i = j
-                    expect_def = False
-                    continue
-                i += 1
-                expect_def = False
-                continue
-            if c.isdigit() or (c == "." and i + 1 < n and text[i + 1].isdigit()):
-                j = i
-                if c == "0" and i + 1 < n and text[i + 1] in "xXoObB":
-                    j = i + 2
-                    while j < n and (text[j].isalnum() or text[j] == "_"):
+            nxt_q = n + 1
+            q1 = text.find('"', pos)
+            if q1 >= 0 and q1 < nxt_q:
+                nxt_q = q1
+            q2 = text.find("'", pos)
+            if q2 >= 0 and q2 < nxt_q:
+                nxt_q = q2
+            hc = text.find(h, pos)
+            if hc >= 0 and hc < nxt_q:
+                nxt_q = hc
+            seg_end = nxt_q if nxt_q <= n else n
+            if seg_end > pos:
+                segments.append((pos, seg_end))
+            if nxt_q > n or nxt_q == n + 1:
+                break
+            pos = nxt_q
+        if not segments:
+            return
+        kw = self._keywords
+        bi = self._builtins
+        cn = self._constants
+        ex = self._exceptions
+        fmt_kw = self._formats["keyword"]
+        fmt_bi = self._formats["builtin"]
+        fmt_ex = self._formats["exception"]
+        fmt_fn = self._formats["function"]
+        fmt_nm = self._formats["number"]
+        fmt_dc = self._formats["decorator"]
+        for s0, s1 in segments:
+            seg = text[s0:s1]
+            for m in self._number_re.finditer(seg):
+                self.setFormat(s0 + m.start(), m.end() - m.start(), fmt_nm)
+            if "@" in seg:
+                at = s0
+                while True:
+                    at = text.find("@", at, s1)
+                    if at < 0:
+                        break
+                    j = at + 1
+                    while j < s1 and (text[j].isalnum() or text[j] == "_" or text[j] == "." or text[j] == "_"):
                         j += 1
-                else:
-                    while j < n and (text[j].isdigit() or text[j] in "._"):
-                        j += 1
-                    if j < n and text[j] in "eE":
-                        j += 1
-                        if j < n and text[j] in "+-":
-                            j += 1
-                        while j < n and text[j].isdigit():
-                            j += 1
-                self.setFormat(i, j - i, self._formats["number"])
-                i = j
-                expect_def = False
-                continue
-            if c.isalpha() or c == "_":
-                j = i
-                while j < n and (text[j].isalnum() or text[j] == "_"):
-                    j += 1
-                word = text[i:j]
-                k = j
-                while k < n and text[k].isspace():
-                    k += 1
-                token = None
-                if expect_def:
-                    token = "function"
-                    expect_def = False
-                elif word in self._keywords:
-                    token = "keyword"
-                    if word in ("def", "class"):
-                        expect_def = True
-                elif word in self._constants:
-                    token = "keyword"
-                elif word in ("self", "cls"):
-                    token = "keyword"
-                elif word in self._exceptions:
-                    token = "exception"
-                elif word in self._builtins:
-                    token = "builtin"
-                elif k < n and text[k] == "(":
-                    token = "function"
-                if token is not None:
-                    self.setFormat(i, j - i, self._formats[token])
-                i = j
-                continue
-            i += 1
+                    if j > at + 1:
+                        self.setFormat(at, j - at, fmt_dc)
+                        at = j
+                    else:
+                        at += 1
             expect_def = False
+            if "def " in seg or "class " in seg:
+                dm = self._def_re.search(seg)
+                if dm:
+                    self.setFormat(s0 + dm.start(1), len(dm.group(1)), fmt_fn)
+                    expect_def_pos = s0 + dm.end()
+                else:
+                    expect_def_pos = -1
+            else:
+                expect_def_pos = -1
+            for m in self._word_re.finditer(seg):
+                a = s0 + m.start()
+                b = s0 + m.end()
+                if a < s0 + 0:
+                    continue
+                w = m.group(0)
+                if expect_def_pos >= 0 and a >= expect_def_pos and a < expect_def_pos + 64:
+                    if w not in kw:
+                        self.setFormat(a, b - a, fmt_fn)
+                        expect_def_pos = -1
+                        continue
+                if w in kw:
+                    self.setFormat(a, b - a, fmt_kw)
+                elif w in cn or w == "self" or w == "cls":
+                    self.setFormat(a, b - a, fmt_kw)
+                elif w in ex:
+                    self.setFormat(a, b - a, fmt_ex)
+                elif w in bi:
+                    self.setFormat(a, b - a, fmt_bi)
+                else:
+                    if b < n and text[b] == "(":
+                        self.setFormat(a, b - a, fmt_fn)

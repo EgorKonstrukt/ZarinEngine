@@ -52,6 +52,7 @@ class CodeEditor(QPlainTextEdit):
     vcs_result_ready = pyqtSignal(object)
     _vcs_result_ready = pyqtSignal(object)
     diagnostics_changed = pyqtSignal(int, int)
+    analysis_ready = pyqtSignal(int, object, object, object, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -86,6 +87,12 @@ class CodeEditor(QPlainTextEdit):
         self._ops_callback = None
         self._suppress_ops = False
         self._old_text = ""
+        self._analysis_version = 0
+        self._diag_selections: list = []
+        self._completion_cache: list[str] = []
+        self._completion_dirty = True
+        self._line_width_cache: dict = {}
+        self.analysis_ready.connect(self._apply_analysis)
         self.document().contentsChange.connect(self._on_contents_change)
         QTimer.singleShot(0, self._init_old_text)
         self._apply_font()
@@ -101,20 +108,24 @@ class CodeEditor(QPlainTextEdit):
         self.blockCountChanged.connect(self._update_line_number)
         self.updateRequest.connect(self._on_update_request)
         self.cursorPositionChanged.connect(self._emit_cursor)
-        self.cursorPositionChanged.connect(self._update_current_line_highlight)
+        self.cursorPositionChanged.connect(self._update_current_line_only)
         self.textChanged.connect(self._invalidate_minimap)
         self.textChanged.connect(self._schedule_analysis)
+        self.textChanged.connect(self._mark_completion_dirty)
         self._analysis_timer = QTimer(self)
         self._analysis_timer.setSingleShot(True)
         self._analysis_timer.timeout.connect(self._run_analysis)
+        self._completion_timer = QTimer(self)
+        self._completion_timer.setSingleShot(True)
+        self._completion_timer.timeout.connect(self._rebuild_completions)
         self._update_line_number()
         self._update_minimap()
-        self._update_current_line_highlight()
+        self._update_current_line_only()
         try:
             self.verticalScrollBar().valueChanged.connect(lambda v: self._minimap.update())
         except Exception:
             pass
-        QTimer.singleShot(200, self._run_analysis)
+        QTimer.singleShot(600, self._run_analysis)
 
     def set_indent_guides(self, on: bool):
         self._show_indent_guides = on
@@ -197,23 +208,33 @@ class CodeEditor(QPlainTextEdit):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if self._show_indent_guides:
-            self._draw_indent_guides(event)
-        if self._vcs_diff_data:
-            self._draw_diff_markers(event)
-        self._draw_remote_cursors(event)
-        self._draw_code_vision(event)
-        self._draw_fold_placeholders(event)
-        self._draw_current_blame(event)
-        self._position_inspection()
+        try:
+            if self._show_indent_guides:
+                self._draw_indent_guides(event)
+            if self._vcs_diff_data:
+                self._draw_diff_markers(event)
+            if self._remote_cursors:
+                self._draw_remote_cursors(event)
+            if self._vision_usages or self._vision_complexity:
+                self._draw_code_vision(event)
+            if self._folded:
+                self._draw_fold_placeholders(event)
+            if self._show_blame and self._vcs_blame_data:
+                self._draw_current_blame(event)
+        except Exception:
+            pass
 
     def _position_inspection(self):
         try:
             vw = self.viewport().width()
             iw = scale(170)
             ih = scale(18)
-            self._inspection.setGeometry(vw - iw - scale(30), scale(2), iw, ih)
-            self._inspection.raise_()
+            x = vw - iw - scale(30)
+            y = scale(2)
+            g = self._inspection.geometry()
+            if g.x() != x or g.y() != y or g.width() != iw or g.height() != ih:
+                self._inspection.setGeometry(x, y, iw, ih)
+                self._inspection.raise_()
         except Exception:
             pass
 
@@ -285,7 +306,7 @@ class CodeEditor(QPlainTextEdit):
 
     def set_remote_cursors(self, cursors: dict[str, dict]):
         self._remote_cursors = dict(cursors)
-        self._update_current_line_highlight()
+        self._update_current_line_only()
         self.viewport().update()
 
     def _update_remote_extra_selections(self):
@@ -323,20 +344,102 @@ class CodeEditor(QPlainTextEdit):
 
     def _schedule_analysis(self):
         try:
-            if not self._analysis_timer.isActive():
-                self._analysis_timer.start(350)
+            if self._analysis_timer.isActive():
+                return
+            try:
+                bc = self.blockCount()
+            except Exception:
+                bc = 0
+            delay = 350
+            if bc > 3000:
+                delay = 900
+            elif bc > 1000:
+                delay = 600
+            self._analysis_timer.start(delay)
+        except Exception:
+            pass
+
+    def _mark_completion_dirty(self):
+        try:
+            self._completion_dirty = True
+            if not self._completion_timer.isActive():
+                self._completion_timer.start(1200)
+        except Exception:
+            pass
+
+    def set_text_fast(self, text: str):
+        try:
+            self.setUpdatesEnabled(False)
+            self.blockSignals(True)
+            self._suppress_ops = True
+            self.setPlainText(text)
+            self._old_text = text
+            self._folded.clear()
+            self._diagnostic_errors = []
+            self._diagnostic_warnings = []
+            self._diag_selections = []
+            self._vision_usages = {}
+            self._vision_complexity = {}
+            self._completion_dirty = True
+            self.document().setModified(False)
+        except Exception:
+            pass
+        try:
+            self.blockSignals(False)
+            self._suppress_ops = False
+            self.setUpdatesEnabled(True)
+        except Exception:
+            pass
+        try:
+            self._update_current_line_only()
+            self._update_line_number()
+        except Exception:
+            pass
+        try:
+            QTimer.singleShot(120, self._run_analysis)
         except Exception:
             pass
 
     def _run_analysis(self):
         try:
+            self._analysis_version += 1
+            ver = self._analysis_version
+            try:
+                bc = self.blockCount()
+            except Exception:
+                bc = 0
+            if bc > 8000:
+                try:
+                    self._inspection.set_counts(0, 0)
+                except Exception:
+                    pass
+                return
             text = self.toPlainText()
-            lines = text.splitlines()
-            errs, warns = diags.analyze_text(text, self._vcs_file_path or "")
+            path = self._vcs_file_path or ""
+            def _work():
+                try:
+                    errs, warns = diags.analyze_text(text, path)
+                    lines = text.splitlines()
+                    usages = vis.compute_usages(text, lines)
+                    comp = vis.compute_complexity(lines)
+                    try:
+                        self.analysis_ready.emit(ver, errs, warns, usages, comp)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            threading.Thread(target=_work, daemon=True).start()
+        except Exception:
+            pass
+
+    def _apply_analysis(self, ver: int, errs, warns, usages, comp):
+        try:
+            if ver != self._analysis_version:
+                return
             self._diagnostic_errors = errs
             self._diagnostic_warnings = warns
-            self._vision_usages = vis.compute_usages(text, lines)
-            self._vision_complexity = vis.compute_complexity(lines)
+            self._vision_usages = usages
+            self._vision_complexity = comp
             try:
                 self._inspection.set_counts(len(errs), len(warns))
             except Exception:
@@ -345,12 +448,66 @@ class CodeEditor(QPlainTextEdit):
                 self.diagnostics_changed.emit(len(errs), len(warns))
             except Exception:
                 pass
-            self._ensure_import_fold(lines)
-            self._update_current_line_highlight()
-            self.viewport().update()
-            self._line_number.update()
-            self._minimap.update()
-            self._minimap_cache = None
+            try:
+                lines = self.toPlainText().splitlines()
+                self._ensure_import_fold(lines)
+            except Exception:
+                pass
+            self._rebuild_diag_selections()
+            self._update_current_line_only()
+            try:
+                self.viewport().update()
+                self._line_number.update()
+                self._minimap_cache = None
+                self._minimap.update()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _rebuild_diag_selections(self):
+        try:
+            out: list = []
+            doc = self.document()
+            for d in self._diagnostic_errors[:200]:
+                try:
+                    blk = doc.findBlockByNumber(d.line)
+                    if not blk.isValid():
+                        continue
+                    sel = QTextEdit.ExtraSelection()
+                    fmt = QTextCharFormat()
+                    fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
+                    fmt.setUnderlineColor(QColor(*Theme.error_red))
+                    sel.format = fmt
+                    tc = QTextCursor(doc)
+                    s = blk.position() + max(0, d.col)
+                    e = blk.position() + max(d.col + 1, d.end_col)
+                    tc.setPosition(s)
+                    tc.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
+                    sel.cursor = tc
+                    out.append(sel)
+                except Exception:
+                    continue
+            for d in self._diagnostic_warnings[:200]:
+                try:
+                    blk = doc.findBlockByNumber(d.line)
+                    if not blk.isValid():
+                        continue
+                    sel = QTextEdit.ExtraSelection()
+                    fmt = QTextCharFormat()
+                    fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
+                    fmt.setUnderlineColor(QColor(*Theme.warn_wave))
+                    sel.format = fmt
+                    tc = QTextCursor(doc)
+                    s = blk.position() + max(0, d.col)
+                    e = blk.position() + max(d.col + 1, d.end_col)
+                    tc.setPosition(s)
+                    tc.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
+                    sel.cursor = tc
+                    out.append(sel)
+                except Exception:
+                    continue
+            self._diag_selections = out
         except Exception:
             pass
 
@@ -568,72 +725,46 @@ class CodeEditor(QPlainTextEdit):
         self._minimap_cache = None
         QTimer.singleShot(0, self._update_minimap)
 
-    def _update_current_line_highlight(self):
-        cur = self.textCursor()
-        cur.clearSelection()
-        selections: list = []
-        base = QTextEdit.ExtraSelection()
-        base.format.setBackground(QColor(*Theme.current_line))
-        base.format.setProperty(QTextCharFormat.Property.FullWidthSelection, True)
-        base.cursor = cur
-        selections.append(base)
-        err_by_line = diags.by_line(self._diagnostic_errors)
-        warn_by_line = diags.by_line(self._diagnostic_warnings)
+    def _update_current_line_only(self):
         try:
-            for ln, lst in err_by_line.items():
-                for d in lst:
-                    sel = QTextEdit.ExtraSelection()
-                    fmt = QTextCharFormat()
-                    fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
-                    fmt.setUnderlineColor(QColor(*Theme.error_red))
-                    sel.format = fmt
-                    tc = QTextCursor(self.document())
-                    blk = self.document().findBlockByNumber(ln)
-                    if not blk.isValid():
-                        continue
-                    start = blk.position() + max(0, d.col)
-                    end = blk.position() + max(d.col + 1, d.end_col)
-                    tc.setPosition(start)
-                    tc.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-                    sel.cursor = tc
-                    selections.append(sel)
-            for ln, lst in warn_by_line.items():
-                for d in lst:
-                    sel = QTextEdit.ExtraSelection()
-                    fmt = QTextCharFormat()
-                    fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
-                    fmt.setUnderlineColor(QColor(*Theme.warn_wave))
-                    sel.format = fmt
-                    tc = QTextCursor(self.document())
-                    blk = self.document().findBlockByNumber(ln)
-                    if not blk.isValid():
-                        continue
-                    start = blk.position() + max(0, d.col)
-                    end = blk.position() + max(d.col + 1, d.end_col)
-                    tc.setPosition(start)
-                    tc.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-                    sel.cursor = tc
-                    selections.append(sel)
+            cur = self.textCursor()
+            cur.clearSelection()
+            base = QTextEdit.ExtraSelection()
+            base.format.setBackground(QColor(*Theme.current_line))
+            base.format.setProperty(QTextCharFormat.Property.FullWidthSelection, True)
+            base.cursor = cur
+            selections: list = [base]
+            try:
+                selections.extend(self._diag_selections)
+            except Exception:
+                pass
+            for _pid, info in self._remote_cursors.items():
+                try:
+                    if info.get("sel_anchor", 0) != info.get("sel_end", 0):
+                        sel = QTextEdit.ExtraSelection()
+                        c = info.get("color", QColor(100, 150, 220))
+                        if not isinstance(c, QColor):
+                            c = QColor(100, 150, 220)
+                        cc = QColor(c)
+                        cc.setAlpha(60)
+                        sel.format.setBackground(cc)
+                        tc = QTextCursor(self.document())
+                        tc.setPosition(info.get("sel_anchor", 0))
+                        tc.setPosition(info.get("sel_end", 0), QTextCursor.MoveMode.KeepAnchor)
+                        sel.cursor = tc
+                        selections.append(sel)
+                except Exception:
+                    continue
+            self.setExtraSelections(selections)
         except Exception:
             pass
-        for _pid, info in self._remote_cursors.items():
-            try:
-                if info.get("sel_anchor", 0) != info.get("sel_end", 0):
-                    sel = QTextEdit.ExtraSelection()
-                    c = info.get("color", QColor(100, 150, 220))
-                    if not isinstance(c, QColor):
-                        c = QColor(100, 150, 220)
-                    cc = QColor(c)
-                    cc.setAlpha(60)
-                    sel.format.setBackground(cc)
-                    tc = QTextCursor(self.document())
-                    tc.setPosition(info.get("sel_anchor", 0))
-                    tc.setPosition(info.get("sel_end", 0), QTextCursor.MoveMode.KeepAnchor)
-                    sel.cursor = tc
-                    selections.append(sel)
-            except Exception:
-                continue
-        self.setExtraSelections(selections)
+
+    def _update_current_line_highlight(self):
+        try:
+            self._rebuild_diag_selections()
+        except Exception:
+            pass
+        self._update_current_line_only()
 
     def _init_old_text(self):
         self._old_text = self.toPlainText()
@@ -660,9 +791,33 @@ class CodeEditor(QPlainTextEdit):
         self._ops_callback = cb
 
     def line_number_width(self) -> int:
-        digits = max(2, len(str(max(1, self.blockCount()))))
-        fm = QFontMetrics(self.font())
-        return 6 + int(fm.horizontalAdvance("9") * digits) + scale(22)
+        try:
+            bc = self.blockCount()
+        except Exception:
+            bc = 1
+        digits = 2
+        if bc >= 10000:
+            digits = 5
+        elif bc >= 1000:
+            digits = 4
+        elif bc >= 100:
+            digits = 3
+        try:
+            key = (digits, self._font_size)
+            cached = self._line_width_cache.get(key)
+            if cached is not None:
+                return cached
+            fm = QFontMetrics(self.font())
+            w = 6 + int(fm.horizontalAdvance("9") * digits) + scale(22)
+            self._line_width_cache[key] = w
+            if len(self._line_width_cache) > 8:
+                try:
+                    self._line_width_cache.clear()
+                except Exception:
+                    pass
+            return w
+        except Exception:
+            return scale(52)
 
     def blame_gutter_width(self) -> int:
         return 0
@@ -947,12 +1102,45 @@ class CodeEditor(QPlainTextEdit):
         self._apply_font()
 
     def refresh_completions(self):
-        words = set(KEYWORDS) | set(BUILTINS) | set(CONSTANTS) | set(EXCEPTIONS) | set(ENGINE_API_WORDS)
-        text = self.toPlainText()
-        for match in re.finditer(r"[A-Za-z_]\w*", text):
-            words.add(match.group(0))
-        model = QStringListModel(sorted(words), self)
-        self._completer.setModel(model)
+        try:
+            if not self._completion_dirty and self._completer.model() is not None:
+                return
+            self._rebuild_completions()
+        except Exception:
+            pass
+
+    def _rebuild_completions(self):
+        try:
+            base = set(KEYWORDS) | set(BUILTINS) | set(CONSTANTS) | set(EXCEPTIONS) | set(ENGINE_API_WORDS)
+            try:
+                bc = self.blockCount()
+            except Exception:
+                bc = 0
+            if bc > 5000:
+                model = QStringListModel(sorted(base), self)
+                self._completer.setModel(model)
+                self._completion_cache = sorted(base)
+                self._completion_dirty = False
+                return
+            text = self.toPlainText()
+            if len(text) > 400000:
+                text = text[:400000]
+            seen: set[str] = set(base)
+            extra: list[str] = []
+            for match in re.finditer(r"[A-Za-z_]\w{1,40}", text):
+                w = match.group(0)
+                if w not in seen:
+                    seen.add(w)
+                    extra.append(w)
+                    if len(extra) >= 2500:
+                        break
+            words = sorted(seen)[:4000]
+            model = QStringListModel(words, self)
+            self._completer.setModel(model)
+            self._completion_cache = words
+            self._completion_dirty = False
+        except Exception:
+            pass
 
     def _word_under_cursor(self) -> QTextCursor:
         cursor = self.textCursor()
@@ -1017,13 +1205,19 @@ class CodeEditor(QPlainTextEdit):
             self._auto_indent(event)
             return
         if event.key() == Qt.Key.Key_Space and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            self.refresh_completions()
+            try:
+                self._rebuild_completions()
+            except Exception:
+                pass
             self._update_completer_popup()
             return
         super().keyPressEvent(event)
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Space, Qt.Key.Key_Backspace):
-            self.refresh_completions()
         if event.text() and event.text().isalnum() or event.key() == Qt.Key.Key_Period:
+            try:
+                if self._completion_dirty:
+                    self._rebuild_completions()
+            except Exception:
+                pass
             self._update_completer_popup()
 
     def _auto_indent(self, event: QKeyEvent):

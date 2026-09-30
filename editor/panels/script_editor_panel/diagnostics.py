@@ -33,73 +33,60 @@ def _hash() -> str:
     return chr(35)
 
 
-def _collect_used_names(tree: ast.AST) -> set[str]:
+def _single_pass(tree: ast.AST) -> tuple[set[str], list, list, list]:
     used: set[str] = set()
+    imports: list = []
+    bare: list = []
+    none_cmp: list = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            used.add(node.id)
-        elif isinstance(node, ast.Attribute):
-            pass
-    return used
-
-
-def _unused_imports(tree: ast.AST, used: set[str]) -> list[Diagnostic]:
-    out: list[Diagnostic] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                full = alias.name
-                local = alias.asname if alias.asname else full.split(".")[0]
-                if local not in used:
-                    ln = (node.lineno or 1) - 1
-                    col = node.col_offset or 0
-                    out.append(Diagnostic(ln, col, col + len(local) + 7, "imported but unused: " + local, "warning", "unused-import"))
-        elif isinstance(node, ast.ImportFrom):
-            if node.names is not None:
-                for alias in node.names:
-                    if alias.name == "*":
-                        continue
-                    local = alias.asname if alias.asname else alias.name
-                    if local not in used:
-                        ln = (node.lineno or 1) - 1
-                        col = node.col_offset or 0
-                        out.append(Diagnostic(ln, col, col + len(local) + 7, "imported but unused: " + local, "warning", "unused-import"))
-    return out
-
-
-def _bare_except_warnings(tree: ast.AST) -> list[Diagnostic]:
-    out: list[Diagnostic] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ExceptHandler):
-            if node.type is None:
-                ln = (node.lineno or 1) - 1
-                col = node.col_offset or 0
-                out.append(Diagnostic(ln, col, col + 6, "bare except BH001", "warning", "bare-except"))
-    return out
-
-
-def _none_compare_warnings(tree: ast.AST) -> list[Diagnostic]:
-    out: list[Diagnostic] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Compare):
-            for op, comp in zip(node.ops, node.comparators):
-                if isinstance(op, (ast.Eq, ast.NotEq)):
-                    is_none = False
+        t = type(node).__name__
+        if t == "Name":
+            try:
+                used.add(node.id)
+            except Exception:
+                pass
+        elif t == "Import" or t == "ImportFrom":
+            imports.append(node)
+        elif t == "ExceptHandler":
+            try:
+                if node.type is None:
+                    bare.append(node)
+            except Exception:
+                pass
+        elif t == "Compare":
+            try:
+                has_none = False
+                for comp in node.comparators:
                     if isinstance(comp, ast.Constant) and comp.value is None:
-                        is_none = True
-                    if isinstance(node.left, ast.Constant) and node.left.value is None:
-                        is_none = True
-                    if is_none:
-                        ln = (node.lineno or 1) - 1
-                        col = node.col_offset or 0
-                        out.append(Diagnostic(ln, col, col + 8, "comparison to None should use is or is not", "warning", "none-compare"))
+                        has_none = True
                         break
-    return out
+                if not has_none and isinstance(node.left, ast.Constant) and node.left.value is None:
+                    has_none = True
+                if has_none:
+                    for op in node.ops:
+                        if isinstance(op, (ast.Eq, ast.NotEq)):
+                            none_cmp.append(node)
+                            break
+            except Exception:
+                pass
+    return used, imports, bare, none_cmp
 
 
 def analyze_text(text: str, filename: str = "") -> tuple[list[Diagnostic], list[Diagnostic]]:
     errors: list[Diagnostic] = []
     warnings: list[Diagnostic] = []
+    if len(text) > 800000:
+        try:
+            tree = ast.parse(text, filename or "<editor>")
+        except SyntaxError as e:
+            ln = (e.lineno or 1) - 1
+            col = (e.offset or 1) - 1
+            if col < 0:
+                col = 0
+            errors.append(Diagnostic(ln, col, col + 4, str(e.msg) if e.msg else "syntax error", "error", "syntax"))
+        except Exception as e:
+            errors.append(Diagnostic(0, 0, 1, str(e)[:200], "error", "parse"))
+        return errors, warnings
     try:
         tree = ast.parse(text, filename or "<editor>")
     except SyntaxError as e:
@@ -117,28 +104,82 @@ def analyze_text(text: str, filename: str = "") -> tuple[list[Diagnostic], list[
         errors.append(Diagnostic(ln, col, end_col, msg, "error", "syntax"))
         return errors, warnings
     except Exception as e:
-        errors.append(Diagnostic(0, 0, 1, str(e), "error", "parse"))
+        errors.append(Diagnostic(0, 0, 1, str(e)[:200], "error", "parse"))
         return errors, warnings
     try:
-        used = _collect_used_names(tree)
-        warnings.extend(_unused_imports(tree, used))
-        warnings.extend(_bare_except_warnings(tree))
-        warnings.extend(_none_compare_warnings(tree))
+        used, imports, bare, none_cmp = _single_pass(tree)
+        for node in imports:
+            try:
+                if type(node).__name__ == "Import":
+                    for alias in node.names:
+                        full = alias.name
+                        local = alias.asname if alias.asname else full.split(".")[0]
+                        if local not in used:
+                            ln = (node.lineno or 1) - 1
+                            col = node.col_offset or 0
+                            warnings.append(Diagnostic(ln, col, col + len(local) + 7, "imported but unused: " + local, "warning", "unused-import"))
+                            if len(warnings) >= 200:
+                                break
+                else:
+                    if node.names is not None:
+                        for alias in node.names:
+                            if alias.name == "*":
+                                continue
+                            local = alias.asname if alias.asname else alias.name
+                            if local not in used:
+                                ln = (node.lineno or 1) - 1
+                                col = node.col_offset or 0
+                                warnings.append(Diagnostic(ln, col, col + len(local) + 7, "imported but unused: " + local, "warning", "unused-import"))
+                                if len(warnings) >= 200:
+                                    break
+            except Exception:
+                continue
+            if len(warnings) >= 200:
+                break
+        for node in bare:
+            try:
+                ln = (node.lineno or 1) - 1
+                col = node.col_offset or 0
+                warnings.append(Diagnostic(ln, col, col + 6, "bare except BH001", "warning", "bare-except"))
+            except Exception:
+                continue
+        for node in none_cmp:
+            try:
+                ln = (node.lineno or 1) - 1
+                col = node.col_offset or 0
+                warnings.append(Diagnostic(ln, col, col + 8, "comparison to None should use is or is not", "warning", "none-compare"))
+            except Exception:
+                continue
     except Exception:
         pass
     try:
         lines = text.splitlines()
-        for idx, ln in enumerate(lines):
+        n = len(lines)
+        step = 1
+        if n > 4000:
+            step = 2
+        for idx in range(0, n, step):
+            ln = lines[idx]
             if len(ln) > 120:
                 warnings.append(Diagnostic(idx, 120, len(ln), "line too long (" + str(len(ln)) + " > 120)", "warning", "line-too-long"))
-            if ln != ln.rstrip(" \t"):
-                warnings.append(Diagnostic(idx, len(ln.rstrip(" \t")), len(ln), "trailing whitespace", "warning", "trailing-whitespace"))
-            s = ln.strip()
-            if s.startswith("import ") and ".." in s:
-                warnings.append(Diagnostic(idx, 0, len(ln), "relative import looks suspicious", "warning", "import"))
+                if len(warnings) >= 250:
+                    break
+            if ln.endswith(" ") or ln.endswith("\t"):
+                try:
+                    rs = len(ln.rstrip(" \t"))
+                    warnings.append(Diagnostic(idx, rs, len(ln), "trailing whitespace", "warning", "trailing-whitespace"))
+                    if len(warnings) >= 250:
+                        break
+                except Exception:
+                    pass
     except Exception:
         pass
-    warnings.sort(key=lambda d: (d.line, d.col))
+    try:
+        warnings.sort(key=lambda d: (d.line, d.col))
+    except Exception:
+        pass
+    if len(warnings) > 250:
+        warnings = warnings[:250]
     return errors, warnings
 
 

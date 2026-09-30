@@ -50,7 +50,6 @@ class ScriptTab(QWidget):
         self._editor = CodeEditor()
         self._highlighter = PythonHighlighter(self._editor.document())
         self._editor.textChanged.connect(self._on_text_changed)
-        self._editor.refresh_completions()
         self._editor.vcs_set_git(git)
         layout.addWidget(self._editor)
 
@@ -109,31 +108,58 @@ class ScriptTab(QWidget):
                 parent_widget = parent_widget.parent()
             if parent_widget and self._file_path:
                 parent_widget.clear_pending_ops(self._file_path)
-        self._editor.blockSignals(True)
-        self._editor.setPlainText(text)
-        self._editor.blockSignals(False)
-        self._editor._old_text = text
-        self._editor._folded.clear()
+        try:
+            self._editor.set_text_fast(text)
+        except Exception:
+            self._editor.blockSignals(True)
+            self._editor.setPlainText(text)
+            self._editor.blockSignals(False)
+            self._editor._old_text = text
+            self._editor._folded.clear()
         self._dirty = False
         self._editor.document().setModified(False)
-        self._editor._run_analysis()
         self._update_title()
 
     def open_file(self, path: str):
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
-            self._editor.blockSignals(True)
-            self._editor.setPlainText(content)
-            self._editor.blockSignals(False)
-            self._editor._old_text = content
-            self._editor._folded.clear()
+            if len(content) > 2000000:
+                content = content[:2000000]
             self._file_path = path
+            try:
+                self._highlighter.setDocument(None)
+            except Exception:
+                pass
+            try:
+                self._editor.set_text_fast(content)
+            except Exception:
+                self._editor.blockSignals(True)
+                self._editor.setPlainText(content)
+                self._editor.blockSignals(False)
+                self._editor._old_text = content
+                self._editor._folded.clear()
+            try:
+                self._highlighter.setDocument(self._editor.document())
+            except Exception:
+                pass
             self._dirty = False
             self._editor.document().setModified(False)
-            self._editor.vcs_set_file(path)
-            self._editor._run_analysis()
             self._update_title()
+            try:
+                from PyQt6.QtCore import QTimer as _QT
+                _ed = self._editor
+                _p = path
+                _QT.singleShot(80, lambda: _ed.vcs_set_file(_p))
+                _QT.singleShot(250, lambda: _ed._run_analysis())
+            except Exception:
+                self._editor.vcs_set_file(path)
+            try:
+                tc = self._editor.textCursor()
+                tc.setPosition(0)
+                self._editor.setTextCursor(tc)
+            except Exception:
+                pass
         except Exception as e:
             QMessageBox.critical(self, "Open Error", f"Failed to open:{chr(10)}{e}")
 
