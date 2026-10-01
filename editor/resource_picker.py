@@ -1116,6 +1116,26 @@ class ResourcePickerDialog(QDialog):
         self._preview_icon.setPixmap(pixmap)
 
     def _on_thumbnail_loaded(self, batch, _):
+        try:
+            if isinstance(batch, int):
+                idx = batch
+                pm = _
+                try:
+                    bad = pm is None or pm.isNull()
+                except Exception:
+                    return
+                if bad:
+                    return
+                try:
+                    if idx < self._list.count():
+                        item = self._list.item(idx)
+                        if item is not None:
+                            item.setIcon(QIcon(pm))
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
         self._thumb_queue.extend(batch)
         if not self._processing_thumbs:
             self._processing_thumbs = True
