@@ -75,57 +75,10 @@ def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
     pipe = GizmoPipeline()
     pipe_col = GizmoPipeline() if not use_cache else None
     meshes = []
-    try:
-        _n_ent = len(scene._entities)
-    except Exception:
-        _n_ent = 0
-    _collider_degraded = _n_ent > 1500
-    try:
-        _sel_list = list(sel) if sel else []
-    except Exception:
-        _sel_list = []
     for pass_name in _GIZMO_PASS_ORDER:
         if use_cache and pass_name == "collider":
             continue
         tgt = pipe_col if (pipe_col is not None and pass_name == "collider") else pipe
-        if pass_name == "collider" and _collider_degraded:
-            if _sel_list:
-                try:
-                    _capped = _sel_list[:256]
-                except Exception:
-                    _capped = _sel_list
-                for _ent in _capped:
-                    if _ent is None:
-                        continue
-                    try:
-                        if not _ent.active:
-                            continue
-                    except Exception:
-                        pass
-                    for ct in _GIZMO_PASSES.get(pass_name, []):
-                        try:
-                            _lst = _ent.get_components(ct)
-                        except Exception:
-                            _lst = None
-                        if not _lst:
-                            continue
-                        for _comp in _lst:
-                            if _comp is None:
-                                continue
-                            try:
-                                if not _comp.enabled:
-                                    continue
-                            except Exception:
-                                pass
-                            try:
-                                tgt._collect_comp(_comp)
-                            except Exception:
-                                pass
-                        try:
-                            meshes.extend(ct.gizmo_collect_meshes(scene))
-                        except Exception:
-                            pass
-            continue
         for ct in _GIZMO_PASSES.get(pass_name, []):
             ct.gizmo_collect(tgt, scene)
             try:
