@@ -151,13 +151,31 @@ class PhysicsProcess:
             self._soft_shared.unlink()
             return
         try:
-            self._cmd_queue.put({"type": "shutdown"})
-            self._process.join(timeout / 1000)
+            try:
+                self._cmd_queue.put_nowait({"type": "shutdown"})
+            except Exception:
+                try:
+                    self._cmd_queue.put({"type": "shutdown"}, timeout=0.2)
+                except Exception:
+                    pass
+            budget = max(0.0, timeout / 1000)
+            waited = 0.0
+            while waited < budget:
+                if not self._process.is_alive():
+                    break
+                time.sleep(0.02)
+                waited += 0.02
         except Exception:
             pass
         if self._process and self._process.is_alive():
-            self._process.terminate()
-            self._process.join(2)
+            try:
+                self._process.terminate()
+            except Exception:
+                pass
+            try:
+                self._process.join(1)
+            except Exception:
+                pass
         self._process = None
         self._shared.close()
         self._shared.unlink()

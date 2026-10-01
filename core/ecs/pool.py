@@ -102,3 +102,36 @@ def mesh_import() -> ProcessPoolExecutor:
             max_workers=min(4, (os.cpu_count() or 2))
         )
     return _mesh_import_pool
+
+
+def shutdown_all() -> None:
+    global _general_pool, _plugin_pool, _audio_pool, _asset_pool, _bvh_parallel_pool
+    global _bvh_pool, _mesh_import_pool
+    for name in ("_general_pool", "_plugin_pool", "_audio_pool", "_asset_pool", "_bvh_parallel_pool"):
+        p = globals().get(name)
+        if p is None:
+            continue
+        globals()[name] = None
+        try:
+            p.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            try:
+                p.shutdown(wait=False)
+            except Exception:
+                pass
+        except Exception:
+            pass
+    for name in ("_bvh_pool", "_mesh_import_pool"):
+        p = globals().get(name)
+        if p is None:
+            continue
+        globals()[name] = None
+        try:
+            p.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            try:
+                p.shutdown(wait=False)
+            except Exception:
+                pass
+        except Exception:
+            pass

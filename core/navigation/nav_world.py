@@ -189,6 +189,17 @@ def _get_nav_worker():
     return w
 
 
+def stop_nav_worker():
+    global _NAV_WORKER
+    w = _NAV_WORKER
+    _NAV_WORKER = None
+    if w is not None:
+        try:
+            w.stop()
+        except Exception:
+            pass
+
+
 class _NavSolveWorker(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True, name="zarin-navmesh")
@@ -196,6 +207,15 @@ class _NavSolveWorker(threading.Thread):
         self._results: dict = {}
         self._cond = threading.Condition()
         self._solvers: dict = {}
+        self._stop = threading.Event()
+
+    def stop(self):
+        self._stop.set()
+        try:
+            with self._cond:
+                self._cond.notify_all()
+        except Exception:
+            pass
 
     def submit(self, spec: dict):
         with self._cond:
@@ -327,11 +347,13 @@ class _NavSolveWorker(threading.Thread):
         return s
 
     def run(self):
-        while True:
+        while not self._stop.is_set():
             try:
                 with self._cond:
-                    while not self._jobs:
+                    while not self._jobs and not self._stop.is_set():
                         self._cond.wait(0.5)
+                    if self._stop.is_set():
+                        break
                     spec = self._jobs.popleft()
                 try:
                     out = self._solve(spec)

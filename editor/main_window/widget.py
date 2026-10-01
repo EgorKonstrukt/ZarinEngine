@@ -394,5 +394,12 @@ class EditorMainWindow(QMainWindow):
             if reply == QMessageBox.StandardButton.Yes:
                 self._engine.save_scene()
         save_state(self)
+        try:
+            vp = getattr(self, "_viewport", None)
+            bw = getattr(vp, "_block_watch", None)
+            if bw is not None:
+                bw.stop()
+        except Exception:
+            pass
         self._engine.shutdown()
         event.accept()

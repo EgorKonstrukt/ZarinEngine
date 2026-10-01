@@ -1545,7 +1545,7 @@ class PhysicsPlugin(PluginBase):
     def shutdown(self):
         if self._simulation_mode == "per_layer_process":
             for proc in self._layer_processes.values():
-                proc.shutdown(5000)
+                proc.shutdown(500)
             self._layer_processes.clear()
         elif self._simulation_mode == "single":
             if self._physics_scene:
@@ -1556,5 +1556,5 @@ class PhysicsPlugin(PluginBase):
                 self._solver = None
         else:
             if self._physics_process:
-                self._physics_process.shutdown(5000)
+                self._physics_process.shutdown(500)
                 self._physics_process = None

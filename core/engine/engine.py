@@ -668,10 +668,52 @@ class Engine:
 
     def shutdown(self):
         try:
+            if self._game_worker:
+                try:
+                    self._game_worker.stop()
+                except Exception:
+                    pass
+                self._game_worker = None
+        except Exception:
+            pass
+        try:
+            cm = self._collab_manager
+            if cm is not None:
+                active = True
+                try:
+                    active = bool(getattr(cm, "_server", None) is not None or getattr(cm, "_mode", "none") != "none")
+                except Exception:
+                    active = True
+                if active:
+                    try:
+                        if hasattr(cm, "shutdown"):
+                            cm.shutdown()
+                        elif hasattr(cm, "stop"):
+                            cm.stop()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            from core.terrain.terrain_worker import stop_all as _terrain_stop_all
+            _terrain_stop_all()
+        except Exception:
+            pass
+        try:
+            from core.navigation.nav_world import stop_nav_worker as _nav_stop
+            _nav_stop()
+        except Exception:
+            pass
+        try:
             from core.audio.audio_system import AudioSystem
             audio_sys = AudioSystem.instance()
             if audio_sys: audio_sys.shutdown()
         except Exception:
             pass
         self._plugin_manager.shutdown_all()
+        try:
+            from core.ecs.pool import shutdown_all as _pools_shutdown
+            _pools_shutdown()
+        except Exception:
+            pass
         Logger.info("Zarin Engine shutdown.")

@@ -292,6 +292,11 @@ def main():
     window.activateWindow()
     QTimer.singleShot(200, window.raise_)
     QTimer.singleShot(500, window.activateWindow)
-    sys.exit(app.exec())
+    code = app.exec()
+    try:
+        code = int(code)
+    except Exception:
+        code = 0
+    os._exit(code)
 if __name__ == "__main__":
     main()

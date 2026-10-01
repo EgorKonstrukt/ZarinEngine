@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import base64
+import pickle
 import shutil
 
 from PyQt6.QtCore import QByteArray, QRect, QSettings
@@ -44,10 +45,10 @@ def save_state(mw, include_tabs=True):
             "scriptPaths": script_paths,
         }
         if include_tabs:
-            _clear_session_dir()
             entries, active = _collect_tab_entries(mw)
             data["tabs"] = entries
             data["active"] = active
+            _prune_session_dir(entries)
         else:
             for key in ("tabs", "active", "scriptPaths"):
                 if key in previous:
@@ -94,10 +95,53 @@ def _clear_session_dir():
             Logger.error(f"Failed to clear session dir: {e}")
 
 
-def _file_entity_count(path: str) -> int:
+def _prune_session_dir(entries: list):
+    try:
+        keep = set()
+        for entry in entries:
+            if isinstance(entry, dict):
+                snap = entry.get("snapshot", "") or ""
+                if snap:
+                    keep.add(os.path.basename(snap))
+        session_dir = _session_dir()
+        if not os.path.isdir(session_dir):
+            return
+        for fn in os.listdir(session_dir):
+            if (fn.startswith("scene_") and (fn.endswith(".json") or fn.endswith(".pkl"))) and fn not in keep:
+                try:
+                    os.remove(os.path.join(session_dir, fn))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _read_snapshot_file(path: str):
+    try:
+        if path.endswith(".pkl"):
+            with open(path, "rb") as f:
+                data = pickle.load(f)
+            return data if isinstance(data, dict) else None
+    except Exception:
+        pass
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        pass
+    try:
+        alt = os.path.splitext(path)[0] + (".json" if path.endswith(".pkl") else ".pkl")
+        if os.path.isfile(alt):
+            return _read_snapshot_file(alt)
+    except Exception:
+        pass
+    return None
+
+
+def _file_entity_count(path: str) -> int:
+    try:
+        data = _read_snapshot_file(path)
         if not isinstance(data, dict):
             return -1
         entities = data.get("entities", {})
@@ -114,22 +158,53 @@ def _snapshot_usable(snapshot_path: str, scene_path: str) -> bool:
     return True
 
 
-def _write_scene_snapshot(scene, index: int, scene_path: str) -> str:
+def _snapshotted_version(scene):
+    try:
+        return getattr(scene, "_snapshot_rev", None)
+    except Exception:
+        return None
+
+
+def _mark_snapshotted(scene, filename: str):
+    try:
+        scene._snapshot_rev = scene._render_version
+        scene._snapshot_file = os.path.basename(filename)
+    except Exception:
+        pass
+
+
+def _reusable_snapshot(scene) -> str:
+    try:
+        sf = getattr(scene, "_snapshot_file", "") or ""
+        rev = getattr(scene, "_snapshot_rev", None)
+        if not sf or rev is None:
+            return ""
+        if rev != scene._render_version:
+            return ""
+        cand = os.path.join(_session_dir(), os.path.basename(sf))
+        if os.path.isfile(cand):
+            return os.path.basename(sf)
+    except Exception:
+        pass
+    return ""
+
+
+def _write_scene_snapshot(scene, filename: str, scene_path: str) -> str:
     try:
         session_dir = _session_dir()
         os.makedirs(session_dir, exist_ok=True)
-        filename = f"scene_{index}.json"
-        full_path = os.path.join(session_dir, filename)
-        with open(full_path, "w", encoding="utf-8") as f:
-            json.dump(scene.serialize(), f)
-        if not _snapshot_usable(full_path, scene_path):
-            try:
-                os.remove(full_path)
-            except Exception:
-                pass
-            Logger.warning(f"Skipping empty snapshot, keeping file version: {scene_path}")
-            return ""
-        return filename
+        full_path = os.path.join(session_dir, os.path.basename(filename))
+        data = scene.serialize()
+        entities = data.get("entities", {})
+        count = len(entities) if isinstance(entities, dict) else -1
+        if count == 0:
+            if scene_path and os.path.isfile(scene_path) and _file_entity_count(scene_path) > 0:
+                Logger.warning(f"Skipping empty snapshot, keeping file version: {scene_path}")
+                return ""
+        with open(full_path, "wb") as f:
+            pickle.dump(data, f, protocol=5)
+        _mark_snapshotted(scene, filename)
+        return os.path.basename(filename)
     except Exception as e:
         Logger.error(f"Failed to write scene snapshot: {e}")
         return ""
@@ -144,6 +219,7 @@ def _collect_tab_entries(mw):
         return entries, active
     current = bar.currentIndex()
     snapshot_index = 0
+    used_names: set[str] = set()
     for i in range(bar.count()):
         entry = None
         if mgr.is_script_tab(i):
@@ -155,12 +231,23 @@ def _collect_tab_entries(mw):
                 if info is not None and not info.prefab_path:
                     entry = {"type": "scene", "name": info.name, "path": info.path or ""}
                     scene = info.scene
-                    if scene is not None and ((not info.path) or info.dirty or scene.dirty):
-                        filename = _write_scene_snapshot(scene, snapshot_index, info.path or "")
-                        if filename:
-                            entry["snapshot"] = filename
+                    if scene is not None and ((not info.path) or not os.path.isfile(info.path or "") or scene.dirty):
+                        hit = _reusable_snapshot(scene)
+                        if hit:
+                            entry["snapshot"] = hit
                             entry["dirty"] = True
-                            snapshot_index += 1
+                            used_names.add(hit)
+                        else:
+                            while True:
+                                cand = f"scene_{snapshot_index}.pkl"
+                                snapshot_index += 1
+                                if cand not in used_names:
+                                    break
+                            filename = _write_scene_snapshot(scene, cand, info.path or "")
+                            if filename:
+                                entry["snapshot"] = filename
+                                entry["dirty"] = True
+                                used_names.add(filename)
         if entry is not None:
             entries.append(entry)
             if i == current:
@@ -213,8 +300,9 @@ def _load_scene_file(eng, path: str):
 def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str, entry_name: str):
     from core.ecs.ecs import Scene, ComponentRegistry
     from core.ecs.embedded_resources import extract_embedded_resources
-    with open(snapshot_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = _read_snapshot_file(snapshot_path)
+    if data is None:
+        raise ValueError(f"Unreadable snapshot: {snapshot_path}")
     data["_source"] = scene_path or snapshot_path
     embedded = extract_embedded_resources(data, eng.project_root, eng._embedded_cache_mode())
     eng.resolve_scene_paths(data)
@@ -226,6 +314,7 @@ def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str, entry_name: s
     elif entry_name:
         scene.name = entry_name
     scene.mark_dirty()
+    _mark_snapshotted(scene, snapshot_path)
     return scene
 
 

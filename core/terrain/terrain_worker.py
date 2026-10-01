@@ -51,14 +51,17 @@ class TerrainGenWorker:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def stop(self):
+    def stop(self, timeout: float = 2.0):
         self._stop.set()
         try:
             self._req.put_nowait(None)
         except Exception:
             pass
         if self._thread is not None:
-            self._thread.join(timeout=2.0)
+            try:
+                self._thread.join(timeout=timeout)
+            except Exception:
+                pass
         self._thread = None
 
     def request(self, settings: dict, resolution: int) -> int:
@@ -226,3 +229,22 @@ def consume_parallel():
         if r is not None:
             return r
     return None
+
+
+def stop_all() -> None:
+    global _worker, _workers
+    w = _worker
+    _worker = None
+    if w is not None:
+        try:
+            w.stop(0.5)
+        except Exception:
+            pass
+    ws = _workers
+    _workers = None
+    if ws:
+        for ww in ws:
+            try:
+                ww.stop(0.5)
+            except Exception:
+                pass

@@ -1123,6 +1123,7 @@ class Scene:
     def name(self, v: str):
         self._name = v
         self._dirty = True
+        self._render_version += 1
 
     @property
     def path(self) -> Optional[str]: return self._path
@@ -1133,7 +1134,7 @@ class Scene:
     @property
     def dirty(self) -> bool: return self._dirty
 
-    def mark_dirty(self): self._dirty = True
+    def mark_dirty(self): self._dirty = True; self._render_version += 1
     def mark_clean(self): self._dirty = False
 
     def _get_entity_depth(self, e: Entity) -> int:
