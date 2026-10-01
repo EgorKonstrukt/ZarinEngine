@@ -26,6 +26,7 @@ from . import diagnostics as diags
 from . import folding as fld
 from . import vision as vis
 from . import blame as blame_mod
+from .smooth import SmoothScrollState
 
 try:
     from core.config.syntax_config import KEYWORDS, BUILTINS, CONSTANTS, EXCEPTIONS
@@ -92,6 +93,25 @@ class CodeEditor(QPlainTextEdit):
         self._completion_cache: list[str] = []
         self._completion_dirty = True
         self._line_width_cache: dict = {}
+        self._err_line_set: set = set()
+        self._warn_line_set: set = set()
+        self._diag_map: dict[int, list] = {}
+        self._foldable_set: set = set()
+        self._class_lines: set = set()
+        self._def_lines: set = set()
+        self._cached_lh = 0
+        self._cached_space_w = 0.0
+        self._cached_tab_w = 0.0
+        self._pen_guide = QPen(QColor(*Theme.indent_guide))
+        self._pen_guide_active = QPen(QColor(*Theme.indent_guide_active))
+        self._pen_lens = QPen(QColor(*Theme.lens))
+        self._pen_lens_green = QPen(QColor(*Theme.lens_green))
+        self._pen_lens_blue = QPen(QColor(*Theme.lens_blue))
+        self._minimap_throttle = QTimer(self)
+        self._minimap_throttle.setSingleShot(True)
+        self._minimap_throttle.setInterval(50)
+        self._minimap_throttle.timeout.connect(self._flush_minimap)
+        self._minimap_pending = False
         self.analysis_ready.connect(self._apply_analysis)
         self.document().contentsChange.connect(self._on_contents_change)
         QTimer.singleShot(0, self._init_old_text)
@@ -118,11 +138,24 @@ class CodeEditor(QPlainTextEdit):
         self._completion_timer = QTimer(self)
         self._completion_timer.setSingleShot(True)
         self._completion_timer.timeout.connect(self._rebuild_completions)
+        try:
+            self._smooth = SmoothScrollState(self, self)
+        except Exception:
+            self._smooth = None
+        try:
+            self.setCenterOnScroll(False)
+        except Exception:
+            pass
+        try:
+            vsb = self.verticalScrollBar()
+            vsb.setSingleStep(1)
+        except Exception:
+            pass
         self._update_line_number()
         self._update_minimap()
         self._update_current_line_only()
         try:
-            self.verticalScrollBar().valueChanged.connect(lambda v: self._minimap.update())
+            self.verticalScrollBar().valueChanged.connect(lambda v: self._queue_minimap())
         except Exception:
             pass
         QTimer.singleShot(600, self._run_analysis)
@@ -148,23 +181,31 @@ class CodeEditor(QPlainTextEdit):
         first = self.firstVisibleBlock()
         if not first.isValid():
             return [], 0
+        try:
+            lh = self._cached_line_height()
+        except Exception:
+            lh = 18
+        try:
+            y0 = int(self.blockBoundingGeometry(first).translated(self.contentOffset()).top())
+        except Exception:
+            y0 = 0
         visible = []
         block = first
+        vidx = 0
         while block.isValid():
-            geom = self.blockBoundingGeometry(block).translated(self.contentOffset())
-            top = int(geom.top())
-            if top > viewport_h:
-                break
             if not block.isVisible():
                 block = block.next()
                 continue
-            bottom = top + int(self.blockBoundingRect(block).height())
-            visible.append([block, top, bottom])
+            top = y0 + vidx * lh
+            vidx += 1
+            if top > viewport_h:
+                break
+            visible.append([block, top, top + lh])
             block = block.next()
         if not visible:
             return [], 0
         cursor_level = self._indent_levels(self.textCursor().block())
-        limit = 200
+        limit = 10
         prev_level = None
         p = first.previous()
         steps = 0
@@ -209,18 +250,37 @@ class CodeEditor(QPlainTextEdit):
     def paintEvent(self, event):
         super().paintEvent(event)
         try:
-            if self._show_indent_guides:
-                self._draw_indent_guides(event)
-            if self._vcs_diff_data:
-                self._draw_diff_markers(event)
-            if self._remote_cursors:
-                self._draw_remote_cursors(event)
-            if self._vision_usages or self._vision_complexity:
-                self._draw_code_vision(event)
-            if self._folded:
-                self._draw_fold_placeholders(event)
-            if self._show_blame and self._vcs_blame_data:
-                self._draw_current_blame(event)
+            try:
+                fast = bool(self._smooth and self._smooth.is_scrolling())
+            except Exception:
+                fast = False
+            painter = QPainter(self.viewport())
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            try:
+                if self._show_indent_guides:
+                    self._draw_indent_guides(event, painter)
+                if self._vcs_diff_data:
+                    self._draw_diff_markers(event, painter)
+                if self._folded:
+                    self._draw_fold_placeholders(event, painter)
+                if fast:
+                    painter.end()
+                    return
+                if self._remote_cursors:
+                    painter.end()
+                    self._draw_remote_cursors(event, None)
+                    painter = QPainter(self.viewport())
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                if self._vision_usages or self._vision_complexity:
+                    self._draw_code_vision(event, painter)
+                if self._show_blame and self._vcs_blame_data:
+                    self._draw_current_blame(event, painter)
+            except Exception:
+                pass
+            try:
+                painter.end()
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -238,71 +298,112 @@ class CodeEditor(QPlainTextEdit):
         except Exception:
             pass
 
-    def _draw_indent_guides(self, event):
-        tab_w = self.tabStopDistance()
-        if tab_w <= 0:
-            return
-        fm = QFontMetrics(self.font())
-        space_w = fm.horizontalAdvance(" ")
-        if space_w <= 0:
-            return
-        records, cursor_level = self._indent_guide_records()
-        if not records:
-            return
-        offset_x = self.contentOffset().x()
-        width = self.viewport().width()
-        rect_top = event.rect().top()
-        rect_bottom = event.rect().bottom()
-        guide_offset = 2 * space_w
-        painter = QPainter(self.viewport())
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        guide_color = QColor(*Theme.indent_guide)
-        active_color = QColor(*Theme.indent_guide_active)
-        for block, top, bottom, level in records:
-            if level <= 0:
-                continue
-            seg_top = max(top, rect_top)
-            seg_bottom = min(bottom, rect_bottom)
-            if seg_top > seg_bottom:
-                continue
-            for L in range(1, level + 1):
-                x = int(offset_x + L * tab_w - guide_offset)
-                if x < 0 or x > width:
+    def _draw_indent_guides(self, event, painter=None):
+        try:
+            tab_w = self.tabStopDistance()
+            if tab_w <= 0:
+                return
+            if self._cached_space_w <= 0 or self._cached_tab_w != tab_w:
+                try:
+                    self._cached_space_w = float(QFontMetrics(self.font()).horizontalAdvance(" "))
+                except Exception:
+                    self._cached_space_w = 7.0
+                self._cached_tab_w = float(tab_w)
+            space_w = self._cached_space_w
+            if space_w <= 0:
+                return
+            records, cursor_level = self._indent_guide_records()
+            if not records:
+                return
+            offset_x = self.contentOffset().x()
+            width = self.viewport().width()
+            rect_top = event.rect().top()
+            rect_bottom = event.rect().bottom()
+            guide_offset = 2.0 * space_w
+            own = False
+            if painter is None:
+                painter = QPainter(self.viewport())
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                own = True
+            pen_g = self._pen_guide
+            pen_a = self._pen_guide_active
+            for block, top, bottom, level in records:
+                if level <= 0:
                     continue
-                painter.setPen(active_color if L <= cursor_level else guide_color)
-                painter.drawLine(x, seg_top, x, seg_bottom)
-        painter.end()
+                if top > rect_bottom or bottom < rect_top:
+                    continue
+                seg_top = top if top >= rect_top else rect_top
+                seg_bottom = bottom if bottom <= rect_bottom else rect_bottom
+                for L in range(1, level + 1):
+                    x = int(offset_x + float(L) * float(tab_w) - guide_offset)
+                    if x < 0 or x > width:
+                        continue
+                    painter.setPen(pen_a if L <= cursor_level else pen_g)
+                    painter.drawLine(x, seg_top, x, seg_bottom)
+            if own:
+                painter.end()
+        except Exception:
+            pass
 
-    def _draw_diff_markers(self, event):
-        viewport_h = self.viewport().height()
-        first = self.firstVisibleBlock()
-        if not first.isValid():
-            return
-        painter = QPainter(self.viewport())
-        offset_x = self.contentOffset().x()
-        marker_w = scale(3)
-        block = first
-        while block.isValid():
-            if not block.isVisible():
-                block = block.next()
-                continue
-            line = block.blockNumber()
-            status = self._vcs_diff_data.get(line, "")
-            if status:
-                geom = self.blockBoundingGeometry(block).translated(self.contentOffset())
-                top = int(geom.top())
-                bottom = top + int(self.blockBoundingRect(block).height())
+    def _draw_diff_markers(self, event, painter=None):
+        try:
+            if not self._vcs_diff_data:
+                return
+            viewport_h = self.viewport().height()
+            first = self.firstVisibleBlock()
+            if not first.isValid():
+                return
+            own = False
+            if painter is None:
+                painter = QPainter(self.viewport())
+                own = True
+            try:
+                lh = self._cached_line_height()
+            except Exception:
+                lh = 18
+            offset_x = int(self.contentOffset().x())
+            marker_w = scale(3)
+            c_add = QColor(*Theme.added)
+            c_mod = QColor(*Theme.modified)
+            c_del = QColor(*Theme.deleted)
+            rt = event.rect().top()
+            coff = self.contentOffset()
+            try:
+                y0 = int(self.blockBoundingGeometry(first).translated(coff).top())
+            except Exception:
+                y0 = 0
+            try:
+                lh = self._cached_line_height()
+            except Exception:
+                lh = 18
+            vis_idx = 0
+            block = first
+            while block.isValid():
+                if not block.isVisible():
+                    block = block.next()
+                    continue
+                top = y0 + vis_idx * lh
+                vis_idx += 1
                 if top > viewport_h:
                     break
-                if bottom >= event.rect().top():
+                line = block.blockNumber()
+                status = self._vcs_diff_data.get(line, "")
+                if not status:
+                    block = block.next()
+                    continue
+                bottom = top + lh
+                if bottom >= rt:
                     if status == "added":
-                        painter.fillRect(int(offset_x), top, marker_w, bottom - top, QColor(*Theme.added))
+                        painter.fillRect(offset_x, top, marker_w, bottom - top, c_add)
                     elif status == "modified":
-                        painter.fillRect(int(offset_x), top, marker_w, bottom - top, QColor(*Theme.modified))
+                        painter.fillRect(offset_x, top, marker_w, bottom - top, c_mod)
                     elif status == "deleted":
-                        painter.fillRect(int(offset_x), top + (bottom - top) // 2 - 1, marker_w, 2, QColor(*Theme.deleted))
-            block = block.next()
-        painter.end()
+                        painter.fillRect(offset_x, top + (bottom - top) // 2 - 1, marker_w, 2, c_del)
+                block = block.next()
+            if own:
+                painter.end()
+        except Exception:
+            pass
 
     def set_remote_cursors(self, cursors: dict[str, dict]):
         self._remote_cursors = dict(cursors)
@@ -312,11 +413,19 @@ class CodeEditor(QPlainTextEdit):
     def _update_remote_extra_selections(self):
         self._update_current_line_highlight()
 
-    def _draw_remote_cursors(self, event):
+    def _draw_remote_cursors(self, event, painter=None):
         if not self._remote_cursors:
             return
-        painter = QPainter(self.viewport())
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        own = False
+        if painter is None:
+            painter = QPainter(self.viewport())
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            own = True
+        else:
+            try:
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            except Exception:
+                pass
         fm = painter.fontMetrics()
         for info in self._remote_cursors.values():
             try:
@@ -340,7 +449,12 @@ class CodeEditor(QPlainTextEdit):
                 painter.drawText(x + 3, y_top - lh - 2 + fm.ascent() + 1, name)
             except Exception:
                 continue
-        painter.end()
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        except Exception:
+            pass
+        if own:
+            painter.end()
 
     def _schedule_analysis(self):
         try:
@@ -378,6 +492,29 @@ class CodeEditor(QPlainTextEdit):
             self._diagnostic_errors = []
             self._diagnostic_warnings = []
             self._diag_selections = []
+            self._err_line_set = set()
+            self._warn_line_set = set()
+            self._diag_map = {}
+            self._foldable_set = set()
+            self._class_lines = set()
+            self._def_lines = set()
+            try:
+                for idx, ln in enumerate(text.splitlines()):
+                    if len(ln) < 4:
+                        continue
+                    s = ln.strip()
+                    if s.startswith("class "):
+                        self._foldable_set.add(idx)
+                        self._class_lines.add(idx)
+                    elif s.startswith("def "):
+                        self._foldable_set.add(idx)
+                        self._def_lines.add(idx)
+                    elif s.startswith("import ") or s.startswith("from ") or s.startswith("try:"):
+                        self._foldable_set.add(idx)
+                    if len(self._foldable_set) > 4000:
+                        break
+            except Exception:
+                pass
             self._vision_usages = {}
             self._vision_complexity = {}
             self._completion_dirty = True
@@ -451,6 +588,29 @@ class CodeEditor(QPlainTextEdit):
             try:
                 lines = self.toPlainText().splitlines()
                 self._ensure_import_fold(lines)
+                try:
+                    fold: set = set()
+                    cls: set = set()
+                    dfn: set = set()
+                    for idx, ln in enumerate(lines):
+                        if len(ln) < 4:
+                            continue
+                        s = ln.strip()
+                        if s.startswith("class "):
+                            fold.add(idx)
+                            cls.add(idx)
+                        elif s.startswith("def "):
+                            fold.add(idx)
+                            dfn.add(idx)
+                        elif s.startswith("import ") or s.startswith("from ") or s.startswith("try:"):
+                            fold.add(idx)
+                        if len(fold) > 4000:
+                            break
+                    self._foldable_set = fold
+                    self._class_lines = cls
+                    self._def_lines = dfn
+                except Exception:
+                    pass
             except Exception:
                 pass
             self._rebuild_diag_selections()
@@ -508,6 +668,23 @@ class CodeEditor(QPlainTextEdit):
                 except Exception:
                     continue
             self._diag_selections = out
+            try:
+                self._err_line_set = {d.line for d in self._diagnostic_errors}
+            except Exception:
+                self._err_line_set = set()
+            try:
+                self._warn_line_set = {d.line for d in self._diagnostic_warnings}
+            except Exception:
+                self._warn_line_set = set()
+            try:
+                m: dict[int, list] = {}
+                for d in self._diagnostic_errors:
+                    m.setdefault(d.line, []).append(d)
+                for d in self._diagnostic_warnings:
+                    m.setdefault(d.line, []).append(d)
+                self._diag_map = m
+            except Exception:
+                self._diag_map = {}
         except Exception:
             pass
 
@@ -563,10 +740,13 @@ class CodeEditor(QPlainTextEdit):
             s, e = r
             self._fold_range(s, e, fld.placeholder_for(text_lines[s] if 0 <= s < len(text_lines) else ""))
 
-    def _draw_fold_placeholders(self, event):
+    def _draw_fold_placeholders(self, event, painter=None):
         if not self._folded:
             return
-        painter = QPainter(self.viewport())
+        own = False
+        if painter is None:
+            painter = QPainter(self.viewport())
+            own = True
         fm = QFontMetrics(self.font())
         for s, (e, ph) in self._folded.items():
             blk = self.document().findBlockByNumber(s)
@@ -594,61 +774,89 @@ class CodeEditor(QPlainTextEdit):
                 x = x_base + fm.horizontalAdvance(txt.strip()[:12])
                 painter.setPen(QColor(140, 140, 140))
                 painter.drawText(x, top + fm.ascent(), "...")
-        painter.end()
+        if own:
+            painter.end()
 
-    def _draw_code_vision(self, event):
+    def _draw_code_vision(self, event, painter=None):
         if not self._vision_usages and not self._vision_complexity:
             return
-        painter = QPainter(self.viewport())
+        own = False
+        if painter is None:
+            painter = QPainter(self.viewport())
+            own = True
         small_font = QFont(self.font().family(), 9)
         painter.setFont(small_font)
         fm_small = QFontMetrics(small_font)
         fm_main = QFontMetrics(self.font())
         block = self.firstVisibleBlock()
-        while block.isValid():
-            if not block.isVisible():
+        try:
+            vh = self.viewport().height()
+            coff = self.contentOffset()
+            try:
+                lh = self._cached_line_height()
+            except Exception:
+                lh = fm_main.height()
+            try:
+                y0 = int(self.blockBoundingGeometry(block).translated(coff).top())
+            except Exception:
+                y0 = 0
+            asc_main = fm_main.ascent()
+            asc_small = fm_small.ascent()
+            space_w = fm_main.horizontalAdvance(" ")
+            vidx = 0
+            mark = chr(11377)
+            mark_w = fm_small.horizontalAdvance(mark + " ")
+            while block.isValid():
+                if not block.isVisible():
+                    block = block.next()
+                    continue
+                top = y0 + vidx * lh
+                vidx += 1
+                if top > vh:
+                    break
+                if top + lh < 0:
+                    block = block.next()
+                    continue
+                ln = block.blockNumber()
+                has_u = ln in self._vision_usages
+                has_c = ln in self._vision_complexity
+                if not has_u and not has_c:
+                    block = block.next()
+                    continue
+                txt = block.text()
+                stripped = txt.strip()
+                if has_u:
+                    usages = self._vision_usages[ln]
+                    if len(txt) > 300:
+                        base_w = space_w * 60.0
+                    else:
+                        base_w = fm_main.horizontalAdvance(txt)
+                    x_u = int(coff.x() + base_w + scale(14))
+                    painter.setPen(self._pen_lens)
+                    painter.drawText(x_u, top + asc_main, usages)
+                    blame = self._vcs_blame_data.get(ln)
+                    if blame and blame.get("author"):
+                        x_a = x_u + fm_small.horizontalAdvance(usages) + scale(14)
+                        painter.setPen(self._pen_lens)
+                        painter.drawText(x_a, top + asc_main, mark + " " + str(blame.get("author", ""))[:40])
+                    if stripped.startswith("class "):
+                        painter.setPen(self._pen_lens_blue)
+                        painter.drawText(scale(2), top + asc_main, chr(9424))
+                if has_c:
+                    comp = self._vision_complexity[ln]
+                    indent = len(txt) - len(txt.lstrip())
+                    x_ind = int(coff.x() + space_w * indent)
+                    painter.setPen(self._pen_lens_green)
+                    painter.drawText(x_ind, top + asc_small, mark)
+                    painter.setPen(self._pen_lens)
+                    painter.drawText(x_ind + mark_w, top + asc_small, comp)
                 block = block.next()
-                continue
-            ln = block.blockNumber()
-            geom = self.blockBoundingGeometry(block).translated(self.contentOffset())
-            top = int(geom.top())
-            if top > self.viewport().height():
-                break
-            if top + fm_main.height() < 0:
-                block = block.next()
-                continue
-            txt = block.text()
-            indent = len(txt) - len(txt.lstrip())
-            x_ind = int(self.contentOffset().x() + fm_main.horizontalAdvance(" ") * indent)
-            if ln in self._vision_usages:
-                usages = self._vision_usages[ln]
-                base_w = fm_main.horizontalAdvance(txt)
-                x_u = int(self.contentOffset().x() + base_w + scale(14))
-                painter.setPen(QColor(*Theme.lens))
-                painter.drawText(x_u, top + fm_main.ascent(), usages)
-                blame = self._vcs_blame_data.get(ln)
-                if blame and blame.get("author"):
-                    x_a = x_u + fm_small.horizontalAdvance(usages) + scale(14)
-                    painter.setPen(QColor(*Theme.lens))
-                    painter.drawText(x_a, top + fm_main.ascent(), chr(11377) + " " + str(blame.get("author", ""))[:40])
-                if txt.strip().startswith("class "):
-                    painter.setPen(QColor(*Theme.lens_blue))
-                    painter.drawText(scale(2), top + fm_main.ascent(), chr(9424))
-            if ln in self._vision_complexity:
-                comp = self._vision_complexity[ln]
-                prev = block.previous()
-                draw_y = top
-                if prev.isValid() and prev.text().strip() == "":
-                    pg = self.blockBoundingGeometry(prev).translated(self.contentOffset())
-                    draw_y = int(pg.top())
-                painter.setPen(QColor(*Theme.lens_green))
-                painter.drawText(x_ind, draw_y + fm_small.ascent(), chr(11377))
-                painter.setPen(QColor(*Theme.lens))
-                painter.drawText(x_ind + fm_small.horizontalAdvance(chr(11377) + " "), draw_y + fm_small.ascent(), comp)
-            block = block.next()
-        painter.end()
+        except Exception:
+            pass
+        if own:
+            painter.end()
 
-    def _draw_current_blame(self, event):
+    def _draw_current_blame(self, event, painter=None):
         if not self._show_blame:
             return
         if not self._vcs_blame_data:
@@ -666,13 +874,19 @@ class CodeEditor(QPlainTextEdit):
         top = int(geom.top())
         if top < 0 or top > self.viewport().height():
             return
-        painter = QPainter(self.viewport())
+        own = False
+        if painter is None:
+            painter = QPainter(self.viewport())
+            own = True
         f = QFont(self.font().family(), 9)
         f.setItalic(True)
         painter.setFont(f)
         fm = QFontMetrics(f)
         txt = cur.text()
-        base_w = QFontMetrics(self.font()).horizontalAdvance(txt)
+        if len(txt) > 300:
+            base_w = QFontMetrics(self.font()).horizontalAdvance(" ") * 60.0
+        else:
+            base_w = QFontMetrics(self.font()).horizontalAdvance(txt)
         x = int(self.contentOffset().x() + base_w + scale(18))
         vw = self.viewport().width()
         tw = fm.horizontalAdvance(label)
@@ -682,7 +896,8 @@ class CodeEditor(QPlainTextEdit):
             x = scale(80)
         painter.setPen(QColor(130, 150, 180))
         painter.drawText(x, top + QFontMetrics(self.font()).ascent(), label)
-        painter.end()
+        if own:
+            painter.end()
 
     def _word_under_cursor_text(self) -> tuple[str, QTextCursor]:
         try:
@@ -716,6 +931,24 @@ class CodeEditor(QPlainTextEdit):
     def _apply_font(self):
         f = editor_font(self._font_size)
         self.setFont(f)
+        try:
+            self._cached_lh = int(QFontMetrics(f).height())
+        except Exception:
+            self._cached_lh = 0
+        try:
+            self._cached_space_w = 0.0
+            self._cached_tab_w = 0.0
+            self._line_width_cache = {}
+        except Exception:
+            pass
+        try:
+            self._pen_guide = QPen(QColor(*Theme.indent_guide))
+            self._pen_guide_active = QPen(QColor(*Theme.indent_guide_active))
+            self._pen_lens = QPen(QColor(*Theme.lens))
+            self._pen_lens_green = QPen(QColor(*Theme.lens_green))
+            self._pen_lens_blue = QPen(QColor(*Theme.lens_blue))
+        except Exception:
+            pass
         self.setTabStopDistance(QFontMetrics(f).horizontalAdvance(" ") * 4)
         self.setStyleSheet(editor_stylesheet())
         self.setLineWrapMode(
@@ -822,6 +1055,59 @@ class CodeEditor(QPlainTextEdit):
     def blame_gutter_width(self) -> int:
         return 0
 
+    def _cached_line_height(self) -> int:
+        try:
+            if self._cached_lh > 0:
+                return self._cached_lh
+            h = QFontMetrics(self.font()).height()
+            if h <= 0:
+                h = 18
+            self._cached_lh = int(h)
+            return self._cached_lh
+        except Exception:
+            return 18
+
+    def _queue_minimap(self):
+        try:
+            try:
+                if self._smooth and self._smooth.is_scrolling():
+                    self._minimap_pending = True
+                    return
+            except Exception:
+                pass
+            if self._minimap_throttle.isActive():
+                self._minimap_pending = True
+                return
+            self._minimap_throttle.start()
+            self._minimap.update()
+        except Exception:
+            try:
+                self._minimap.update()
+            except Exception:
+                pass
+
+    def _flush_minimap(self):
+        try:
+            if self._minimap_pending:
+                self._minimap_pending = False
+                self._minimap.update()
+        except Exception:
+            pass
+
+    def _on_smooth_idle(self):
+        try:
+            self.viewport().update()
+            self._line_number.update()
+            try:
+                if self._minimap_pending:
+                    self._minimap_pending = False
+                    self._minimap_cache = None
+                    self._minimap.update()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def _update_extra(self):
         lw = self.line_number_width()
         mw = self._minimap.width()
@@ -851,7 +1137,7 @@ class CodeEditor(QPlainTextEdit):
 
     def _invalidate_minimap(self):
         self._minimap_cache = None
-        self._minimap.update()
+        self._queue_minimap()
 
     def _on_update_request(self, rect, dy):
         if dy:
@@ -860,7 +1146,7 @@ class CodeEditor(QPlainTextEdit):
         else:
             self._line_number.update(0, rect.y(), self._line_number.width(), rect.height())
             self._blame_gutter.update(0, rect.y(), self._blame_gutter.width(), rect.height())
-        self._minimap.update()
+        self._queue_minimap()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -903,67 +1189,92 @@ class CodeEditor(QPlainTextEdit):
         painter.setFont(self.font())
         painter.fillRect(event.rect(), QColor(*Theme.gutter))
         block = self.firstVisibleBlock()
-        block_number = block.blockNumber()
-        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
-        bottom = top + int(self.blockBoundingRect(block).height())
+        if not block.isValid():
+            painter.end()
+            return
+        try:
+            lh = self._cached_line_height()
+        except Exception:
+            lh = 18
+        try:
+            y0 = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        except Exception:
+            y0 = 0
         cur_block = self.textCursor().blockNumber()
         fm = painter.fontMetrics()
-        vcs_colors = {
-            "added": QColor(*Theme.added),
-            "modified": QColor(*Theme.modified),
-            "deleted": QColor(*Theme.deleted),
-        }
-        err_lines = {d.line for d in self._diagnostic_errors}
-        warn_lines = {d.line for d in self._diagnostic_warnings}
-        while block.isValid() and top <= event.rect().bottom():
+        fm_h = fm.height()
+        c_add = QColor(*Theme.added)
+        c_mod = QColor(*Theme.modified)
+        c_del = QColor(*Theme.deleted)
+        c_cur_bg = QColor(*Theme.gutter_current)
+        c_cur = QColor(*Theme.line_number_current)
+        c_err = QColor(*Theme.error_red)
+        c_warn = QColor(*Theme.warn_yellow)
+        c_norm = QColor(*Theme.line_number)
+        c_fold = QColor(150, 150, 150)
+        c_foldable = QColor(80, 80, 80)
+        c_blue = QColor(*Theme.lens_blue)
+        c_green = QColor(*Theme.lens_green)
+        err_lines = self._err_line_set
+        warn_lines = self._warn_line_set
+        folded = self._folded
+        vcs = self._vcs_diff_data
+        aw = area.width()
+        right_x = aw - scale(18)
+        fold_x = aw - scale(14)
+        evt_top = event.rect().top()
+        evt_bot = event.rect().bottom()
+        vidx = 0
+        while block.isValid():
             if not block.isVisible():
                 block = block.next()
-                block_number += 1
-                if not block.isValid():
-                    break
-                top = bottom
-                bottom = top + int(self.blockBoundingRect(block).height())
                 continue
-            if block.isVisible() and bottom >= event.rect().top():
-                line = block_number
-                txt = str(line + 1)
-                vcs_status = self._vcs_diff_data.get(line, "")
-                if line == cur_block:
-                    painter.fillRect(0, top, area.width(), int(self.blockBoundingRect(block).height()), QColor(*Theme.gutter_current))
-                    painter.setPen(QColor(*Theme.line_number_current))
-                elif line in err_lines:
-                    painter.setPen(QColor(*Theme.error_red))
-                elif line in warn_lines:
-                    painter.setPen(QColor(*Theme.warn_yellow))
-                elif vcs_status in vcs_colors:
-                    painter.setPen(vcs_colors[vcs_status])
-                else:
-                    painter.setPen(QColor(*Theme.line_number))
-                if vcs_status in vcs_colors:
-                    marker_w = scale(3)
-                    painter.fillRect(0, top, marker_w, int(self.blockBoundingRect(block).height()), vcs_colors[vcs_status])
-                painter.drawText(0, top, area.width() - scale(18), fm.height(), Qt.AlignmentFlag.AlignRight, txt)
-                if line in self._folded:
-                    painter.setPen(QColor(150, 150, 150))
-                    painter.drawText(area.width() - scale(14), top, scale(12), fm.height(), Qt.AlignmentFlag.AlignLeft, ">")
-                else:
-                    t = block.text().strip()
-                    if t.startswith("import ") or t.startswith("from ") or t.startswith("class ") or t.startswith("def ") or t.startswith("try:"):
-                        painter.setPen(QColor(80, 80, 80))
-                        painter.drawText(area.width() - scale(14), top, scale(12), fm.height(), Qt.AlignmentFlag.AlignLeft, "v")
-                btxt = block.text().strip()
-                if btxt.startswith("class "):
-                    painter.setPen(QColor(*Theme.lens_blue))
-                    painter.drawText(scale(2), top, scale(12), fm.height(), Qt.AlignmentFlag.AlignLeft, chr(9424))
-                if btxt.startswith("def "):
-                    painter.setPen(QColor(*Theme.lens_green))
-                    painter.drawText(scale(2), top, scale(12), fm.height(), Qt.AlignmentFlag.AlignLeft, chr(11377))
-            block = block.next()
-            top = bottom
-            if not block.isValid():
+            top = y0 + vidx * lh
+            vidx += 1
+            if top > evt_bot:
                 break
-            bottom = top + int(self.blockBoundingRect(block).height())
-            block_number += 1
+            bottom = top + lh
+            if bottom < evt_top:
+                block = block.next()
+                continue
+            line = block.blockNumber()
+            txt = str(line + 1)
+            vcs_status = vcs.get(line, "")
+            if line == cur_block:
+                painter.fillRect(0, top, aw, lh, c_cur_bg)
+                painter.setPen(c_cur)
+            elif line in err_lines:
+                painter.setPen(c_err)
+            elif line in warn_lines:
+                painter.setPen(c_warn)
+            elif vcs_status == "added":
+                painter.setPen(c_add)
+            elif vcs_status == "modified":
+                painter.setPen(c_mod)
+            elif vcs_status == "deleted":
+                painter.setPen(c_del)
+            else:
+                painter.setPen(c_norm)
+            if vcs_status == "added":
+                painter.fillRect(0, top, scale(3), lh, c_add)
+            elif vcs_status == "modified":
+                painter.fillRect(0, top, scale(3), lh, c_mod)
+            elif vcs_status == "deleted":
+                painter.fillRect(0, top + lh // 2 - 1, scale(3), 2, c_del)
+            painter.drawText(0, top, right_x, fm_h, Qt.AlignmentFlag.AlignRight, txt)
+            if line in folded:
+                painter.setPen(c_fold)
+                painter.drawText(fold_x, top, scale(12), fm_h, Qt.AlignmentFlag.AlignLeft, ">")
+            elif line in self._foldable_set:
+                painter.setPen(c_foldable)
+                painter.drawText(fold_x, top, scale(12), fm_h, Qt.AlignmentFlag.AlignLeft, "v")
+            if line in self._class_lines:
+                painter.setPen(c_blue)
+                painter.drawText(scale(2), top, scale(12), fm_h, Qt.AlignmentFlag.AlignLeft, chr(9424))
+            elif line in self._def_lines:
+                painter.setPen(c_green)
+                painter.drawText(scale(2), top, scale(12), fm_h, Qt.AlignmentFlag.AlignLeft, chr(11377))
+            block = block.next()
         painter.end()
 
     def line_number_mouse_move(self, event: QMouseEvent, area):
@@ -973,12 +1284,15 @@ class CodeEditor(QPlainTextEdit):
             if block is not None:
                 line = block.blockNumber()
                 diags_here: list[str] = []
-                for d in self._diagnostic_errors:
-                    if d.line == line:
-                        diags_here.append("error: " + d.message)
-                for d in self._diagnostic_warnings:
-                    if d.line == line:
-                        diags_here.append("warning: " + d.message)
+                try:
+                    cached = self._diag_map.get(line, [])
+                except Exception:
+                    cached = []
+                for d in cached:
+                    try:
+                        diags_here.append(str(d.kind) + ": " + str(d.message))
+                    except Exception:
+                        continue
                 if line in self._vcs_blame_data:
                     info = self._vcs_blame_data[line]
                     tip_parts: list[str] = []
@@ -1157,21 +1471,25 @@ class CodeEditor(QPlainTextEdit):
     def _update_completer_popup(self):
         cursor = self._word_under_cursor()
         prefix = cursor.selectedText()
-        if not prefix or prefix[0].isdigit():
-            self._completer.popup().hide()
+        if not prefix or len(prefix) < 2 or prefix[0].isdigit():
+            try:
+                self._completer.popup().hide()
+            except Exception:
+                pass
             return
         self._completer.setCompletionPrefix(prefix)
-        if self._completer.completionCount() == 0:
-            self._completer.popup().hide()
+        try:
+            if self._completer.completionCount() == 0:
+                self._completer.popup().hide()
+                return
+        except Exception:
             return
-        popup = self._completer.popup()
-        if popup is None:
-            return
-        scroll = popup.verticalScrollBar()
-        scroll_width = scroll.sizeHint().width() if scroll is not None else 0
-        rect = self.cursorRect()
-        rect.setWidth(popup.sizeHintForColumn(0) + scroll_width)
-        self._completer.complete(rect)
+        try:
+            rect = self.cursorRect()
+            rect.setWidth(scale(320))
+            self._completer.complete(rect)
+        except Exception:
+            pass
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Escape:
@@ -1214,11 +1532,14 @@ class CodeEditor(QPlainTextEdit):
         super().keyPressEvent(event)
         if event.text() and event.text().isalnum() or event.key() == Qt.Key.Key_Period:
             try:
-                if self._completion_dirty:
-                    self._rebuild_completions()
+                self._mark_completion_dirty()
             except Exception:
                 pass
-            self._update_completer_popup()
+            try:
+                if not self._completion_dirty:
+                    self._update_completer_popup()
+            except Exception:
+                pass
 
     def _auto_indent(self, event: QKeyEvent):
         cursor = self.textCursor()
@@ -1305,10 +1626,38 @@ class CodeEditor(QPlainTextEdit):
         super().focusInEvent(event)
 
     def wheelEvent(self, event: QWheelEvent):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            self.zoom(event.angleDelta().y())
-            event.accept()
-            return
+        try:
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                self.zoom(event.angleDelta().y())
+                event.accept()
+                return
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                super().wheelEvent(event)
+                return
+            try:
+                pd = event.pixelDelta()
+            except Exception:
+                pd = None
+            handled = False
+            try:
+                if pd is not None and (pd.x() != 0 or pd.y() != 0):
+                    if abs(pd.y()) >= abs(pd.x()):
+                        handled = bool(self._smooth and self._smooth.add_pixels(float(pd.y())))
+                    else:
+                        super().wheelEvent(event)
+                        return
+                else:
+                    ad = event.angleDelta()
+                    dy = float(ad.y())
+                    if dy != 0.0:
+                        handled = bool(self._smooth and self._smooth.add_wheel(dy))
+            except Exception:
+                handled = False
+            if handled:
+                event.accept()
+                return
+        except Exception:
+            pass
         super().wheelEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -1324,15 +1673,15 @@ class CodeEditor(QPlainTextEdit):
             if word and docs.is_doc_trigger(word):
                 self.setToolTip("Press Ctrl+Q for documentation")
             else:
-                errs = [d for d in self._diagnostic_errors if d.line == blk.blockNumber()]
-                warns = [d for d in self._diagnostic_warnings if d.line == blk.blockNumber()]
-                msgs: list[str] = []
-                for d in errs:
-                    msgs.append("error: " + d.message)
-                for d in warns:
-                    msgs.append("warning: " + d.message)
-                if msgs:
-                    self.setToolTip(chr(10).join(msgs[:4]))
+                lst = self._diag_map.get(blk.blockNumber(), [])
+                if lst:
+                    msgs: list[str] = []
+                    for d in lst[:4]:
+                        try:
+                            msgs.append(str(d.kind) + ": " + str(d.message))
+                        except Exception:
+                            continue
+                    self.setToolTip(chr(10).join(msgs))
                 else:
                     self.setToolTip("")
         except Exception:

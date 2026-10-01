@@ -102,18 +102,14 @@ def _render_mesh_ortho(verts_flat: np.ndarray, idx: np.ndarray, size: int,
     if bg_a > 0:
         pm.fill(QColor(int(bg_r * 255), int(bg_g * 255),
                         int(bg_b * 255), int(bg_a * 255)))
-    pts = verts_flat.reshape(-1, 3).copy()
+    pts = np.asarray(verts_flat, dtype=np.float64).reshape(-1, 3)
     rot_y = math.radians(rot_y_deg)
     rot_x = math.radians(rot_x_deg)
     cos_y, sin_y = math.cos(rot_y), math.sin(rot_y)
     cos_x, sin_x = math.cos(rot_x), math.sin(rot_x)
-    for i in range(len(pts)):
-        x, y, z = pts[i]
-        rx = x * cos_y - z * sin_y
-        rz = x * sin_y + z * cos_y
-        ry = y * cos_x - rz * sin_x
-        rz = y * sin_x + rz * cos_x
-        pts[i] = [rx, ry, rz]
+    ry_mat = np.array([[cos_y, 0.0, -sin_y], [0.0, 1.0, 0.0], [sin_y, 0.0, cos_y]], dtype=np.float64)
+    rx_mat = np.array([[1.0, 0.0, 0.0], [0.0, cos_x, -sin_x], [0.0, sin_x, cos_x]], dtype=np.float64)
+    pts = pts @ ry_mat.T @ rx_mat.T
     proj = pts[:, :2].copy()
     cx, cy = proj.mean(axis=0)
     proj -= [cx, cy]

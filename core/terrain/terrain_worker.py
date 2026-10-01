@@ -188,6 +188,8 @@ class TerrainGenWorker:
 
 
 _worker: TerrainGenWorker | None = None
+_workers: list[TerrainGenWorker] | None = None
+_rr: int = 0
 
 
 def get_worker() -> TerrainGenWorker:
@@ -196,3 +198,31 @@ def get_worker() -> TerrainGenWorker:
         _worker = TerrainGenWorker()
         _worker.start()
     return _worker
+
+
+def get_worker_pool(n: int = 2) -> list[TerrainGenWorker]:
+    global _workers
+    if _workers is None:
+        _workers = []
+        for _ in range(max(1, n)):
+            w = TerrainGenWorker()
+            w.start()
+            _workers.append(w)
+    return _workers
+
+
+def request_parallel(settings: dict, resolution: int) -> int:
+    global _rr
+    pool = get_worker_pool(2)
+    w = pool[_rr % len(pool)]
+    _rr += 1
+    return w.request(settings, resolution)
+
+
+def consume_parallel():
+    pool = get_worker_pool(2)
+    for w in pool:
+        r = w.consume_result()
+        if r is not None:
+            return r
+    return None

@@ -283,6 +283,44 @@ def _hash_file(path: str) -> str:
     return h.hexdigest()
 
 
+def _hash_files_many(paths: list[str]) -> dict[str, str]:
+    import concurrent.futures
+    if len(paths) <= 1:
+        out: dict[str, str] = {}
+        for p in paths:
+            try:
+                out[p] = _hash_file(p)
+            except Exception:
+                pass
+        return out
+    out = {}
+    workers = min(8, len(paths))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(_hash_file, p): p for p in paths}
+        for fu in concurrent.futures.as_completed(futs):
+            try:
+                out[futs[fu]] = fu.result()
+            except Exception:
+                pass
+    return out
+
+
+def _fingerprints_many(paths: list[str]) -> dict[str, dict]:
+    import concurrent.futures
+    if len(paths) <= 1:
+        return {p: _zplugin_fingerprint(p) for p in paths}
+    out: dict[str, dict] = {}
+    workers = min(8, len(paths))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(_zplugin_fingerprint, p): p for p in paths}
+        for fu in concurrent.futures.as_completed(futs):
+            try:
+                out[futs[fu]] = fu.result()
+            except Exception:
+                pass
+    return out
+
+
 def _self_provided_modules(kind, path, manifest: dict) -> set:
     out = set()
     if isinstance(manifest, dict):

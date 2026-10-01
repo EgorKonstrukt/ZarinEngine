@@ -262,16 +262,61 @@ class Engine:
     def resolve_scene_paths(self, data: dict):
         root = self.project_root
         entities = data.get("entities", {})
-        for eid, edata in entities.items():
-            for comp in edata.get("components", []):
+        comps: list[dict] = []
+        for edata in entities.values():
+            try:
+                cl = edata.get("components", [])
+            except Exception:
+                continue
+            for comp in cl:
+                comps.append(comp)
+        if len(comps) <= 32:
+            for comp in comps:
                 self._resolve_component_paths(comp, root)
+            return
+        import concurrent.futures
+        import os as _os
+        workers = min(8, max(2, _os.cpu_count() or 4))
+        chunk = (len(comps) + workers - 1) // workers
+        def task(part):
+            for c in part:
+                self._resolve_component_paths(c, root)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = [ex.submit(task, comps[i:i+chunk]) for i in range(0, len(comps), chunk)]
+            for fu in concurrent.futures.as_completed(futs):
+                try:
+                    fu.result()
+                except Exception:
+                    pass
     def relativize_scene_paths(self, data: dict):
-        """Convert absolute paths to project-relative in scene JSON data."""
         root = self.project_root
         entities = data.get("entities", {})
-        for eid, edata in entities.items():
-            for comp in edata.get("components", []):
+        comps: list[dict] = []
+        for edata in entities.values():
+            try:
+                cl = edata.get("components", [])
+            except Exception:
+                continue
+            for comp in cl:
+                comps.append(comp)
+        if len(comps) <= 32:
+            for comp in comps:
                 self._relativize_component_paths(comp, root)
+            return
+        import concurrent.futures
+        import os as _os2
+        workers = min(8, max(2, _os2.cpu_count() or 4))
+        chunk = (len(comps) + workers - 1) // workers
+        def task(part):
+            for c in part:
+                self._relativize_component_paths(c, root)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = [ex.submit(task, comps[i:i+chunk]) for i in range(0, len(comps), chunk)]
+            for fu in concurrent.futures.as_completed(futs):
+                try:
+                    fu.result()
+                except Exception:
+                    pass
     @staticmethod
     def _resolve_component_paths(comp: dict, root: str):
         for key, val in comp.items():

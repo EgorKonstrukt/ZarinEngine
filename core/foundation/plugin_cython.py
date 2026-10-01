@@ -1,4 +1,5 @@
 from __future__ import annotations
+import concurrent.futures
 import importlib.machinery
 import importlib.util
 import os
@@ -130,11 +131,21 @@ def _build_list_and_release(anchor, pyx_files, timeout):
         per = timeout // max(1, len(pyx_files))
         if per < 60:
             per = 60
-        for pyx in pyx_files:
-            try:
-                build_file(pyx, timeout=per)
-            except Exception:
-                pass
+        if len(pyx_files) > 1:
+            workers = min(4, len(pyx_files), os.cpu_count() or 2)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = [ex.submit(build_file, pyx, per) for pyx in pyx_files]
+                for fu in concurrent.futures.as_completed(futs):
+                    try:
+                        fu.result()
+                    except Exception:
+                        pass
+        else:
+            for pyx in pyx_files:
+                try:
+                    build_file(pyx, timeout=per)
+                except Exception:
+                    pass
     finally:
         with _LOCK:
             _BUILDING.discard(anchor)
@@ -176,9 +187,20 @@ def ensure_extensions(plugin_dir, background=False, timeout=600):
             if per < 60:
                 per = 60
             ok = True
-            for pyx in pending:
-                if not build_file(pyx, timeout=per):
-                    ok = False
+            if len(pending) > 1:
+                workers = min(4, len(pending), os.cpu_count() or 2)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                    futs = {ex.submit(build_file, pyx, per): pyx for pyx in pending}
+                    for fu in concurrent.futures.as_completed(futs):
+                        try:
+                            if not fu.result():
+                                ok = False
+                        except Exception:
+                            ok = False
+            else:
+                for pyx in pending:
+                    if not build_file(pyx, timeout=per):
+                        ok = False
             return ok
         finally:
             with _LOCK:

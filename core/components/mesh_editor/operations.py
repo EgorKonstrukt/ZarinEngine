@@ -5,7 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import concurrent.futures
 import math
+import os
 import numpy as np
 from core.components.mesh_editor.probuilder_mesh import ProBuilderMesh
 
@@ -216,39 +218,127 @@ def subdivide_faces(mesh: ProBuilderMesh, face_indices: set[int]):
 def weld_vertices(mesh: ProBuilderMesh, threshold: float = 0.001):
     if mesh.positions.size == 0:
         return
-    pos = mesh.positions
+    pos = mesh.positions.astype(np.float32, copy=False)
     n = pos.shape[0]
-    merge_map = list(range(n))
+    if n < 2:
+        return
+    if threshold <= 0:
+        threshold = 0.001
+    inv = 1.0 / float(threshold)
+    cells = np.floor(pos.astype(np.float64) * inv).astype(np.int64)
+    cell_dict: dict[tuple[int, int, int], list[int]] = {}
     for i in range(n):
-        for j in range(i + 1, n):
-            if np.linalg.norm(pos[i] - pos[j]) < threshold:
-                merge_map[j] = i
-    for i in range(n - 1, -1, -1):
-        if merge_map[i] != i:
-            merge_map[i] = merge_map[merge_map[i]]
-    unique_indices = {}
-    new_positions = []
+        key = (int(cells[i, 0]), int(cells[i, 1]), int(cells[i, 2]))
+        lst = cell_dict.get(key)
+        if lst is None:
+            cell_dict[key] = [i]
+        else:
+            lst.append(i)
+    thr2 = float(threshold * threshold)
+    merge_map = list(range(n))
+    if n > 2000:
+        workers = min(8, max(2, os.cpu_count() or 4))
+        chunk = (n + workers - 1) // workers
+        def find_chunk(s: int, e: int):
+            out: list[tuple[int, int]] = []
+            for i in range(s, min(e, n)):
+                xi = float(pos[i, 0])
+                yi = float(pos[i, 1])
+                zi = float(pos[i, 2])
+                cx = int(cells[i, 0])
+                cy = int(cells[i, 1])
+                cz = int(cells[i, 2])
+                best = -1
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        for dz in (-1, 0, 1):
+                            lst = cell_dict.get((cx + dx, cy + dy, cz + dz))
+                            if not lst:
+                                continue
+                            for j in lst:
+                                if j >= i:
+                                    continue
+                                ddx = xi - float(pos[j, 0])
+                                ddy = yi - float(pos[j, 1])
+                                ddz = zi - float(pos[j, 2])
+                                if ddx * ddx + ddy * ddy + ddz * ddz < thr2:
+                                    if best == -1 or j < best:
+                                        best = j
+                                    if best == 0:
+                                        break
+                            if best == 0:
+                                break
+                        if best == 0:
+                            break
+                    if best == 0:
+                        break
+                if best >= 0:
+                    out.append((i, best))
+            return out
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = [ex.submit(find_chunk, s, s + chunk) for s in range(0, n, chunk)]
+            pairs: list[tuple[int, int]] = []
+            for fu in concurrent.futures.as_completed(futs):
+                try:
+                    pairs.extend(fu.result())
+                except Exception:
+                    pass
+        for i, j in pairs:
+            merge_map[i] = j
+    else:
+        for i in range(n):
+            xi = float(pos[i, 0])
+            yi = float(pos[i, 1])
+            zi = float(pos[i, 2])
+            cx = int(cells[i, 0])
+            cy = int(cells[i, 1])
+            cz = int(cells[i, 2])
+            best = -1
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for dz in (-1, 0, 1):
+                        lst = cell_dict.get((cx + dx, cy + dy, cz + dz))
+                        if not lst:
+                            continue
+                        for j in lst:
+                            if j >= i:
+                                continue
+                            ddx = xi - float(pos[j, 0])
+                            ddy = yi - float(pos[j, 1])
+                            ddz = zi - float(pos[j, 2])
+                            if ddx * ddx + ddy * ddy + ddz * ddz < thr2:
+                                if best == -1 or j < best:
+                                    best = j
+            if best >= 0:
+                merge_map[i] = best
+    for i in range(n):
+        r = merge_map[i]
+        while merge_map[r] != r:
+            merge_map[r] = merge_map[merge_map[r]]
+            r = merge_map[r]
+        merge_map[i] = r
+    unique_indices: dict[int, int] = {}
+    new_positions: list = []
     for i in range(n):
         target = merge_map[i]
         if target not in unique_indices:
             unique_indices[target] = len(new_positions)
             new_positions.append(pos[target].copy())
-        elif i != target:
-            unique_indices[i] = unique_indices[target]
     for i in range(n):
         target = merge_map[i]
         if i not in unique_indices:
             unique_indices[i] = unique_indices[target]
-    new_indices = []
     idx = mesh.indices
-    for i in range(idx.shape[0]):
-        a = unique_indices.get(int(idx[i, 0]), int(idx[i, 0]))
-        b = unique_indices.get(int(idx[i, 1]), int(idx[i, 1]))
-        c = unique_indices.get(int(idx[i, 2]), int(idx[i, 2]))
-        if a != b and b != c and a != c:
-            new_indices.append([a, b, c])
-        else:
-            new_indices.append([a, b, c])
+    if idx.size == 0:
+        mesh.positions = np.array(new_positions, dtype=np.float32)
+        mesh.rebuild_normals()
+        mesh.rebuild_uvs()
+        mesh.clear_selection()
+        mesh._gpu_dirty = True
+        return
+    remap = np.array([unique_indices.get(int(merge_map[i]), 0) for i in range(n)], dtype=np.int64)
+    flat = remap[idx.astype(np.int64).ravel()]
+    new_indices = flat.reshape(-1, 3)
     mesh.positions = np.array(new_positions, dtype=np.float32)
     mesh.indices = np.array(new_indices, dtype=np.uint32)
     mesh.rebuild_normals()
@@ -318,19 +408,27 @@ def smart_optimize(mesh: ProBuilderMesh):
     weld_vertices(mesh, threshold=0.001)
     if mesh.positions.size == 0:
         return
-    pos = mesh.positions
-    idx = mesh.indices.astype(np.int32)
-    keep_face = np.ones(idx.shape[0], dtype=bool)
-    for i in range(idx.shape[0]):
-        v0, v1, v2 = pos[idx[i, 0]], pos[idx[i, 1]], pos[idx[i, 2]]
-        area = np.linalg.norm(np.cross(v1 - v0, v2 - v0)) * 0.5
-        if area < 1e-10:
-            keep_face[i] = False
-            continue
-        for j in range(i + 1, idx.shape[0]):
-            if (set(idx[i]) == set(idx[j])):
-                keep_face[j] = False
-    new_idx = idx[keep_face]
+    pos = mesh.positions.astype(np.float32, copy=False)
+    idx = mesh.indices.astype(np.int64, copy=False)
+    if idx.size == 0:
+        return
+    v0 = pos[idx[:, 0]]
+    v1 = pos[idx[:, 1]]
+    v2 = pos[idx[:, 2]]
+    cross = np.cross(v1 - v0, v2 - v0)
+    area2 = np.einsum("ij,ij->i", cross, cross) * 0.25
+    keep_face = area2 >= 1e-20
+    if not np.any(keep_face):
+        mesh.indices = np.zeros((0, 3), dtype=np.uint32)
+        mesh.rebuild_normals()
+        mesh._gpu_dirty = True
+        return
+    live = idx[keep_face]
+    srt = np.sort(live, axis=1)
+    _, uniq_pos = np.unique(srt, axis=0, return_index=True)
+    keep2 = np.zeros(live.shape[0], dtype=bool)
+    keep2[np.sort(uniq_pos)] = True
+    new_idx = live[keep2]
     mesh.indices = new_idx.astype(np.uint32)
     mesh.rebuild_normals()
     mesh._gpu_dirty = True

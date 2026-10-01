@@ -1182,6 +1182,8 @@ def raycast_scene(origin, direction, max_dist=RAY_MAX_DIST):
         return None, None, float('inf')
     except Exception:
         return None, None, float('inf')
+    except Exception:
+        return None, None, float('inf')
 
 def get_controller_hits():
     hits = []

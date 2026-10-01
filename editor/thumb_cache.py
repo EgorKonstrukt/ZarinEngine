@@ -14,6 +14,7 @@ asset actually changes.
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import xxhash
 
@@ -50,6 +51,23 @@ def thumb_disk_key(path: str, size: int, mtime: float, fsize: int,
 
 def thumb_disk_path(cache_dir: str, key: str) -> str:
     return os.path.join(cache_dir, key[:2], key + ".png")
+
+
+def thumb_disk_keys_many(items: list[tuple[str, int, float, int, str]]) -> dict[str, str]:
+    def one(it: tuple[str, int, float, int, str]):
+        path, size, mtime, fsize, mode = it
+        try:
+            return (path, thumb_disk_key(path, size, mtime, fsize, mode))
+        except Exception:
+            return (path, "")
+    if len(items) <= 4:
+        return {p: thumb_disk_key(p, s, m, f, mo) for p, s, m, f, mo in items}
+    out: dict[str, str] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(items))) as ex:
+        for p, k in ex.map(one, items):
+            if k:
+                out[p] = k
+    return out
 
 
 def load_thumb_disk(cache_dir: str, key: str):

@@ -5,6 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import concurrent.futures
+import os
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Type, TypeVar, Optional
@@ -1896,7 +1898,24 @@ class Scene:
         prof.stop("scene_start")
 
     def serialize(self) -> dict:
-        data = {"name": self._name, "entities": {eid: e.serialize() for eid, e in self._entities.items()}}
+        items = list(self._entities.items())
+        if len(items) > 64:
+            workers = min(8, max(2, (os.cpu_count() or 4)))
+            chunk = (len(items) + workers - 1) // workers
+            out: dict = {}
+            def task(part):
+                return [(eid, e.serialize()) for eid, e in part]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = [ex.submit(task, items[i:i + chunk]) for i in range(0, len(items), chunk)]
+                for fu in concurrent.futures.as_completed(futs):
+                    try:
+                        for eid, ed in fu.result():
+                            out[eid] = ed
+                    except Exception:
+                        pass
+            data = {"name": self._name, "entities": out}
+        else:
+            data = {"name": self._name, "entities": {eid: e.serialize() for eid, e in self._entities.items()}}
         if self._embed_all:
             data["embed_all"] = True
         if self._compress_resources:

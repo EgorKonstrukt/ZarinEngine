@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 import base64
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -223,6 +224,20 @@ def _flagged_entity_ids(data: dict, entities: dict) -> set:
     return result
 
 
+def _read_raw_digest(val: str, root: str, compress_level: int):
+    absv = _abs_path(val, root)
+    if not absv:
+        return (val, None, None, None, None)
+    try:
+        with open(absv, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return (val, None, None, None, None)
+    digest = hashlib.sha1(raw).hexdigest()[:16]
+    payload = _compress(raw, compress_level)
+    return (val, absv, raw, digest, payload)
+
+
 def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None,
                           compress_level: int = 0, progress_cb: Optional[Callable] = None) -> int:
     entities = data.get("entities", {})
@@ -303,8 +318,84 @@ def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None
                     embed_file(tex)
         return storage_key
 
+    def apply_loaded(val: str, absv: str | None, raw: bytes | None, digest: str | None, payload: bytes | None) -> str:
+        if absv is None or raw is None or digest is None or payload is None:
+            bname = _sanitize_name(os.path.basename(_norm(val).rstrip("/")))
+            if bname and bname in basename_map:
+                return basename_map[bname]
+            storage_key = next((k for k in _key_candidates(val, root) if k in storage), None)
+            if storage_key is None:
+                return ""
+            return storage_key
+        bname = _sanitize_name(os.path.basename(_norm(val).rstrip("/")))
+        if bname and bname in basename_map:
+            return basename_map[bname]
+        storage_key = _storage_key(absv, root)
+        if not force_reencode and digest in digest_map:
+            alias_key = digest_map[digest]
+            if alias_key != storage_key:
+                storage[storage_key] = {"key": storage_key, "name": os.path.basename(absv), "alias": alias_key}
+            return alias_key
+        existing_entry = storage.get(storage_key)
+        if existing_entry and existing_entry.get("digest") == digest and not force_reencode:
+            return storage_key
+        entry = {
+            "key": storage_key,
+            "name": os.path.basename(absv),
+            "size": len(raw),
+            "digest": digest,
+            "data": base64.b64encode(payload).decode("ascii"),
+        }
+        if len(payload) < len(raw):
+            entry["compression"] = "zlib"
+            entry["csize"] = len(payload)
+        elif not use_compression:
+            entry.pop("compression", None)
+            entry.pop("csize", None)
+        storage[storage_key] = entry
+        digest_map[digest] = storage_key
+        basename_map[_entry_cache_basename(entry, storage)] = storage_key
+        return storage_key
+
+    uniq = list(dict.fromkeys(fields))
+    pending_mats: list[str] = []
+    if len(uniq) > 1:
+        workers = min(8, max(2, os.cpu_count() or 4))
+        loaded: dict[str, tuple] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(_read_raw_digest, v, root, compress_level): v for v in uniq}
+            for fu in concurrent.futures.as_completed(futs):
+                try:
+                    v, av, rw, dg, pl = fu.result()
+                except Exception:
+                    continue
+                loaded[v] = (av, rw, dg, pl)
+        for val in uniq:
+            av, rw, dg, pl = loaded.get(val, (None, None, None, None))
+            sk = apply_loaded(val, av, rw, dg, pl)
+            if sk and av and _is_material_file(av):
+                pending_mats.append(av)
+    else:
+        for val in fields:
+            sk = embed_file(val)
+            done += 1
+            progress_cb(done, total, os.path.basename(str(val)))
+        if not storage:
+            data.pop("embedded_resources", None)
+            return 0
+        data["embedded_resources"] = storage
+        return len(storage)
+    for mat_abs in pending_mats:
+        try:
+            texs = _material_textures(mat_abs, root).values()
+        except Exception:
+            continue
+        for tex in texs:
+            bname = _sanitize_name(os.path.basename(_norm(tex).rstrip("/")))
+            if bname and bname in basename_map:
+                continue
+            embed_file(tex)
     for val in fields:
-        embed_file(val)
         done += 1
         progress_cb(done, total, os.path.basename(str(val)))
     if not storage:
@@ -312,6 +403,25 @@ def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None
         return 0
     data["embedded_resources"] = storage
     return len(storage)
+
+
+def _decode_entry_raw(storage_key: str, storage: dict):
+    entry = storage.get(storage_key)
+    if not entry:
+        return (storage_key, None, None, None)
+    entry = _resolve_alias(entry, storage)
+    try:
+        raw = _entry_raw_bytes(entry)
+    except Exception:
+        return (storage_key, None, None, None)
+    digest = entry.get("digest")
+    if not digest:
+        try:
+            digest = hashlib.sha1(raw).hexdigest()[:16]
+        except Exception:
+            digest = None
+    name = _sanitize_name(str(entry.get("name") or os.path.basename(storage_key)))
+    return (storage_key, raw, digest, name)
 
 
 def extract_embedded_resources(data: dict, root: str, cache_mode: str = "project",
@@ -328,22 +438,59 @@ def extract_embedded_resources(data: dict, root: str, cache_mode: str = "project
     total = len(fields)
     done = 0
     progress_cb = progress_cb or (lambda *_: None)
+    flagged_ids = _flagged_entity_ids(data, entities)
+    needed_keys: dict[str, list[tuple]] = {}
+    bname_index: dict[str, str] = {}
+    for k, e in storage.items():
+        try:
+            bname_index[_entry_cache_basename(e, storage)] = k
+        except Exception:
+            pass
     for ed, comp, path, val in fields:
-        if ed.get("id") not in _flagged_entity_ids(data, entities):
+        if ed.get("id") not in flagged_ids:
             done += 1
             continue
         storage_key = next((k for k in _key_candidates(val, root) if k in storage), None)
         if storage_key is None:
             bname = _sanitize_name(os.path.basename(_norm(val).rstrip("/")))
-            storage_key = next((k for k, e in storage.items() if _entry_cache_basename(e, storage) == bname), None)
+            storage_key = bname_index.get(bname)
         if storage_key is not None:
-            cache_path = _cache_path_for(storage_key, storage, cache_dir)
-            if cache_path:
-                _set_nested(comp, path, cache_path)
-                if _is_material_file(storage_key):
-                    _rewrite_material_textures(cache_path, storage, root, cache_dir)
+            needed_keys.setdefault(storage_key, []).append((ed, comp, path, val))
         done += 1
         progress_cb(done, total, os.path.basename(str(val)))
+    if needed_keys:
+        keys = list(needed_keys.keys())
+        decoded: dict[str, tuple] = {}
+        if len(keys) > 1:
+            workers = min(8, max(2, os.cpu_count() or 4))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = {ex.submit(_decode_entry_raw, k, storage): k for k in keys}
+                for fu in concurrent.futures.as_completed(futs):
+                    try:
+                        sk, raw, digest, name = fu.result()
+                    except Exception:
+                        continue
+                    decoded[sk] = (raw, digest, name)
+        else:
+            for k in keys:
+                sk, raw, digest, name = _decode_entry_raw(k, storage)
+                decoded[sk] = (raw, digest, name)
+        for storage_key, usages in needed_keys.items():
+            raw, digest, name = decoded.get(storage_key, (None, None, None))
+            if raw is None or digest is None or name is None:
+                continue
+            path = os.path.join(cache_dir, f"{digest}_{name}")
+            if not os.path.exists(path):
+                try:
+                    with open(path, "wb") as f:
+                        f.write(raw)
+                except OSError:
+                    continue
+            cache_path = _norm(os.path.abspath(path))
+            for ed, comp, pth, val in usages:
+                _set_nested(comp, pth, cache_path)
+                if _is_material_file(storage_key):
+                    _rewrite_material_textures(cache_path, storage, root, cache_dir)
     data.pop("embedded_resources", None)
     return storage
 

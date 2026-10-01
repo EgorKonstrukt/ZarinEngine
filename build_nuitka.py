@@ -9,6 +9,7 @@ Zarin Engine вЂ” Nuitka build script.
 Uses BuildSettings.json to determine which scenes and assets to include.
 """
 import subprocess
+import concurrent.futures
 import sys
 import os
 import json
@@ -228,30 +229,47 @@ def _scan_scene_assets(scene_path: str) -> set[str]:
         with open(scene_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         entities = data.get("entities", {})
-        for eid, edata in entities.items():
-            for comp in edata.get("components", []):
+        jobs: list[dict] = []
+        for edata in entities.values():
+            try:
+                comps = edata.get("components", [])
+            except Exception:
+                continue
+            jobs.extend(comps)
+        def scan_comp(comp: dict):
+            found: set[str] = set()
+            try:
                 for key, val in comp.items():
                     if key in PATH_FIELDS and isinstance(val, str) and val:
-                        assets.add(val)
+                        found.add(val)
+            except Exception:
+                pass
+            return found
+        if len(jobs) > 32:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
+                for part in ex.map(scan_comp, jobs):
+                    assets.update(part)
+        else:
+            for comp in jobs:
+                assets.update(scan_comp(comp))
     except Exception as e:
         print(f"  WARNING: failed to scan {scene_path}: {e}")
     return assets
 
 
-def _resolve_assets(assets: set[str], project_root: Path) -> set[Path]:
-    resolved = set()
-    assets_dir = project_root / "assets"
-    for a in assets:
+def _resolve_one(a: str, project_root: Path, assets_dir: Path) -> set[Path]:
+    out: set[Path] = set()
+    try:
         if os.path.isabs(a):
             p = Path(a)
             if p.exists():
                 if p.is_dir():
                     for root, dirs, files in os.walk(p):
                         for fn in files:
-                            resolved.add(Path(root) / fn)
-                    resolved.add(p)
+                            out.add(Path(root) / fn)
+                    out.add(p)
                 else:
-                    resolved.add(p)
+                    out.add(p)
         else:
             candidates = [
                 project_root / a,
@@ -263,11 +281,31 @@ def _resolve_assets(assets: set[str], project_root: Path) -> set[Path]:
                     if c.is_dir():
                         for root, dirs, files in os.walk(c):
                             for fn in files:
-                                resolved.add(Path(root) / fn)
-                        resolved.add(c)
+                                out.add(Path(root) / fn)
+                        out.add(c)
                     else:
-                        resolved.add(c)
+                        out.add(c)
                     break
+    except Exception:
+        pass
+    return out
+
+
+def _resolve_assets(assets: set[str], project_root: Path) -> set[Path]:
+    resolved = set()
+    assets_dir = project_root / "assets"
+    lst = list(assets)
+    if len(lst) <= 8:
+        for a in lst:
+            resolved.update(_resolve_one(a, project_root, assets_dir))
+        return resolved
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
+        futs = [ex.submit(_resolve_one, a, project_root, assets_dir) for a in lst]
+        for fu in concurrent.futures.as_completed(futs):
+            try:
+                resolved.update(fu.result())
+            except Exception:
+                pass
     return resolved
 
 

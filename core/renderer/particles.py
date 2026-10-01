@@ -148,19 +148,28 @@ class ParticleRenderer:
             return np.zeros(0, dtype=np.uint32)
         return np.frombuffer(data[4:4 + dead_count * 4], dtype=np.uint32).copy()
 
+    def _resolve_particle_path(self, path: str) -> str | None:
+        import os as _os
+        if not path:
+            return None
+        abs_path = path
+        if not _os.path.isabs(path):
+            abs_path = _os.path.join(_os.getcwd(), path)
+            if not _os.path.exists(abs_path):
+                alt = _os.path.join("assets", path)
+                if _os.path.exists(alt):
+                    abs_path = alt
+        if not _os.path.exists(abs_path):
+            return None
+        return abs_path
+
     def load_texture(self, path: str) -> Optional[Any]:
         if not path:
             return None
         if path in self._textures:
             return self._textures[path]
-        abs_path = path
-        if not __import__('os').path.isabs(path):
-            abs_path = __import__('os').path.join(__import__('os').getcwd(), path)
-            if not __import__('os').path.exists(abs_path):
-                alt = __import__('os').path.join("assets", path)
-                if __import__('os').path.exists(alt):
-                    abs_path = alt
-        if not __import__('os').path.exists(abs_path):
+        abs_path = self._resolve_particle_path(path)
+        if not abs_path:
             return None
         try:
             from PIL import Image
@@ -174,6 +183,47 @@ class ParticleRenderer:
             return tex
         except Exception:
             return None
+
+    def load_textures_many(self, paths: list[str]) -> dict[str, Any]:
+        import concurrent.futures
+        import os as _os
+        uniq = [p for p in dict.fromkeys(paths) if p and p not in self._textures]
+        if not uniq:
+            return {p: self._textures[p] for p in paths if p in self._textures}
+        resolved: dict[str, str] = {}
+        for p in uniq:
+            r = self._resolve_particle_path(p)
+            if r:
+                resolved[p] = r
+        def decode_one(item: tuple[str, str]):
+            k, ap = item
+            try:
+                from PIL import Image
+                im = Image.open(ap).convert("RGBA")
+                return (k, im.size, im.tobytes())
+            except Exception:
+                return (k, None, None)
+        decoded: dict[str, tuple] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, _os.cpu_count() or 4))) as ex:
+            for k, sz, raw in ex.map(decode_one, resolved.items()):
+                if sz is not None and raw is not None:
+                    decoded[k] = (sz, raw)
+        out: dict[str, Any] = {}
+        for k, (sz, raw) in decoded.items():
+            try:
+                tex = self._ctx.texture(sz, 4, raw)
+                tex.build_mipmaps()
+                tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+                tex.repeat_x = True
+                tex.repeat_y = True
+                self._textures[k] = tex
+                out[k] = tex
+            except Exception:
+                pass
+        for p in paths:
+            if p in self._textures and p not in out:
+                out[p] = self._textures[p]
+        return out
 
     def begin_frame(self, view_mat, proj_mat):
         if not self._particle_prog or not self._vao:

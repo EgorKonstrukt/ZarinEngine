@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import concurrent.futures
 import json
 import os
 import uuid
@@ -338,10 +339,27 @@ class Prefab:
 
     @staticmethod
     def compute_all_overrides(entities: list[Entity]) -> list[dict]:
+        if len(entities) <= 4:
+            all_overrides = []
+            for e in entities:
+                all_overrides.extend(Prefab.compute_overrides(e))
+                all_overrides.extend(Prefab.compute_all_overrides(e.children))
+            return all_overrides
+        def one(ent):
+            out: list[dict] = []
+            try:
+                out.extend(Prefab.compute_overrides(ent))
+            except Exception:
+                pass
+            try:
+                out.extend(Prefab.compute_all_overrides(ent.children))
+            except Exception:
+                pass
+            return out
         all_overrides = []
-        for e in entities:
-            all_overrides.extend(Prefab.compute_overrides(e))
-            all_overrides.extend(Prefab.compute_all_overrides(e.children))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(entities))) as ex:
+            for part in ex.map(one, entities):
+                all_overrides.extend(part)
         return all_overrides
 
     @staticmethod

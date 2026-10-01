@@ -458,7 +458,6 @@ def pick_entity(vp, sx: int, sy: int):
 
 
 def pick_entity_hit(vp, sx: int, sy: int):
-    """Returns (entity, hit_world_pos) or (None, None)."""
     scene = vp._engine.scene
     if not scene:
         return None, None

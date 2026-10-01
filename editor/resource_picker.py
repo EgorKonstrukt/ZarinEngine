@@ -5,6 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import collections
+import concurrent.futures
 import os
 import json
 import math
@@ -668,6 +670,7 @@ class _PopulateWorker(QThread):
         search_dirs = [search_root] + extra_dirs
         batch: list = []
         seen_paths: set[str] = set()
+        pending: list[tuple[str, str]] = []
         for search_dir in search_dirs:
             for root, dirs, files in os.walk(search_dir):
                 if self._cancelled:
@@ -689,17 +692,39 @@ class _PopulateWorker(QThread):
                     if full_path in seen_paths:
                         continue
                     seen_paths.add(full_path)
-                    rel_path = os.path.relpath(full_path, self._project_root)
-                    try:
-                        file_size = os.path.getsize(full_path)
-                    except OSError:
-                        file_size = 0
-                    batch.append((full_path, f, rel_path, file_size))
-                    if len(batch) >= 100:
-                        self.batch_ready.emit(batch)
-                        batch = []
+                    pending.append((full_path, f))
+                    if len(pending) >= 200:
+                        self._flush_pending(pending, batch)
+                        if len(batch) >= 100:
+                            self.batch_ready.emit(batch)
+                            batch = []
+                        pending = []
+                        if self._cancelled:
+                            return
+        if pending:
+            self._flush_pending(pending, batch)
         if batch:
             self.batch_ready.emit(batch)
+
+    def _flush_pending(self, pending: list[tuple[str, str]], batch: list):
+        def stat_one(item: tuple[str, str]):
+            full_path, f = item
+            try:
+                sz = os.path.getsize(full_path)
+            except OSError:
+                sz = 0
+            try:
+                rel = os.path.relpath(full_path, self._project_root)
+            except Exception:
+                rel = full_path
+            return (full_path, f, rel, sz)
+        if len(pending) > 16:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                for r in ex.map(stat_one, pending):
+                    batch.append(r)
+        else:
+            for item in pending:
+                batch.append(stat_one(item))
 
 
 def _draw_vector_placeholder(path: str, size: int) -> Optional[QPixmap]:
@@ -736,7 +761,7 @@ class _ThumbnailLoader(QThread):
     def __init__(self, thumb_size: int):
         super().__init__()
         self._thumb_size = thumb_size
-        self._queue: list[tuple[int, str]] = []
+        self._queue: collections.deque[tuple[int, str]] = collections.deque()
         self._queue_mutex = QMutex()
         self._cancelled = False
         self._running = False
@@ -757,13 +782,12 @@ class _ThumbnailLoader(QThread):
 
     def run(self):
         self._running = True
-        batch: list[tuple[int, str]] = []
         while not self._cancelled:
             self._queue_mutex.lock()
             if not self._queue:
                 self._queue_mutex.unlock()
                 break
-            idx, full_path = self._queue.pop(0)
+            idx, full_path = self._queue.popleft()
             self._queue_mutex.unlock()
             cache_key = f"thumb:{full_path}:{self._thumb_size}"
             _thumbnail_mutex.lock()
@@ -775,12 +799,7 @@ class _ThumbnailLoader(QThread):
                     _thumbnail_mutex.lock()
                     _placeholder_cache[cache_key] = pm
                     _thumbnail_mutex.unlock()
-            batch.append((idx, full_path))
-            if len(batch) >= 32:
-                self.thumbnail_loaded.emit(batch, None)
-                batch.clear()
-        if batch:
-            self.thumbnail_loaded.emit(batch, None)
+                    self.thumbnail_loaded.emit(idx, pm)
         self._running = False
 
 

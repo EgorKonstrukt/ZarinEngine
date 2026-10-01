@@ -9,6 +9,7 @@ Build Settings вЂ” Unity-style scene list and build configuration.
 First scene in the list is loaded on game startup.
 """
 from __future__ import annotations
+import concurrent.futures
 import json
 import os
 from typing import Optional
@@ -160,14 +161,9 @@ class BuildSettings:
         return result
 
     def get_all_referenced_assets(self, project_root: str) -> set[str]:
-        """
-        Scan all included scenes and collect referenced asset paths.
-        Returns absolute paths of all assets that need to be in the build.
-        """
         scenes_dir = os.path.join(project_root, "scenes")
-        assets_dir = os.path.join(project_root, "assets")
         referenced: set[str] = set()
-
+        scene_paths: list[str] = []
         for scene in self._scenes:
             if os.path.isabs(scene):
                 scene_path = scene
@@ -180,13 +176,35 @@ class BuildSettings:
                 scene_path = os.path.join(scenes_dir, s)
             if not os.path.exists(scene_path):
                 continue
+            scene_paths.append(scene_path)
+        if not scene_paths:
+            return referenced
+        def load_one(p: str):
             try:
-                with open(scene_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                self._collect_assets_from_scene(data, project_root, referenced)
+                with open(p, "r", encoding="utf-8") as f:
+                    return (p, json.load(f), None)
             except Exception as e:
-                Logger.warning(f"BuildSettings: failed to scan {scene_path}: {e}")
-
+                return (p, None, e)
+        datas: list[dict] = []
+        if len(scene_paths) > 1:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(scene_paths))) as ex:
+                for p, d, e in ex.map(load_one, scene_paths):
+                    if e is not None:
+                        Logger.warning(f"BuildSettings: failed to scan {p}: {e}")
+                    elif d is not None:
+                        datas.append(d)
+        else:
+            for p in scene_paths:
+                pp, d, e = load_one(p)
+                if e is not None:
+                    Logger.warning(f"BuildSettings: failed to scan {pp}: {e}")
+                elif d is not None:
+                    datas.append(d)
+        for data in datas:
+            try:
+                self._collect_assets_from_scene(data, project_root, referenced)
+            except Exception:
+                pass
         return referenced
 
     def _collect_assets_from_scene(self, data: dict, project_root: str, result: set[str]):
@@ -194,28 +212,68 @@ class BuildSettings:
                        "ply_path", "shader_path", "env_path", "svg_path", "font_path",
                        "video_path", "graph_path"}
         entities = data.get("entities", {})
+        jobs: list[tuple[str, str]] = []
         for eid, entity_data in entities.items():
             components = entity_data.get("components", [])
             for comp in components:
                 for key, value in comp.items():
                     if key in PATH_FIELDS and isinstance(value, str) and value:
-                        abs_path = self._resolve_asset_path(value, project_root)
-                        if abs_path:
-                            if os.path.isdir(abs_path):
-                                result.add(abs_path)
-                                try:
-                                    for root, dirs, files in os.walk(abs_path):
-                                        for fn in files:
-                                            result.add(os.path.join(root, fn))
-                                except Exception:
-                                    pass
-                            else:
-                                result.add(abs_path)
-                        if key == "material_path":
-                            mat_abs = self._resolve_asset_path(value, project_root)
-                            if mat_abs and os.path.exists(mat_abs):
-                                result.add(mat_abs)
-                                self._scan_material(mat_abs, project_root, result)
+                        jobs.append((key, value))
+        if not jobs:
+            return
+        def resolve_one(item: tuple[str, str]):
+            key, value = item
+            abs_path = self._resolve_asset_path(value, project_root)
+            return (key, value, abs_path)
+        resolved: list[tuple[str, str, str | None]] = []
+        if len(jobs) > 16:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
+                for r in ex.map(resolve_one, jobs):
+                    resolved.append(r)
+        else:
+            for j in jobs:
+                resolved.append(resolve_one(j))
+        mat_jobs: list[str] = []
+        for key, value, abs_path in resolved:
+            if not abs_path:
+                continue
+            if os.path.isdir(abs_path):
+                result.add(abs_path)
+                try:
+                    for root, dirs, files in os.walk(abs_path):
+                        for fn in files:
+                            result.add(os.path.join(root, fn))
+                except Exception:
+                    pass
+            else:
+                result.add(abs_path)
+            if key == "material_path":
+                if os.path.exists(abs_path):
+                    result.add(abs_path)
+                    mat_jobs.append(abs_path)
+        if mat_jobs:
+            uniq_mats = list(dict.fromkeys(mat_jobs))
+            def scan_one(mp: str):
+                found: list[str] = []
+                try:
+                    with open(mp, "r", encoding="utf-8") as f:
+                        mat_data = json.load(f)
+                    for tex_path in mat_data.get("textures", {}).values():
+                        if isinstance(tex_path, str) and tex_path:
+                            ap = self._resolve_asset_path(tex_path, project_root)
+                            if ap:
+                                found.append(ap)
+                except Exception:
+                    pass
+                return found
+            if len(uniq_mats) > 1:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(uniq_mats))) as ex:
+                    for lst in ex.map(scan_one, uniq_mats):
+                        for p in lst:
+                            result.add(p)
+            else:
+                for p in scan_one(uniq_mats[0]):
+                    result.add(p)
 
     def _scan_material(self, mat_path: str, project_root: str, result: set[str]):
         try:
