@@ -1974,10 +1974,32 @@ class Scene:
         raw = data.get("entities", {})
         entities: dict[str, Entity] = {}
         parent_map: dict[str, Optional[str]] = {}
-        for eid, ed in raw.items():
-            e = Entity.deserialize(ed, registry)
-            entities[eid] = e
-            parent_map[eid] = ed.get("parent")
+        items = list(raw.items())
+        if len(items) > 64:
+            workers = min(8, max(2, (os.cpu_count() or 4)))
+            chunk = (len(items) + workers - 1) // workers
+            def task(part):
+                res = []
+                for eid, ed in part:
+                    try:
+                        res.append((eid, Entity.deserialize(ed, registry), ed.get("parent")))
+                    except Exception:
+                        pass
+                return res
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = [ex.submit(task, items[i:i + chunk]) for i in range(0, len(items), chunk)]
+                for fu in concurrent.futures.as_completed(futs):
+                    try:
+                        for eid, e, pid in fu.result():
+                            entities[eid] = e
+                            parent_map[eid] = pid
+                    except Exception:
+                        pass
+        else:
+            for eid, ed in raw.items():
+                e = Entity.deserialize(ed, registry)
+                entities[eid] = e
+                parent_map[eid] = ed.get("parent")
         for eid, e in entities.items():
             pid = parent_map.get(eid)
             if pid and pid in entities:

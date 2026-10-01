@@ -224,18 +224,34 @@ def _flagged_entity_ids(data: dict, entities: dict) -> set:
     return result
 
 
+_EMBED_STAT_CACHE: dict[tuple[str, int], tuple[float, int, str, str, int]] = {}
+
+
 def _read_raw_digest(val: str, root: str, compress_level: int):
     absv = _abs_path(val, root)
     if not absv:
-        return (val, None, None, None, None)
+        return (val, None, 0, None, None, 0)
+    try:
+        st = os.stat(absv)
+    except OSError:
+        return (val, None, 0, None, None, 0)
+    ckey = (absv, int(compress_level))
+    hit = _EMBED_STAT_CACHE.get(ckey)
+    if hit is not None and hit[0] == st.st_mtime and hit[1] == st.st_size:
+        return (val, absv, hit[1], hit[2], hit[3], hit[4])
     try:
         with open(absv, "rb") as f:
             raw = f.read()
     except OSError:
-        return (val, None, None, None, None)
+        return (val, None, 0, None, None, 0)
     digest = hashlib.sha1(raw).hexdigest()[:16]
     payload = _compress(raw, compress_level)
-    return (val, absv, raw, digest, payload)
+    b64 = base64.b64encode(payload).decode("ascii")
+    try:
+        _EMBED_STAT_CACHE[ckey] = (st.st_mtime, len(raw), digest, b64, len(payload))
+    except Exception:
+        pass
+    return (val, absv, len(raw), digest, b64, len(payload))
 
 
 def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None,
@@ -258,8 +274,8 @@ def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None
     has_compressed = any(bool(e.get("compression")) for e in storage.values())
     has_raw_large = any(not e.get("compression") and int(e.get("size", 0)) >= 64 for e in storage.values())
     force_reencode = (use_compression and has_raw_large) or (not use_compression and has_compressed)
-    fields = [val for eid in flagged
-              for _, _, _, val in _iter_component_path_entries({"entities": {eid: entities[eid]}})]
+    fdata = {"entities": {eid: entities[eid] for eid in flagged if eid in entities}}
+    fields = [val for _, _, _, val in _iter_component_path_entries(fdata)]
     total = len(fields)
     done = 0
     progress_cb = progress_cb or (lambda *_: None)
@@ -318,8 +334,8 @@ def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None
                     embed_file(tex)
         return storage_key
 
-    def apply_loaded(val: str, absv: str | None, raw: bytes | None, digest: str | None, payload: bytes | None) -> str:
-        if absv is None or raw is None or digest is None or payload is None:
+    def apply_loaded(val: str, absv: str | None, size: int, digest: str | None, b64: str | None, plen: int) -> str:
+        if absv is None or digest is None or b64 is None:
             bname = _sanitize_name(os.path.basename(_norm(val).rstrip("/")))
             if bname and bname in basename_map:
                 return basename_map[bname]
@@ -327,6 +343,7 @@ def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None
             if storage_key is None:
                 return ""
             return storage_key
+        raw_len = int(size)
         bname = _sanitize_name(os.path.basename(_norm(val).rstrip("/")))
         if bname and bname in basename_map:
             return basename_map[bname]
@@ -342,13 +359,13 @@ def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None
         entry = {
             "key": storage_key,
             "name": os.path.basename(absv),
-            "size": len(raw),
+            "size": raw_len,
             "digest": digest,
-            "data": base64.b64encode(payload).decode("ascii"),
+            "data": b64,
         }
-        if len(payload) < len(raw):
+        if plen < raw_len:
             entry["compression"] = "zlib"
-            entry["csize"] = len(payload)
+            entry["csize"] = plen
         elif not use_compression:
             entry.pop("compression", None)
             entry.pop("csize", None)
@@ -366,13 +383,13 @@ def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None
             futs = {ex.submit(_read_raw_digest, v, root, compress_level): v for v in uniq}
             for fu in concurrent.futures.as_completed(futs):
                 try:
-                    v, av, rw, dg, pl = fu.result()
+                    v, av, sz, dg, b64, plen = fu.result()
                 except Exception:
                     continue
-                loaded[v] = (av, rw, dg, pl)
+                loaded[v] = (av, sz, dg, b64, plen)
         for val in uniq:
-            av, rw, dg, pl = loaded.get(val, (None, None, None, None))
-            sk = apply_loaded(val, av, rw, dg, pl)
+            av, sz, dg, b64, plen = loaded.get(val, (None, 0, None, None, 0))
+            sk = apply_loaded(val, av, sz, dg, b64, plen)
             if sk and av and _is_material_file(av):
                 pending_mats.append(av)
     else:
@@ -424,6 +441,18 @@ def _decode_entry_raw(storage_key: str, storage: dict):
     return (storage_key, raw, digest, name)
 
 
+def _target_for_key(storage_key: str, storage: dict, cache_dir: str):
+    entry = storage.get(storage_key)
+    if not entry:
+        return None
+    entry = _resolve_alias(entry, storage)
+    digest = entry.get("digest")
+    if not digest or not isinstance(digest, str):
+        return None
+    name = _sanitize_name(str(entry.get("name") or os.path.basename(storage_key)))
+    return (os.path.join(cache_dir, f"{digest}_{name}"), digest, name)
+
+
 def extract_embedded_resources(data: dict, root: str, cache_mode: str = "project",
                                progress_cb: Optional[Callable] = None) -> dict:
     storage = data.get("embedded_resources")
@@ -443,7 +472,11 @@ def extract_embedded_resources(data: dict, root: str, cache_mode: str = "project
     bname_index: dict[str, str] = {}
     for k, e in storage.items():
         try:
-            bname_index[_entry_cache_basename(e, storage)] = k
+            dg = e.get("digest")
+            nm = _sanitize_name(str(e.get("name") or os.path.basename(k)))
+            if dg:
+                bname_index[f"{dg}_{nm}"] = k
+            bname_index[nm] = k
         except Exception:
             pass
     for ed, comp, path, val in fields:
@@ -460,33 +493,50 @@ def extract_embedded_resources(data: dict, root: str, cache_mode: str = "project
         progress_cb(done, total, os.path.basename(str(val)))
     if needed_keys:
         keys = list(needed_keys.keys())
-        decoded: dict[str, tuple] = {}
-        if len(keys) > 1:
-            workers = min(8, max(2, os.cpu_count() or 4))
-            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-                futs = {ex.submit(_decode_entry_raw, k, storage): k for k in keys}
-                for fu in concurrent.futures.as_completed(futs):
-                    try:
-                        sk, raw, digest, name = fu.result()
-                    except Exception:
-                        continue
-                    decoded[sk] = (raw, digest, name)
-        else:
-            for k in keys:
-                sk, raw, digest, name = _decode_entry_raw(k, storage)
-                decoded[sk] = (raw, digest, name)
-        for storage_key, usages in needed_keys.items():
-            raw, digest, name = decoded.get(storage_key, (None, None, None))
-            if raw is None or digest is None or name is None:
+        ready: dict[str, str] = {}
+        missing: list[str] = []
+        for k in keys:
+            t = _target_for_key(k, storage, cache_dir)
+            if t is None:
+                missing.append(k)
                 continue
-            path = os.path.join(cache_dir, f"{digest}_{name}")
-            if not os.path.exists(path):
-                try:
-                    with open(path, "wb") as f:
-                        f.write(raw)
-                except OSError:
+            p, _, _ = t
+            if os.path.exists(p):
+                ready[k] = _norm(os.path.abspath(p))
+            else:
+                missing.append(k)
+        decoded: dict[str, tuple] = {}
+        if missing:
+            if len(missing) > 1:
+                workers = min(8, max(2, os.cpu_count() or 4))
+                with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                    futs = {ex.submit(_decode_entry_raw, k, storage): k for k in missing}
+                    for fu in concurrent.futures.as_completed(futs):
+                        try:
+                            sk, raw, digest, name = fu.result()
+                        except Exception:
+                            continue
+                        decoded[sk] = (raw, digest, name)
+            else:
+                for k in missing:
+                    sk, raw, digest, name = _decode_entry_raw(k, storage)
+                    decoded[sk] = (raw, digest, name)
+            for storage_key in missing:
+                raw, digest, name = decoded.get(storage_key, (None, None, None))
+                if raw is None or digest is None or name is None:
                     continue
-            cache_path = _norm(os.path.abspath(path))
+                path = os.path.join(cache_dir, f"{digest}_{name}")
+                if not os.path.exists(path):
+                    try:
+                        with open(path, "wb") as f:
+                            f.write(raw)
+                    except OSError:
+                        continue
+                ready[storage_key] = _norm(os.path.abspath(path))
+        for storage_key, usages in needed_keys.items():
+            cache_path = ready.get(storage_key)
+            if not cache_path:
+                continue
             for ed, comp, pth, val in usages:
                 _set_nested(comp, pth, cache_path)
                 if _is_material_file(storage_key):

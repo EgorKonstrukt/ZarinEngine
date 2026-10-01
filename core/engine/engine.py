@@ -168,7 +168,7 @@ class Engine:
         self.relativize_scene_paths(data)
         build_path = path + ".build"
         with open(build_path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
+            json.dump(data, f, separators=(",", ":"))
         os.replace(build_path, path)
         return storage
     def save_scene_async(self, path: Optional[str] = None, on_done: Optional[Any] = None):
@@ -213,7 +213,20 @@ class Engine:
         def _cb(done: int, total_: int, name: str) -> None:
             frac = None if total_ <= 0 else done / max(1, total_)
             task_update(task_id, fraction=frac, detail=name)
-        def _worker(snapshot: dict):
+        def _worker(snapshot: dict | None):
+            if snapshot is None:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        snapshot = json.load(f)
+                except Exception as e:
+                    Logger.error(f"Failed to load scene '{path}': {e}", e)
+                    msg = str(e)
+                    def _err():
+                        from core.foundation import progress
+                        progress.notify_error(f"Failed to load scene: {msg}")
+                        task_complete(task_id)
+                    self._defer_gui(_err)
+                    return
             try:
                 embedded = _extract_embedded_resources(snapshot, self.project_root,
                                                        self._embedded_cache_mode(), progress_cb=_cb)
@@ -228,14 +241,6 @@ class Engine:
                 self._defer_gui(_err)
                 return
             self._defer_gui(lambda: self._apply_loaded(snapshot, embedded, path, task_id, on_done))
-        if data is None:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except Exception as e:
-                Logger.error(f"Failed to load scene '{path}': {e}", e)
-                task_complete(task_id)
-                return
         threading.Thread(target=_worker, args=(data,), name="scene-load-worker", daemon=True).start()
     def _apply_loaded(self, data: dict, embedded: dict, path: str, task_id: str,
                       on_done: Optional[Any] = None):
