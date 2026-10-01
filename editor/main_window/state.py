@@ -150,14 +150,6 @@ def _file_entity_count(path: str) -> int:
         return -1
 
 
-def _snapshot_usable(snapshot_path: str, scene_path: str) -> bool:
-    if _file_entity_count(snapshot_path) != 0:
-        return True
-    if scene_path and os.path.isfile(scene_path) and _file_entity_count(scene_path) > 0:
-        return False
-    return True
-
-
 def _snapshotted_version(scene):
     try:
         return getattr(scene, "_snapshot_rev", None)
@@ -297,12 +289,32 @@ def _load_scene_file(eng, path: str):
     return scene
 
 
+def _migrate_snapshot_to_pkl(snapshot_path: str, data: dict) -> str:
+    try:
+        if not snapshot_path.endswith(".json") or not os.path.isfile(snapshot_path):
+            return ""
+        pkl_path = os.path.splitext(snapshot_path)[0] + ".pkl"
+        if os.path.isfile(pkl_path):
+            return os.path.basename(pkl_path)
+        with open(pkl_path, "wb") as f:
+            pickle.dump(data, f, protocol=5)
+        return os.path.basename(pkl_path)
+    except Exception:
+        return ""
+
+
 def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str, entry_name: str):
     from core.ecs.ecs import Scene, ComponentRegistry
     from core.ecs.embedded_resources import extract_embedded_resources
     data = _read_snapshot_file(snapshot_path)
     if data is None:
         raise ValueError(f"Unreadable snapshot: {snapshot_path}")
+    migrated = _migrate_snapshot_to_pkl(snapshot_path, data)
+    entities = data.get("entities", {})
+    if isinstance(entities, dict) and len(entities) == 0:
+        if scene_path and os.path.isfile(scene_path) and _file_entity_count(scene_path) > 0:
+            Logger.warning(f"Ignoring empty snapshot, loading file instead: {scene_path}")
+            return None
     data["_source"] = scene_path or snapshot_path
     embedded = extract_embedded_resources(data, eng.project_root, eng._embedded_cache_mode())
     eng.resolve_scene_paths(data)
@@ -314,7 +326,10 @@ def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str, entry_name: s
     elif entry_name:
         scene.name = entry_name
     scene.mark_dirty()
-    _mark_snapshotted(scene, snapshot_path)
+    if migrated:
+        _mark_snapshotted(scene, os.path.splitext(snapshot_path)[0] + ".pkl")
+    else:
+        _mark_snapshotted(scene, snapshot_path)
     return scene
 
 
@@ -353,10 +368,18 @@ def restore_tabs(mw) -> bool:
             scene_path = entry.get("path", "") or ""
             snapshot = entry.get("snapshot", "") or ""
             snapshot_path = os.path.join(_session_dir(), os.path.basename(snapshot)) if snapshot else ""
+            try:
+                fsize = os.path.getsize(scene_path) if scene_path and os.path.isfile(scene_path) else -1
+            except Exception:
+                fsize = -1
+            try:
+                ssize = os.path.getsize(snapshot_path) if snapshot_path and os.path.isfile(snapshot_path) else -1
+            except Exception:
+                ssize = -1
             _debug_log(
                 f"restore entry scene name={entry.get('name')} path={scene_path} "
-                f"file_entities={_file_entity_count(scene_path) if scene_path else -1} "
-                f"snapshot_entities={_file_entity_count(snapshot_path) if snapshot_path else -1}"
+                f"file_bytes={fsize} "
+                f"snapshot_bytes={ssize}"
             )
         else:
             _debug_log(f"restore entry script path={entry.get('path')}")
@@ -403,14 +426,12 @@ def restore_tabs(mw) -> bool:
                 scene = None
                 if snapshot:
                     snapshot_path = os.path.join(_session_dir(), os.path.basename(snapshot))
-                    if os.path.isfile(snapshot_path) and _snapshot_usable(snapshot_path, scene_path):
+                    if os.path.isfile(snapshot_path):
                         try:
                             scene = _load_scene_snapshot(eng, snapshot_path, scene_path, name)
                         except Exception as e:
                             Logger.error(f"Failed to restore scene snapshot: {e}")
                             scene = None
-                    elif os.path.isfile(snapshot_path):
-                        Logger.warning(f"Ignoring empty snapshot, loading file instead: {scene_path}")
                 if scene is None and scene_path:
                     if eng.scene is not None and getattr(eng.scene, 'path', None) == scene_path:
                         scene = eng.scene

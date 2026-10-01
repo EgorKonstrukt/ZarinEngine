@@ -283,9 +283,10 @@ class Engine:
         import os as _os
         workers = min(8, max(2, _os.cpu_count() or 4))
         chunk = (len(comps) + workers - 1) // workers
+        cache: dict = {}
         def task(part):
             for c in part:
-                self._resolve_component_paths(c, root)
+                self._resolve_component_paths(c, root, cache)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
             futs = [ex.submit(task, comps[i:i+chunk]) for i in range(0, len(comps), chunk)]
             for fu in concurrent.futures.as_completed(futs):
@@ -312,9 +313,10 @@ class Engine:
         import os as _os2
         workers = min(8, max(2, _os2.cpu_count() or 4))
         chunk = (len(comps) + workers - 1) // workers
+        cache: dict = {}
         def task(part):
             for c in part:
-                self._relativize_component_paths(c, root)
+                self._relativize_component_paths(c, root, cache)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
             futs = [ex.submit(task, comps[i:i+chunk]) for i in range(0, len(comps), chunk)]
             for fu in concurrent.futures.as_completed(futs):
@@ -323,26 +325,26 @@ class Engine:
                 except Exception:
                     pass
     @staticmethod
-    def _resolve_component_paths(comp: dict, root: str):
+    def _resolve_component_paths(comp: dict, root: str, cache: dict | None = None):
         for key, val in comp.items():
             if key in _PATH_FIELDS and val and isinstance(val, str):
-                comp[key] = Engine._resolve_path(val, root)
+                comp[key] = Engine._resolve_path(val, root, cache)
         mats = Engine._copy_materials(comp.get("materials"))
         if mats is not None:
             for mat in mats.values() if isinstance(mats, dict) else mats:
                 if isinstance(mat, dict) and "path" in mat:
-                    mat["path"] = Engine._resolve_path(mat["path"], root)
+                    mat["path"] = Engine._resolve_path(mat["path"], root, cache)
             comp["materials"] = mats
     @staticmethod
-    def _relativize_component_paths(comp: dict, root: str):
+    def _relativize_component_paths(comp: dict, root: str, cache: dict | None = None):
         for key, val in comp.items():
             if key in _PATH_FIELDS and val and isinstance(val, str):
-                comp[key] = Engine._relativize_path(val, root)
+                comp[key] = Engine._relativize_path(val, root, cache)
         mats = Engine._copy_materials(comp.get("materials"))
         if mats is not None:
             for mat in mats.values() if isinstance(mats, dict) else mats:
                 if isinstance(mat, dict) and "path" in mat:
-                    mat["path"] = Engine._relativize_path(mat["path"], root)
+                    mat["path"] = Engine._relativize_path(mat["path"], root, cache)
             comp["materials"] = mats
     @staticmethod
     def _copy_materials(mats):
@@ -353,17 +355,30 @@ class Engine:
             return {k: dict(e) if isinstance(e, dict) else e for k, e in mats.items()}
         return None
     @staticmethod
-    def _resolve_path(val: str, root: str) -> str:
+    def _resolve_path(val: str, root: str, cache: dict | None = None) -> str:
+        if cache is not None:
+            try:
+                hit = cache.get(val)
+                if hit is not None:
+                    return hit
+            except Exception:
+                pass
+        res = Engine._resolve_path_uncached(val, root)
+        if cache is not None:
+            try:
+                cache[val] = res
+            except Exception:
+                pass
+        return res
+    @staticmethod
+    def _resolve_path_uncached(val: str, root: str) -> str:
         if not val or os.path.exists(val):
             return val
-        # Try resolving relative to project root
         candidate = os.path.normpath(os.path.join(root, val))
         if os.path.exists(candidate):
             return candidate.replace("\\", "/")
-        # Windows absolute path (C:\...) on Linux вЂ” extract subpath after project name
         if len(val) > 1 and val[1] == ":":
             parts = val.replace("\\", "/").split("/")
-            # Try each suffix from longest to shortest
             for i in range(len(parts)):
                 sub = "/".join(parts[i:])
                 if sub:
@@ -372,15 +387,29 @@ class Engine:
                         return c.replace("\\", "/")
         return val
     @staticmethod
-    def _relativize_path(val: str, root: str) -> str:
+    def _relativize_path(val: str, root: str, cache: dict | None = None) -> str:
+        if cache is not None:
+            try:
+                hit = cache.get(val)
+                if hit is not None:
+                    return hit
+            except Exception:
+                pass
         if not val:
-            return ""
-        if not os.path.isabs(val):
-            return val.replace("\\", "/")
-        try:
-            return os.path.relpath(val, root).replace("\\", "/")
-        except ValueError:
-            return val
+            res = ""
+        elif not os.path.isabs(val):
+            res = val.replace("\\", "/")
+        else:
+            try:
+                res = os.path.relpath(val, root).replace("\\", "/")
+            except ValueError:
+                res = val
+        if cache is not None:
+            try:
+                cache[val] = res
+            except Exception:
+                pass
+        return res
     def initialize(self):
         import core.components
 
