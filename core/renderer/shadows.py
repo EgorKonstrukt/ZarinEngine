@@ -919,7 +919,15 @@ class ShadowRenderer:
             fk = self._shadow_frame_key
             if fk is None or sel is None:
                 return
-            self._shadow_inst_sel[key] = (fk, np.array(sel, dtype=np.intp, copy=True))
+            try:
+                _so = self._shadow_origin
+                if _so is None:
+                    _ok = None
+                else:
+                    _ok = (float(_so[0]), float(_so[1]), float(_so[2]))
+            except Exception:
+                _ok = None
+            self._shadow_inst_sel[key] = (fk, _ok, np.array(sel, dtype=np.intp, copy=True))
             if len(self._shadow_inst_sel) > 1024:
                 try:
                     self._shadow_inst_sel.pop(next(iter(self._shadow_inst_sel)))
@@ -938,8 +946,16 @@ class ShadowRenderer:
         try:
             fk = self._shadow_frame_key
             if fk is not None and sel is not None:
+                try:
+                    _so2 = self._shadow_origin
+                    if _so2 is None:
+                        _ok2 = None
+                    else:
+                        _ok2 = (float(_so2[0]), float(_so2[1]), float(_so2[2]))
+                except Exception:
+                    _ok2 = None
                 rec = self._shadow_inst_sel.get(key)
-                if rec is not None and rec[0] == fk and rec[1].shape == sel.shape and bool((rec[1] == sel).all()):
+                if rec is not None and len(rec) == 3 and rec[0] == fk and rec[1] == _ok2 and rec[2].shape == sel.shape and bool((rec[2] == sel).all()):
                     cached = self._shadow_inst_vbo.get(key)
                     if cached is not None:
                         return cached
@@ -1126,18 +1142,18 @@ class ShadowRenderer:
         if _o is not None:
             try:
                 cen = cen - np.asarray(_o, dtype=np.float64).reshape(3)
-                vpm = np.frombuffer(shift_vp_bytes(vp, _o), dtype=np.float32).reshape(4, 4)
+                vpm = np.frombuffer(shift_vp_bytes(vp, _o), dtype=np.float32).copy().reshape(4, 4)
             except Exception:
                 cen = self._flat_centers[:n]
                 vpm = vp
         if cull_flat is not None:
             try:
-                return int(cull_flat(cen, self._flat_radii[:n], vpm, self._flat_out[:n]))
+                return int(cull_flat(np.ascontiguousarray(cen, dtype=np.float64), np.ascontiguousarray(self._flat_radii[:n], dtype=np.float64), np.ascontiguousarray(vpm, dtype=np.float32), self._flat_out[:n]))
             except Exception:
                 pass
         from core.renderer.culling import cpu_frustum_cull
         try:
-            vis = cpu_frustum_cull(cen, self._flat_radii[:n], np.asarray(vpm, dtype=np.float64))
+            vis = cpu_frustum_cull(cen, self._flat_radii[:n], np.ascontiguousarray(np.asarray(vpm, dtype=np.float64).T))
             m = len(vis)
             self._flat_out[:m] = vis
             return m
@@ -1150,9 +1166,22 @@ class ShadowRenderer:
             return 0
         if min_radius <= 0.0:
             return self._cull_flat_count(vp)
+        try:
+            _o = self._shadow_origin
+        except Exception:
+            _o = None
+        cen = self._flat_centers[:n]
+        vpm = vp
+        if _o is not None:
+            try:
+                cen = cen - np.asarray(_o, dtype=np.float64).reshape(3)
+                vpm = np.frombuffer(shift_vp_bytes(vp, _o), dtype=np.float32).copy().reshape(4, 4)
+            except Exception:
+                cen = self._flat_centers[:n]
+                vpm = vp
         if cull_flat_min is not None:
             try:
-                return int(cull_flat_min(self._flat_centers[:n], self._flat_radii[:n], vp, float(min_radius), self._flat_out[:n]))
+                return int(cull_flat_min(np.ascontiguousarray(cen, dtype=np.float64), np.ascontiguousarray(self._flat_radii[:n], dtype=np.float64), np.ascontiguousarray(vpm, dtype=np.float32), float(min_radius), self._flat_out[:n]))
             except Exception:
                 pass
         return self._cull_flat_count(vp)
@@ -1178,39 +1207,70 @@ class ShadowRenderer:
             try:
                 _ox = float(_o[0]); _oy = float(_o[1]); _oz = float(_o[2])
                 cen = cen - np.asarray(_o, dtype=np.float64).reshape(3)
-                vpm = np.frombuffer(shift_vp_bytes(vp, _o), dtype=np.float32).reshape(4, 4)
+                vpm = np.frombuffer(shift_vp_bytes(vp, _o), dtype=np.float32).copy().reshape(4, 4)
                 _lx -= _ox; _ly -= _oy; _lz -= _oz
             except Exception:
                 cen = self._flat_centers[:n]
                 vpm = vp
                 _lx = float(lx); _ly = float(ly); _lz = float(lz)
-        if cull_flat_range_min is not None:
+        try:
+            rad_all = self._flat_radii[:n]
+            dx = cen[:, 0] - _lx
+            dy = cen[:, 1] - _ly
+            dz = cen[:, 2] - _lz
+            lim = base_range + rad_all
+            mask = (dx * dx + dy * dy + dz * dz) <= lim * lim
+            if min_radius > 0.0:
+                mask = mask & (rad_all >= min_radius)
+            idx = np.nonzero(mask)[0].astype(np.intp, copy=False)
+        except Exception:
+            idx = np.empty(0, dtype=np.intp)
             try:
-                rmax = float(np.max(self._flat_radii[:n]))
-            except Exception:
-                rmax = 0.0
-            if rmax < 0.0:
-                rmax = 0.0
-            eff = base_range + rmax
-            try:
-                return int(cull_flat_range_min(cen, self._flat_radii[:n], vpm, float(_lx), float(_ly), float(_lz), float(eff * eff), float(min_radius), self._flat_out[:n]))
+                if min_radius <= 0.0:
+                    return self._cull_flat_count(vp)
             except Exception:
                 pass
-        c = cen
-        rad = self._flat_radii[:n]
-        dx = c[:, 0] - _lx
-        dy = c[:, 1] - _ly
-        dz = c[:, 2] - _lz
-        lim = base_range + rad
-        mask = (dx * dx + dy * dy + dz * dz) <= lim * lim
-        if min_radius > 0.0:
-            mask = mask & (self._flat_radii[:n] >= min_radius)
-        idx = np.nonzero(mask)[0].astype(np.intp, copy=False)
+            return 0
         if idx.size == 0:
             return 0
+        try:
+            vpm_c = np.ascontiguousarray(vpm, dtype=np.float32)
+        except Exception:
+            vpm_c = vpm
+        if idx.size == n:
+            if cull_flat is not None:
+                try:
+                    return int(cull_flat(np.ascontiguousarray(cen, dtype=np.float64), np.ascontiguousarray(rad_all, dtype=np.float64), vpm_c, self._flat_out[:n]))
+                except Exception:
+                    pass
+            from core.renderer.culling import cpu_frustum_cull as _cpu_cull_full
+            try:
+                vis = _cpu_cull_full(cen, rad_all, np.ascontiguousarray(np.asarray(vpm_c, dtype=np.float64).T))
+                m = len(vis)
+                self._flat_out[:m] = vis
+                return m
+            except Exception:
+                return n
+        try:
+            sub_cen = np.ascontiguousarray(cen[idx], dtype=np.float64)
+            sub_rad = np.ascontiguousarray(rad_all[idx], dtype=np.float64)
+        except Exception:
+            return 0
+        if cull_flat is not None:
+            try:
+                cnt = int(cull_flat(sub_cen, sub_rad, vpm_c, self._flat_out[:idx.size]))
+                try:
+                    mapped = idx[np.asarray(self._flat_out[:cnt], dtype=np.intp)]
+                    m = len(mapped)
+                    self._flat_out[:m] = mapped
+                    return m
+                except Exception:
+                    return cnt
+            except Exception:
+                pass
         from core.renderer.culling import cpu_frustum_cull
         try:
-            vis = cpu_frustum_cull(c[idx, :], self._flat_radii[:n][idx], np.asarray(vpm, dtype=np.float64))
+            vis = cpu_frustum_cull(sub_cen, sub_rad, np.ascontiguousarray(np.asarray(vpm_c, dtype=np.float64).T))
             mapped = idx[vis]
             m = len(mapped)
             self._flat_out[:m] = mapped

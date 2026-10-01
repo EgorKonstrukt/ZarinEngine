@@ -123,12 +123,11 @@ def relativize_model_f32(model_mat, origin):
         except Exception:
             return np.eye(4, dtype=np.float32).reshape(-1)
     try:
-        d = model_mat._d
-        out = d.astype(np.float32)
-        out[3, 0] -= float(origin[0])
-        out[3, 1] -= float(origin[1])
-        out[3, 2] -= float(origin[2])
-        return out.reshape(-1)
+        d = model_mat._d.astype(np.float64)
+        d[3, 0] -= float(origin[0])
+        d[3, 1] -= float(origin[1])
+        d[3, 2] -= float(origin[2])
+        return np.ascontiguousarray(d.astype(np.float32)).reshape(-1)
     except Exception:
         pass
     try:
