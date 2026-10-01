@@ -117,6 +117,20 @@ def shifted_model(model_mat, origin):
 
 
 def relativize_model_f32(model_mat, origin):
+    if origin is None:
+        try:
+            return model_mat.to_f32()
+        except Exception:
+            return np.eye(4, dtype=np.float32).reshape(-1)
+    try:
+        d = model_mat._d
+        out = d.astype(np.float32)
+        out[3, 0] -= float(origin[0])
+        out[3, 1] -= float(origin[1])
+        out[3, 2] -= float(origin[2])
+        return out.reshape(-1)
+    except Exception:
+        pass
     try:
         return shifted_model(model_mat, origin).to_f32()
     except Exception:

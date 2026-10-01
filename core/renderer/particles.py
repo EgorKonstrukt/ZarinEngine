@@ -30,6 +30,9 @@ class ParticleRenderer:
         self._last_particle_time: float = time.perf_counter()
         self._render_dt: float = 0.016
         self._last_frame: int = -1
+        self._frame_seq: int = 0
+        self._readback_stride: int = 3
+        self._cached_dead: np.ndarray = np.zeros(0, dtype=np.uint32)
 
     def load_compute_shader(self, path: str) -> bool:
         abs_path = os.path.abspath(path)
@@ -82,19 +85,47 @@ class ParticleRenderer:
         pad = FORCE_FIELD_SSBO_SIZE - len(data)
         if pad > 0:
             data += b'\x00' * pad
+        try:
+            self._ff_ssbo.orphan(len(data))
+        except Exception:
+            pass
         self._ff_ssbo.write(data)
 
     def upload_all(self, particles_np: np.ndarray):
         if self._particle_ssbo is None:
             return
-        self._particle_ssbo.write(particles_np.tobytes())
+        try:
+            raw = particles_np.tobytes()
+            try:
+                self._particle_ssbo.orphan(len(raw))
+            except Exception:
+                pass
+            self._particle_ssbo.write(raw)
+        except Exception:
+            try:
+                self._particle_ssbo.write(particles_np.tobytes())
+            except Exception:
+                pass
 
     def readback_all(self, particles_np: np.ndarray):
         if self._particle_ssbo is None:
             return
-        data = self._particle_ssbo.read()
-        arr = np.frombuffer(data, dtype=particles_np.dtype)
-        particles_np[:] = arr[:len(particles_np)]
+        try:
+            if (self._frame_seq % max(1, self._readback_stride)) != 0:
+                return
+        except Exception:
+            pass
+        try:
+            data = self._particle_ssbo.read()
+        except Exception:
+            return
+        try:
+            arr = np.frombuffer(data, dtype=particles_np.dtype)
+            n = len(particles_np)
+            if len(arr) >= n:
+                particles_np[:] = arr[:n]
+        except Exception:
+            pass
 
     def dispatch(self, params: dict):
         if not self._compute_prog or not self._particle_ssbo:
@@ -138,15 +169,43 @@ class ParticleRenderer:
                 prog['u_vel_orbital'].write(np.array(params.get('vel_orbital', (0, 0, 0)), dtype=np.float32).tobytes())
         groups = (n + 63) // 64
         prog.run(groups)
+        try:
+            self._ctx.memory_barrier(moderngl.SHADER_STORAGE_BARRIER_BIT)
+        except Exception:
+            pass
+        try:
+            self._frame_seq += 1
+        except Exception:
+            pass
 
     def read_dead_list(self) -> np.ndarray:
         if self._dead_ssbo is None:
             return np.zeros(0, dtype=np.uint32)
-        data = self._dead_ssbo.read()
-        dead_count = int(np.frombuffer(data[:4], dtype=np.uint32)[0])
+        try:
+            if (self._frame_seq % max(1, self._readback_stride)) != 1:
+                return self._cached_dead
+        except Exception:
+            pass
+        try:
+            data = self._dead_ssbo.read()
+        except Exception:
+            return self._cached_dead
+        try:
+            dead_count = int(np.frombuffer(data[:4], dtype=np.uint32)[0])
+        except Exception:
+            return self._cached_dead
         if dead_count == 0:
+            try:
+                self._cached_dead = np.zeros(0, dtype=np.uint32)
+            except Exception:
+                pass
             return np.zeros(0, dtype=np.uint32)
-        return np.frombuffer(data[4:4 + dead_count * 4], dtype=np.uint32).copy()
+        try:
+            out = np.frombuffer(data[4:4 + dead_count * 4], dtype=np.uint32).copy()
+            self._cached_dead = out
+            return out
+        except Exception:
+            return self._cached_dead
 
     def _resolve_particle_path(self, path: str) -> str | None:
         import os as _os

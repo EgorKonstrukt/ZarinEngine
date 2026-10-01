@@ -68,6 +68,12 @@ def cpu_frustum_cull(
     cdef np.ndarray[DTYPE_t, ndim=2] planes = np.empty((6, 4), dtype=DTYPE)
     _extract_frustum_planes(view_proj, planes)
 
+    if n >= 2048:
+        try:
+            return cpu_frustum_cull_parallel(centers, radii, planes)
+        except Exception:
+            pass
+
     cdef np.ndarray[np.intp_t, ndim=1] visible = np.empty(n, dtype=np.intp)
     cdef int count = 0, i, j
     cdef DTYPE_t dist
@@ -86,6 +92,35 @@ def cpu_frustum_cull(
             count += 1
 
     return visible[:count]
+
+
+def cpu_frustum_cull_parallel(
+    np.ndarray[DTYPE_t, ndim=2] centers,
+    np.ndarray[DTYPE_t, ndim=1] radii,
+    np.ndarray[DTYPE_t, ndim=2] planes,
+):
+    cdef int n = centers.shape[0]
+    if n == 0:
+        return np.zeros(0, dtype=np.intp)
+    cdef np.ndarray[np.uint8_t, ndim=1] mask = np.empty(n, dtype=np.uint8)
+    cdef DTYPE_t[:, :] cview = centers
+    cdef DTYPE_t[:] rview = radii
+    cdef DTYPE_t[:, :] pview = planes
+    cdef unsigned char[:] mview = mask
+    cdef int i, j
+    cdef DTYPE_t dist
+    cdef bint inside
+    with nogil:
+        for i in prange(n, schedule='static'):
+            inside = True
+            for j in range(6):
+                dist = (pview[j, 0] * cview[i, 0] + pview[j, 1] * cview[i, 1]
+                        + pview[j, 2] * cview[i, 2] + pview[j, 3])
+                if dist < -rview[i]:
+                    inside = False
+                    break
+            mview[i] = 1 if inside else 0
+    return np.where(mask)[0].astype(np.intp, copy=False)
 
 
 def extract_frustum_planes_c(np.ndarray[DTYPE_t, ndim=2] view_proj):

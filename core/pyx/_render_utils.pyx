@@ -116,6 +116,32 @@ def batch_mat4_to_f32_flat(list matrices):
     return out
 
 
+def batch_mat4_to_f32_flat_origin(list matrices, double ox, double oy, double oz):
+    cdef int n = len(matrices)
+    if n == 0:
+        return np.zeros((0, 16), dtype=np.float32)
+    cdef np.ndarray[np.float32_t, ndim=2] out = np.empty((n, 16), dtype=np.float32)
+    cdef int i, r, c, idx
+    cdef object wm
+    cdef DTYPE_t[:, :] d
+    for i in range(n):
+        wm = matrices[i]
+        d = wm._d
+        idx = 0
+        for r in range(4):
+            for c in range(4):
+                if r == 3 and c == 0:
+                    out[i, idx] = <np.float32_t>(d[r, c] - ox)
+                elif r == 3 and c == 1:
+                    out[i, idx] = <np.float32_t>(d[r, c] - oy)
+                elif r == 3 and c == 2:
+                    out[i, idx] = <np.float32_t>(d[r, c] - oz)
+                else:
+                    out[i, idx] = <np.float32_t>d[r, c]
+                idx += 1
+    return out
+
+
 def pack_gizmo_instance_data(list instances, int n):
     cdef np.ndarray[np.float32_t, ndim=2] buf = np.empty((n, 20), dtype=np.float32)
     cdef int i

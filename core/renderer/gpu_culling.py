@@ -67,17 +67,30 @@ class GpuStorage:
             return
         self._last_upload_version = version
         self.ensure_capacity(len(matrices))
-        try:
-            from core.renderer.origin import relativize_models
-            rel_mats = relativize_models(matrices, origin)
-        except Exception:
-            rel_mats = matrices
-        try:
-            from core._render_utils import batch_mat4_to_f32_flat
-            flat = batch_mat4_to_f32_flat(rel_mats)
-            self._world_mat_ssbo.write(flat.tobytes())
-        except ImportError:
-            self._world_mat_ssbo.write(Mat4.batch_to_f32(rel_mats).tobytes())
+        if origin is not None:
+            try:
+                from core._render_utils import batch_mat4_to_f32_flat_origin
+                flat = batch_mat4_to_f32_flat_origin(matrices, float(origin[0]), float(origin[1]), float(origin[2]))
+                self._world_mat_ssbo.write(flat.tobytes())
+            except Exception:
+                try:
+                    from core.renderer.origin import relativize_models
+                    rel_mats = relativize_models(matrices, origin)
+                except Exception:
+                    rel_mats = matrices
+                try:
+                    from core._render_utils import batch_mat4_to_f32_flat
+                    flat = batch_mat4_to_f32_flat(rel_mats)
+                    self._world_mat_ssbo.write(flat.tobytes())
+                except ImportError:
+                    self._world_mat_ssbo.write(Mat4.batch_to_f32(rel_mats).tobytes())
+        else:
+            try:
+                from core._render_utils import batch_mat4_to_f32_flat
+                flat = batch_mat4_to_f32_flat(matrices)
+                self._world_mat_ssbo.write(flat.tobytes())
+            except ImportError:
+                self._world_mat_ssbo.write(Mat4.batch_to_f32(matrices).tobytes())
         if self._culling is not None and bounding_radii.shape[0] == len(matrices):
             self._culling.upload_bounding(matrices, bounding_radii)
 

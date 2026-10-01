@@ -223,6 +223,7 @@ class ShadowRenderer:
         self._temporal_frame: int = 0
         self._temporal_skip_idx: int = -1
         self._cascade_valid = [False, False, False, False]
+        self._cascade_vp_key = None
         self._prev_flat_centers = np.zeros((0, 3), dtype=np.float64)
         self._prev_flat_radii = np.zeros(0, dtype=np.float64)
         self._prev_flat_n: int = 0
@@ -248,6 +249,10 @@ class ShadowRenderer:
         self._flat_mesh_ids = np.zeros(0, dtype=np.uint64)
         self._flat_out = np.zeros(0, dtype=np.intp)
         self._flat_mesh_map: dict = {}
+        self._flat_tr_index: dict = {}
+        self._flat_row_base = np.zeros((0,), dtype=np.float64)
+        self._flat_index_src = None
+        self._flat_index_n: int = 0
         self._mesh_radius_cache: dict = {}
         self._instancing_cache: dict[int, bool] = {}
         self._point_proj_cache: dict = {}
@@ -301,6 +306,10 @@ class ShadowRenderer:
             self._type_flags = dict(type_flags)
         if changed:
             self._cascade_valid = [False, False, False, False]
+            try:
+                self._cascade_vp_key = None
+            except Exception:
+                pass
             try:
                 self._create_csm_resources()
             except Exception:
@@ -763,6 +772,139 @@ class ShadowRenderer:
                 mats[bi, :] = 0.0
         self._flat_mesh_map = mesh_map
 
+    def _rebuild_shadow_index(self, renderable_shadow, n):
+        try:
+            idx = {}
+            base = np.empty(n, dtype=np.float64)
+            mids = self._flat_mesh_ids
+            mmap = self._flat_mesh_map
+            rc = self._mesh_radius_cache
+            get_idx = idx.get
+            for i in range(n):
+                try:
+                    tr = renderable_shadow[i][1]
+                except Exception:
+                    continue
+                if tr is None:
+                    continue
+                tid = id(tr)
+                lst = get_idx(tid)
+                if lst is None:
+                    idx[tid] = [i]
+                else:
+                    lst.append(i)
+                try:
+                    mesh = mmap.get(int(mids[i]))
+                    b = rc.get(mesh)
+                    if b is None:
+                        b = float(mesh.bounding_radius)
+                        try:
+                            rc[mesh] = b
+                        except Exception:
+                            pass
+                    base[i] = b
+                except Exception:
+                    base[i] = 1.0
+            self._flat_tr_index = idx
+            self._flat_row_base = base
+            self._flat_index_src = renderable_shadow
+            self._flat_index_n = n
+        except Exception:
+            try:
+                self._flat_tr_index = {}
+                self._flat_index_src = None
+                self._flat_index_n = 0
+            except Exception:
+                pass
+
+    def _try_shadow_partial(self, scene, renderable_shadow):
+        try:
+            n = len(renderable_shadow)
+        except Exception:
+            return False
+        if n == 0:
+            return False
+        try:
+            if renderable_shadow is not self._flat_index_src or self._flat_index_n != n or self._flat_n != n:
+                return False
+            if not self._shadow_groups_cache:
+                return False
+            index = self._flat_tr_index
+            if not index:
+                return False
+            if scene is None or not hasattr(scene, "peek_flushed_transforms"):
+                return False
+            try:
+                flushed = scene.peek_flushed_transforms()
+            except Exception:
+                return False
+            if not flushed:
+                return False
+            try:
+                if bool(getattr(scene, "_flushed_overflow", False)):
+                    return False
+            except Exception:
+                pass
+            if len(flushed) * 2 >= n:
+                return False
+            rows = []
+            mats = []
+            rows_append = rows.append
+            mats_append = mats.append
+            get_row = index.get
+            for tr in flushed:
+                try:
+                    lst = get_row(id(tr))
+                except Exception:
+                    lst = None
+                if not lst:
+                    continue
+                try:
+                    d = tr._world_matrix._d
+                except Exception:
+                    try:
+                        d = tr.world_matrix._d
+                    except Exception:
+                        continue
+                for r in lst:
+                    rows_append(r)
+                    mats_append(d)
+            if not rows:
+                try:
+                    rv = scene._render_version if scene is not None else None
+                    tv = scene._transform_version if scene is not None else None
+                    self._flat_sig = (id(scene), rv, tv, n)
+                    self._flat_src_list = renderable_shadow
+                except Exception:
+                    pass
+                return True
+            try:
+                idx_arr = np.asarray(rows, dtype=np.intp)
+                M = np.empty((len(rows), 4, 4), dtype=np.float64)
+                for j in range(len(rows)):
+                    M[j] = mats[j]
+            except Exception:
+                return False
+            try:
+                self._flat_centers[idx_arr] = M[:, 3, :3]
+                col = M[:, :3, :]
+                ms = np.sqrt(np.einsum('nca,nca->na', col, col)).max(axis=1)
+                base = self._flat_row_base
+                self._flat_radii[idx_arr] = ms * base[idx_arr]
+                self._flat_mats[idx_arr] = np.ascontiguousarray(M.reshape(len(rows), 16).astype(np.float32))
+                try:
+                    rv = scene._render_version if scene is not None else None
+                    tv = scene._transform_version if scene is not None else None
+                    self._flat_sig = (id(scene), rv, tv, n)
+                    self._flat_src_list = renderable_shadow
+                except Exception:
+                    pass
+                return True
+            except Exception:
+                return False
+        except Exception:
+            return False
+
     def _supports_instancing_cached(self, prog) -> bool:
         key = id(prog)
         v = self._instancing_cache.get(key)
@@ -786,7 +928,7 @@ class ShadowRenderer:
         except Exception:
             pass
 
-    def _upload_instanced_mats(self, key: tuple, mats_slice: np.ndarray, sel=None) -> moderngl.Buffer:
+    def _upload_instanced_mats(self, key: tuple, mats_slice: np.ndarray, sel=None, changed=False) -> moderngl.Buffer:
         try:
             _so = self._shadow_origin
             if _so is not None:
@@ -804,18 +946,24 @@ class ShadowRenderer:
         except Exception:
             pass
         data = mats_slice.tobytes()
-        try:
-            prev = self._shadow_inst_vbo_fp.get(key)
-        except Exception:
-            prev = None
-        if prev is not None and prev == data:
+        if changed:
             try:
-                cached = self._shadow_inst_vbo.get(key)
-                if cached is not None and cached.size >= len(data):
-                    self._remember_inst_sel(key, sel)
-                    return cached
+                self._shadow_inst_vbo_fp[key] = data
             except Exception:
                 pass
+        else:
+            try:
+                prev = self._shadow_inst_vbo_fp.get(key)
+            except Exception:
+                prev = None
+            if prev is not None and prev == data:
+                try:
+                    cached = self._shadow_inst_vbo.get(key)
+                    if cached is not None and cached.size >= len(data):
+                        self._remember_inst_sel(key, sel)
+                        return cached
+                except Exception:
+                    pass
         cached = self._shadow_inst_vbo.get(key)
         if cached is not None:
             try:
@@ -1413,6 +1561,28 @@ class ShadowRenderer:
             return {}
         if self._flat_cache_valid(scene, renderable_shadow):
             shadow_groups = self._shadow_groups_cache
+        elif self._try_shadow_partial(scene, renderable_shadow):
+            shadow_groups = self._shadow_groups_cache
+            if shadow_groups is None:
+                self._flat_rebuilt_frame = True
+                try:
+                    self._prepare_flat(renderable_shadow)
+                except Exception:
+                    self._flat_n = 0
+                    self._flat_mesh_map = {}
+                shadow_groups = self._build_shadow_groups(renderable_shadow)
+                try:
+                    self._rebuild_shadow_index(renderable_shadow, len(renderable_shadow))
+                except Exception:
+                    pass
+                try:
+                    rv = scene._render_version if scene is not None else None
+                    tv = scene._transform_version if scene is not None else None
+                    self._flat_sig = (id(scene), rv, tv, len(renderable_shadow))
+                    self._flat_src_list = renderable_shadow
+                except Exception:
+                    self._flat_sig = None
+                    self._flat_src_list = None
         else:
             self._flat_rebuilt_frame = True
             try:
@@ -1421,6 +1591,10 @@ class ShadowRenderer:
                 self._flat_n = 0
                 self._flat_mesh_map = {}
             shadow_groups = self._build_shadow_groups(renderable_shadow)
+            try:
+                self._rebuild_shadow_index(renderable_shadow, len(renderable_shadow))
+            except Exception:
+                pass
             try:
                 rv = scene._render_version if scene is not None else None
                 tv = scene._transform_version if scene is not None else None
@@ -1616,6 +1790,19 @@ class ShadowRenderer:
             inv_view = np.linalg.inv(view_mat._d)
         splits = self._compute_cascade_splits(cam_near, cam_far)
         self._cascade_splits = splits
+        try:
+            _vres = tuple(int(self._cascade_resolutions[ci]) if ci < len(self._cascade_resolutions) else int(self._shadow_resolution) for ci in range(self._cascade_count))
+        except Exception:
+            _vres = ()
+        try:
+            _vpkey = (vd.tobytes(), round(float(ld_x), 4), round(float(ld_y), 4), round(float(ld_z), 4), tuple(float(s) for s in splits), round(float(cam_fov), 3), round(float(aspect), 4), int(self._cascade_count), _vres)
+        except Exception:
+            _vpkey = None
+        try:
+            _reuse_vp = _vpkey is not None and _vpkey == self._cascade_vp_key
+        except Exception:
+            _reuse_vp = False
+            _vpkey = None
         near_z = max(cam_near, 0.01)
         prog = self._prog
         try:
@@ -1699,6 +1886,10 @@ class ShadowRenderer:
         umodel = "u_model" in names
         prog_id = id(prog)
         mmap = self._flat_mesh_map
+        try:
+            _single_clear = not stagger_allowed and self._shadow_fbos and self._shadow_fbos[0] is not None
+        except Exception:
+            _single_clear = False
         for ci in range(self._cascade_count):
             res = self._cascade_resolutions[ci] if ci < len(self._cascade_resolutions) else self._shadow_resolution
             if stagger_allowed and self._cascade_valid[ci]:
@@ -1708,7 +1899,12 @@ class ShadowRenderer:
                 if ci == 2 and (self._temporal_frame % 2) != 0:
                     near_z = splits[ci]
                     continue
-            if compute_frustum_corners_out is not None and build_directional_cascade_fast is not None:
+            if _reuse_vp:
+                try:
+                    np.copyto(self._vp_f32_buf, self._cascade_vps_raw[ci])
+                except Exception:
+                    _reuse_vp = False
+            if not _reuse_vp and compute_frustum_corners_out is not None and build_directional_cascade_fast is not None:
                 try:
                     compute_frustum_corners_out(
                         near_z, splits[ci], cam_fov, aspect,
@@ -1724,20 +1920,30 @@ class ShadowRenderer:
                     corners = self._get_frustum_corners(near_z, splits[ci], cam_fov, aspect, inv_view)
                     vp = self._build_directional_cascade(light_dir_v, corners, splits[ci] - near_z, res)
                     np.copyto(self._vp_f32_buf, vp)
-            else:
+            elif not _reuse_vp:
                 corners = self._get_frustum_corners(near_z, splits[ci], cam_fov, aspect, inv_view)
                 vp = self._build_directional_cascade(light_dir_v, corners, splits[ci] - near_z, res)
                 np.copyto(self._vp_f32_buf, vp)
-            self._light_space_matrices[ci] = self._vp_f32_buf.copy()
-            self._cascade_valid[ci] = True
+            if not _reuse_vp:
+                self._light_space_matrices[ci] = self._vp_f32_buf.copy()
+                self._cascade_valid[ci] = True
             if use_flat:
                 try:
                     cnt = self._cull_flat_count(self._vp_f32_buf)
                 except Exception:
                     cnt = 0
                 try:
-                    self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
-                    self._shadow_fbos[0].use()
+                    if _single_clear and first_cascade:
+                        try:
+                            self._shadow_fbos[0].use()
+                            self._ctx.viewport = (0, 0, self._cascade_atlas_w, self._cascade_atlas_h)
+                            self._shadow_fbos[0].clear(depth=1.0)
+                        except Exception:
+                            self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
+                        self._shadow_fbos[0].use()
+                    else:
+                        self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
+                        self._shadow_fbos[0].use()
                     self._ctx.viewport = (self._cascade_tile_x[ci], 0, res, res)
                     if first_cascade:
                         self._ctx.enable(moderngl.DEPTH_TEST)
@@ -1753,7 +1959,11 @@ class ShadowRenderer:
                                 prog["u_use_instancing"].value = 1
                             for mesh, sel in self._iter_flat_groups(vis, vis_mesh, mmap):
                                 chunk = self._flat_mats[sel]
-                                vbo = self._upload_instanced_mats((id(mesh), prog_id, ("d", ci)), chunk, sel)
+                                try:
+                                    _chg = bool(scene_moved)
+                                except Exception:
+                                    _chg = False
+                                vbo = self._upload_instanced_mats((id(mesh), prog_id, ("d", ci)), chunk, sel, changed=_chg)
                                 vao = self._get_shadow_vao(prog, mesh, vbo)
                                 vao.render(instances=int(sel.size))
                         else:
@@ -1784,8 +1994,17 @@ class ShadowRenderer:
             else:
                 culled = shadow_groups
             if culled:
-                self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
-                self._shadow_fbos[0].use()
+                if _single_clear and first_cascade:
+                    try:
+                        self._shadow_fbos[0].use()
+                        self._ctx.viewport = (0, 0, self._cascade_atlas_w, self._cascade_atlas_h)
+                        self._shadow_fbos[0].clear(depth=1.0)
+                    except Exception:
+                        self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
+                    self._shadow_fbos[0].use()
+                else:
+                    self._clear_atlas_tile(self._shadow_fbos[0], (self._cascade_tile_x[ci], 0, res, res))
+                    self._shadow_fbos[0].use()
                 self._ctx.viewport = (self._cascade_tile_x[ci], 0, res, res)
                 if first_cascade:
                     self._ctx.enable(moderngl.DEPTH_TEST)
@@ -1822,6 +2041,11 @@ class ShadowRenderer:
             near_z = splits[ci]
         if not first_cascade:
             self._ctx.enable(moderngl.CULL_FACE)
+        try:
+            if _vpkey is not None:
+                self._cascade_vp_key = _vpkey
+        except Exception:
+            pass
 
     def _get_frustum_corners(self, near_z: float, far_z: float, cam_fov: float,
                              aspect: float, inv_view: np.ndarray) -> list[np.ndarray]:

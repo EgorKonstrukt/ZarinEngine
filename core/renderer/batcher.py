@@ -315,7 +315,7 @@ class RenderBatcher:
         except Exception:
             return False
 
-    def _write_shared_vbo(self, matrices: list[Mat4]):
+    def _write_shared_vbo(self, matrices, origin=None):
         n = len(matrices)
         if n == 0:
             return self._shared_inst_vbo
@@ -336,6 +336,22 @@ class RenderBatcher:
                 except Exception:
                     pass
             self._vao_cache.clear()
+        if origin is not None:
+            try:
+                from core._render_utils import batch_mat4_to_f32_flat_origin
+                flat = batch_mat4_to_f32_flat_origin(matrices, float(origin[0]), float(origin[1]), float(origin[2]))
+                try:
+                    self._shared_inst_vbo.orphan()
+                except Exception:
+                    pass
+                self._shared_inst_vbo.write(flat)
+                return self._shared_inst_vbo
+            except Exception:
+                pass
+            try:
+                matrices = relativize_models(matrices, origin)
+            except Exception:
+                pass
         try:
             from core._render_utils import batch_mat4_to_f32_flat
             flat = batch_mat4_to_f32_flat(matrices)
@@ -391,7 +407,8 @@ class RenderBatcher:
                       disable_shadows: bool, set_scene_uniforms_fn,
                       apply_material_fn, normal_cache: dict,
                       selected_entities: set, outline_queue: list,
-                      gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None, skip_cull=False, skip_inst_upload=False):
+                      gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None, skip_cull=False, skip_inst_upload=False,
+                      sort_groups=True):
         self.reset_stats()
         try:
             if selected_entities is not None and len(selected_entities) > 256:
@@ -403,7 +420,40 @@ class RenderBatcher:
         if not skip_cull:
             frustum_planes = self._get_frustum_planes(view_f32, proj_f32)
         skip_up = skip_inst_upload and len(groups) == 1 and origin_for(cam_pos) is None
-        for key, group in groups.items():
+        if sort_groups and len(groups) > 1:
+            try:
+                items = sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1]))
+            except Exception:
+                items = list(groups.items())
+        else:
+            items = list(groups.items())
+        last_apply_key = None
+        last_ibl_key = None
+        real_apply = apply_material_fn
+
+        def cached_apply(mat, prog, mr=None):
+            nonlocal last_apply_key
+            try:
+                pid = id(prog)
+                mid = id(mat) if mat is not None else 0
+                if mr is None:
+                    akey = (pid, mid, 0)
+                else:
+                    try:
+                        _u = mr.uv_scale
+                        _o = mr.uv_offset
+                        akey = (pid, mid, _u.x, _u.y, _o.x, _o.y, mr.uv_scale_by_transform, mr.sprite_texture)
+                    except Exception:
+                        akey = (pid, mid, 0)
+            except Exception:
+                return real_apply(mat, prog, mr)
+            if akey == last_apply_key:
+                return
+            last_apply_key = akey
+            return real_apply(mat, prog, mr)
+
+        apply_material_fn = cached_apply
+        for key, group in items:
             _, _, mesh, _, mat, prog, _, _ = group[0]
             dyn_ref = key[5] if len(key) > 5 else False
             self._stats_batches += 1
@@ -415,9 +465,15 @@ class RenderBatcher:
                                       disable_shadows=group_disable_shadows)
                 scene_done.add(scene_key)
             if dyn_ref and dynamic_cubemaps is not None:
-                dynamic_cubemaps.bind_ibl(prog)
+                ikey = (id(prog), id(dynamic_cubemaps))
+                if ikey != last_ibl_key:
+                    dynamic_cubemaps.bind_ibl(prog)
+                    last_ibl_key = ikey
             elif sky_ibl is not None and sky_ibl.ready:
-                sky_ibl.bind(prog)
+                ikey = (id(prog), id(sky_ibl))
+                if ikey != last_ibl_key:
+                    sky_ibl.bind(prog)
+                    last_ibl_key = ikey
             elif not dyn_ref:
                 names = self._uniform_names(prog)
                 try:
@@ -427,9 +483,6 @@ class RenderBatcher:
                         prog["u_prefilter_map_Active"].value = 0
                     if "u_brdf_lut_Active" in names:
                         prog["u_brdf_lut_Active"].value = 0
-                    # Keep the IBL samplers off unit 0: unit 0 may hold a
-                    # cubemap left by dynamic-cubemap generation, which makes
-                    # the driver reject draws that still reference unit 0.
                     if "u_irradiance_map" in names:
                         prog["u_irradiance_map"].value = 14
                     if "u_prefilter_map" in names:
@@ -528,8 +581,9 @@ class RenderBatcher:
                     prog["u_use_instancing"].value = 2
         else:
             if not skip_upload:
-                model_mats = relativize_models([item[6] for item in group], origin_for(cam_pos))
-                self._write_shared_vbo(model_mats)
+                _org = origin_for(cam_pos)
+                model_mats = [item[6] for item in group]
+                self._write_shared_vbo(model_mats, _org)
             if "u_use_instancing" in names:
                 prog["u_use_instancing"].value = 1
         if "u_use_skinning" in names:

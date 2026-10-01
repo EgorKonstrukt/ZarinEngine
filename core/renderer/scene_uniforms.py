@@ -240,13 +240,31 @@ class SceneUniformsMixin:
             except Exception:
                 pass
             return list(renderable), transparent
+        try:
+            _pc = self._part_cache
+        except Exception:
+            _pc = None
+        try:
+            _pn = len(renderable)
+        except Exception:
+            _pn = -1
+        if _pc is not None and _pn > 0 and _pc[0] == _pn:
+            try:
+                _cmp = self._partition_cached(renderable, _pn, _pc, ism, lm)
+                if _cmp is not None:
+                    return _cmp
+            except Exception:
+                pass
         uniq = set()
         has_sprite = False
         uniq_add = uniq.add
+        _rec_mp = []
+        _rec_mp_append = _rec_mp.append
         for e in renderable:
             mr = e[3]
             if mr is None:
                 uniq_add("")
+                _rec_mp_append("")
                 continue
             sp = mr.sprite_texture
             if sp:
@@ -255,12 +273,15 @@ class SceneUniformsMixin:
             mats = mr.materials
             if not mats:
                 uniq_add("")
+                _rec_mp_append("")
             else:
                 sub = e[5]
                 if sub < len(mats):
-                    uniq_add(mats[sub].get("path", ""))
+                    _mp0 = mats[sub].get("path", "")
                 else:
-                    uniq_add(mats[-1].get("path", ""))
+                    _mp0 = mats[-1].get("path", "")
+                uniq_add(_mp0)
+                _rec_mp_append(_mp0)
         if has_sprite:
             try:
                 self._last_has_sprite = True
@@ -295,6 +316,11 @@ class SceneUniformsMixin:
         except Exception:
             pass
         if not trans_set:
+            try:
+                if len(_rec_mp) == len(renderable):
+                    self._part_cache = (len(renderable), _rec_mp, bytearray(len(renderable)), frozenset(uniq), frozenset(trans_set))
+            except Exception:
+                pass
             return list(renderable), transparent
         for e in renderable:
             mr = e[3]
@@ -314,6 +340,74 @@ class SceneUniformsMixin:
                     transparent.append(e)
                 else:
                     opaque.append(e)
+        try:
+            if len(_rec_mp) == len(renderable):
+                self._part_cache = (len(renderable), _rec_mp, bytearray(len(renderable)), frozenset(uniq), frozenset(trans_set))
+        except Exception:
+            pass
+        return opaque, transparent
+
+
+    def _partition_cached(self, renderable, n, pc, ism, lm):
+        cached_mpaths = pc[1]
+        for i in range(n):
+            try:
+                e = renderable[i]
+                mr = e[3]
+                if mr is None:
+                    if cached_mpaths[i] != "":
+                        return None
+                    continue
+                try:
+                    _spt = mr.sprite_texture
+                    if _spt:
+                        return None
+                except Exception:
+                    pass
+                mats = mr.materials
+                if mats:
+                    sub = e[5]
+                    if sub < len(mats):
+                        mp = mats[sub].get("path", "")
+                    else:
+                        mp = mats[-1].get("path", "")
+                else:
+                    mp = ""
+            except Exception:
+                mp = ""
+            if mp != cached_mpaths[i]:
+                return None
+        uniq = pc[3]
+        trans_set = set()
+        try:
+            for p in uniq:
+                try:
+                    mat = lm(p)
+                    if ism(None, mat):
+                        trans_set.add(p)
+                except Exception:
+                    pass
+        except Exception:
+            return None
+        try:
+            self._last_has_sprite = False
+            self._last_uniq = frozenset(uniq)
+            self._last_trans = frozenset(trans_set)
+        except Exception:
+            pass
+        if not trans_set:
+            return list(renderable), []
+        opaque = []
+        transparent = []
+        for i in range(n):
+            try:
+                e = renderable[i]
+            except Exception:
+                continue
+            if cached_mpaths[i] in trans_set:
+                transparent.append(e)
+            else:
+                opaque.append(e)
         return opaque, transparent
 
 
@@ -344,6 +438,18 @@ class SceneUniformsMixin:
         except Exception:
             return
         try:
+            _ck = getattr(self, "_opaque_sort_cache", None)
+            if _ck is not None and _ck[0] == id(entries) and _ck[1] == n and _ck[2] == cx and _ck[3] == cy and _ck[4] == cz:
+                try:
+                    _e0 = entries[0][4]._d
+                    _e1 = entries[-1][4]._d
+                    if _e0[3, 0] == _ck[5] and _e0[3, 1] == _ck[6] and _e0[3, 2] == _ck[7] and _e1[3, 0] == _ck[8] and _e1[3, 1] == _ck[9] and _e1[3, 2] == _ck[10]:
+                        return
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
             import numpy as _np
             try:
                 from core._render_utils import build_frustum_cull_inputs as _bfci
@@ -361,5 +467,11 @@ class SceneUniformsMixin:
             _idx = _np.argsort(_dx * _dx + _dy * _dy + _dz * _dz, kind="stable")
             _ordered = [entries[int(_i)] for _i in _idx]
             entries[:] = _ordered
+            try:
+                _n0 = entries[0][4]._d
+                _n1 = entries[-1][4]._d
+                self._opaque_sort_cache = (id(entries), n, cx, cy, cz, float(_n0[3, 0]), float(_n0[3, 1]), float(_n0[3, 2]), float(_n1[3, 0]), float(_n1[3, 1]), float(_n1[3, 2]))
+            except Exception:
+                pass
         except Exception:
             pass

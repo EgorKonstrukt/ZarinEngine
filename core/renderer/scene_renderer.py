@@ -397,45 +397,47 @@ class SceneRendererMixin:
             _stats_groups = []
             try:
                 _s_hit = False
-                if renderable is snap.renderable and len(renderable) > 0:
+                _s_all_vis = False
+                _snap_renderable = snap.renderable
+                if _snap_renderable is not None and len(_snap_renderable) > 0:
                     try:
                         _all_vis_chk = self._culled_visible == self._culled_total
                     except Exception:
                         _all_vis_chk = False
-                    if _all_vis_chk:
-                        try:
-                            _mg_s = self._mesh_loader._loaded_generation if self._mesh_loader else 0
-                        except Exception:
-                            _mg_s = 0
-                        try:
-                            _skey = (scene._render_version, _mg_s, len(renderable), id(snap))
-                        except Exception:
-                            _skey = None
-                        if _skey is not None and getattr(self, "_struct_key", None) == _skey:
-                            _sg = getattr(self, "_struct_groups", None)
-                            _su = getattr(self, "_struct_uniq", None)
-                            _sm = getattr(self, "_struct_mats", None)
-                            if _sg is not None and _su is not None and _sm is not None:
-                                _ok_s = True
-                                for _p in _su:
-                                    _m = self._materials.load_material(_p)
-                                    _sp = self._shaders.get_or_compile(_m.shader_path) if _m is not None and getattr(_m, "shader_path", "") else None
-                                    if _sp is None:
-                                        _sp = self._default_prog
-                                    _cid = _sm.get(_p)
-                                    if _cid is None or _cid[0] != (id(_m) if _m is not None else 0) or _cid[1] != id(_sp):
-                                        _ok_s = False
-                                        break
-                                    if self._materials.mesh_transparency(None, _m):
-                                        _ok_s = False
-                                        break
-                                if _ok_s:
-                                    use_struct_groups = True
-                                    struct_groups = _sg
+                    _s_all_vis = bool(_all_vis_chk)
+                    try:
+                        _mg_s = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+                    except Exception:
+                        _mg_s = 0
+                    try:
+                        _skey = (scene._render_version, _mg_s, len(_snap_renderable), id(snap))
+                    except Exception:
+                        _skey = None
+                    if _skey is not None and getattr(self, "_struct_key", None) == _skey:
+                        _sg = getattr(self, "_struct_groups", None)
+                        _su = getattr(self, "_struct_uniq", None)
+                        _sm = getattr(self, "_struct_mats", None)
+                        if _sg is not None and _su is not None and _sm is not None:
+                            _ok_s = True
+                            for _p in _su:
+                                _m = self._materials.load_material(_p)
+                                _sp = self._shaders.get_or_compile(_m.shader_path) if _m is not None and getattr(_m, "shader_path", "") else None
+                                if _sp is None:
+                                    _sp = self._default_prog
+                                _cid = _sm.get(_p)
+                                if _cid is None or _cid[0] != (id(_m) if _m is not None else 0) or _cid[1] != id(_sp):
+                                    _ok_s = False
+                                    break
+                                if self._materials.mesh_transparency(None, _m):
+                                    _ok_s = False
+                                    break
+                            if _ok_s:
+                                use_struct_groups = True
+                                struct_groups = _sg
             except Exception:
                 use_struct_groups = False
                 struct_groups = None
-            if use_struct_groups:
+            if use_struct_groups and _s_all_vis:
                 _stats_groups = [struct_groups]
                 if self._batcher:
                     _patched = False
@@ -500,6 +502,36 @@ class SceneRendererMixin:
                             sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=False)
                 opaque_entries = []
                 transparent_entries = []
+            elif use_struct_groups:
+                _fg = None
+                try:
+                    _vis_ids = set()
+                    for _ve in renderable:
+                        try:
+                            _vis_ids.add(id(_ve[0]))
+                        except Exception:
+                            pass
+                    if _vis_ids:
+                        _fg = {}
+                        for _gk, _grp in struct_groups.items():
+                            _nl = [it for it in _grp if id(it[0]) in _vis_ids]
+                            if _nl:
+                                _fg[_gk] = _nl
+                except Exception:
+                    _fg = None
+                if _fg:
+                    _stats_groups = [_fg]
+                    if self._batcher:
+                        self._batcher.render_groups(
+                            _fg, view_f32, proj_f32, cam_pos, lights, False,
+                            self._set_scene_uniforms, self._materials.apply_material,
+                            self._normal_cache,
+                            selected_entities or set(), outline_queue,
+                            gpu_storage=self._gpu_storage,
+                            dynamic_cubemaps=dynamic_cubemaps,
+                            sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=False)
+                opaque_entries = []
+                transparent_entries = []
             else:
                 opaque_entries, transparent_entries = self._partition_transparent(renderable)
                 self._sort_transparent_far_first(transparent_entries, cam_pos)
@@ -541,7 +573,8 @@ class SceneRendererMixin:
                     selected_entities or set(), outline_queue,
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
-                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=_all_vis)
+                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=_all_vis,
+                    sort_groups=not _is_trans_phase)
                 _stats_groups.append(groups)
                 try:
                     if _is_trans_phase:
@@ -551,11 +584,87 @@ class SceneRendererMixin:
                 except Exception:
                     pass
                 try:
-                    if not _is_trans_phase and not transparent_entries and renderable is snap.renderable and not fx_renderable:
+                    if not _is_trans_phase and not transparent_entries and not fx_renderable and (renderable is snap.renderable or (self._batcher is not None and snap.renderable is not None and len(snap.renderable) > 0 and getattr(self, "_struct_key", None) is None)):
+                        _full_build = not (renderable is snap.renderable)
+                        if _full_build:
+                            try:
+                                _brv = scene._render_version
+                            except Exception:
+                                _brv = None
+                            if _brv is not None and getattr(self, "_struct_build_tried_rv", None) == _brv:
+                                _full_build = False
+                            else:
+                                try:
+                                    self._struct_build_tried_rv = _brv
+                                except Exception:
+                                    pass
+                        if _full_build:
+                            try:
+                                _full = snap.renderable
+                                _fop, _ftr = self._partition_transparent(_full)
+                                if not _ftr:
+                                    _ffx = False
+                                    for _fe in _fop:
+                                        try:
+                                            if len(_fe) > 6 and _fe[6]:
+                                                _ffx = True
+                                                break
+                                        except Exception:
+                                            pass
+                                    if not _ffx:
+                                        _fgroups = self._batcher.collect_groups(_fop, self._materials, self._shaders)
+                                        _flu = getattr(self, "_last_uniq", None)
+                                        _flt = getattr(self, "_last_trans", None)
+                                        _flhs = getattr(self, "_last_has_sprite", True)
+                                        if _flu is not None and _flt is not None and not _flhs and len(_flt) == 0:
+                                            _ffm = {}
+                                            for _pp in _flu:
+                                                _mm = self._materials.load_material(_pp)
+                                                _psp = self._shaders.get_or_compile(_mm.shader_path) if _mm is not None and getattr(_mm, "shader_path", "") else None
+                                                if _psp is None:
+                                                    _psp = self._default_prog
+                                                _ffm[_pp] = ((id(_mm) if _mm is not None else 0), id(_psp))
+                                            try:
+                                                _mg_f = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+                                            except Exception:
+                                                _mg_f = 0
+                                            self._struct_key = (scene._render_version, _mg_f, len(_full), id(snap))
+                                            self._struct_groups = _fgroups
+                                            self._struct_uniq = _flu
+                                            self._struct_mats = dict(_ffm)
+                                            try:
+                                                if len(_fgroups) == 1:
+                                                    _only_f = next(iter(_fgroups.values()))
+                                                    _smap_f = {}
+                                                    for _ii_f, _it_f in enumerate(_only_f):
+                                                        try:
+                                                            _tr_f = _it_f[1]
+                                                        except Exception:
+                                                            continue
+                                                        if _tr_f is None:
+                                                            continue
+                                                        _tid_f = id(_tr_f)
+                                                        _ex_f = _smap_f.get(_tid_f)
+                                                        if _ex_f is None:
+                                                            _smap_f[_tid_f] = _ii_f
+                                                        else:
+                                                            if isinstance(_ex_f, list):
+                                                                _ex_f.append(_ii_f)
+                                                            else:
+                                                                _smap_f[_tid_f] = [_ex_f, _ii_f]
+                                                    self._struct_single_index = _smap_f
+                                                    self._struct_single_snap = id(snap)
+                                                else:
+                                                    self._struct_single_index = None
+                                                    self._struct_single_snap = None
+                                            except Exception:
+                                                pass
+                            except Exception:
+                                pass
                         _lu = getattr(self, "_last_uniq", None)
                         _lt = getattr(self, "_last_trans", None)
                         _lhs = getattr(self, "_last_has_sprite", True)
-                        if _lu is not None and _lt is not None and not _lhs and len(_lt) == 0:
+                        if not _full_build and _lu is not None and _lt is not None and not _lhs and len(_lt) == 0:
                             _fm = {}
                             for _pp in _lu:
                                 _mm = self._materials.load_material(_pp)
