@@ -221,6 +221,37 @@ class SceneRendererMixin:
                     except Exception:
                         _mg = 0
                     _ck = (id(snap), _mg, n_ent)
+                    try:
+                        _vpb = vp.tobytes()
+                    except Exception:
+                        _vpb = None
+                    try:
+                        _cull_memo = self._cull_vis_memo
+                    except Exception:
+                        _cull_memo = {}
+                        try:
+                            self._cull_vis_memo = _cull_memo
+                        except Exception:
+                            pass
+                    def _cached_cull(_c, _r, _v):
+                        try:
+                            _k = (id(_c), id(_r), _tvg, _vpb)
+                        except Exception:
+                            return cpu_frustum_cull(_c, _r, _v)
+                        try:
+                            _hit = _cull_memo.get(_k)
+                        except Exception:
+                            _hit = None
+                        if _hit is not None:
+                            return _hit
+                        _res = cpu_frustum_cull(_c, _r, _v)
+                        try:
+                            if len(_cull_memo) > 8:
+                                _cull_memo.clear()
+                            _cull_memo[_k] = _res
+                        except Exception:
+                            pass
+                        return _res
                     _centers = None
                     _radii = None
                     _cull_index = None
@@ -231,7 +262,7 @@ class SceneRendererMixin:
                         _last_tv = _cc[4] if len(_cc) > 4 else None
                         if _last_tv is not None and _tvg == _last_tv:
                             centers, radii = _centers, _radii
-                            visible = cpu_frustum_cull(centers, radii, vp)
+                            visible = _cached_cull(centers, radii, vp)
                         else:
                             try:
                                 _flushed = scene.peek_flushed_transforms() if hasattr(scene, "peek_flushed_transforms") else []
@@ -308,12 +339,12 @@ class SceneRendererMixin:
                             else:
                                 self._cull_cache = (_ck, _centers, _radii, _cull_index, _tvg)
                             centers, radii = _centers, _radii
-                            visible = cpu_frustum_cull(centers, radii, vp)
+                            visible = _cached_cull(centers, radii, vp)
                     else:
                         _centers, _radii = _bfci(cull_entries)
                         self._cull_cache = (_ck, _centers, _radii, None, _tvg)
                         centers, radii = _centers, _radii
-                        visible = cpu_frustum_cull(centers, radii, vp)
+                        visible = _cached_cull(centers, radii, vp)
                     offsets = snap.cull_offsets
                     counts = snap.cull_counts
                     n_vis = len(visible)

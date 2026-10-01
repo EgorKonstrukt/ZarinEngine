@@ -143,24 +143,37 @@ def _frustum_cull_instances(group, planes, mesh_radius):
                     float(mesh_radius))
     except ImportError:
         pass
-    centers = np.empty((n, 3), dtype=np.float64)
-    radii = np.empty(n, dtype=np.float64)
-    for i, item in enumerate(group):
-        wm = item[6]
-        d = wm._d
-        centers[i, 0] = d[3, 0]
-        centers[i, 1] = d[3, 1]
-        centers[i, 2] = d[3, 2]
-        sx = (d[0, 0] * d[0, 0] + d[1, 0] * d[1, 0] + d[2, 0] * d[2, 0]) ** 0.5
-        sy = (d[0, 1] * d[0, 1] + d[1, 1] * d[1, 1] + d[2, 1] * d[2, 1]) ** 0.5
-        sz = (d[0, 2] * d[0, 2] + d[1, 2] * d[1, 2] + d[2, 2] * d[2, 2]) ** 0.5
-        radii[i] = max(sx, sy, sz) * mesh_radius
-    distances = planes[:, :3] @ centers.T + planes[:, 3, None]
-    visible_mask = np.all(distances > -radii[None, :], axis=0)
-    if np.all(visible_mask):
+    except Exception:
+        pass
+    try:
+        mats = [item[6]._d for item in group]
+    except Exception:
         return group
-    indices = np.where(visible_mask)[0]
-    return [group[i] for i in indices]
+    try:
+        arr = np.stack(mats).astype(np.float64, copy=False)
+    except Exception:
+        return group
+    try:
+        centers = np.ascontiguousarray(arr[:, 3, :3], dtype=np.float64)
+        sx = arr[:, 0, 0] * arr[:, 0, 0] + arr[:, 1, 0] * arr[:, 1, 0] + arr[:, 2, 0] * arr[:, 2, 0]
+        sy = arr[:, 0, 1] * arr[:, 0, 1] + arr[:, 1, 1] * arr[:, 1, 1] + arr[:, 2, 1] * arr[:, 2, 1]
+        sz = arr[:, 0, 2] * arr[:, 0, 2] + arr[:, 1, 2] * arr[:, 1, 2] + arr[:, 2, 2] * arr[:, 2, 2]
+        np.sqrt(sx, out=sx)
+        np.sqrt(sy, out=sy)
+        np.sqrt(sz, out=sz)
+        ms = sx
+        np.maximum(ms, sy, out=ms)
+        np.maximum(ms, sz, out=ms)
+        radii = ms * float(mesh_radius)
+        pl = np.ascontiguousarray(planes, dtype=np.float64)
+        distances = pl[:, :3] @ centers.T + pl[:, 3, None]
+        visible_mask = np.all(distances > -radii[None, :], axis=0)
+        if bool(np.all(visible_mask)):
+            return group
+        indices = np.where(visible_mask)[0]
+        return [group[int(i)] for i in indices]
+    except Exception:
+        return group
 
 
 class RenderBatcher:
@@ -238,42 +251,86 @@ class RenderBatcher:
             mesh = entry[2]
             wm = entry[4]
             sub_idx = entry[5]
-            mats = mr.materials
+            try:
+                mats = mr.materials
+            except Exception:
+                mats = None
             if mats:
-                if sub_idx < len(mats):
-                    mpath = mats[sub_idx].get("path", "")
-                else:
-                    mpath = mats[-1].get("path", "")
+                try:
+                    if sub_idx < len(mats):
+                        mpath = mats[sub_idx].get("path", "")
+                    else:
+                        mpath = mats[-1].get("path", "")
+                except Exception:
+                    mpath = ""
             else:
                 mpath = ""
             cached = get_cached(mpath)
             if cached is None:
-                mat = get_mat(mpath)
-                shader_path = mat.shader_path if mat is not None else ""
-                prog = get_prog(shader_path) if shader_path else None
+                try:
+                    mat = get_mat(mpath)
+                except Exception:
+                    mat = None
+                try:
+                    if mat is not None:
+                        shader_path = mat.shader_path
+                    else:
+                        shader_path = ""
+                except Exception:
+                    shader_path = ""
+                try:
+                    if shader_path:
+                        prog = get_prog(shader_path)
+                    else:
+                        prog = None
+                except Exception:
+                    prog = None
                 if prog is None:
                     prog = default_prog
                 cached = (mat, prog)
                 mpath_cache[mpath] = cached
             else:
                 mat, prog = cached
-            mat_key = id(mat) if mat is not None else none_id
-            _uv = mr.uv_scale
-            _usx = _uv.x
-            _usy = _uv.y
-            _uo = mr.uv_offset
-            _uox = _uo.x
-            _uoy = _uo.y
-            _uw = mr.uv_scale_by_transform
-            _sp = mr.sprite_texture
+            if mat is not None:
+                mat_key = id(mat)
+            else:
+                mat_key = none_id
+            try:
+                _uv = mr.uv_scale
+                _usx = float(_uv.x)
+                _usy = float(_uv.y)
+            except Exception:
+                _usx = 1.0
+                _usy = 1.0
+            try:
+                _uo = mr.uv_offset
+                _uox = float(_uo.x)
+                _uoy = float(_uo.y)
+            except Exception:
+                _uox = 0.0
+                _uoy = 0.0
+            try:
+                _uw = mr.uv_scale_by_transform
+            except Exception:
+                _uw = False
+            try:
+                _sp = mr.sprite_texture
+            except Exception:
+                _sp = ""
             if not _sp:
                 _sp = ""
             if _usx == 1.0 and _usy == 1.0 and _uox == 0.0 and _uoy == 0.0 and not _uw and _sp == "":
                 uv_key = 0
             else:
                 uv_key = (_usx, _usy, _uox, _uoy, _uw, _sp)
-            _rs = mr.receive_shadows
-            _dr = mr.dynamic_reflections
+            try:
+                _rs = mr.receive_shadows
+            except Exception:
+                _rs = False
+            try:
+                _dr = mr.dynamic_reflections
+            except Exception:
+                _dr = False
             key = (id(prog), mat_key, id(mesh), _rs, sub_idx, _dr, uv_key)
             lst = groups.get(key)
             if lst is None:

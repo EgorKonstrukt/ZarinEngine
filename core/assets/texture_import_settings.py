@@ -7,11 +7,17 @@
 from __future__ import annotations
 import json
 import os
+import time
 from enum import Enum
 
 import moderngl
 from dataclasses import dataclass
 from typing import Any, Optional
+
+
+_MTIME_CACHE: dict[str, tuple[float, float]] = {}
+_MTIME_TTL = 2.0
+_SETTINGS_CACHE: dict[str, tuple[float, TextureImportSettings]] = {}
 
 
 class FilterMode(Enum):
@@ -55,6 +61,28 @@ class TextureImportSettings:
     @classmethod
     def for_file(cls, path: str) -> TextureImportSettings:
         import_path = path + ".import"
+        try:
+            now = time.monotonic()
+        except Exception:
+            now = 0.0
+        try:
+            mtime = cls.import_mtime(path)
+        except Exception:
+            mtime = 0.0
+        try:
+            hit = _SETTINGS_CACHE.get(import_path)
+            if hit is not None and abs(hit[0] - mtime) < 0.001:
+                cached_settings = hit[1]
+                fresh = cls()
+                fresh.filter_mode = cached_settings.filter_mode
+                fresh.anisotropic = cached_settings.anisotropic
+                fresh.max_size = cached_settings.max_size
+                fresh.wrap_mode = cached_settings.wrap_mode
+                fresh.compression = cached_settings.compression
+                fresh.srgb = cached_settings.srgb
+                return fresh
+        except Exception:
+            pass
         settings = cls()
         if os.path.exists(import_path):
             try:
@@ -68,15 +96,40 @@ class TextureImportSettings:
                 settings.srgb = data.get("srgb", settings.srgb)
             except Exception:
                 pass
+        try:
+            _SETTINGS_CACHE[import_path] = (mtime, settings)
+            if len(_SETTINGS_CACHE) > 1024:
+                _SETTINGS_CACHE.clear()
+                _SETTINGS_CACHE[import_path] = (mtime, settings)
+        except Exception:
+            pass
         return settings
 
     @staticmethod
     def import_mtime(path: str) -> float:
         import_path = path + ".import"
         try:
-            return os.path.getmtime(import_path)
+            now = time.monotonic()
+        except Exception:
+            now = 0.0
+        try:
+            hit = _MTIME_CACHE.get(import_path)
+            if hit is not None and (now - hit[1]) < _MTIME_TTL:
+                return hit[0]
+        except Exception:
+            pass
+        try:
+            mtime = os.path.getmtime(import_path)
         except OSError:
-            return 0.0
+            mtime = 0.0
+        try:
+            _MTIME_CACHE[import_path] = (mtime, now)
+            if len(_MTIME_CACHE) > 2048:
+                _MTIME_CACHE.clear()
+                _MTIME_CACHE[import_path] = (mtime, now)
+        except Exception:
+            pass
+        return mtime
 
     def apply_to_texture(self, tex: moderngl.Texture) -> None:
         if self.filter_mode == "point":
