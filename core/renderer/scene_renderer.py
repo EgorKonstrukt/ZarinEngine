@@ -7,11 +7,14 @@
 """Main scene rendering orchestration."""
 
 from __future__ import annotations
+import math
 import time
 import traceback
 import numpy as np
 import moderngl
+from itertools import chain as _chain
 from typing import Optional, Any, Callable
+from core._render_utils import build_frustum_cull_inputs as _bfci
 from core.components.lighting import Light, Projector
 from core.engine.engine import Engine
 from core.foundation.logger import Logger
@@ -205,8 +208,6 @@ class SceneRendererMixin:
         self._culled_visible = self._culled_total
         if renderable:
             try:
-                from core._render_utils import build_frustum_cull_inputs as _bfci
-                from itertools import chain as _chain
                 vp = proj_mat._d.T @ view_mat._d.T
                 cull_entries = snap.cull_entries
                 n_ent = len(cull_entries)
@@ -313,8 +314,7 @@ class SceneRendererMixin:
                                         if _sz > _ms:
                                             _ms = _sz
                                         try:
-                                            import math as _math
-                                            _ms = _math.sqrt(_ms)
+                                            _ms = math.sqrt(_ms)
                                         except Exception:
                                             _ms = _ms ** 0.5
                                     except Exception:
@@ -345,22 +345,45 @@ class SceneRendererMixin:
                         self._cull_cache = (_ck, _centers, _radii, None, _tvg)
                         centers, radii = _centers, _radii
                         visible = _cached_cull(centers, radii, vp)
-                    offsets = snap.cull_offsets
-                    counts = snap.cull_counts
-                    n_vis = len(visible)
-                    if n_vis == n_ent:
-                        self._culled_visible = self._culled_total
-                    else:
-                        self._culled_visible = sum(counts[i] for i in visible) if n_vis else 0
-                    if n_vis < n_ent:
-                        if n_vis == 0:
-                            renderable = []
-                        elif n_vis == 1:
-                            i = int(visible[0])
-                            renderable = renderable[offsets[i]:offsets[i] + counts[i]]
+                    try:
+                        _tail_key = self._cull_tail_key
+                    except Exception:
+                        _tail_key = None
+                    _cur_tail = (_ck, _tvg, _vpb)
+                    try:
+                        _tail_snap = self._cull_tail_snap
+                    except Exception:
+                        _tail_snap = None
+                    if _tail_key == _cur_tail and _tail_snap is snap:
+                        try:
+                            renderable = self._cull_tail_renderable
+                            self._culled_visible = self._cull_tail_count
+                        except Exception:
+                            _tail_key = None
+                    if not (_tail_key == _cur_tail and _tail_snap is snap):
+                        offsets = snap.cull_offsets
+                        counts = snap.cull_counts
+                        n_vis = len(visible)
+                        if n_vis == n_ent:
+                            self._culled_visible = self._culled_total
                         else:
-                            parts = [renderable[offsets[i]:offsets[i] + counts[i]] for i in visible]
-                            renderable = list(_chain.from_iterable(parts))
+                            self._culled_visible = sum(counts[i] for i in visible) if n_vis else 0
+                        if n_vis < n_ent:
+                            if n_vis == 0:
+                                renderable = []
+                            elif n_vis == 1:
+                                i = int(visible[0])
+                                renderable = renderable[offsets[i]:offsets[i] + counts[i]]
+                            else:
+                                parts = [renderable[offsets[i]:offsets[i] + counts[i]] for i in visible]
+                                renderable = list(_chain.from_iterable(parts))
+                        try:
+                            self._cull_tail_key = _cur_tail
+                            self._cull_tail_snap = snap
+                            self._cull_tail_renderable = renderable
+                            self._cull_tail_count = self._culled_visible
+                        except Exception:
+                            pass
                 else:
                     n = len(renderable)
                     centers, radii = _bfci(renderable)
