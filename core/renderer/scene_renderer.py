@@ -206,6 +206,7 @@ class SceneRendererMixin:
 
         self._culled_total = len(renderable) if renderable else 0
         self._culled_visible = self._culled_total
+        _tail_hit = False
         if renderable:
             try:
                 vp = proj_mat._d.T @ view_mat._d.T
@@ -358,6 +359,7 @@ class SceneRendererMixin:
                         try:
                             renderable = self._cull_tail_renderable
                             self._culled_visible = self._cull_tail_count
+                            _tail_hit = True
                         except Exception:
                             _tail_key = None
                     if not (_tail_key == _cur_tail and _tail_snap is snap):
@@ -620,6 +622,10 @@ class SceneRendererMixin:
                     _all_vis = self._culled_visible == self._culled_total
                 except Exception:
                     _all_vis = False
+                try:
+                    _skip_cull = bool(_all_vis or _tail_hit)
+                except Exception:
+                    _skip_cull = bool(_all_vis)
                 self._batcher.render_groups(
                     groups, view_f32, proj_f32, cam_pos, lights, False,
                     self._set_scene_uniforms, self._materials.apply_material,
@@ -627,7 +633,7 @@ class SceneRendererMixin:
                     selected_entities or set(), outline_queue,
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
-                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=_all_vis,
+                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=_skip_cull,
                     sort_groups=not _is_trans_phase)
                 _stats_groups.append(groups)
                 try:

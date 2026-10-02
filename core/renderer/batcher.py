@@ -9,6 +9,19 @@ from core.maths.math3d import Mat4
 from core.renderer.gpu_culling import WORLD_MATRIX_BINDING, INDEX_BINDING
 from core.renderer.origin import origin_for, relativize_model_f32, relativize_models
 
+try:
+    from core._culling import cull_group_instances as _cgi
+except Exception:
+    _cgi = None
+try:
+    from core._render_utils import batch_mat4_to_f32_flat as _batch_f32_flat
+except Exception:
+    _batch_f32_flat = None
+try:
+    from core._render_utils import batch_mat4_to_f32_flat_origin as _batch_f32_flat_origin
+except Exception:
+    _batch_f32_flat_origin = None
+
 _INSTANCE_ATTRS = ("in_model0", "in_model1", "in_model2", "in_model3")
 
 _INITIAL_INST_VBO_CAPACITY = 8192
@@ -137,14 +150,12 @@ def _frustum_cull_instances(group, planes, mesh_radius):
     n = len(group)
     if n == 0:
         return group
-    try:
-        from core._culling import cull_group_instances as _cgi
-        return _cgi(group, np.ascontiguousarray(planes, dtype=np.float32),
-                    float(mesh_radius))
-    except ImportError:
-        pass
-    except Exception:
-        pass
+    if _cgi is not None:
+        try:
+            return _cgi(group, np.ascontiguousarray(planes, dtype=np.float32),
+                        float(mesh_radius))
+        except Exception:
+            pass
     try:
         mats = [item[6]._d for item in group]
     except Exception:
@@ -394,9 +405,35 @@ class RenderBatcher:
                     pass
             self._vao_cache.clear()
         if origin is not None:
+            if _batch_f32_flat_origin is not None:
+                try:
+                    flat = _batch_f32_flat_origin(matrices, float(origin[0]), float(origin[1]), float(origin[2]))
+                    try:
+                        self._shared_inst_vbo.orphan()
+                    except Exception:
+                        pass
+                    self._shared_inst_vbo.write(flat)
+                    return self._shared_inst_vbo
+                except Exception:
+                    pass
+            else:
+                try:
+                    matrices = relativize_models(matrices, origin)
+                except Exception:
+                    pass
+                try:
+                    self._shared_inst_vbo.orphan()
+                except Exception:
+                    pass
+                self._shared_inst_vbo.write(Mat4.batch_to_f32(matrices))
+                return self._shared_inst_vbo
             try:
-                from core._render_utils import batch_mat4_to_f32_flat_origin
-                flat = batch_mat4_to_f32_flat_origin(matrices, float(origin[0]), float(origin[1]), float(origin[2]))
+                matrices = relativize_models(matrices, origin)
+            except Exception:
+                pass
+        if _batch_f32_flat is not None:
+            try:
+                flat = _batch_f32_flat(matrices)
                 try:
                     self._shared_inst_vbo.orphan()
                 except Exception:
@@ -405,24 +442,11 @@ class RenderBatcher:
                 return self._shared_inst_vbo
             except Exception:
                 pass
-            try:
-                matrices = relativize_models(matrices, origin)
-            except Exception:
-                pass
         try:
-            from core._render_utils import batch_mat4_to_f32_flat
-            flat = batch_mat4_to_f32_flat(matrices)
-            try:
-                self._shared_inst_vbo.orphan()
-            except Exception:
-                pass
-            self._shared_inst_vbo.write(flat)
-        except ImportError:
-            try:
-                self._shared_inst_vbo.orphan()
-            except Exception:
-                pass
-            self._shared_inst_vbo.write(Mat4.batch_to_f32(matrices))
+            self._shared_inst_vbo.orphan()
+        except Exception:
+            pass
+        self._shared_inst_vbo.write(Mat4.batch_to_f32(matrices))
         return self._shared_inst_vbo
 
     def _get_vao(self, prog: moderngl.Program, mesh) -> moderngl.VertexArray:
