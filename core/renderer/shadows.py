@@ -272,6 +272,10 @@ class ShadowRenderer:
         self._area_vp_back_bytes: bytes = b""
         self._area_nearfar_bytes: bytes = b""
         self._shadow_origin = None
+        self._last_static_frame_key = None
+        self._point_static_key = None
+        self._spot_static_key = None
+        self._area_static_key = None
         self._create_csm_resources()
 
     def update_settings(self, shadow_resolution: int = None, shadow_distance: float = None,
@@ -308,6 +312,13 @@ class ShadowRenderer:
             self._cascade_valid = [False, False, False, False]
             try:
                 self._cascade_vp_key = None
+            except Exception:
+                pass
+            try:
+                self._last_static_frame_key = None
+                self._point_static_key = None
+                self._spot_static_key = None
+                self._area_static_key = None
             except Exception:
                 pass
             try:
@@ -447,6 +458,10 @@ class ShadowRenderer:
             return
         self._point_shadow_maps.append(tex)
         self._point_shadow_fbos.append(fbo)
+        try:
+            self._point_static_key = None
+        except Exception:
+            pass
 
     def _create_spot_shadow_resources(self):
         self._ensure_context()
@@ -479,6 +494,10 @@ class ShadowRenderer:
             return
         self._spot_shadow_maps.append(tex)
         self._spot_shadow_fbos.append(fbo)
+        try:
+            self._spot_static_key = None
+        except Exception:
+            pass
 
     def _create_projector_shadow_resources(self):
         self._ensure_context()
@@ -532,6 +551,10 @@ class ShadowRenderer:
                 btex.release()
             except Exception:
                 pass
+        try:
+            self._area_static_key = None
+        except Exception:
+            pass
 
     def _build_renderable_shadow(self, scene) -> list[tuple[MeshData, Mat4]]:
         result = []
@@ -1663,6 +1686,10 @@ class ShadowRenderer:
             except Exception:
                 self._flat_sig = None
                 self._flat_src_list = None
+        try:
+            _static_frame = (not self._flat_rebuilt_frame) and (not self._pending_skinned) and (self._shadow_frame_key is not None) and (self._shadow_frame_key == self._last_static_frame_key)
+        except Exception:
+            _static_frame = False
         flags = self._type_flags
         if flags.get('directional', True):
             for l, lt in lights:
@@ -1689,12 +1716,7 @@ class ShadowRenderer:
             cam_z = 0.0
         if not self._point_shadow_maps:
             self._create_point_shadow_resources()
-        try:
-            if self._point_shadow_fbos:
-                self._point_shadow_fbos[0].use()
-                self._point_shadow_fbos[0].clear(depth=1.0)
-        except Exception:
-            pass
+        _point_skip = False
         if flags.get('point', True):
             pc = []
             for l, lt in lights:
@@ -1709,25 +1731,69 @@ class ShadowRenderer:
                     pc.append((l, lt, dx * dx + dy * dy + dz * dz))
             pc.sort(key=lambda x: x[2])
             self._point_shadow_count = min(len(pc), MAX_POINT_SHADOWS)
-            for slot in range(self._point_shadow_count):
-                l, lt, _ = pc[slot]
-                self._render_point_shadow_for_slot(slot, l, lt, shadow_groups, lights)
-            for slot in range(self._point_shadow_count, MAX_POINT_SHADOWS):
-                self._point_shadow_light_indices[slot] = -1
-            self._has_point_shadow = self._point_shadow_count > 0
+            try:
+                _pe = []
+                for _slot in range(self._point_shadow_count):
+                    _l, _lt, _ = pc[_slot]
+                    try:
+                        _qx, _qy, _qz = _tr_pos_xyz(_lt)
+                    except Exception:
+                        try:
+                            _pp = _lt.position
+                            _qx, _qy, _qz = float(_pp.x), float(_pp.y), float(_pp.z)
+                        except Exception:
+                            _qx, _qy, _qz = 0.0, 0.0, 0.0
+                    try:
+                        _qr = max(float(getattr(_l, 'range', 10.0)), 0.1)
+                    except Exception:
+                        _qr = 10.0
+                    _pe.append((id(_l), id(_lt), _qx, _qy, _qz, _qr))
+                _pkey = (self._shadow_frame_key, self._point_shadow_resolution, tuple(_pe))
+            except Exception:
+                _pkey = None
+            try:
+                _point_skip = bool(_static_frame) and (_pkey is not None) and (_pkey == self._point_static_key)
+            except Exception:
+                _point_skip = False
+            if _point_skip:
+                for slot in range(self._point_shadow_count):
+                    l, lt, _ = pc[slot]
+                    try:
+                        self._point_shadow_light_indices[slot] = next((i for i, (_ll, _tt) in enumerate(lights) if _ll is l and _tt is lt), -1)
+                    except Exception:
+                        pass
+                for slot in range(self._point_shadow_count, MAX_POINT_SHADOWS):
+                    self._point_shadow_light_indices[slot] = -1
+                self._has_point_shadow = self._point_shadow_count > 0
+            else:
+                try:
+                    if self._point_shadow_fbos:
+                        self._point_shadow_fbos[0].use()
+                        self._point_shadow_fbos[0].clear(depth=1.0)
+                except Exception:
+                    pass
+                for slot in range(self._point_shadow_count):
+                    l, lt, _ = pc[slot]
+                    self._render_point_shadow_for_slot(slot, l, lt, shadow_groups, lights)
+                for slot in range(self._point_shadow_count, MAX_POINT_SHADOWS):
+                    self._point_shadow_light_indices[slot] = -1
+                self._has_point_shadow = self._point_shadow_count > 0
+                try:
+                    self._point_static_key = _pkey
+                except Exception:
+                    pass
         else:
             self._point_shadow_count = 0
             self._has_point_shadow = False
             for slot in range(MAX_POINT_SHADOWS):
                 self._point_shadow_light_indices[slot] = -1
+            try:
+                self._point_static_key = None
+            except Exception:
+                pass
         if not self._spot_shadow_maps:
             self._create_spot_shadow_resources()
-        try:
-            if self._spot_shadow_fbos:
-                self._spot_shadow_fbos[0].use()
-                self._spot_shadow_fbos[0].clear(depth=1.0)
-        except Exception:
-            pass
+        _spot_skip = False
         if flags.get('spot', True):
             sc = []
             for l, lt in lights:
@@ -1742,17 +1808,78 @@ class ShadowRenderer:
                     sc.append((l, lt, dx * dx + dy * dy + dz * dz))
             sc.sort(key=lambda x: x[2])
             self._spot_shadow_count = min(len(sc), MAX_SPOT_SHADOWS)
-            for slot in range(self._spot_shadow_count):
-                l, lt, _ = sc[slot]
-                self._render_spot_shadow_for_slot(slot, l, lt, shadow_groups, lights)
-            for slot in range(self._spot_shadow_count, MAX_SPOT_SHADOWS):
-                self._spot_shadow_light_indices[slot] = -1
-            self._has_spot_shadow = self._spot_shadow_count > 0
+            try:
+                _se = []
+                for _slot in range(self._spot_shadow_count):
+                    _l, _lt, _ = sc[_slot]
+                    try:
+                        _qx, _qy, _qz = _tr_pos_xyz(_lt)
+                    except Exception:
+                        try:
+                            _pp = _lt.position
+                            _qx, _qy, _qz = float(_pp.x), float(_pp.y), float(_pp.z)
+                        except Exception:
+                            _qx, _qy, _qz = 0.0, 0.0, 0.0
+                    try:
+                        _dx, _dy, _dz = _tr_fwd_xyz(_lt)
+                    except Exception:
+                        try:
+                            _fd = _lt.forward.normalized()
+                            _dx, _dy, _dz = float(_fd.x), float(_fd.y), float(_fd.z)
+                        except Exception:
+                            _dx, _dy, _dz = 0.0, 0.0, -1.0
+                    try:
+                        _qr = max(float(getattr(_l, 'range', 10.0)), 0.1)
+                    except Exception:
+                        _qr = 10.0
+                    try:
+                        _qf = max(float(getattr(_l, 'spot_angle', 30.0)) * 2.0, 1.0)
+                    except Exception:
+                        _qf = 60.0
+                    _se.append((id(_l), id(_lt), _qx, _qy, _qz, _dx, _dy, _dz, _qr, _qf))
+                _skey = (self._shadow_frame_key, self._spot_shadow_resolution, tuple(_se))
+            except Exception:
+                _skey = None
+            try:
+                _spot_skip = bool(_static_frame) and (_skey is not None) and (_skey == self._spot_static_key)
+            except Exception:
+                _spot_skip = False
+            if _spot_skip:
+                for slot in range(self._spot_shadow_count):
+                    l, lt, _ = sc[slot]
+                    try:
+                        self._spot_shadow_light_indices[slot] = next((i for i, (_ll, _tt) in enumerate(lights) if _ll is l and _tt is lt), -1)
+                    except Exception:
+                        pass
+                for slot in range(self._spot_shadow_count, MAX_SPOT_SHADOWS):
+                    self._spot_shadow_light_indices[slot] = -1
+                self._has_spot_shadow = self._spot_shadow_count > 0
+            else:
+                try:
+                    if self._spot_shadow_fbos:
+                        self._spot_shadow_fbos[0].use()
+                        self._spot_shadow_fbos[0].clear(depth=1.0)
+                except Exception:
+                    pass
+                for slot in range(self._spot_shadow_count):
+                    l, lt, _ = sc[slot]
+                    self._render_spot_shadow_for_slot(slot, l, lt, shadow_groups, lights)
+                for slot in range(self._spot_shadow_count, MAX_SPOT_SHADOWS):
+                    self._spot_shadow_light_indices[slot] = -1
+                self._has_spot_shadow = self._spot_shadow_count > 0
+                try:
+                    self._spot_static_key = _skey
+                except Exception:
+                    pass
         else:
             self._spot_shadow_count = 0
             self._has_spot_shadow = False
             for slot in range(MAX_SPOT_SHADOWS):
                 self._spot_shadow_light_indices[slot] = -1
+            try:
+                self._spot_static_key = None
+            except Exception:
+                pass
         if flags.get('area', True):
             best_area = None
             best_area_dist = float('inf')
@@ -1779,6 +1906,10 @@ class ShadowRenderer:
             self._cache_uniform_bytes()
         except Exception:
             pass
+        try:
+            self._last_static_frame_key = self._shadow_frame_key
+        except Exception:
+            pass
         return shadow_groups
 
     def reset_shadow_state(self):
@@ -1791,6 +1922,13 @@ class ShadowRenderer:
         self._has_area_shadow = False
         self._has_area_shadow_back = False
         self._area_shadow_two_sided = 0.0
+        try:
+            self._last_static_frame_key = None
+            self._point_static_key = None
+            self._spot_static_key = None
+            self._area_static_key = None
+        except Exception:
+            pass
 
     def _compute_cascade_splits(self, cam_near: float, cam_far: float) -> list[float]:
         if not self._cascade_splits_norm:
@@ -2389,7 +2527,37 @@ class ShadowRenderer:
         lr2 = light_range * light_range
         if self._flat_n == 0:
             return
+        try:
+            _a_static = (not self._flat_rebuilt_frame) and (not self._pending_skinned) and (self._shadow_frame_key is not None) and (self._shadow_frame_key == self._last_static_frame_key)
+        except Exception:
+            _a_static = False
+        try:
+            _akey = (self._shadow_frame_key, self._area_shadow_resolution, id(area_light), id(area_transform), float(lp_x), float(lp_y), float(lp_z), float(fdx), float(fdy), float(fdz), float(udx), float(udy), float(udz), float(light_range), float(aw), float(ah), float(self._area_shadow_two_sided))
+        except Exception:
+            _akey = None
+        try:
+            _askip = bool(_a_static) and (_akey is not None) and (_akey == self._area_static_key)
+        except Exception:
+            _askip = False
+        if _askip:
+            try:
+                if float(self._area_shadow_two_sided) > 0.5 and self._area_shadow_fbo_back is not None:
+                    try:
+                        _bview_d = Mat4.look_at(light_pos, light_pos + (-light_dir), light_up)._d
+                        _bproj_d = Mat4.perspective(fov, 1.0, near_plane, far_plane)._d
+                        self._area_light_vp_back = (_bview_d @ _bproj_d).astype(np.float32)
+                    except Exception:
+                        pass
+                    self._has_area_shadow_back = True
+            except Exception:
+                pass
+            return
         self._draw_area_shadow_side(vp, lp_x, lp_y, lp_z, lr2, self._area_shadow_fbo)
+        try:
+            if not (float(self._area_shadow_two_sided) > 0.5):
+                self._area_static_key = _akey
+        except Exception:
+            pass
         if self._area_shadow_two_sided > 0.5:
             try:
                 if self._area_shadow_fbo_back is None:
@@ -2407,6 +2575,10 @@ class ShadowRenderer:
             self._area_light_vp_back = bvp
             self._has_area_shadow_back = True
             self._draw_area_shadow_side(bvp, lp_x, lp_y, lp_z, lr2, self._area_shadow_fbo_back, ("a", 1))
+            try:
+                self._area_static_key = _akey
+            except Exception:
+                pass
 
     def _draw_area_shadow_side(self, vp, px: float, py: float, pz: float, lr2: float, fbo, tag=("a", 0)) -> bool:
         try:
