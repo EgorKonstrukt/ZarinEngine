@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 import gc
+import threading
+import time
 import tracemalloc
 from collections import deque
 
@@ -135,6 +137,9 @@ class TracemallocPanel(QDockWidget):
         self._last_gc_counts = [0, 0, 0]
         self._prev_snapshot: tracemalloc.Snapshot | None = None
         self._refresh_tick = 0
+        self._heavy_running = False
+        self._heavy_gen = 0
+        self._heavy_since = 0.0
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh)
@@ -394,12 +399,190 @@ class TracemallocPanel(QDockWidget):
 
         self._update_gc_stats()
 
-        if tick % 5 == 0:
-            if tracemalloc.is_tracing():
-                self._update_tracemalloc()
+        _need_trace = (tick % 5 == 0) and tracemalloc.is_tracing()
+        _need_objs = (tick % 3 == 0)
+        if _need_trace or _need_objs:
+            self._kick_heavy(_need_trace, _need_objs)
 
-        if tick % 3 == 0:
-            self._update_object_counts()
+    def _kick_heavy(self, do_trace: bool, do_objs: bool):
+        try:
+            now = time.monotonic()
+        except Exception:
+            now = 0.0
+        try:
+            if self._heavy_running:
+                try:
+                    if (now - self._heavy_since) < 30.0:
+                        return
+                except Exception:
+                    return
+                try:
+                    self._heavy_running = False
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            self._heavy_gen += 1
+        except Exception:
+            self._heavy_gen = 1
+        try:
+            _gen = self._heavy_gen
+            _prev = self._prev_snapshot
+        except Exception:
+            return
+        try:
+            self._heavy_running = True
+            self._heavy_since = now
+        except Exception:
+            pass
+        try:
+            _t = threading.Thread(
+                target=self._heavy_worker,
+                args=(_gen, bool(do_trace), bool(do_objs), _prev),
+                daemon=True,
+            )
+            _t.start()
+        except Exception:
+            try:
+                self._heavy_running = False
+            except Exception:
+                pass
+
+    def _heavy_worker(self, gen: int, do_trace: bool, do_objs: bool, prev):
+        obj_rows = None
+        trace_status = None
+        trace_rows = None
+        new_snapshot = None
+        try:
+            if do_objs:
+                try:
+                    objs = gc.get_objects()
+                except Exception:
+                    objs = []
+                type_counts: dict[str, int] = {}
+                for o in objs:
+                    try:
+                        t = type(o).__name__
+                        type_counts[t] = type_counts.get(t, 0) + 1
+                    except Exception:
+                        pass
+                try:
+                    top = sorted(type_counts.items(), key=lambda x: -x[1])[:30]
+                except Exception:
+                    top = []
+                obj_rows = [(t, str(c), f"~{c * 64}B") for t, c in top]
+            if do_trace:
+                try:
+                    snapshot = tracemalloc.take_snapshot()
+                    cur, peak = tracemalloc.get_traced_memory()
+                    trace_status = f"current: {cur/1024:.1f}K  peak: {peak/1024:.1f}K"
+                    if prev is not None:
+                        stats = snapshot.compare_to(prev, 'lineno')
+                    else:
+                        stats = snapshot.statistics('lineno')
+                    stats = stats[:50]
+                    has_diff = prev is not None
+                    rows = []
+                    for st in stats:
+                        try:
+                            if has_diff:
+                                sz = st.size_diff
+                                ct = st.count_diff
+                                if sz == 0 and ct == 0:
+                                    continue
+                            else:
+                                sz = st.size
+                                ct = st.count
+                            loc = str(st.traceback.format())[:150]
+                            tip = str(st.traceback.format())
+                            if has_diff:
+                                if sz > 0:
+                                    col = "#f88"
+                                elif sz < 0:
+                                    col = "#8f8"
+                                else:
+                                    col = None
+                            else:
+                                col = None
+                            rows.append((loc, self._format_size(sz, has_diff), str(ct), col, tip))
+                        except Exception:
+                            continue
+                    trace_rows = rows
+                    new_snapshot = snapshot
+                except Exception:
+                    trace_status = "tracemalloc snapshot error"
+        except Exception:
+            pass
+        try:
+            from editor.scene_async import call_on_main
+            call_on_main(lambda: self._apply_heavy(gen, obj_rows, trace_status, trace_rows, new_snapshot, do_trace))
+        except Exception:
+            try:
+                self._heavy_running = False
+            except Exception:
+                pass
+
+    def _apply_heavy(self, gen: int, obj_rows, trace_status, trace_rows, new_snapshot, do_trace: bool):
+        try:
+            if gen != self._heavy_gen:
+                return
+        except Exception:
+            return
+        finally:
+            try:
+                self._heavy_running = False
+            except Exception:
+                pass
+        try:
+            if not self.isVisible():
+                if do_trace and new_snapshot is not None:
+                    try:
+                        self._prev_snapshot = new_snapshot
+                    except Exception:
+                        pass
+                return
+        except Exception:
+            pass
+        try:
+            if obj_rows is not None:
+                self._obj_tree.blockSignals(True)
+                self._obj_tree.clear()
+                for tname, cnt, approx in obj_rows:
+                    item = QTreeWidgetItem([tname, cnt, approx])
+                    self._obj_tree.addTopLevelItem(item)
+                self._obj_tree.blockSignals(False)
+        except Exception:
+            pass
+        try:
+            if trace_status is not None:
+                self._trace_status.setText(trace_status)
+        except Exception:
+            pass
+        try:
+            if trace_rows is not None:
+                self._trace_tree.blockSignals(True)
+                self._trace_tree.clear()
+                for loc, sz_text, cnt_text, col, tip in trace_rows:
+                    item = QTreeWidgetItem([loc, sz_text, cnt_text])
+                    try:
+                        item.setToolTip(0, tip)
+                    except Exception:
+                        pass
+                    if col is not None:
+                        try:
+                            item.setForeground(1, QBrush(QColor(col)))
+                        except Exception:
+                            pass
+                    self._trace_tree.addTopLevelItem(item)
+                self._trace_tree.blockSignals(False)
+            if do_trace and new_snapshot is not None:
+                try:
+                    self._prev_snapshot = new_snapshot
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _update_gc_stats(self):
         counts = gc.get_count()

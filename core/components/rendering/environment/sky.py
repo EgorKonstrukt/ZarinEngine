@@ -181,7 +181,52 @@ def _get_env_texture(ctx: moderngl.Context, path: str):
 
 
 _MOON_TEX_CACHE: dict[str, tuple[float, object]] = {}
+_MOON_PENDING: dict[str, bool] = {}
+_MOON_READY: dict[str, tuple[float, object]] = {}
+_MOON_STAT_CACHE: dict[str, tuple[float, bool, float]] = {}
+_MOON_STAT_TTL = 2.0
 _WHITE_TEX: object = None
+
+
+def _moon_stat(path: str) -> tuple[str, float, bool]:
+    try:
+        abs_path = os.path.abspath(path)
+    except Exception:
+        return path, 0.0, False
+    try:
+        import time as _time
+        now = _time.monotonic()
+    except Exception:
+        now = 0.0
+    try:
+        hit = _MOON_STAT_CACHE.get(abs_path)
+        if hit is not None and (now - hit[2]) < _MOON_STAT_TTL:
+            return abs_path, hit[0], hit[1]
+    except Exception:
+        pass
+    try:
+        exists = os.path.exists(abs_path)
+    except Exception:
+        exists = False
+    if not exists:
+        try:
+            if len(_MOON_STAT_CACHE) > 256:
+                _MOON_STAT_CACHE.clear()
+            _MOON_STAT_CACHE[abs_path] = (0.0, False, now)
+        except Exception:
+            pass
+        return abs_path, 0.0, False
+    try:
+        mtime = os.path.getmtime(abs_path)
+    except OSError:
+        mtime = 0.0
+    try:
+        if len(_MOON_STAT_CACHE) > 256:
+            _MOON_STAT_CACHE.clear()
+        _MOON_STAT_CACHE[abs_path] = (mtime, True, now)
+    except Exception:
+        pass
+    return abs_path, mtime, True
 
 
 def _load_moon_float(path: str):
@@ -208,10 +253,9 @@ def _load_moon_float(path: str):
 def _get_moon_texture(ctx: moderngl.Context, path: str):
     if not path:
         return None
-    abs_path = os.path.abspath(path)
-    if not os.path.exists(abs_path):
+    abs_path, mtime, exists = _moon_stat(path)
+    if not exists:
         return None
-    mtime = os.path.getmtime(abs_path)
     cached = _MOON_TEX_CACHE.get(abs_path)
     if cached is not None:
         cm, tex = cached
@@ -222,17 +266,64 @@ def _get_moon_texture(ctx: moderngl.Context, path: str):
                 tex.release()
             except Exception:
                 pass
-    arr = _load_moon_float(abs_path)
-    if arr is None:
-        _MOON_TEX_CACHE[abs_path] = (mtime, None)
+    try:
+        ready = _MOON_READY.get(abs_path)
+        if ready is not None and abs(mtime - ready[0]) < 0.001 and ready[1] is not None:
+            arr = ready[1]
+            try:
+                _MOON_READY.pop(abs_path, None)
+            except Exception:
+                pass
+            try:
+                _MOON_PENDING.pop(abs_path, None)
+            except Exception:
+                pass
+            h, w = arr.shape[:2]
+            tex = ctx.texture((w, h), 4, arr.tobytes(), dtype="f4")
+            tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            tex.repeat_x = False
+            tex.repeat_y = False
+            _MOON_TEX_CACHE[abs_path] = (mtime, tex)
+            return tex
+    except Exception:
+        pass
+    try:
+        if _MOON_PENDING.get(abs_path):
+            return None
+        _MOON_PENDING[abs_path] = True
+    except Exception:
         return None
-    h, w = arr.shape[:2]
-    tex = ctx.texture((w, h), 4, arr.tobytes(), dtype="f4")
-    tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-    tex.repeat_x = False
-    tex.repeat_y = False
-    _MOON_TEX_CACHE[abs_path] = (mtime, tex)
-    return tex
+    try:
+        import threading as _threading
+
+        def _decode():
+            try:
+                arr = _load_moon_float(abs_path)
+            except Exception:
+                arr = None
+            try:
+                if arr is None:
+                    _MOON_TEX_CACHE[abs_path] = (mtime, None)
+                else:
+                    if len(_MOON_READY) > 4:
+                        _MOON_READY.clear()
+                    _MOON_READY[abs_path] = (mtime, arr)
+            except Exception:
+                pass
+            finally:
+                try:
+                    _MOON_PENDING.pop(abs_path, None)
+                except Exception:
+                    pass
+
+        _t = _threading.Thread(target=_decode, daemon=True)
+        _t.start()
+    except Exception:
+        try:
+            _MOON_PENDING.pop(abs_path, None)
+        except Exception:
+            pass
+    return None
 
 
 def _get_white_tex(ctx: moderngl.Context):

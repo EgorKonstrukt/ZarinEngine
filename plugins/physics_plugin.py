@@ -1112,6 +1112,24 @@ class PhysicsPlugin(PluginBase):
                 rb2d._force_accum = Vec2.zero()
                 rb2d._torque_accum = 0.0
 
+    def _unload_no_wait(self, proc: PhysicsProcess):
+        try:
+            if proc is None:
+                return False
+            try:
+                alive = proc.is_alive()
+            except Exception:
+                alive = False
+            if not alive:
+                return False
+            try:
+                proc.send({"type": "unload_all"})
+            except Exception:
+                return False
+            return True
+        except Exception:
+            return False
+
     def _unload_and_wait(self, proc: PhysicsProcess):
         proc.send({"type": "unload_all"})
         if proc.wait_for_result("unload_all", timeout=3.0) is None:
@@ -1132,7 +1150,7 @@ class PhysicsPlugin(PluginBase):
             for proc in self._layer_processes.values():
                 proc.clear_slots()
                 proc.clear_soft_slots()
-                self._unload_and_wait(proc)
+                self._unload_no_wait(proc)
         elif self._simulation_mode == "single":
             if self._physics_scene:
                 self._physics_scene.shutdown()
@@ -1140,7 +1158,15 @@ class PhysicsPlugin(PluginBase):
             if self._physics_process:
                 self._physics_process.clear_slots()
                 self._physics_process.clear_soft_slots()
-                self._unload_and_wait(self._physics_process)
+                if not self._unload_no_wait(self._physics_process):
+                    try:
+                        self._physics_process.shutdown(500)
+                    except Exception:
+                        pass
+                    try:
+                        self._physics_process = None
+                    except Exception:
+                        pass
             self._step_caches.clear()
 
     def pre_step(self, dt: float):

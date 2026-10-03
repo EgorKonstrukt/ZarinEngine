@@ -945,15 +945,26 @@ def _do_open_scene(mw, path):
             from editor.scene_async import call_on_main
             call_on_main(_err)
             return
+        try:
+            from core.ecs.ecs import Scene, ComponentRegistry
+            scene = Scene.deserialize(data, ComponentRegistry)
+            scene.embedded_resources = data.get("embedded_resources", {})
+            scene.path = path
+            tab_name = os.path.splitext(os.path.basename(path))[0]
+            scene.name = tab_name
+            scene.mark_clean()
+        except Exception as ex:
+            msg = str(ex)
+            Logger.error(f"Error opening scene: {ex}", ex)
+            def _err():
+                task_complete(task_id)
+                from core.foundation import progress
+                progress.notify_error(f"Failed to open scene: {msg}")
+            from editor.scene_async import call_on_main
+            call_on_main(_err)
+            return
         def _apply():
             try:
-                from core.ecs.ecs import Scene, ComponentRegistry
-                scene = Scene.deserialize(data, ComponentRegistry)
-                scene.embedded_resources = data.get("embedded_resources", {})
-                scene.path = path
-                tab_name = os.path.splitext(os.path.basename(path))[0]
-                scene.name = tab_name
-                scene.mark_clean()
                 mw._scene_tab_manager.add_tab(tab_name, path=path, scene=scene)
             except Exception as e:
                 Logger.error(f"Error opening scene: {e}", e)
