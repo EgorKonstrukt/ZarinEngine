@@ -56,30 +56,50 @@ def _load_specs() -> list:
     return data or []
 
 
-def register_all() -> None:
+def _register_spec(entry) -> None:
     from core.prefabs.registry import register_system_prefab
-    for entry in _load_specs():
-        menu_path = entry.get("menu", "")
-        entity_name = entry.get("name", "")
-        order = int(entry.get("order", 100))
-        description = entry.get("description", "") or ""
-        probuilder = entry.get("probuilder")
-        if probuilder:
-            register_system_prefab(menu_path, _make_probuilder(str(probuilder)),
-                                   name=entity_name, order=order,
-                                   description=description, overwrite=True,
-                                   icon="ProBuilderMesh")
-            continue
-        comp_specs = entry.get("components") or [{"type": "Transform"}]
-        builder_name = ""
-        non_transform = [s for s in comp_specs if s.get("type") != "Transform"]
-        if len(non_transform) == 1 and len(comp_specs) == 2:
-            builder_name = "build_" + str(non_transform[0].get("type"))
-        icon = str(entry.get("icon") or "")
-        if not icon and non_transform:
-            icon = str(non_transform[0].get("type") or "")
-        if not icon and comp_specs:
-            icon = str(comp_specs[0].get("type") or "")
-        register_system_prefab(menu_path, _make_spec(entity_name, comp_specs, builder_name),
+    menu_path = entry.get("menu", "")
+    entity_name = entry.get("name", "")
+    order = int(entry.get("order", 100))
+    description = entry.get("description", "") or ""
+    probuilder = entry.get("probuilder")
+    if probuilder:
+        register_system_prefab(menu_path, _make_probuilder(str(probuilder)),
                                name=entity_name, order=order,
-                               description=description, overwrite=True, icon=icon)
+                               description=description, overwrite=True,
+                               icon="ProBuilderMesh")
+        return
+    comp_specs = entry.get("components") or [{"type": "Transform"}]
+    builder_name = ""
+    non_transform = [s for s in comp_specs if s.get("type") != "Transform"]
+    if len(non_transform) == 1 and len(comp_specs) == 2:
+        builder_name = "build_" + str(non_transform[0].get("type"))
+    icon = str(entry.get("icon") or "")
+    if not icon and non_transform:
+        icon = str(non_transform[0].get("type") or "")
+    if not icon and comp_specs:
+        icon = str(comp_specs[0].get("type") or "")
+    register_system_prefab(menu_path, _make_spec(entity_name, comp_specs, builder_name),
+                           name=entity_name, order=order,
+                           description=description, overwrite=True, icon=icon)
+
+
+def register_all() -> bool:
+    specs = _load_specs()
+    if not specs:
+        return False
+    for entry in specs:
+        try:
+            _register_spec(entry)
+        except Exception as e:
+            try:
+                from core.foundation.logger import Logger
+                try:
+                    _menu = entry.get("menu", "?") if isinstance(entry, dict) else "?"
+                except Exception:
+                    _menu = "?"
+                Logger.warning(f"Skipping system prefab entry {_menu}: {e}")
+            except Exception:
+                pass
+            continue
+    return True

@@ -85,12 +85,22 @@ def ensure_builtin_prefabs() -> None:
     global _BUILTINS_LOADED
     if _BUILTINS_LOADED:
         return
-    _BUILTINS_LOADED = True
     try:
         from core.prefabs import builtins as _builtins
-        _builtins.register_all()
-    except Exception:
-        pass
+        if _builtins.register_all():
+            _BUILTINS_LOADED = True
+        else:
+            try:
+                from core.foundation.logger import Logger
+                Logger.warning("System prefabs file is empty, retrying on next open")
+            except Exception:
+                pass
+    except Exception as e:
+        try:
+            from core.foundation.logger import Logger
+            Logger.warning(f"System prefabs failed to register, retrying on next open: {e}")
+        except Exception:
+            pass
 
 
 def get_system_prefabs() -> list[SystemPrefabEntry]:
