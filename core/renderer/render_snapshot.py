@@ -17,7 +17,7 @@ class _RenderSnapshot:
         'projectors', 'skinned_renderables', 'skinned_shadow_renderables',
         'interactors', 'gaussian_splats', 'dynamic_cubemaps',
         'dynamic_cubemaps_pos', 'dynamic_cubemaps_entity',
-        'cull_entries', 'cull_offsets', 'cull_counts',
+        'cull_entries', 'cull_offsets', 'cull_counts', '_cull_counts_np',
     )
     def __init__(self):
         self.lights: list = []
@@ -46,3 +46,4 @@ class _RenderSnapshot:
         self.cull_entries: list = []
         self.cull_offsets: list = []
         self.cull_counts: list = []
+        self._cull_counts_np = None

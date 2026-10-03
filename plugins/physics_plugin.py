@@ -1359,7 +1359,7 @@ class PhysicsPlugin(PluginBase):
             _flags[slots] = flv
         return max_slot
 
-    def _step_process(self, proc: PhysicsProcess, scene, dt: float, prof) -> list:
+    def _step_process(self, proc: PhysicsProcess, scene, dt: float, prof, need_coll=None) -> list:
         shared = proc.shared
         ets = proc.entity_slot_map
         entities = scene._entities
@@ -1391,7 +1391,12 @@ class PhysicsPlugin(PluginBase):
             else:
                 self._read_results_python(shared, _cache)
 
-        if not self._has_collision_listeners(scene):
+        if need_coll is None:
+            try:
+                need_coll = self._has_collision_listeners(scene)
+            except Exception:
+                need_coll = True
+        if not need_coll:
             for r in pending_results:
                 if r.get("collision_events"):
                     self._prev_frame_contacts.clear()
@@ -1414,7 +1419,11 @@ class PhysicsPlugin(PluginBase):
             max_slot = self._write_inputs_python(shared, _cache)
         shared.set_num_entities(max_slot + 1 if max_slot >= 0 else 0)
 
-        need_coll = self._has_collision_listeners(scene)
+        if need_coll is None:
+            try:
+                need_coll = self._has_collision_listeners(scene)
+            except Exception:
+                need_coll = True
         soft_velocities = None
         try:
             soft_velocities = self._sync_soft_remote(proc, scene, dt, pending_results)
@@ -1443,13 +1452,17 @@ class PhysicsPlugin(PluginBase):
             return
 
         prof.start("physics_collect_results")
+        try:
+            need_coll = self._has_collision_listeners(scene)
+        except Exception:
+            need_coll = None
         if self._simulation_mode == "per_layer_process":
             for proc in list(self._layer_processes.values()):
-                events = self._step_process(proc, scene, dt, prof)
+                events = self._step_process(proc, scene, dt, prof, need_coll)
                 if events:
                     self._process_collisions(scene, events)
         elif self._physics_process:
-            events = self._step_process(self._physics_process, scene, dt, prof)
+            events = self._step_process(self._physics_process, scene, dt, prof, need_coll)
             if events:
                 self._process_collisions(scene, events)
         prof.stop("physics_collect_results")

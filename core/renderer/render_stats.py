@@ -216,6 +216,7 @@ _vram_t = 0.0
 _vram_busy = False
 _frame_metrics_cache: dict = {"key": None, "val": None}
 _stats_adv_cache: dict = {}
+_scene_counts_cache: dict = {}
 _gl_info_cache = ["", "", 0.0]
 
 
@@ -395,17 +396,40 @@ def collect_render_stats(engine, renderer) -> dict:
     try:
         if scene is not None:
             try:
-                _ents = scene.get_all_entities()
+                _rv = scene._render_version
             except Exception:
-                _ents = getattr(scene, '_entities', None) or []
-            _nc = 0
-            _iter = _ents.values() if isinstance(_ents, dict) else _ents
-            for _e in _iter:
+                _rv = None
+            try:
+                _ents_d = getattr(scene, '_entities', None)
+                _n_ents = len(_ents_d) if _ents_d is not None else -1
+            except Exception:
+                _ents_d = None
+                _n_ents = -1
+            _cc_key = (id(scene), _rv, _n_ents)
+            _cc_hit = _scene_counts_cache.get(_cc_key) if _rv is not None else None
+            if _cc_hit is not None:
+                st['entities'] = _cc_hit[0]
+                st['components'] = _cc_hit[1]
+            else:
                 try:
-                    _nc += len(getattr(_e, '_components', {}) or {})
+                    _ents = scene.get_all_entities()
                 except Exception:
-                    continue
-            st['components'] = _nc
+                    _ents = getattr(scene, '_entities', None) or []
+                _nc = 0
+                _iter = _ents.values() if isinstance(_ents, dict) else _ents
+                for _e in _iter:
+                    try:
+                        _nc += len(getattr(_e, '_components', {}) or {})
+                    except Exception:
+                        continue
+                st['components'] = _nc
+                if _rv is not None:
+                    try:
+                        if len(_scene_counts_cache) > 8:
+                            _scene_counts_cache.clear()
+                        _scene_counts_cache[_cc_key] = (st['entities'], _nc)
+                    except Exception:
+                        pass
     except Exception:
         pass
     st['shader_progs'] = 0

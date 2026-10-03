@@ -596,6 +596,12 @@ class Engine:
         dt = raw_dt * self._time_scale
         self._profiler.start("tick")
         self._fixed_accum += dt
+        try:
+            _cap = float(self._fixed_dt) * 5.0
+            if self._fixed_accum > _cap:
+                self._fixed_accum = _cap
+        except Exception:
+            pass
         return dt
 
     def tick_fixed_step(self) -> bool:

@@ -7,9 +7,66 @@
 from __future__ import annotations
 
 import re
+import time
 
 RTC_KEY = "rendering.high_precision_rtc"
 GPU_DOUBLE_KEY = "rendering.high_precision_gpu"
+
+_FLAG_CACHE: dict = {}
+_FLAG_TTL = 2.0
+_FLAG_SUB_ID = None
+
+
+def _drop_flag_cache(key, value):
+    try:
+        if key == RTC_KEY or key == GPU_DOUBLE_KEY:
+            _FLAG_CACHE.pop(key, None)
+    except Exception:
+        pass
+
+
+def _ensure_flag_subscription(cfg):
+    global _FLAG_SUB_ID
+    try:
+        if id(cfg) == _FLAG_SUB_ID:
+            return
+        cfg.on_changed(_drop_flag_cache)
+        _FLAG_SUB_ID = id(cfg)
+    except Exception:
+        pass
+
+
+def _read_flag_uncached(key, default):
+    try:
+        from core.config.config import get_global_config
+        cfg = get_global_config()
+        if cfg is None:
+            return default
+        _ensure_flag_subscription(cfg)
+        return bool(cfg.get(key, default))
+    except Exception:
+        return default
+
+
+def _read_flag(key, default):
+    try:
+        now = time.monotonic()
+    except Exception:
+        now = 0.0
+    try:
+        hit = _FLAG_CACHE.get(key)
+        if hit is not None and (now - hit[1]) < _FLAG_TTL:
+            return hit[0]
+    except Exception:
+        pass
+    val = _read_flag_uncached(key, default)
+    try:
+        if len(_FLAG_CACHE) > 8:
+            _FLAG_CACHE.clear()
+        _FLAG_CACHE[key] = (val, now)
+    except Exception:
+        pass
+    return val
 
 _MARK = "ZARIN_HIGH_PRECISION"
 
@@ -35,14 +92,7 @@ _GL_DEPTH_RE = re.compile(r'gl_FragDepth[ \t]*=[ \t]*([^;]+);')
 def _get_enabled(enabled=None):
     if enabled is not None:
         return bool(enabled)
-    try:
-        from core.config.config import get_global_config
-        cfg = get_global_config()
-        if cfg is None:
-            return False
-        return bool(cfg.get(GPU_DOUBLE_KEY, False))
-    except Exception:
-        return False
+    return _read_flag(GPU_DOUBLE_KEY, False)
 
 
 def is_gpu_double_enabled(enabled=None):
@@ -52,14 +102,7 @@ def is_gpu_double_enabled(enabled=None):
 def is_rtc_enabled(enabled=None):
     if enabled is not None:
         return bool(enabled)
-    try:
-        from core.config.config import get_global_config
-        cfg = get_global_config()
-        if cfg is None:
-            return False
-        return bool(cfg.get(RTC_KEY, False))
-    except Exception:
-        return False
+    return _read_flag(RTC_KEY, False)
 
 
 def _has_mark(src):

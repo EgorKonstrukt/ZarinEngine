@@ -90,14 +90,13 @@ def relativize_chunk_f32(chunk, origin):
             stride = 16
         if stride < 16 or a.size % stride != 0:
             return chunk
-        m = a.reshape(-1, stride).astype(np.float64)
-        ox = float(origin[0])
-        oy = float(origin[1])
-        oz = float(origin[2])
-        m[:, 12] -= ox
-        m[:, 13] -= oy
-        m[:, 14] -= oz
-        return np.ascontiguousarray(m.astype(np.float32)).reshape(a.shape)
+        m = np.array(a.reshape(-1, stride), dtype=np.float32, copy=True)
+        t = np.asarray(m[:, 12:15], dtype=np.float64)
+        t[:, 0] -= float(origin[0])
+        t[:, 1] -= float(origin[1])
+        t[:, 2] -= float(origin[2])
+        m[:, 12:15] = t
+        return np.ascontiguousarray(m, dtype=np.float32).reshape(a.shape)
     except Exception:
         return chunk
 

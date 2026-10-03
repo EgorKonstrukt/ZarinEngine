@@ -207,6 +207,7 @@ class SceneRendererMixin:
         self._culled_total = len(renderable) if renderable else 0
         self._culled_visible = self._culled_total
         _tail_hit = False
+        _vis_sig = None
         if renderable:
             try:
                 vp = proj_mat._d.T @ view_mat._d.T
@@ -369,7 +370,26 @@ class SceneRendererMixin:
                         if n_vis == n_ent:
                             self._culled_visible = self._culled_total
                         else:
-                            self._culled_visible = sum(counts[i] for i in visible) if n_vis else 0
+                            try:
+                                _cc_np = snap._cull_counts_np
+                                if _cc_np is None or len(_cc_np) != len(counts):
+                                    raise ValueError
+                            except Exception:
+                                try:
+                                    _cc_np = np.ascontiguousarray(counts, dtype=np.int64)
+                                except Exception:
+                                    _cc_np = None
+                                try:
+                                    snap._cull_counts_np = _cc_np
+                                except Exception:
+                                    pass
+                            try:
+                                if _cc_np is not None and n_vis:
+                                    self._culled_visible = int(_cc_np[visible].sum())
+                                else:
+                                    self._culled_visible = sum(counts[i] for i in visible) if n_vis else 0
+                            except Exception:
+                                self._culled_visible = sum(counts[i] for i in visible) if n_vis else 0
                         if n_vis < n_ent:
                             if n_vis == 0:
                                 renderable = []
@@ -395,6 +415,10 @@ class SceneRendererMixin:
                         renderable = [renderable[idx] for idx in visible]
             except Exception:
                 import traceback; traceback.print_exc()
+            try:
+                _vis_sig = visible.tobytes()
+            except Exception:
+                _vis_sig = None
 
         if prof:
             prof.start("render_meshes")
@@ -616,8 +640,117 @@ class SceneRendererMixin:
                 self._render_object_effects(fx_renderable, view_f32, proj_f32, cam_pos, lights, selected_entities, outline_queue)
                 _phase_entries = [e for e in _phase_entries if not (len(e) > 6 and e[6])]
             if self._batcher:
-                groups = self._batcher.collect_groups(
-                    _phase_entries, self._materials, self._shaders)
+                _cg_hit = False
+                _cg_key = None
+                if (not _is_trans_phase) and (_vis_sig is not None) and (not transparent_entries) and (not fx_renderable):
+                    try:
+                        _rv3 = scene._render_version
+                    except Exception:
+                        _rv3 = None
+                    try:
+                        _mg3 = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+                    except Exception:
+                        _mg3 = 0
+                    try:
+                        _spr = bool(getattr(self, "_last_has_sprite", False))
+                    except Exception:
+                        _spr = False
+                    if not _spr:
+                        _cg_key = (id(snap), _rv3, _mg3, _vis_sig)
+                        try:
+                            _pc = self._part_cache
+                            _cg_hit = (_cg_key == self._cg_key) and (self._cg_groups is not None) and (_pc is not None) and (self._cg_part is _pc[1])
+                            if _cg_hit:
+                                _uniq = self._cg_uniques
+                                if _uniq:
+                                    _lm = self._materials.load_material
+                                    _gc = self._shaders.get_or_compile
+                                    try:
+                                        _dp = self._batcher._default_prog
+                                    except Exception:
+                                        _dp = None
+                                    for _mp, (_mt, _pr, _sp) in _uniq.items():
+                                        try:
+                                            if _lm(_mp) is not _mt:
+                                                _cg_hit = False
+                                                break
+                                        except Exception:
+                                            _cg_hit = False
+                                            break
+                                        try:
+                                            if _sp:
+                                                _ex = _gc(_sp)
+                                            else:
+                                                _ex = None
+                                        except Exception:
+                                            _cg_hit = False
+                                            break
+                                        if _ex is None:
+                                            try:
+                                                if _pr is not _dp:
+                                                    _cg_hit = False
+                                                    break
+                                            except Exception:
+                                                _cg_hit = False
+                                                break
+                                        elif _ex is not _pr:
+                                            _cg_hit = False
+                                            break
+                        except Exception:
+                            _cg_hit = False
+                if _cg_hit:
+                    try:
+                        groups = self._cg_groups
+                    except Exception:
+                        _cg_hit = False
+                if not _cg_hit:
+                    groups = self._batcher.collect_groups(
+                        _phase_entries, self._materials, self._shaders)
+                    if (_cg_key is not None) and (not _is_trans_phase) and (not transparent_entries) and (not fx_renderable):
+                        try:
+                            if _cg_key == getattr(self, "_cg_pending", None):
+                                self._cg_key = _cg_key
+                                self._cg_groups = groups
+                                try:
+                                    self._cg_part = self._part_cache[1]
+                                except Exception:
+                                    self._cg_part = None
+                                try:
+                                    _nu = {}
+                                    for _gk, _gv in groups.items():
+                                        if not _gv:
+                                            continue
+                                        _it = _gv[0]
+                                        try:
+                                            _mr = _it[3]
+                                            _sb = _it[7]
+                                            _ms = _mr.materials
+                                            if _ms:
+                                                if _sb < len(_ms):
+                                                    _mp = _ms[_sb].get("path", "")
+                                                else:
+                                                    _mp = _ms[-1].get("path", "")
+                                            else:
+                                                _mp = ""
+                                        except Exception:
+                                            _mp = ""
+                                        if _mp in _nu:
+                                            continue
+                                        _nu[_mp] = (_it[4], _it[5], getattr(_it[4], "shader_path", "") if _it[4] is not None else "")
+                                    self._cg_uniques = _nu
+                                except Exception:
+                                    self._cg_uniques = {}
+                                try:
+                                    self._cg_pending = None
+                                except Exception:
+                                    pass
+                            else:
+                                try:
+                                    self._cg_pending = _cg_key
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                 try:
                     _all_vis = self._culled_visible == self._culled_total
                 except Exception:

@@ -25,6 +25,10 @@ class LightAreaType(Enum):
     DISK = "disk"
 
 
+_SUN_CACHE: dict = {}
+_PLANCK_CACHE: dict = {}
+
+
 @ComponentRegistry.register
 class Light(Component):
     _icon = "Light.png"
@@ -167,6 +171,16 @@ class Light(Component):
 
     @staticmethod
     def _planck_white(color_temp: float) -> list[float]:
+        try:
+            key = float(color_temp)
+        except Exception:
+            key = 5778.0
+        try:
+            hit = _PLANCK_CACHE.get(key)
+            if hit is not None:
+                return [hit[0], hit[1], hit[2]]
+        except Exception:
+            pass
         t = max(float(color_temp), 1000.0) / 100.0
         if t <= 66.0:
             r = 255.0
@@ -182,7 +196,14 @@ class Light(Component):
         m = max(r, g, b)
         if m <= 0.0:
             return [1.0, 1.0, 1.0]
-        return [r / m, g / m, b / m]
+        out = [r / m, g / m, b / m]
+        try:
+            if len(_PLANCK_CACHE) > 32:
+                _PLANCK_CACHE.clear()
+            _PLANCK_CACHE[key] = (out[0], out[1], out[2])
+        except Exception:
+            pass
+        return out
 
     @staticmethod
     def point_lumen_to_candela(lumens: float) -> float:
@@ -209,6 +230,38 @@ class Light(Component):
 
     @staticmethod
     def compute_sun_light(sun_dir: Vec3, color_temp: float = 5778.0,
+                           aerosol_scale: float = 1.0,
+                           use_atmosphere: bool = True,
+                           ozone_factor: float = 1.0,
+                           rayleigh_scale: float = 1.0,
+                           mie_albedo: float = 0.9) -> tuple[list[float], float]:
+        try:
+            _skey = (float(sun_dir.x), float(sun_dir.y), float(sun_dir.z),
+                     float(color_temp), float(aerosol_scale), bool(use_atmosphere),
+                     float(ozone_factor), float(rayleigh_scale), float(mie_albedo))
+        except Exception:
+            _skey = None
+        if _skey is not None:
+            try:
+                _hit = _SUN_CACHE.get(_skey)
+                if _hit is not None:
+                    return [_hit[0][0], _hit[0][1], _hit[0][2]], _hit[1]
+            except Exception:
+                pass
+        color, intensity = Light._compute_sun_light_uncached(
+            sun_dir, color_temp, aerosol_scale, use_atmosphere,
+            ozone_factor, rayleigh_scale, mie_albedo)
+        if _skey is not None:
+            try:
+                if len(_SUN_CACHE) > 128:
+                    _SUN_CACHE.clear()
+                _SUN_CACHE[_skey] = ((float(color[0]), float(color[1]), float(color[2])), float(intensity))
+            except Exception:
+                pass
+        return color, intensity
+
+    @staticmethod
+    def _compute_sun_light_uncached(sun_dir: Vec3, color_temp: float = 5778.0,
                            aerosol_scale: float = 1.0,
                            use_atmosphere: bool = True,
                            ozone_factor: float = 1.0,
