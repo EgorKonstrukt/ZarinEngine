@@ -7,6 +7,7 @@
 from __future__ import annotations
 import math
 import os
+import threading
 import numpy as np
 from typing import TYPE_CHECKING, Optional
 from core.foundation.plugin_manager import PluginBase
@@ -63,6 +64,7 @@ class PhysicsPlugin(PluginBase):
         )
         self._step_caches: dict[int, tuple] = {}
         self._cache_version: int = 0
+        self._play_gen: int = 0
         self._collision_listener_sig: tuple = None
         self._has_collision_cache: bool = False
         self._collision_cache_valid: bool = False
@@ -774,6 +776,194 @@ class PhysicsPlugin(PluginBase):
         Logger.error("PhysicsPlugin: failed to start physics process")
         return False
 
+    def _wait_gen(self, proc: PhysicsProcess, typ: str, total: float, gen: int):
+        try:
+            remain = max(0.0, float(total))
+        except Exception:
+            remain = 0.0
+        while remain > 0.0:
+            try:
+                if gen != self._play_gen:
+                    return None
+            except Exception:
+                return None
+            try:
+                chunk = min(remain, 0.25)
+            except Exception:
+                chunk = 0.25
+            try:
+                r = proc.wait_for_result(typ, timeout=chunk)
+            except Exception:
+                r = None
+            if r is not None:
+                return r
+            try:
+                remain -= chunk
+            except Exception:
+                return None
+        return None
+
+    def _bringup_process_async(self, gen: int, scene, sm, sc, settings, old_proc) -> None:
+        try:
+            if old_proc is not None:
+                try:
+                    old_proc.shutdown(500)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            alive = self._is_alive_for_bringup(gen, scene)
+        except Exception:
+            alive = False
+        if not alive:
+            return
+        new_proc = PhysicsProcess(project_root=self._project_root)
+        try:
+            if not new_proc.spawn(sm, sc, settings):
+                try:
+                    new_proc.shutdown(500)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            return
+        if not self._is_alive_for_bringup(gen, scene):
+            try:
+                new_proc.shutdown(500)
+            except Exception:
+                pass
+            return
+        if new_proc.wait_init(timeout=10.0) is not True:
+            return
+        if not self._is_alive_for_bringup(gen, scene):
+            try:
+                new_proc.shutdown(500)
+            except Exception:
+                pass
+            return
+        try:
+            bodies = []
+            try:
+                entities = scene.get_all_entities()
+            except Exception:
+                entities = []
+            for entity in entities:
+                try:
+                    if gen != self._play_gen:
+                        try:
+                            new_proc.shutdown(500)
+                        except Exception:
+                            pass
+                        return
+                except Exception:
+                    return
+                try:
+                    rb = entity._components.get("Rigidbody")
+                    rb2d = entity._components.get("Rigidbody2D")
+                    tr = entity._components.get("Transform")
+                    if (not rb and not rb2d) or not tr:
+                        continue
+                    bd = self._body_with_slot_in_process(entity, tr, new_proc)
+                    if bd:
+                        bodies.append(bd)
+                except Exception:
+                    continue
+        except Exception:
+            bodies = []
+        if not self._is_alive_for_bringup(gen, scene):
+            try:
+                new_proc.shutdown(500)
+            except Exception:
+                pass
+            return
+        try:
+            softs = self._collect_soft_dicts(scene, new_proc)
+        except Exception:
+            softs = []
+        if not bodies and not softs:
+            try:
+                self._physics_process = new_proc
+            except Exception:
+                pass
+            return
+        if bodies:
+            try:
+                new_proc.send({"type": "load_bodies", "bodies": bodies})
+            except Exception:
+                try:
+                    new_proc.shutdown(500)
+                except Exception:
+                    pass
+                return
+            if self._wait_gen(new_proc, "load_bodies", 5.0, gen) is None:
+                Logger.error("PhysicsPlugin: load_bodies timed out, shutting down process")
+                try:
+                    new_proc.shutdown(500)
+                except Exception:
+                    pass
+                try:
+                    self._clear_soft_remote()
+                except Exception:
+                    pass
+                return
+            try:
+                Logger.info(f"[PhysicsPlugin] Scene loaded with {len(bodies)} bodies (shared-memory).")
+            except Exception:
+                pass
+        if softs:
+            try:
+                new_proc.send({"type": "load_soft_bodies", "softs": softs})
+            except Exception:
+                try:
+                    new_proc.shutdown(500)
+                except Exception:
+                    pass
+                return
+            ack = self._wait_gen(new_proc, "soft_loaded", 60.0, gen)
+            if ack is None:
+                try:
+                    if gen == self._play_gen:
+                        Logger.error("PhysicsPlugin: load_soft_bodies timed out")
+                except Exception:
+                    pass
+            else:
+                try:
+                    self._harvest_soft_created(new_proc, scene, [ack])
+                except Exception:
+                    pass
+            try:
+                Logger.info(f"[PhysicsPlugin] Scene loaded with {len(softs)} soft bodies (shared-memory).")
+            except Exception:
+                pass
+        if not self._is_alive_for_bringup(gen, scene):
+            try:
+                new_proc.shutdown(500)
+            except Exception:
+                pass
+            return
+        try:
+            self._physics_process = new_proc
+        except Exception:
+            try:
+                new_proc.shutdown(500)
+            except Exception:
+                pass
+
+    def _is_alive_for_bringup(self, gen: int, scene) -> bool:
+        try:
+            if gen != self._play_gen:
+                return False
+        except Exception:
+            return False
+        try:
+            eng = self._engine
+            if eng is None or eng.scene is not scene:
+                return False
+        except Exception:
+            return False
+        return True
+
     def on_play_start(self):
         from core.foundation.logger import Logger
         Logger.info(f"[PhysicsPlugin] on_play_start called, mode={self._simulation_mode}")
@@ -858,38 +1048,50 @@ class PhysicsPlugin(PluginBase):
                 else:
                     self._harvest_soft_created(proc, scene, [ack])
         else:
-            if not self._start_fresh_process():
+            try:
+                self._play_gen += 1
+            except Exception:
+                self._play_gen = 1
+            try:
+                _gen = self._play_gen
+            except Exception:
+                _gen = 1
+            try:
+                _old_proc = self._physics_process
+            except Exception:
+                _old_proc = None
+            try:
+                self._physics_process = None
+            except Exception:
+                pass
+            try:
+                self._step_caches.clear()
+            except Exception:
+                pass
+            try:
+                self._clear_soft_remote()
+            except Exception:
+                pass
+            try:
+                _sm, _sc = self._solver_module_class()
+                _settings = self._get_physics_settings()
+            except Exception:
+                _sm, _sc, _settings = None, None, None
+            if _sm is None:
+                Logger.error("PhysicsPlugin: failed to start physics process")
                 return
-            bodies = []
-            for entity in scene.get_all_entities():
-                rb = entity._components.get("Rigidbody")
-                rb2d = entity._components.get("Rigidbody2D")
-                tr = entity._components.get("Transform")
-                if (not rb and not rb2d) or not tr:
-                    continue
-                bd = self._body_with_slot(entity, tr)
-                if bd:
-                    bodies.append(bd)
-            softs = self._collect_soft_dicts(scene, self._physics_process)
-            if not bodies and not softs:
-                return
-            if bodies:
-                self._physics_process.send({"type": "load_bodies", "bodies": bodies})
-                if self._physics_process.wait_for_result("load_bodies", timeout=5.0) is None:
-                    Logger.error("PhysicsPlugin: load_bodies timed out, shutting down process")
-                    self._physics_process.shutdown(500)
-                    self._physics_process = None
-                    self._clear_soft_remote()
-                    return
-                Logger.info(f"[PhysicsPlugin] Scene loaded with {len(bodies)} bodies (shared-memory).")
-            if softs:
-                self._physics_process.send({"type": "load_soft_bodies", "softs": softs})
-                ack = self._physics_process.wait_for_result("soft_loaded", timeout=60.0)
-                if ack is None:
-                    Logger.error("PhysicsPlugin: load_soft_bodies timed out")
-                else:
-                    self._harvest_soft_created(self._physics_process, scene, [ack])
-                Logger.info(f"[PhysicsPlugin] Scene loaded with {len(softs)} soft bodies (shared-memory).")
+            try:
+                _t = threading.Thread(
+                    target=self._bringup_process_async,
+                    args=(_gen, scene, _sm, _sc, _settings, _old_proc),
+                    daemon=True,
+                )
+                _t.start()
+            except Exception:
+                try:
+                    self._bringup_process_async(_gen, scene, _sm, _sc, _settings, _old_proc)
+                except Exception:
+                    pass
 
     def _reset_entity_velocities(self, scene=None):
         if scene is None:
@@ -917,6 +1119,10 @@ class PhysicsPlugin(PluginBase):
             proc.shutdown(500)
 
     def on_play_stop(self):
+        try:
+            self._play_gen += 1
+        except Exception:
+            self._play_gen = 1
         self._scanned_entity_ids.clear()
         self._last_entity_count = -1
         self._prev_frame_contacts.clear()

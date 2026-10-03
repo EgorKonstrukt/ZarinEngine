@@ -84,32 +84,56 @@ class PhysicsProcess:
         except Exception:
             pass
 
-    def start(self, solver_module: str, solver_class: str, settings: dict) -> bool:
-        self._solver_module = solver_module
-        self._solver_class = solver_class
-        self._shared.set_num_entities(0)
-        from core.foundation.logger import Logger
-        self._process = multiprocessing.Process(
-            target=_physics_loop,
-            args=(self._cmd_queue, self._result_queue,
-                  self._shared.name, self._soft_shared.name,
-                  self._project_root, solver_module, solver_class, settings),
-            daemon=True,
-        )
-        self._process.start()
-        result = self.wait_for_result("init", timeout=10.0)
+    def spawn(self, solver_module: str, solver_class: str, settings: dict) -> bool:
+        try:
+            self._solver_module = solver_module
+            self._solver_class = solver_class
+            self._shared.set_num_entities(0)
+            self._process = multiprocessing.Process(
+                target=_physics_loop,
+                args=(self._cmd_queue, self._result_queue,
+                      self._shared.name, self._soft_shared.name,
+                      self._project_root, solver_module, solver_class, settings),
+                daemon=True,
+            )
+            self._process.start()
+            return True
+        except Exception:
+            try:
+                self._process = None
+            except Exception:
+                pass
+            return False
+
+    def wait_init(self, timeout: float = 10.0) -> bool:
+        try:
+            result = self.wait_for_result("init", timeout=timeout)
+        except Exception:
+            result = None
         ok = result is not None and result.get("success", False)
         if not ok:
+            from core.foundation.logger import Logger
             Logger.warning(f"  PhysicsProcess.start FAILED, killing process")
-            if self._process and self._process.is_alive():
-                self._process.terminate()
-                self._process.join(2)
-            self._process = None
-            self._shared.close()
-            self._shared.unlink()
-            self._soft_shared.close()
-            self._soft_shared.unlink()
+            try:
+                if self._process and self._process.is_alive():
+                    self._process.terminate()
+                    self._process.join(2)
+            except Exception:
+                pass
+            try:
+                self._process = None
+                self._shared.close()
+                self._shared.unlink()
+                self._soft_shared.close()
+                self._soft_shared.unlink()
+            except Exception:
+                pass
         return ok
+
+    def start(self, solver_module: str, solver_class: str, settings: dict) -> bool:
+        if not self.spawn(solver_module, solver_class, settings):
+            return False
+        return self.wait_init(timeout=10.0)
 
     def send(self, cmd: dict):
         self._cmd_queue.put(cmd)

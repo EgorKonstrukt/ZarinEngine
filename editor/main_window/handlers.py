@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 
 import qtawesome as qta
 from PyQt6.QtWidgets import QMessageBox, QFileDialog
@@ -16,6 +17,28 @@ from PyQt6.QtCore import Qt, QTimer
 from core.maths.math3d import Vec3
 from core.foundation.logger import Logger
 from editor.splash import SplashScreen
+
+
+_PENDING_SNAPSHOTS: dict = {}
+
+
+def _wait_pending_snapshot(info, timeout: float = 0.5) -> None:
+    try:
+        rec = _PENDING_SNAPSHOTS.get(id(info))
+    except Exception:
+        return
+    if rec is None:
+        return
+    try:
+        thr = rec[1]
+        if thr is None:
+            return
+    except Exception:
+        return
+    try:
+        thr.join(timeout=max(0.0, float(timeout)))
+    except Exception:
+        pass
 
 
 def on_entity_selected(mw, entity):
@@ -741,6 +764,10 @@ def toggle_play_stop(mw):
         mw._engine.stop_play()
         mw._viewport_dock.raise_()
         info = _tab_info(mw)
+        try:
+            _wait_pending_snapshot(info)
+        except Exception:
+            pass
         if info and info.scene_snapshot and mw._engine.scene:
             from core.components.rendering.postfx.graphics_effect import GraphicsEffect
             GraphicsEffect.cleanup_registry()
@@ -764,8 +791,52 @@ def toggle_play_stop(mw):
         if mw._engine.scene:
             info = _tab_info(mw)
             if info:
-                info.scene_snapshot = mw._engine.scene.serialize()
-                info.play_mode = True
+                try:
+                    info.scene_snapshot = None
+                    info.play_mode = True
+                    _tok = object()
+                    _PENDING_SNAPSHOTS[id(info)] = [_tok, None]
+                    _scene_ref = mw._engine.scene
+
+                    def _snap_worker():
+                        try:
+                            _data = _scene_ref.serialize()
+                        except Exception:
+                            return
+                        try:
+                            _rec = _PENDING_SNAPSHOTS.get(id(info))
+                            if _rec is None or _rec[0] is not _tok:
+                                return
+                            try:
+                                _playing = bool(mw._engine.play_mode)
+                            except Exception:
+                                _playing = False
+                            if not _playing:
+                                return
+                            try:
+                                if not getattr(info, "play_mode", False):
+                                    return
+                            except Exception:
+                                return
+                            info.scene_snapshot = _data
+                        except Exception:
+                            pass
+                        finally:
+                            try:
+                                _rec = _PENDING_SNAPSHOTS.get(id(info))
+                                if _rec is not None and _rec[0] is _tok:
+                                    _PENDING_SNAPSHOTS.pop(id(info), None)
+                            except Exception:
+                                pass
+
+                    _thr = threading.Thread(target=_snap_worker, daemon=True)
+                    _PENDING_SNAPSHOTS[id(info)][1] = _thr
+                    _thr.start()
+                except Exception:
+                    try:
+                        info.scene_snapshot = mw._engine.scene.serialize()
+                    except Exception:
+                        info.scene_snapshot = None
         mw._engine.start_play()
         mw._play_dock.raise_()
 
@@ -774,6 +845,10 @@ def toggle_pause(mw):
     if mw._play_dock:
         mw._play_dock._toggle_pause()
     info = _tab_info(mw)
+    try:
+        _wait_pending_snapshot(info)
+    except Exception:
+        pass
     if info and info.scene_snapshot and mw._engine.scene:
         from core.components.rendering.postfx.graphics_effect import GraphicsEffect
         GraphicsEffect.cleanup_registry()
