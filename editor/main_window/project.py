@@ -12,8 +12,68 @@ import os
 from PyQt6.QtWidgets import QFileDialog
 from PyQt6.QtCore import QTimer
 
-from editor.project_manager import ProjectManagerDialog, _add_recent_project
+from editor.project_manager import ProjectManagerDialog, _add_recent_project, _get_last_scene
 from editor.splash import SplashScreen
+
+
+def _resolve_startup_scene(project_path: str, project_name: str) -> str:
+    cand = _get_last_scene(project_path)
+    if cand and os.path.isfile(cand):
+        return cand
+    settings_path = os.path.join(project_path, "ProjectSettings.json")
+    if os.path.isfile(settings_path):
+        try:
+            with open(settings_path) as f:
+                data = json.load(f)
+            default_scene = (data.get("project") or {}).get("default_scene") or ""
+            if default_scene:
+                full = default_scene if os.path.isabs(default_scene) else os.path.join(project_path, default_scene)
+                if os.path.isfile(full):
+                    return os.path.abspath(full)
+        except Exception:
+            pass
+    build_path = os.path.join(project_path, "BuildSettings.json")
+    if os.path.isfile(build_path):
+        try:
+            with open(build_path) as f:
+                bs = json.load(f)
+            scenes = bs.get("scenes") or []
+            if scenes:
+                first = scenes[0]
+                for prefix in ("scenes/", "scenes\\"):
+                    if first.startswith(prefix):
+                        first = first[len(prefix):]
+                        break
+                full = first if os.path.isabs(first) else os.path.join(project_path, "scenes", first)
+                if os.path.isfile(full):
+                    return os.path.abspath(full)
+        except Exception:
+            pass
+    scenes_dir = os.path.join(project_path, "scenes")
+    if not os.path.isdir(scenes_dir):
+        scenes_dir = project_path
+    legacy = os.path.join(scenes_dir, f"{project_name}.zpes")
+    if os.path.isfile(legacy):
+        return os.path.abspath(legacy)
+    try:
+        best = ""
+        best_mtime = -1.0
+        for root, _dirs, files in os.walk(scenes_dir):
+            for fn in files:
+                if fn.lower().endswith(".zpes"):
+                    full = os.path.join(root, fn)
+                    try:
+                        mt = os.path.getmtime(full)
+                    except Exception:
+                        continue
+                    if mt > best_mtime:
+                        best_mtime = mt
+                        best = full
+        if best and os.path.isfile(best):
+            return os.path.abspath(best)
+    except Exception:
+        pass
+    return ""
 
 
 def switch_project(mw, project_path: str):
@@ -49,14 +109,10 @@ def _do_switch_project(mw, project_path: str):
     bs = BuildSettings.instance() or BuildSettings()
     bs.load(os.path.join(project_path, "BuildSettings.json"))
 
-    if os.path.isdir(os.path.join(project_path, "scenes")):
-        scenes_dir = os.path.join(project_path, "scenes")
-    else:
-        scenes_dir = project_path
-    scene_name = os.path.join(scenes_dir, f"{name}.zpes")
-    if os.path.exists(scene_name):
-        SplashScreen.show_message(f"Loading scene: {name}.zpes...")
-        mw._engine.load_scene(scene_name)
+    target = _resolve_startup_scene(project_path, name)
+    if target:
+        SplashScreen.show_message(f"Loading scene: {os.path.basename(target)}...")
+        mw._engine.load_scene(target)
         mw._hierarchy.refresh()
     else:
         SplashScreen.show_message(f"Creating new scene: {name}...")

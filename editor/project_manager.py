@@ -47,12 +47,63 @@ def _get_recent_projects(max_count: int = 10) -> list[dict]:
     return projects[:max_count]
 
 
-def _add_recent_project(name: str, path: str):
+def _add_recent_project(name: str, path: str, last_scene: Optional[str] = None):
     projects = _load_projects_db()
-    entry = {"name": name, "path": os.path.abspath(path), "last_opened": datetime.now().isoformat()}
-    projects = [p for p in projects if p.get("path") != os.path.abspath(path)]
+    abspath = os.path.abspath(path)
+    kept_scene = None
+    for p in projects:
+        if os.path.normcase(p.get("path") or "") == os.path.normcase(abspath):
+            kept_scene = p.get("last_scene") or None
+            break
+    if last_scene is not None:
+        kept_scene = os.path.abspath(last_scene) if last_scene else None
+    entry = {"name": name, "path": abspath, "last_opened": datetime.now().isoformat()}
+    if kept_scene:
+        entry["last_scene"] = kept_scene
+    projects = [p for p in projects if os.path.normcase(p.get("path") or "") != os.path.normcase(abspath)]
     projects.append(entry)
     _save_projects_db(projects)
+
+
+def _set_last_scene(project_path: str, scene_path: str):
+    try:
+        if not project_path or not scene_path:
+            return
+        proj = os.path.abspath(project_path)
+        scene = os.path.abspath(scene_path)
+        if not os.path.isfile(scene):
+            return
+        try:
+            inside = os.path.commonpath([os.path.normcase(proj), os.path.normcase(scene)]) == os.path.normcase(proj)
+        except Exception:
+            return
+        if not inside:
+            return
+        projects = _load_projects_db()
+        for p in projects:
+            if os.path.normcase(p.get("path") or "") == os.path.normcase(proj):
+                if p.get("last_scene") != scene:
+                    p["last_scene"] = scene
+                    _save_projects_db(projects)
+                break
+    except Exception:
+        pass
+
+
+def _get_last_scene(project_path: str) -> str:
+    try:
+        if not project_path:
+            return ""
+        proj = os.path.abspath(project_path)
+        for p in _load_projects_db():
+            if os.path.normcase(p.get("path") or "") == os.path.normcase(proj):
+                cand = p.get("last_scene") or ""
+                if cand and os.path.isfile(cand):
+                    return cand
+                return ""
+    except Exception:
+        return ""
+    return ""
 
 
 def _create_project_directory(path: str, name: str) -> bool:

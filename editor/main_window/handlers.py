@@ -588,6 +588,15 @@ def on_scene_loaded(mw, scene):
     mw.setWindowTitle(f"Zarin Engine Editor - {tab_name}")
     if hasattr(mw, '_viewport') and mw._viewport and hasattr(mw._viewport, 'renderer') and mw._viewport.renderer:
         mw._viewport.renderer.clear_scene_caches()
+    try:
+        scene_path = getattr(scene, "path", "") or ""
+        eng = getattr(mw, "_engine", None)
+        project_path = getattr(eng, "_project_path", "") or ""
+        if scene_path and project_path:
+            from editor.project_manager import _set_last_scene
+            _set_last_scene(project_path, scene_path)
+    except Exception:
+        pass
 
 
 def on_gizmo_mode_changed(mw, mode):
@@ -983,6 +992,16 @@ def _sync_tab_after_save(mw):
             info = mw._scene_tab_manager.get_tab_info(active)
             if info:
                 info.path = mw._engine.scene.path if mw._engine.scene else info.path
+    try:
+        eng = getattr(mw, "_engine", None)
+        scene = getattr(eng, "scene", None)
+        scene_path = getattr(scene, "path", "") or ""
+        project_path = getattr(eng, "_project_path", "") or ""
+        if scene_path and project_path:
+            from editor.project_manager import _set_last_scene
+            _set_last_scene(project_path, scene_path)
+    except Exception:
+        pass
 
 
 def save_scene(mw):

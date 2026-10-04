@@ -53,11 +53,11 @@ SPLASH_WINDOW_FLAGS = (
     Qt.WindowType.SplashScreen
 )
 
-LOGO_TARGET_WIDTH = 560
+LOGO_TARGET_WIDTH = 620
 LOGO_VIEWBOX = QRectF(0, 0, 700, 260)
 
-PROGRESS_BAR_WIDTH = 380
-PROGRESS_BAR_HEIGHT = 8
+PROGRESS_BAR_WIDTH = 582
+PROGRESS_BAR_HEIGHT = 12
 PROGRESS_BAR_Y_OFFSET = 60
 PROGRESS_BAR_RADIUS = 4
 PROGRESS_FILL_RADIUS = 3
@@ -70,49 +70,49 @@ DID_YOU_KNOW_Y = 245
 VERSION_Y = 275
 ACCENT_BAR_Y = 305
 
-DID_YOU_KNOW_WIDTH_MAX = 540
+DID_YOU_KNOW_WIDTH_MAX = 620
 
 TIPS = [
-    "Did you know? Press Ctrl+Z to undo, Ctrl+Shift+Z to redo any action.",
-    "Did you know? Right-click in the viewport to create entities via the context menu.",
-    "Did you know? Hold middle mouse and drag to orbit the viewport camera.",
-    "Did you know? Scroll to zoom, Ctrl+middle-drag to pan in the viewport.",
-    "Did you know? Press F2 to rename any entity in the Hierarchy or Project panel.",
-    "Did you know? Press Delete to remove selected entities from the scene.",
-    "Did you know? The Inspector supports Vec2, Vec3, Quat, color pickers, and curve editors.",
-    "Did you know? The Console groups duplicate messages and supports level filtering.",
-    "Did you know? The Profiler shows live frame time breakdowns per system.",
-    "Did you know? Prefabs let you reuse complex objects вЂ” drag them from Project into the scene.",
-    "Did you know? The Project panel has Icon, List, and Details view modes.",
-    "Did you know? Press F5 in the Project panel to refresh the file listing.",
-    "Did you know? Press Alt+Up in the Project panel to navigate to the parent directory.",
-    "Did you know? Press Home in the Project panel to jump to the project root.",
-    "Did you know? The Undo History panel lets you click any point to seek to that state.",
-    "Did you know? The gizmo supports Translate (W), Rotate (E), and Scale (R) modes.",
-    "Did you know? Hold Shift while using the gizmo to snap to configured grid values.",
-    "Did you know? Collider wireframes are drawn directly in the viewport.",
-    "Did you know? Camera frustum gizmos show what each camera sees in real-time.",
-    "Did you know? Particle emitters display cone, sphere, box, and circle shape gizmos.",
-    "Did you know? Audio sources draw min/max distance spheres in the viewport.",
-    "Did you know? Scripts can draw custom gizmo lines via the gizmo_lines() API.",
-    "Did you know? Physics runs on a separate background thread for smooth performance.",
-    "Did you know? The engine supports Box, Sphere, Capsule, Mesh colliders and 2D variants.",
-    "Did you know? The Collaboration feature lets you host or join peer-to-peer editing sessions.",
-    "Did you know? The Play Window opens a separate viewport for play-mode rendering.",
-    "Did you know? The Terminal panel supports PowerShell and Python REPL modes.",
-    "Did you know? You can manage plugins via the Plugin Manager вЂ” enable/disable at runtime.",
-    "Did you know? The engine includes 10 constraint components like AimConstraint and ParentConstraint.",
-    "Did you know? Area-select multiple entities by click-dragging in the viewport.",
-    "Did you know? Drop prefab files from Project onto the viewport to instantiate them.",
-    "Did you know? The Axis Gizmo in the corner snaps the camera to any axis on click.",
-    "Did you know? Component icons float above entities showing camera, light, and audio types.",
-    "Did you know? Drag and drop dock panels anywhere to rearrange your workspace layout.",
-    "Did you know? The engine has built-in ECS with tags, layers, parenting, and prefab support.",
-    "Did you know? You can toggle wireframe overlay mode from the viewport toolbar.",
-    "Did you know? The Input system supports Unity-style GetKey, GetButton, and GetAxis.",
-    "Did you know? Audio supports 3D positioning, doppler effect, and reverb zones via OpenAL.",
-    "Did you know? The engine supports modular shader parsing with auto-recompilation.",
-    "Did you know? The build system uses Nuitka to compile standalone executables.",
+    "Did you know? Press Ctrl+S to save — scenes are JSON, safe to commit to git.",
+    "Did you know? Shift+F10 toggles Play — Pause + Step to debug frame by frame.",
+    "Did you know? Hold right mouse + WASD to fly, Q/E down/up, Shift for speed.",
+    "Did you know? Press F to focus selection, Delete to remove, F2 to rename.",
+    "Did you know? Press Q/W/E/R for No/Move/Rotate/Scale gizmo modes.",
+    "Did you know? Snap is ON — hold Ctrl while dragging to move freely.",
+    "Did you know? Tune snap steps T/R/S in the viewport toolbar for precise layout.",
+    "Did you know? Ctrl+D duplicates, Ctrl+C/Ctrl+V copy-pastes entities.",
+    "Did you know? Right-click the viewport - Create spawns lights, physics, UI.",
+    "Did you know? Drag a .zpep from Project into the viewport to instantiate it.",
+    "Did you know? Save any subtree as prefab to reuse enemies, pickups, UI.",
+    "Did you know? Edit scripts during Play — hot-reload keeps Inspector values.",
+    "Did you know? Annotate float with Range(0,10) to get a slider in Inspector.",
+    "Did you know? Add _inspector_buttons to call script methods from Inspector.",
+    "Did you know? Type a field as 'Entity' to get an entity picker in Inspector.",
+    "Did you know? Input, KeyCode, Vec3 work in scripts with zero imports.",
+    "Did you know? Double-click a .py in Project to edit it, Check validates it.",
+    "Did you know? Lower the TS slider to 0.1 for slow-motion physics debugging.",
+    "Did you know? Prefer Box/Sphere colliders — MeshCollider is for static only.",
+    "Did you know? Freeze Rigidbody axes for top-down games and 2.5D platformers.",
+    "Did you know? Use CharacterController for move, jump, slope limit and steps.",
+    "Did you know? Audio min/max spheres show 3D falloff directly in viewport.",
+    "Did you know? Spatial blend 0 = flat 2D sound, 1 = full 3D positional audio.",
+    "Did you know? Profiler finds the slow system — export SVG flamegraph to share.",
+    "Did you know? Console groups duplicates — filter by level to find real errors.",
+    "Did you know? Click any Undo History entry to jump the scene to that state.",
+    "Did you know? Ctrl+Z / Ctrl+Shift+Z undoes entities, Inspector and files.",
+    "Did you know? Corner Axis Gizmo clicks snap the camera to that axis.",
+    "Did you know? Drag in empty viewport to area-select multiple entities.",
+    "Did you know? Shaded+Wireframe mode reveals z-fighting and hidden geometry.",
+    "Did you know? Toggle 2D / Ortho in the toolbar for UI and pixel-perfect work.",
+    "Did you know? .import files remember scale, normals, filter per asset.",
+    "Did you know? Drop FBX, GLTF, OBJ or BLEND into Project to import it.",
+    "Did you know? Host Collaboration to co-edit — peers see cursors and gizmos.",
+    "Did you know? Shaders recompile live — edit .shader and see it instantly.",
+    "Did you know? Ctrl+Shift+B builds a standalone exe via Nuitka.",
+    "Did you know? Tags, layers and parenting filter logic, cameras and search.",
+    "Did you know? Draw debug lines from any script via gizmo_lines(), no Play needed.",
+    "Did you know? Curve editor: double-click adds a key, F fits the view.",
+    "Did you know? Script Editor: Ctrl+Q for docs, Ctrl+= / Ctrl+- to zoom.",
 ]
 
 BG_GRADIENT = [
