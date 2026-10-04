@@ -157,6 +157,7 @@ class MeshData:
         self._vao: Optional[Any] = None
         self._vbo: Optional[Any] = None
         self._ibo: Optional[Any] = None
+        self._shadow_vbo: Optional[Any] = None
         self._outline_vao: Optional[Any] = None
         self._outline_vbo: Optional[Any] = None
         self._ctx: Optional[Any] = None
@@ -380,6 +381,12 @@ class MeshData:
         self._ctx = ctx
         verts = self.vertices
         if verts.size == 0:
+            if self._shadow_vbo is not None:
+                try:
+                    self._shadow_vbo.release()
+                except Exception:
+                    pass
+                self._shadow_vbo = None
             return
         n_verts = verts.size // 3
         prebuilt = self._up_vbo if self._vbo is None else None
@@ -398,6 +405,24 @@ class MeshData:
                 _buffers_recreated = True
             else:
                 self._vbo.write(b)
+        try:
+            pos = np.ascontiguousarray(verts.reshape(-1, 3), dtype=np.float32).tobytes()
+        except Exception:
+            pos = b""
+        if pos:
+            if self._shadow_vbo is None:
+                self._shadow_vbo = ctx.buffer(pos)
+                _buffers_recreated = True
+            else:
+                if self._shadow_vbo.size != len(pos):
+                    try:
+                        self._shadow_vbo.release()
+                    except Exception:
+                        pass
+                    self._shadow_vbo = ctx.buffer(pos)
+                    _buffers_recreated = True
+                else:
+                    self._shadow_vbo.write(pos)
         idx = self.indices
         if idx.size > 0:
             ib = self._up_ibo if (self._ibo is None and self._up_ibo) else idx.astype(np.uint32, copy=False).tobytes()

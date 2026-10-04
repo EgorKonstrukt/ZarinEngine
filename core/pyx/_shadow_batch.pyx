@@ -774,6 +774,101 @@ def cull_flat_min(np.ndarray[DTYPE_t, ndim=2] centers,
     return count
 
 
+def cull_flat_multi(np.ndarray[DTYPE_t, ndim=2] centers,
+                     np.ndarray[DTYPE_t, ndim=1] radii,
+                     np.ndarray[FLOAT32_t, ndim=3] vps,
+                     np.ndarray[DTYPE_t, ndim=1] min_radii,
+                     np.ndarray[np.intp_t, ndim=2] outs,
+                     np.ndarray[np.intp_t, ndim=1] counts):
+    cdef int n = centers.shape[0]
+    cdef int K = vps.shape[0]
+    if n == 0 or K == 0:
+        return 0
+    if K > 8:
+        K = 8
+    cdef DTYPE_t[:, :] c_v = centers
+    cdef DTYPE_t[:] r_v = radii
+    cdef FLOAT32_t[:, :, :] v_v = vps
+    cdef DTYPE_t[::1] m_v = min_radii
+    cdef np.intp_t[:, :] o_v = outs
+    cdef np.intp_t[::1] n_v = counts
+    cdef double pl[8][6][4]
+    cdef double p0, p1, p2, p3, norm
+    cdef double c00, c01, c02, c03, c10, c11, c12, c13
+    cdef double c20, c21, c22, c23, c30, c31, c32, c33
+    cdef int k, i, total = 0
+    cdef double cx, cy, cz, rad, dist, mrad
+    for k in range(K):
+        c00 = v_v[k, 0, 0]; c01 = v_v[k, 1, 0]; c02 = v_v[k, 2, 0]; c03 = v_v[k, 3, 0]
+        c10 = v_v[k, 0, 1]; c11 = v_v[k, 1, 1]; c12 = v_v[k, 2, 1]; c13 = v_v[k, 3, 1]
+        c20 = v_v[k, 0, 2]; c21 = v_v[k, 1, 2]; c22 = v_v[k, 2, 2]; c23 = v_v[k, 3, 2]
+        c30 = v_v[k, 0, 3]; c31 = v_v[k, 1, 3]; c32 = v_v[k, 2, 3]; c33 = v_v[k, 3, 3]
+        p0 = c30 + c00; p1 = c31 + c01; p2 = c32 + c02; p3 = c33 + c03
+        norm = sqrt(p0 * p0 + p1 * p1 + p2 * p2)
+        if norm < 1e-10:
+            norm = 1.0
+        pl[k][0][0] = p0 / norm; pl[k][0][1] = p1 / norm; pl[k][0][2] = p2 / norm; pl[k][0][3] = p3 / norm
+        p0 = c30 - c00; p1 = c31 - c01; p2 = c32 - c02; p3 = c33 - c03
+        norm = sqrt(p0 * p0 + p1 * p1 + p2 * p2)
+        if norm < 1e-10:
+            norm = 1.0
+        pl[k][1][0] = p0 / norm; pl[k][1][1] = p1 / norm; pl[k][1][2] = p2 / norm; pl[k][1][3] = p3 / norm
+        p0 = c30 + c10; p1 = c31 + c11; p2 = c32 + c12; p3 = c33 + c13
+        norm = sqrt(p0 * p0 + p1 * p1 + p2 * p2)
+        if norm < 1e-10:
+            norm = 1.0
+        pl[k][2][0] = p0 / norm; pl[k][2][1] = p1 / norm; pl[k][2][2] = p2 / norm; pl[k][2][3] = p3 / norm
+        p0 = c30 - c10; p1 = c31 - c11; p2 = c32 - c12; p3 = c33 - c13
+        norm = sqrt(p0 * p0 + p1 * p1 + p2 * p2)
+        if norm < 1e-10:
+            norm = 1.0
+        pl[k][3][0] = p0 / norm; pl[k][3][1] = p1 / norm; pl[k][3][2] = p2 / norm; pl[k][3][3] = p3 / norm
+        p0 = c30 + c20; p1 = c31 + c21; p2 = c32 + c22; p3 = c33 + c23
+        norm = sqrt(p0 * p0 + p1 * p1 + p2 * p2)
+        if norm < 1e-10:
+            norm = 1.0
+        pl[k][4][0] = p0 / norm; pl[k][4][1] = p1 / norm; pl[k][4][2] = p2 / norm; pl[k][4][3] = p3 / norm
+        p0 = c30 - c20; p1 = c31 - c21; p2 = c32 - c22; p3 = c33 - c23
+        norm = sqrt(p0 * p0 + p1 * p1 + p2 * p2)
+        if norm < 1e-10:
+            norm = 1.0
+        pl[k][5][0] = p0 / norm; pl[k][5][1] = p1 / norm; pl[k][5][2] = p2 / norm; pl[k][5][3] = p3 / norm
+        n_v[k] = 0
+    with nogil:
+        for i in range(n):
+            cx = c_v[i, 0]
+            cy = c_v[i, 1]
+            cz = c_v[i, 2]
+            rad = r_v[i]
+            for k in range(K):
+                mrad = m_v[k]
+                if rad < mrad:
+                    continue
+                dist = pl[k][0][0] * cx + pl[k][0][1] * cy + pl[k][0][2] * cz + pl[k][0][3]
+                if dist < -rad:
+                    continue
+                dist = pl[k][1][0] * cx + pl[k][1][1] * cy + pl[k][1][2] * cz + pl[k][1][3]
+                if dist < -rad:
+                    continue
+                dist = pl[k][2][0] * cx + pl[k][2][1] * cy + pl[k][2][2] * cz + pl[k][2][3]
+                if dist < -rad:
+                    continue
+                dist = pl[k][3][0] * cx + pl[k][3][1] * cy + pl[k][3][2] * cz + pl[k][3][3]
+                if dist < -rad:
+                    continue
+                dist = pl[k][4][0] * cx + pl[k][4][1] * cy + pl[k][4][2] * cz + pl[k][4][3]
+                if dist < -rad:
+                    continue
+                dist = pl[k][5][0] * cx + pl[k][5][1] * cy + pl[k][5][2] * cz + pl[k][5][3]
+                if dist < -rad:
+                    continue
+                o_v[k, n_v[k]] = i
+                n_v[k] += 1
+    for k in range(K):
+        total += n_v[k]
+    return total
+
+
 def cull_flat_range_min(np.ndarray[DTYPE_t, ndim=2] centers,
                         np.ndarray[DTYPE_t, ndim=1] radii,
                         np.ndarray[FLOAT32_t, ndim=2] vp,
@@ -824,4 +919,60 @@ def cull_flat_range_min(np.ndarray[DTYPE_t, ndim=2] centers,
                 continue
             o_v[count] = i
             count += 1
+    return count
+
+
+def collect_row_tr_ids(list renderable_shadow,
+                       np.ndarray[np.uint64_t, ndim=1] out):
+    cdef int n = len(renderable_shadow)
+    if n == 0:
+        return 0
+    cdef unsigned long long[::1] o_v = out
+    cdef int i
+    cdef object entry, tr
+    with nogil:
+        for i in range(n):
+            o_v[i] = 0
+    for i in range(n):
+        entry = renderable_shadow[i]
+        tr = entry[1]
+        if tr is None:
+            o_v[i] = 0
+        else:
+            o_v[i] = <unsigned long long><void *>tr
+    return n
+
+
+def match_flushed_rows(np.ndarray[np.uint64_t, ndim=1] row_tids,
+                       np.ndarray[np.uint64_t, ndim=1] fids_sorted,
+                       np.ndarray[np.intp_t, ndim=1] out_rows,
+                       np.ndarray[np.intp_t, ndim=1] out_which):
+    cdef int n = row_tids.shape[0]
+    cdef int f = fids_sorted.shape[0]
+    if n == 0 or f == 0:
+        return 0
+    cdef unsigned long long[::1] t_v = row_tids
+    cdef unsigned long long[::1] f_v = fids_sorted
+    cdef np.intp_t[::1] r_v = out_rows
+    cdef np.intp_t[::1] w_v = out_which
+    cdef int i, lo, hi, mid, count = 0
+    cdef unsigned long long t
+    with nogil:
+        for i in range(n):
+            t = t_v[i]
+            if t == 0:
+                continue
+            lo = 0
+            hi = f - 1
+            while lo <= hi:
+                mid = (lo + hi) >> 1
+                if f_v[mid] == t:
+                    r_v[count] = i
+                    w_v[count] = mid
+                    count += 1
+                    break
+                elif f_v[mid] < t:
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
     return count
