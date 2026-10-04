@@ -27,6 +27,137 @@ from core.assets.font_atlas import request_font_atlas, get_default_font_path as 
 
 _GIZMO_INST_CACHE: dict = {}
 
+_FAST_COLLIDER_NAMES = ("BoxCollider", "SphereCollider", "CapsuleCollider")
+_FAST_D = None
+
+
+def _fast_buf():
+    global _FAST_D
+    try:
+        d = _FAST_D
+        if d is None:
+            from array import array as _array
+            d = _array("d")
+            _FAST_D = d
+        return d
+    except Exception:
+        return None
+
+
+def _try_fast_colliders(scene):
+    try:
+        from core.components.physics.box_collider import BoxCollider
+        from core.components.physics.sphere_collider import SphereCollider
+        from core.components.physics.capsule_collider import CapsuleCollider
+    except Exception:
+        return None
+    try:
+        from core._render_batch import build_collider_gizmo_batch as _build
+    except Exception:
+        return None
+    try:
+        classes = (("box", BoxCollider), ("sphere", SphereCollider), ("capsule", CapsuleCollider))
+    except Exception:
+        return None
+    try:
+        stage = _fast_buf()
+        if stage is None:
+            return None
+    except Exception:
+        return None
+    out = []
+    for shape, cls in classes:
+        try:
+            ents = scene.get_entities_with_component(cls)
+        except Exception:
+            continue
+        if not ents:
+            continue
+        try:
+            del stage[:]
+        except Exception:
+            return None
+        n = 0
+        try:
+            for ent in ents:
+                try:
+                    if not ent._active:
+                        continue
+                except Exception:
+                    continue
+                try:
+                    lst = ent._type_map.get(cls)
+                    if lst is None:
+                        lst = ent.get_components(cls)
+                        if not lst:
+                            continue
+                except Exception:
+                    continue
+                for comp in lst:
+                    try:
+                        tr = comp.transform
+                        if not tr:
+                            continue
+                        lp = tr._local_pos
+                        lr = tr._local_rot
+                        ls = tr._local_scale
+                        ce = comp.center
+                        if shape == "box":
+                            sz = comp.size
+                            ex = sz._x * 0.5
+                            ey = sz._y * 0.5
+                            ez = sz._z * 0.5
+                            cx = ce._x
+                            cy = ce._y
+                            cz = ce._z
+                        elif shape == "sphere":
+                            ms = ls._x
+                            if ls._y > ms:
+                                ms = ls._y
+                            if ls._z > ms:
+                                ms = ls._z
+                            r = comp.radius * ms
+                            ex = r
+                            ey = r
+                            ez = r
+                            cx = ce._x * ls._x
+                            cy = ce._y * ls._y
+                            cz = ce._z * ls._z
+                        else:
+                            hh = comp.height * 0.5 - comp.radius
+                            if hh < 0.0:
+                                hh = 0.0
+                            ex = comp.radius
+                            ey = comp.radius
+                            ez = comp.radius
+                            dd = comp.direction
+                            if dd == 0:
+                                ex = hh + comp.radius
+                            elif dd == 1:
+                                ey = hh + comp.radius
+                            else:
+                                ez = hh + comp.radius
+                            cx = ce._x
+                            cy = ce._y
+                            cz = ce._z
+                        stage.extend((lp._x, lp._y, lp._z, lr._x, lr._y, lr._z, lr._w,
+                                      ls._x, ls._y, ls._z, cx, cy, cz, ex, ey, ez))
+                        n += 1
+                    except Exception:
+                        continue
+        except Exception:
+            return None
+        if n <= 0:
+            continue
+        try:
+            params = np.frombuffer(stage, dtype=np.float64).reshape(n, 16)
+            buf = _build(params)
+            del params
+        except Exception:
+            return None
+        out.append((shape, buf, int(n)))
+    return out
+
 
 def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
     scene = vp._engine.scene if vp._engine else None
@@ -75,10 +206,39 @@ def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
     pipe = GizmoPipeline()
     pipe_col = GizmoPipeline() if not use_cache else None
     meshes = []
+    _fast_cols = []
     for pass_name in _GIZMO_PASS_ORDER:
         if use_cache and pass_name == "collider":
             continue
         tgt = pipe_col if (pipe_col is not None and pass_name == "collider") else pipe
+        _fast = None
+        if pass_name == "collider" and pipe_col is not None:
+            try:
+                _fast = _try_fast_colliders(scene)
+            except Exception:
+                _fast = None
+        if _fast is not None:
+            try:
+                _fast_cols.extend(_fast)
+            except Exception:
+                pass
+            for ct in _GIZMO_PASSES.get(pass_name, []):
+                try:
+                    _cn = ct.__name__
+                except Exception:
+                    _cn = ""
+                if _cn in _FAST_COLLIDER_NAMES:
+                    try:
+                        meshes.extend(ct.gizmo_collect_meshes(scene))
+                    except Exception:
+                        pass
+                    continue
+                ct.gizmo_collect(tgt, scene)
+                try:
+                    meshes.extend(ct.gizmo_collect_meshes(scene))
+                except Exception:
+                    pass
+            continue
         for ct in _GIZMO_PASSES.get(pass_name, []):
             ct.gizmo_collect(tgt, scene)
             try:
@@ -100,6 +260,11 @@ def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
             col_data = pipe_col.get_instance_render_data()
         except Exception:
             col_data = []
+        try:
+            if _fast_cols:
+                col_data = list(_fast_cols) + list(col_data)
+        except Exception:
+            pass
         if not col_lines and cacheable and rv is not None and col_data:
             try:
                 if len(_GIZMO_INST_CACHE) > 8:

@@ -95,6 +95,9 @@ def batch_sync_physics_to_ecs(list items, object solver):
     cdef int body_id
     cdef bint is_2d
     cdef double qr_x, qr_y, qr_z, qr_w
+    cdef bint any_dirty = False
+    cdef object any_scn = None
+    cdef object scn
     for i in range(n):
         entity_id, body_id, entity, rb, tr, is_2d = items[i]
         if not entity._active or rb.is_kinematic or getattr(tr, "_physics_dirty", False):
@@ -132,6 +135,19 @@ def batch_sync_physics_to_ecs(list items, object solver):
             rb._torque_accum._z = 0.0
         else:
             rb._torque_accum = 0.0
+        try:
+            scn = entity._scene
+            if scn is not None:
+                scn._dirty_roots.add(tr)
+                any_dirty = True
+                any_scn = scn
+        except Exception:
+            pass
+    if any_dirty and any_scn is not None:
+        try:
+            any_scn._transform_version_pending = True
+        except Exception:
+            pass
 
 
 def sync_read_to_ecs(object shared, list cache):

@@ -14,8 +14,42 @@ except Exception:
 _TAG = "physics_visualisation"
 _CONFIG_VERSION = 2
 _BOX_EDGES = ((0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7))
+_BOX_EDGES_NP = np.array(_BOX_EDGES, dtype=np.intp)
+_BOX_CORNERS = np.array([
+    [-1.0, -1.0, -1.0], [1.0, -1.0, -1.0], [1.0, 1.0, -1.0], [-1.0, 1.0, -1.0],
+    [-1.0, -1.0, 1.0], [1.0, -1.0, 1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, 1.0],
+], dtype=np.float64)
+_UNIT_CIRCLE_20 = None
+_RIM_IDX = (0, 5, 10, 15)
 _REF_X = np.array([1.0, 0.0, 0.0], dtype=np.float32)
 _REF_Y = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+_BOX_CORNERS = np.array([
+    [-1.0, -1.0, -1.0], [1.0, -1.0, -1.0], [1.0, 1.0, -1.0], [-1.0, 1.0, -1.0],
+    [-1.0, -1.0, 1.0], [1.0, -1.0, 1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, 1.0],
+], dtype=np.float64)
+_BOX_EDGES_NP = np.array(_BOX_EDGES, dtype=np.intp)
+_UNIT_CIRCLE_20 = None
+_RIM_QUARTERS = (0, 5, 10, 15)
+_RING_IDX0 = np.arange(20, dtype=np.intp)
+_RING_IDX1 = np.array([(i + 1) % 20 for i in range(20)], dtype=np.intp)
+
+
+def _unit_circle_20():
+    global _UNIT_CIRCLE_20
+    try:
+        if _UNIT_CIRCLE_20 is not None:
+            return _UNIT_CIRCLE_20
+    except Exception:
+        pass
+    try:
+        a = np.arange(20, dtype=np.float64) * (6.283185307179586 / 20.0)
+        t = np.empty((20, 2), dtype=np.float64)
+        t[:, 0] = np.cos(a)
+        t[:, 1] = np.sin(a)
+    except Exception:
+        return None
+    _UNIT_CIRCLE_20 = t
+    return t
 
 
 class PhysicsVisualisationPlugin(PluginBase):
@@ -69,6 +103,13 @@ class PhysicsVisualisationPlugin(PluginBase):
         self._xm2 = np.zeros((512,), dtype=bool)
         self._last_draw = 0.0
         self._min_interval = 1.0 / 30.0
+        self._auto_throttle_k = 8e-6
+        self._rev_key = None
+        self._rev_s = None
+        self._rev_e = None
+        self._rev_c = None
+        self._rev_n = 0
+        self._vec_scratch = {}
         self._cap = 0
         self._segcap = 0
         self._O = np.zeros((0, 3), dtype=np.float32)
@@ -1215,7 +1256,34 @@ class PhysicsVisualisationPlugin(PluginBase):
                 pass
         return off
 
-    def _wire_capsule_at(self, m, cx, cy, cz, r, h, direction, color, off):
+    def _vec_batch(self, items, kind):
+        try:
+            n = len(items)
+        except Exception:
+            return 0
+        if n <= 0:
+            return 0
+        if kind == 0:
+            mats = []
+            mats_append = mats.append
+            half = np.empty((n, 3), dtype=np.float64)
+            cen = np.empty((n, 3), dtype=np.float64)
+            trig = np.empty(n, dtype=bool)
+            k = 0
+            for m, hx, hy, hz, cx, cy, cz, tg in items:
+                mats_append(m)
+                half[k, 0] = hx
+                half[k, 1] = hy
+                half[k, 2] = hz
+                cen[k, 0] = cx
+                cen[k, 1] = cy
+                cen[k, 2] = cz
+                trig[k] = tg
+                k += 1
+            return self._vec_boxes(mats, half, cen, trig, n)
+        if kind == 1:
+            return self._vec_rings(items, 3)
+        return self._vec_capsules(items)
         try:
             if direction == 0:
                 ax, ay, az = 1.0, 0.0, 0.0

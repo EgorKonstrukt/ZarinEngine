@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import math
 import numpy as np
 from core.ecs.ecs import Component, ComponentRegistry, InstancePrimitive
 from core.maths.math3d import Vec2, Vec3
@@ -64,9 +65,8 @@ class BoxCollider2D(Component):
         off = np.array([self.offset.x, self.offset.y, 0.0], dtype=np.float32)
         T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
         q = tr.local_rotation
-        import math as m
         x, y, z, w = q.x, q.y, q.z, q.w
-        n = m.sqrt(x*x + y*y + z*z + w*w)
+        n = math.sqrt(x*x + y*y + z*z + w*w)
         if n > 1e-10:
             inv = 1.0/n; x *= inv; y *= inv; z *= inv; w *= inv
         R = np.array([[1-2*(y*y+z*z), 2*(x*y-w*z), 2*(x*z+w*y)],

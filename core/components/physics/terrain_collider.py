@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import math
 import os
 import numpy as np
 from typing import Optional
@@ -80,14 +81,12 @@ class TerrainCollider(Component):
         tr = self.transform
         if not tr:
             return None
-        import numpy as np
-        import math as m
         c = np.array([self.center.x, self.center.y, self.center.z], dtype=np.float32)
         h = np.array([self.size.x * 0.5, self.size.y * 0.5, self.size.z * 0.5], dtype=np.float32)
         T = np.array([tr.local_position.x, tr.local_position.y, tr.local_position.z], dtype=np.float32)
         q = tr.local_rotation
         x, y, z, w = q.x, q.y, q.z, q.w
-        n = m.sqrt(x * x + y * y + z * z + w * w)
+        n = math.sqrt(x * x + y * y + z * z + w * w)
         if n > 1e-10:
             inv = 1.0 / n
             x *= inv

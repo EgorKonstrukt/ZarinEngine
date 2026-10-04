@@ -1622,6 +1622,11 @@ class PhysicsPlugin(PluginBase):
                 _read(shared, _cache)
             else:
                 self._read_results_python(shared, _cache)
+            try:
+                if scene._dirty_roots:
+                    scene._transform_version_pending = True
+            except Exception:
+                pass
 
         if need_coll is None:
             try:

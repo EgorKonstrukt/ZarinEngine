@@ -93,7 +93,6 @@ class CapsuleCollider(Component):
         tr = self.transform
         if not tr:
             return None
-        import math as m
         lp = tr.local_position
         lr = tr.local_rotation
         ls = tr.local_scale
@@ -121,7 +120,7 @@ class CapsuleCollider(Component):
             ey = hh + rd
         else:
             ez = hh + rd
-        n = m.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+        n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
         if n > 1e-10:
             inv = 1.0/n; qx *= inv; qy *= inv; qz *= inv; qw *= inv
         xx, yy, zz = qx*qx, qy*qy, qz*qz

@@ -574,6 +574,17 @@ class SceneCollectorMixin:
                     return
             except Exception:
                 pass
+        try:
+            _race = list(scene._dirty_roots) if scene._dirty_roots else []
+        except Exception:
+            _race = []
+        if _race:
+            for t in _race:
+                try:
+                    if t._dirty:
+                        t._update_world_matrix()
+                except Exception:
+                    pass
         for item in snap.projectors:
             item.refresh_vp()
         try:

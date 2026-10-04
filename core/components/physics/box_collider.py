@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import math
 from core.ecs.ecs import Component, ComponentRegistry, InstancePrimitive
 from core.maths.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
@@ -81,7 +82,6 @@ class BoxCollider(Component):
         tr = self.transform
         if not tr:
             return None
-        import math as m
         lp = tr.local_position
         lr = tr.local_rotation
         ls = tr.local_scale
@@ -97,7 +97,7 @@ class BoxCollider(Component):
         ck = getattr(self, "_gizmo_ck", None)
         if ck is not None and ck[0] == tv and ck[1] == px and ck[2] == py and ck[3] == pz and ck[4] == qx and ck[5] == qy and ck[6] == qz and ck[7] == qw and ck[8] == sx and ck[9] == sy and ck[10] == sz and ck[11] == cx and ck[12] == cy and ck[13] == cz and ck[14] == hx and ck[15] == hy and ck[16] == hz:
             return getattr(self, "_gizmo_prim", None)
-        n = m.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+        n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
         if n > 1e-10:
             inv = 1.0/n; qx *= inv; qy *= inv; qz *= inv; qw *= inv
         xx, yy, zz = qx*qx, qy*qy, qz*qz

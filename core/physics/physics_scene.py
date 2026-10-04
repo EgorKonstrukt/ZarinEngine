@@ -1436,6 +1436,10 @@ class PhysicsScene:
         except ImportError:
             from core.math_helpers import quat_from_euler_rad
             cache = self._entity_body_cache
+            try:
+                _scn = self._scene
+            except Exception:
+                _scn = None
             for entity_id, body_id in self._entity_to_body.items():
                 cached = cache.get(entity_id)
                 if not cached:
@@ -1458,6 +1462,12 @@ class PhysicsScene:
                 tr._local_rot._z = q[2]
                 tr._local_rot._w = q[3]
                 tr._dirty = True
+                if _scn is not None:
+                    try:
+                        _scn._dirty_roots.add(tr)
+                        _scn._transform_version_pending = True
+                    except Exception:
+                        pass
                 rb._velocity._x = vel[0]
                 rb._velocity._y = vel[1]
                 if not is_2d:
