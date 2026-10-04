@@ -206,6 +206,8 @@ class ShadowRenderer:
         self._temporal_frame: int = 0
         self._temporal_skip_idx: int = -1
         self._cascade_valid = [False, False, False, False]
+        self._cascade_stale = [False, False, False, False]
+        self._cascade_raw_key = [None, None, None, None]
         self._cascade_vp_key = None
         self._prev_flat_centers = np.zeros((0, 3), dtype=np.float64)
         self._prev_flat_radii = np.zeros(0, dtype=np.float64)
@@ -243,7 +245,9 @@ class ShadowRenderer:
         self._flat_prep_ver: int = 0
         self._flat_order_ver: int = -1
         self._flat_max_radius: float = 0.0
-        self._small_caster_texels: float = 1.0
+        self._small_caster_texels: float = 0.5
+        self._last_cam_pos = None
+        self._last_cam_fwd = None
         self._flat_out_multi = np.zeros((0, 0), dtype=np.intp)
         self._flat_multi_counts = np.zeros(0, dtype=np.intp)
         self._cull_cen_buf = np.zeros((0, 3), dtype=np.float64)
@@ -310,6 +314,8 @@ class ShadowRenderer:
                 pass
         if changed:
             self._cascade_valid = [False, False, False, False]
+            self._cascade_stale = [False, False, False, False]
+            self._cascade_raw_key = [None, None, None, None]
             try:
                 self._cascade_vp_key = None
             except Exception:
@@ -2048,6 +2054,8 @@ class ShadowRenderer:
     def reset_shadow_state(self):
         self._cascade_splits = [0.0] * 4
         self._cascade_valid = [False, False, False, False]
+        self._cascade_stale = [False, False, False, False]
+        self._cascade_raw_key = [None, None, None, None]
         self._has_point_shadow = False
         self._point_shadow_count = 0
         self._has_spot_shadow = False
@@ -2120,6 +2128,10 @@ class ShadowRenderer:
         except Exception:
             inv_view = np.linalg.inv(view_mat._d)
         splits = self._compute_cascade_splits(cam_near, cam_far)
+        try:
+            prev_splits = list(self._cascade_splits)
+        except Exception:
+            prev_splits = []
         self._cascade_splits = splits
         try:
             _vres = tuple(int(self._cascade_resolutions[ci]) if ci < len(self._cascade_resolutions) else int(self._shadow_resolution) for ci in range(self._cascade_count))
@@ -2141,6 +2153,7 @@ class ShadowRenderer:
         except Exception:
             pass
         self._temporal_frame += 1
+        _gentle = False
         try:
             lv = self._last_view
             cam_moved = True
@@ -2153,6 +2166,24 @@ class ShadowRenderer:
                     px, py, pz = self._last_light_dir_xyz
                     if abs(px - ld_x) < 0.002 and abs(py - ld_y) < 0.002 and abs(pz - ld_z) < 0.002:
                         cam_moved = False
+            try:
+                _cx = float(inv_view[3, 0]); _cy = float(inv_view[3, 1]); _cz = float(inv_view[3, 2])
+                _fx = -float(inv_view[2, 0]); _fy = -float(inv_view[2, 1]); _fz = -float(inv_view[2, 2])
+                _fl = math.sqrt(_fx * _fx + _fy * _fy + _fz * _fz)
+                if _fl > 1e-12:
+                    _fx /= _fl; _fy /= _fl; _fz /= _fl
+                _lp = self._last_cam_pos
+                _lf = self._last_cam_fwd
+                if _lp is not None and _lf is not None:
+                    _dx = _cx - _lp[0]; _dy = _cy - _lp[1]; _dz = _cz - _lp[2]
+                    _dd = math.sqrt(_dx * _dx + _dy * _dy + _dz * _dz)
+                    _dt = _fx * _lf[0] + _fy * _lf[1] + _fz * _lf[2]
+                    if _dd < 0.25 and _dt > 0.9999:
+                        _gentle = True
+                self._last_cam_pos = (_cx, _cy, _cz)
+                self._last_cam_fwd = (_fx, _fy, _fz)
+            except Exception:
+                pass
             try:
                 np.copyto(self._last_view, vd)
             except Exception:
@@ -2206,10 +2237,56 @@ class ShadowRenderer:
                     if not self._cascade_valid[_ci]:
                         all_valid = False
                         break
-                if all_valid:
+                try:
+                    _any_stale = bool(any(self._cascade_stale))
+                except Exception:
+                    _any_stale = False
+                if all_valid and not _any_stale:
                     return
             except Exception:
                 pass
+        try:
+            _tframe0 = int(self._temporal_frame)
+        except Exception:
+            _tframe0 = 0
+        try:
+            _skip = set()
+            for _ci in range(self._cascade_count):
+                if not self._cascade_valid[_ci]:
+                    continue
+                if stagger_allowed:
+                    if _ci == 3 and (_tframe0 % 3) != 0:
+                        _skip.add(_ci)
+                    elif _ci == 2 and (_tframe0 % 2) != 0:
+                        _skip.add(_ci)
+                elif _gentle and not scene_moved:
+                    if _ci == 1 and (_tframe0 % 2) != 0:
+                        _skip.add(_ci)
+                        try:
+                            self._cascade_stale[_ci] = True
+                        except Exception:
+                            pass
+                    elif _ci == 2 and (_tframe0 % 3) != 0:
+                        _skip.add(_ci)
+                        try:
+                            self._cascade_stale[_ci] = True
+                        except Exception:
+                            pass
+                    elif _ci == 3 and (_tframe0 % 4) != 0:
+                        _skip.add(_ci)
+                        try:
+                            self._cascade_stale[_ci] = True
+                        except Exception:
+                            pass
+            for _ci in _skip:
+                try:
+                    if _ci < len(prev_splits):
+                        splits[_ci] = float(prev_splits[_ci])
+                        self._cascade_splits[_ci] = float(prev_splits[_ci])
+                except Exception:
+                    pass
+        except Exception:
+            _skip = set()
         first_cascade = True
         supports_instancing = self._supports_instancing_cached(prog)
         names = self._uniform_names(prog)
@@ -2228,35 +2305,28 @@ class ShadowRenderer:
         active_res = []
         active_vps = []
         active_min = []
-        try:
-            _tframe = int(self._temporal_frame)
-        except Exception:
-            _tframe = 0
         for ci in range(self._cascade_count):
             res = self._cascade_resolutions[ci] if ci < len(self._cascade_resolutions) else self._shadow_resolution
-            if stagger_allowed and self._cascade_valid[ci]:
-                if ci == 3 and (_tframe % 3) != 0:
-                    near_z = splits[ci]
-                    continue
-                if ci == 2 and (_tframe % 2) != 0:
-                    near_z = splits[ci]
-                    continue
-            elif self._cascade_valid[ci]:
-                if ci == 1 and (_tframe % 2) != 0:
-                    near_z = splits[ci]
-                    continue
-                if ci == 2 and (_tframe % 3) != 0:
-                    near_z = splits[ci]
-                    continue
-                if ci == 3 and (_tframe % 4) != 0:
-                    near_z = splits[ci]
-                    continue
+            try:
+                _skipped = ci in _skip
+            except Exception:
+                _skipped = False
+            if _skipped:
+                near_z = splits[ci]
+                continue
+            _ci_reuse = False
             if _reuse_vp:
+                try:
+                    _rk = self._cascade_raw_key[ci] if ci < len(self._cascade_raw_key) else None
+                    _ci_reuse = _rk is not None and _vpkey is not None and _rk == _vpkey
+                except Exception:
+                    _ci_reuse = False
+            if _ci_reuse:
                 try:
                     np.copyto(self._vp_f32_buf, self._cascade_vps_raw[ci])
                 except Exception:
-                    _reuse_vp = False
-            if not _reuse_vp and compute_frustum_corners_out is not None and build_directional_cascade_fast is not None:
+                    _ci_reuse = False
+            if not _ci_reuse and compute_frustum_corners_out is not None and build_directional_cascade_fast is not None:
                 try:
                     compute_frustum_corners_out(
                         near_z, splits[ci], cam_fov, aspect,
@@ -2268,17 +2338,32 @@ class ShadowRenderer:
                         self._cascade_vps_raw[ci]
                     )
                     np.copyto(self._vp_f32_buf, self._cascade_vps_raw[ci])
+                    try:
+                        self._cascade_raw_key[ci] = _vpkey
+                    except Exception:
+                        pass
                 except Exception:
                     corners = self._get_frustum_corners(near_z, splits[ci], cam_fov, aspect, inv_view)
                     vp = self._build_directional_cascade(light_dir_v, corners, splits[ci] - near_z, res)
                     np.copyto(self._vp_f32_buf, vp)
-            elif not _reuse_vp:
+                    try:
+                        self._cascade_raw_key[ci] = None
+                    except Exception:
+                        pass
+            elif not _ci_reuse:
                 corners = self._get_frustum_corners(near_z, splits[ci], cam_fov, aspect, inv_view)
                 vp = self._build_directional_cascade(light_dir_v, corners, splits[ci] - near_z, res)
                 np.copyto(self._vp_f32_buf, vp)
-            if not _reuse_vp:
-                self._light_space_matrices[ci] = self._vp_f32_buf.copy()
-                self._cascade_valid[ci] = True
+                try:
+                    self._cascade_raw_key[ci] = None
+                except Exception:
+                    pass
+            self._light_space_matrices[ci] = self._vp_f32_buf.copy()
+            self._cascade_valid[ci] = True
+            try:
+                self._cascade_stale[ci] = False
+            except Exception:
+                pass
             try:
                 _sx = float(self._vp_f32_buf[0, 0])
                 _sy = float(self._vp_f32_buf[1, 0])
