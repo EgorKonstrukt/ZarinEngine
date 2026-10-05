@@ -186,7 +186,19 @@ class GameViewport(QOpenGLWidget):
             proj = cam.get_projection_matrix(aspect)
             self._renderer.show_grid = False
             _t0 = time.perf_counter()
-            self._renderer.render_scene(scene, view, proj, tr.position, rw, rh, self._screen_fbo, display_w=pw, display_h=ph)
+            try:
+                _cn = float(cam.near)
+            except Exception:
+                _cn = 0.01
+            try:
+                _cf = float(cam.far)
+            except Exception:
+                _cf = 1000.0
+            try:
+                _cv = float(cam.fov)
+            except Exception:
+                _cv = 60.0
+            self._renderer.render_scene(scene, view, proj, tr.position, rw, rh, self._screen_fbo, None, _cn, _cf, _cv, display_w=pw, display_h=ph)
             self._last_render_ms = (time.perf_counter() - _t0) * 1000.0
             if self._stats_enabled:
                 self._draw_stats_overlay()

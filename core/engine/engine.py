@@ -253,6 +253,7 @@ class Engine:
             self._scene.embedded_resources = embedded
             self._scene.path = path
             self._scene.name = os.path.splitext(os.path.basename(path))[0]
+            self._ensure_shadow_system(self._scene)
             self._scene.mark_clean()
             self._plugin_manager.notify_scene_loaded(self._scene)
             Logger.info(f"Scene loaded: {path}")
@@ -450,6 +451,7 @@ class Engine:
                 self._scene.embedded_resources = embedded
                 self._scene.path = path
                 self._scene.name = os.path.splitext(os.path.basename(path))[0]
+                self._ensure_shadow_system(self._scene)
                 self._scene.mark_clean()
                 self._plugin_manager.notify_scene_loaded(self._scene)
                 Logger.info(f"Scene loaded: {path}")
@@ -469,6 +471,7 @@ class Engine:
                 from core.components.rendering.postfx.graphics_effect import GraphicsEffect
                 GraphicsEffect.cleanup_registry()
                 self._scene = Scene.deserialize(data, self._component_registry)
+                self._ensure_shadow_system(self._scene)
                 self._scene.mark_clean()
                 self._plugin_manager.notify_scene_loaded(self._scene)
                 Logger.info(f"Scene synced: {self._scene.name}")
@@ -514,15 +517,22 @@ class Engine:
         self._emit_event("scene_loaded", self._scene)
         Logger.info(f"New scene created: {name}")
         return self._scene
-    def _add_default_scene_objects(self, scene):
+    def _ensure_shadow_system(self, scene):
         try:
             from core.components.transform import Transform
             from core.components.rendering.environment.directional_shadow import DirectionalShadow
             from core.components.rendering.environment.point_shadow import PointShadow
             from core.components.rendering.environment.spot_shadow import SpotShadow
             from core.components.rendering.environment.area_shadow import AreaShadow
-            if next((s for s in DirectionalShadow._registry if s.entity and s.entity._scene is scene), None):
-                return
+            try:
+                for ent in scene.get_entities_with_component(DirectionalShadow):
+                    try:
+                        if ent._scene is scene:
+                            return
+                    except Exception:
+                        return
+            except Exception:
+                pass
             e = scene.create_entity("Shadow System")
             e.add_component(Transform())
             e.add_component(DirectionalShadow())
@@ -533,6 +543,8 @@ class Engine:
             e.locked = True
         except Exception:
             pass
+    def _add_default_scene_objects(self, scene):
+        self._ensure_shadow_system(scene)
     def start_play(self):
         if self._play_mode: return
         self._play_mode = True

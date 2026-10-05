@@ -196,7 +196,19 @@ class PlayViewport(QOpenGLWidget):
             view = cam.get_view_matrix()
             proj = cam.get_projection_matrix(aspect)
             self._renderer.show_grid = False
-            self._renderer.render_scene(scene, view, proj, tr.position, rw, rh, self._screen_fbo, display_w=pw, display_h=ph)
+            try:
+                _cn = float(cam.near)
+            except Exception:
+                _cn = 0.01
+            try:
+                _cf = float(cam.far)
+            except Exception:
+                _cf = 1000.0
+            try:
+                _cv = float(cam.fov)
+            except Exception:
+                _cv = 60.0
+            self._renderer.render_scene(scene, view, proj, tr.position, rw, rh, self._screen_fbo, None, _cn, _cf, _cv, display_w=pw, display_h=ph)
             if self._overlay_canvas and self._overlay_canvas.edit_mode:
                 from PyQt6.QtGui import QPainter
                 qp = QPainter(self)

@@ -1106,6 +1106,10 @@ def _do_open_scene(mw, path):
             scene.path = path
             tab_name = os.path.splitext(os.path.basename(path))[0]
             scene.name = tab_name
+            try:
+                eng._ensure_shadow_system(scene)
+            except Exception:
+                pass
             scene.mark_clean()
         except Exception as ex:
             msg = str(ex)
