@@ -1578,7 +1578,11 @@ class SceneRendererMixin:
             prof.stop("render_text")
         if prof:
             prof.start("render_svgs")
-        self._svgs.render_snapshot(snap.svg_items, view_mat, proj_mat)
+        try:
+            _svg_key = (id(scene), scene._render_version, scene._transform_version) if scene is not None else None
+        except Exception:
+            _svg_key = None
+        self._svgs.render_snapshot(snap.svg_items, view_mat, proj_mat, _svg_key)
         if prof:
             prof.stop("render_svgs")
         if prof:

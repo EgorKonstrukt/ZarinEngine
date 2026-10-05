@@ -292,17 +292,28 @@ class SceneCollectorMixin:
                 tr.world_matrix, vr.color, vr.flip_x, vr.flip_y,
                 vr.video_path, ent._id, vr.loop, vr.volume, vr.offset,
                 vr.audio_source_entity_id, tr))
+        _svg_append = snap.svg_items.append
+        _SvgItemLocal = _SvgItem
+        _svg_resolve = self._svgs.resolve_path
+        _svg_path_lut: dict = {}
         for ent in scene.get_entities_with_component(SvgRenderer):
-            if not ent.active:
+            if not ent._active:
                 continue
-            sr = ent.get_component(SvgRenderer)
-            if not sr or not sr.enabled:
+            tm = ent._type_map.get(SvgRenderer)
+            sr = tm[0] if tm else None
+            if sr is None or not sr.enabled:
                 continue
-            tr = ent.transform
-            if not tr:
-                continue
-            abs_path = self._svgs.resolve_path(sr.svg_path)
-            snap.svg_items.append(_SvgItem(
+            tr = ent._transform
+            if tr is None:
+                tr = ent.transform
+                if tr is None:
+                    continue
+            raw_path = sr.svg_path
+            abs_path = _svg_path_lut.get(raw_path)
+            if abs_path is None and raw_path not in _svg_path_lut:
+                abs_path = _svg_resolve(raw_path) or ""
+                _svg_path_lut[raw_path] = abs_path
+            _svg_append(_SvgItemLocal(
                 tr.world_matrix, sr.color, sr.flip_x, sr.flip_y,
                 abs_path or "", sr.pixels_per_unit, tr))
         for ent in scene.get_entities_with_component(Projector):
