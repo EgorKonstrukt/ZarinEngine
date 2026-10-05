@@ -64,7 +64,6 @@ _SPLAT_MAX_SORTS_PER_FRAME = 2
 _SPLAT_GPU_MIN_N = 131072
 _SPLAT_GPU_SORTS_PER_FRAME = 4
 _SPLAT_GPU_GROUPS = 128
-_SPLAT_SORT_INTERVAL = 1.0 / 30.0
 _SPLAT_MIN_PX = 0.5
 
 _GS_B_POS = 2
@@ -660,7 +659,6 @@ class GaussianSplatRenderer:
         self._gs_cmd: dict[str, object] = {}
         self._gs_up: dict[str, int] = {}
         self._gs_key: dict[tuple, bytes] = {}
-        self._gs_sort_time: dict[str, float] = {}
         self._init_shaders()
         if _cython_available():
             self._sort_backend = "cython"
@@ -807,14 +805,6 @@ class GaussianSplatRenderer:
                 self._bind_gpu_draw(path, model_f32, view_f32, proj_f32, cam_pos,
                                     viewport_w, viewport_h, sh_degree, opacity_threshold)
                 return key, True
-            try:
-                _now = time.monotonic()
-            except Exception:
-                _now = 0.0
-            if _now - float(self._gs_sort_time.get(path, 0.0)) < _SPLAT_SORT_INTERVAL:
-                self._bind_gpu_draw(path, model_f32, view_f32, proj_f32, cam_pos,
-                                    viewport_w, viewport_h, sh_degree, opacity_threshold)
-                return key, True
             if self._gpu_sorts_this_frame >= _SPLAT_GPU_SORTS_PER_FRAME:
                 return None
             self._gpu_sorts_this_frame += 1
@@ -913,10 +903,6 @@ class GaussianSplatRenderer:
             except Exception:
                 pass
             self._gs_key[gk] = key
-            try:
-                self._gs_sort_time[path] = _now
-            except Exception:
-                pass
             self._bind_gpu_draw(path, model_f32, view_f32, proj_f32, cam_pos,
                                 viewport_w, viewport_h, sh_degree, opacity_threshold)
             return key, False
@@ -1069,7 +1055,6 @@ class GaussianSplatRenderer:
         self._upload_progress.pop(path, None)
         self._last_order.pop(path, None)
         self._gs_up.pop(path, None)
-        self._gs_sort_time.pop(path, None)
         self._gs_key = {k: v for k, v in self._gs_key.items() if k[0] != path}
         for attr in ("_gs_pos", "_gs_opa", "_gs_srad", "_gs_order", "_gs_cmd"):
             d = getattr(self, attr)
@@ -1516,7 +1501,6 @@ class GaussianSplatRenderer:
         self._gs_order.clear()
         self._gs_cmd.clear()
         self._gs_up.clear()
-        self._gs_sort_time.clear()
         self._gs_key.clear()
         self._gpu_sorts_this_frame = 0
         self._vao = None
