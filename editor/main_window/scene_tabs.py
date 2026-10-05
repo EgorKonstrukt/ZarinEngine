@@ -10,8 +10,8 @@ import os
 from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal, Qt
-from PyQt6.QtGui import QPixmap, QPainter, QColor, QBrush, QIcon
-from PyQt6.QtWidgets import QTabBar, QMessageBox
+from PyQt6.QtGui import QPixmap, QPainter, QColor, QBrush, QIcon, QAction
+from PyQt6.QtWidgets import QTabBar, QMessageBox, QMenu
 
 from core.ecs.ecs import Scene
 from core.foundation.logger import Logger
@@ -95,6 +95,8 @@ class SceneTabManager(QObject):
         self._active_tab: Optional[str] = None
         self._switching = False
         self._restoring = False
+        self._closed_stack: list[dict] = []
+        self._max_closed = 25
 
         tab_bar.currentChanged.connect(self._on_tab_changed)
         tab_bar.tabCloseRequested.connect(self._on_tab_close_requested)
@@ -103,6 +105,14 @@ class SceneTabManager(QObject):
         tab_bar.setMovable(True)
         tab_bar.setDrawBase(False)
         tab_bar.setExpanding(False)
+        tab_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        tab_bar.customContextMenuRequested.connect(self._on_context_menu)
+        self._reopen_action = QAction("Reopen Closed Tab", tab_bar)
+        self._reopen_action.triggered.connect(lambda: self.reopen_closed_tab())
+        try:
+            tab_bar.addAction(self._reopen_action)
+        except Exception:
+            pass
 
     def begin_restore(self):
         self._restoring = True
@@ -311,69 +321,606 @@ class SceneTabManager(QObject):
             self._switching = False
 
     def _on_tab_close_requested(self, idx: int):
-        if self.is_script_tab(idx):
-            path = self.script_path_at(idx)
-            self.script_tab_closed.emit(path)
-            self._tab_bar.removeTab(idx)
-            return
-        tab_name = self.tab_name_at(idx)
-        if tab_name is None:
-            return
-        info = self._tabs.get(tab_name)
-        scene = info.scene if info else None
+        self.close_tab_at(idx)
 
-        if info and info.prefab_path:
-            from core.ecs.prefab import PrefabLibrary
-            pref = PrefabLibrary.load(info.prefab_path)
-            prefab_guid = pref.guid if pref else None
-            scene = info.scene
-            if scene:
-                from editor.main_window.handlers import _save_prefab_direct
-                _save_prefab_direct(info.prefab_path, scene)
-            origin = info.origin_tab
-            if origin and origin in self._tabs:
-                origin_info = self._tabs.get(origin)
-                if origin_info and origin_info.scene and prefab_guid:
-                    from editor.main_window.handlers import _refresh_prefab_instances
-                    _refresh_prefab_instances(origin_info.scene, prefab_guid, self._mw._engine._component_registry)
+    def _norm_path(self, p: str) -> str:
+        try:
+            if not p:
+                return ""
+            return os.path.normcase(os.path.normpath(p))
+        except Exception:
+            return p or ""
+
+    def _tab_key(self, idx: int):
+        try:
+            if self.is_script_tab(idx):
+                p = self._norm_path(self.script_path_at(idx))
+                if p:
+                    return ("script-file", p)
+                return ("script-untitled", "")
+            name = self.tab_name_at(idx)
+            if name is None:
+                return ("invalid", str(idx))
+            info = self._tabs.get(name)
+            if info is not None and getattr(info, "path", None):
+                return ("scene-file", self._norm_path(info.path))
+            return ("scene-name", name)
+        except Exception:
+            return ("invalid", str(idx))
+
+    def _duplicate_indices(self, idx: int) -> list[int]:
+        try:
+            if idx < 0 or idx >= self._tab_bar.count():
+                return []
+            key = self._tab_key(idx)
+            out: list[int] = []
+            for i in range(self._tab_bar.count()):
+                if i == idx:
+                    continue
+                if self._tab_key(i) == key:
+                    out.append(i)
+            return out
+        except Exception:
+            return []
+
+    def duplicate_count(self, idx: int) -> int:
+        return len(self._duplicate_indices(idx))
+
+    def can_reopen(self) -> bool:
+        return len(self._closed_stack) > 0
+
+    def _find_internal_script_tab(self, bar_idx: int):
+        try:
+            sw = self._mw._script_editor._script_widget
+        except Exception:
+            return None
+        try:
+            path = self.script_path_at(bar_idx)
+        except Exception:
+            return None
+        try:
+            if path:
+                for i in range(sw._tabs.count()):
+                    try:
+                        w = sw._tabs.widget(i)
+                        if getattr(w, "_file_path", None) == path:
+                            return w
+                    except Exception:
+                        continue
+                return None
+            bar_untitled: list[int] = []
+            for i in range(self._tab_bar.count()):
+                try:
+                    if self.is_script_tab(i) and self.script_path_at(i) == "":
+                        bar_untitled.append(i)
+                except Exception:
+                    continue
+            try:
+                ordinal = bar_untitled.index(bar_idx)
+            except Exception:
+                ordinal = 0
+            internal_untitled = []
+            for i in range(sw._tabs.count()):
+                try:
+                    w = sw._tabs.widget(i)
+                    fp = getattr(w, "_file_path", None)
+                    if not fp:
+                        internal_untitled.append(w)
+                except Exception:
+                    continue
+            if internal_untitled:
+                if 0 <= ordinal < len(internal_untitled):
+                    return internal_untitled[ordinal]
+                return internal_untitled[0]
+        except Exception:
+            return None
+        return None
+
+    def _snapshot_for_reopen(self, idx: int):
+        try:
+            if idx < 0 or idx >= self._tab_bar.count():
+                return None
+            if self.is_script_tab(idx):
+                path = self.script_path_at(idx)
+                try:
+                    title = self._tab_bar.tabText(idx)
+                except Exception:
+                    title = path or "Untitled"
+                content = ""
+                dirty = False
+                w = self._find_internal_script_tab(idx)
+                if w is not None:
+                    try:
+                        content = w._editor.toPlainText()
+                    except Exception:
+                        content = ""
+                    try:
+                        dirty = bool(w._dirty)
+                    except Exception:
+                        dirty = False
+                return {"kind": "script", "path": path, "title": title, "content": content, "dirty": dirty, "bar_index": idx}
+            name = self.tab_name_at(idx)
+            if name is None:
+                return None
+            info = self._tabs.get(name)
+            if info is None:
+                return None
+            return {"kind": "scene", "info": info, "bar_index": idx, "was_active": (name == self._active_tab)}
+        except Exception:
+            return None
+
+    def _push_closed(self, entry):
+        try:
+            if entry is None:
+                return
+            self._closed_stack.append(entry)
+            while len(self._closed_stack) > self._max_closed:
+                self._closed_stack.pop(0)
+        except Exception:
+            pass
+
+    def close_tab_at(self, idx: int) -> bool:
+        try:
+            if idx < 0 or idx >= self._tab_bar.count():
+                return False
+            snap = self._snapshot_for_reopen(idx)
+            ok = self._try_close_single(idx)
+            if ok and snap is not None:
+                self._push_closed(snap)
+            return ok
+        except Exception:
+            return False
+
+    def close_other_tabs(self, keep_idx: int):
+        try:
+            bar = self._tab_bar
+            if keep_idx < 0 or keep_idx >= bar.count():
+                return
+            indices = [i for i in range(bar.count()) if i != keep_idx]
+            indices.sort(reverse=True)
+            for i in indices:
+                if i < 0 or i >= bar.count():
+                    continue
+                ok = self.close_tab_at(i)
+                if not ok:
+                    if i < bar.count():
+                        try:
+                            still_exists = False
+                            if self.is_script_tab(i):
+                                still_exists = True
+                            else:
+                                nm = self.tab_name_at(i)
+                                still_exists = nm is not None and nm in self._tabs
+                            if still_exists:
+                                break
+                        except Exception:
+                            break
+        except Exception:
+            pass
+
+    def close_tabs_left(self, idx: int):
+        try:
+            bar = self._tab_bar
+            if idx <= 0 or idx >= bar.count():
+                return
+            indices = [i for i in range(idx - 1, -1, -1)]
+            for i in indices:
+                if i < 0 or i >= bar.count():
+                    continue
+                ok = self.close_tab_at(i)
+                if not ok:
+                    break
+        except Exception:
+            pass
+
+    def close_tabs_right(self, idx: int):
+        try:
+            bar = self._tab_bar
+            if idx < 0 or idx >= bar.count() - 1:
+                return
+            indices = [i for i in range(bar.count() - 1, idx, -1)]
+            for i in indices:
+                if i < 0 or i >= bar.count():
+                    continue
+                ok = self.close_tab_at(i)
+                if not ok:
+                    break
+        except Exception:
+            pass
+
+    def close_duplicate_tabs(self, idx: int):
+        try:
+            dup = self._duplicate_indices(idx)
+            dup.sort(reverse=True)
+            for i in dup:
+                if i < 0 or i >= self._tab_bar.count():
+                    continue
+                ok = self.close_tab_at(i)
+                if not ok:
+                    break
+        except Exception:
+            pass
+
+    def _try_close_single(self, idx: int) -> bool:
+        try:
+            bar = self._tab_bar
+            if idx < 0 or idx >= bar.count():
+                return False
+            if self.is_script_tab(idx):
+                path = self.script_path_at(idx)
+                w = self._find_internal_script_tab(idx)
+                if w is not None:
+                    try:
+                        sw = self._mw._script_editor._script_widget
+                        before_internal = sw._tabs.count()
+                    except Exception:
+                        before_internal = -1
+                    before_bar = bar.count()
+                    try:
+                        w._close_self()
+                    except Exception:
+                        pass
+                    try:
+                        sw2 = self._mw._script_editor._script_widget
+                        after_internal = sw2._tabs.count()
+                        still = False
+                        for k in range(sw2._tabs.count()):
+                            try:
+                                if sw2._tabs.widget(k) is w:
+                                    still = True
+                                    break
+                            except Exception:
+                                continue
+                        if still:
+                            return False
+                        if before_internal >= 0 and after_internal >= before_internal:
+                            return False
+                    except Exception:
+                        pass
+                    try:
+                        after_bar = bar.count()
+                    except Exception:
+                        after_bar = before_bar
+                    if after_bar < before_bar:
+                        return True
+                    try:
+                        if idx < bar.count() and self.is_script_tab(idx):
+                            bar.removeTab(idx)
+                            return True
+                        for k in range(bar.count() - 1, -1, -1):
+                            try:
+                                if self.is_script_tab(k) and self.script_path_at(k) == path:
+                                    bar.removeTab(k)
+                                    return True
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+                    return True
+                try:
+                    self.script_tab_closed.emit(path)
+                except Exception:
+                    pass
+                try:
+                    for k in range(bar.count() - 1, -1, -1):
+                        try:
+                            if self.is_script_tab(k) and self.script_path_at(k) == path:
+                                bar.removeTab(k)
+                                return True
+                        except Exception:
+                            continue
+                    if idx < bar.count():
+                        bar.removeTab(idx)
+                        return True
+                except Exception:
+                    pass
+                return False
+            tab_name = self.tab_name_at(idx)
+            if tab_name is None:
+                return False
+            info = self._tabs.get(tab_name)
+            if info is None:
+                try:
+                    bar.removeTab(idx)
+                except Exception:
+                    pass
+                return False
+            scene = info.scene if info else None
+            if info and info.prefab_path:
+                from core.ecs.prefab import PrefabLibrary
+                pref = PrefabLibrary.load(info.prefab_path)
+                prefab_guid = pref.guid if pref else None
+                scene = info.scene
+                if scene:
+                    from editor.main_window.handlers import _save_prefab_direct
+                    _save_prefab_direct(info.prefab_path, scene)
+                origin = info.origin_tab
+                if origin and origin in self._tabs:
+                    origin_info = self._tabs.get(origin)
+                    if origin_info and origin_info.scene and prefab_guid:
+                        from editor.main_window.handlers import _refresh_prefab_instances
+                        _refresh_prefab_instances(origin_info.scene, prefab_guid, self._mw._engine._component_registry)
+                if tab_name == self._active_tab:
+                    self._active_tab = None
+                self.remove_tab(tab_name)
+                try:
+                    self._mw._prefab_mode = False
+                    self._mw._prefab_path = None
+                    self._mw._viewport._prefab_btns.hide()
+                    from core.config.editor_scale import scale
+                    self._mw._viewport._toolbar.setFixedHeight(scale(30))
+                except Exception:
+                    pass
+                return True
+            is_dirty = scene.dirty if scene else False
+            if is_dirty and scene:
+                reply = QMessageBox.question(
+                    self._mw, "Unsaved Changes",
+                    f"Scene '{info.name}' has unsaved changes. Save before closing?",
+                    QMessageBox.StandardButton.Yes |
+                    QMessageBox.StandardButton.No |
+                    QMessageBox.StandardButton.Cancel
+                )
+                if reply == QMessageBox.StandardButton.Cancel:
+                    return False
+                if reply == QMessageBox.StandardButton.Yes:
+                    self._save_scene_tab(info)
+            if tab_name == self._active_tab and self._engine.play_mode:
+                try:
+                    self._engine.stop_play()
+                except Exception:
+                    pass
+                if info and info.scene_snapshot:
+                    try:
+                        from core.ecs.ecs import Scene as S
+                        from core.engine.engine import Engine as Eng
+                        restored = S.deserialize(info.scene_snapshot, Eng.instance()._component_registry)
+                        restored.path = self._engine.scene.path if self._engine.scene else info.path
+                        self._engine._scene = restored
+                        self._engine._plugin_manager.notify_scene_loaded(restored)
+                    except Exception:
+                        pass
             if tab_name == self._active_tab:
                 self._active_tab = None
             self.remove_tab(tab_name)
-            self._mw._prefab_mode = False
-            self._mw._prefab_path = None
-            self._mw._viewport._prefab_btns.hide()
-            from core.config.editor_scale import scale
-            self._mw._viewport._toolbar.setFixedHeight(scale(30))
-            return
+            return True
+        except Exception:
+            return False
 
-        is_dirty = scene.dirty if scene else False
-        if is_dirty and scene:
-            reply = QMessageBox.question(
-                self._mw, "Unsaved Changes",
-                f"Scene '{info.name}' has unsaved changes. Save before closing?",
-                QMessageBox.StandardButton.Yes |
-                QMessageBox.StandardButton.No |
-                QMessageBox.StandardButton.Cancel
-            )
-            if reply == QMessageBox.StandardButton.Cancel:
+    def _restore_scene_entry(self, entry: dict) -> bool:
+        try:
+            info = entry.get("info")
+            orig = int(entry.get("bar_index", 0))
+            if info is None:
+                return False
+            name = getattr(info, "name", "Scene") or "Scene"
+            if name in self._tabs:
+                name = self._unique_name(name)
+                try:
+                    info.name = name
+                except Exception:
+                    pass
+            pos = max(0, min(orig, self._tab_bar.count()))
+            scene_before = 0
+            try:
+                limit = min(pos, self._tab_bar.count())
+                for i in range(limit):
+                    try:
+                        d = self._tab_bar.tabData(i)
+                        if isinstance(d, str) and not d.startswith(self.SCRIPT_TAB_PREFIX):
+                            scene_before += 1
+                    except Exception:
+                        continue
+            except Exception:
+                scene_before = len(self._tab_names)
+            if scene_before > len(self._tab_names):
+                scene_before = len(self._tab_names)
+            self._tabs[name] = info
+            try:
+                self._tab_names.insert(scene_before, name)
+            except Exception:
+                self._tab_names.append(name)
+            idx = self._tab_bar.insertTab(pos, name)
+            self._tab_bar.setTabData(idx, name)
+            try:
+                self._tab_bar.setTabIcon(idx, self._get_zarin_icon())
+            except Exception:
+                pass
+            try:
+                self._tab_bar.setCurrentIndex(idx)
+            except Exception:
+                pass
+            try:
+                self.tab_added.emit(name)
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _restore_script_entry(self, entry: dict) -> bool:
+        try:
+            path = entry.get("path", "") or ""
+            content = entry.get("content", "") or ""
+            dirty = bool(entry.get("dirty", False))
+            orig = int(entry.get("bar_index", 0))
+            try:
+                sw = self._mw._script_editor._script_widget
+            except Exception:
+                return False
+            restored = None
+            if path and os.path.isfile(path):
+                found = None
+                try:
+                    for i in range(sw._tabs.count()):
+                        try:
+                            w = sw._tabs.widget(i)
+                            if getattr(w, "_file_path", None) == path:
+                                found = w
+                                break
+                        except Exception:
+                            continue
+                except Exception:
+                    found = None
+                if found is None:
+                    try:
+                        sw.open_script(path)
+                    except Exception:
+                        pass
+                    try:
+                        for i in range(sw._tabs.count()):
+                            try:
+                                w = sw._tabs.widget(i)
+                                if getattr(w, "_file_path", None) == path:
+                                    found = w
+                                    break
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+                restored = found
+                if restored is not None and dirty and content:
+                    try:
+                        cur = restored._editor.toPlainText()
+                    except Exception:
+                        cur = ""
+                    if cur != content:
+                        try:
+                            restored._editor.blockSignals(True)
+                            restored._editor.setPlainText(content)
+                            restored._editor.blockSignals(False)
+                            try:
+                                restored._editor._old_text = content
+                            except Exception:
+                                pass
+                            restored._dirty = True
+                            restored._update_title()
+                            try:
+                                self.update_script_tab_title(path, restored._tab_title())
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+            else:
+                try:
+                    sw._new_tab()
+                except Exception:
+                    return False
+                try:
+                    restored = sw._tabs.currentWidget()
+                except Exception:
+                    restored = None
+                if restored is not None and content:
+                    try:
+                        restored._editor.blockSignals(True)
+                        restored._editor.setPlainText(content)
+                        restored._editor.blockSignals(False)
+                        try:
+                            restored._editor._old_text = content
+                        except Exception:
+                            pass
+                        restored._dirty = bool(dirty) or True
+                        if path and not os.path.isfile(path) and path:
+                            try:
+                                restored._file_path = path
+                            except Exception:
+                                pass
+                        restored._update_title()
+                    except Exception:
+                        pass
+            try:
+                bar = self._tab_bar
+                target = -1
+                if path:
+                    for i in range(bar.count()):
+                        try:
+                            if self.is_script_tab(i) and self.script_path_at(i) == path:
+                                target = i
+                        except Exception:
+                            continue
+                else:
+                    for i in range(bar.count() - 1, -1, -1):
+                        try:
+                            if self.is_script_tab(i) and self.script_path_at(i) == "":
+                                target = i
+                                break
+                        except Exception:
+                            continue
+                if target >= 0:
+                    dest = max(0, min(orig, bar.count() - 1))
+                    if target != dest:
+                        try:
+                            bar.moveTab(target, dest)
+                        except Exception:
+                            pass
+                    try:
+                        bar.setCurrentIndex(dest)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def reopen_closed_tab(self) -> bool:
+        try:
+            if not self._closed_stack:
+                return False
+            entry = self._closed_stack.pop()
+            if entry.get("kind") == "scene":
+                return self._restore_scene_entry(entry)
+            return self._restore_script_entry(entry)
+        except Exception:
+            return False
+
+    def _on_context_menu(self, pos):
+        try:
+            bar = self._tab_bar
+            idx = bar.tabAt(pos)
+            menu = QMenu(bar)
+            if idx < 0:
+                act = menu.addAction("Reopen Closed Tab")
+                act.setEnabled(self.can_reopen())
+                act.triggered.connect(lambda: self.reopen_closed_tab())
+                try:
+                    menu.exec(bar.mapToGlobal(pos))
+                except Exception:
+                    pass
                 return
-            if reply == QMessageBox.StandardButton.Yes:
-                self._save_scene_tab(info)
-
-        if tab_name == self._active_tab and self._engine.play_mode:
-            self._engine.stop_play()
-            if info and info.scene_snapshot:
-                from core.ecs.ecs import Scene as S
-                from core.engine.engine import Engine as Eng
-                restored = S.deserialize(info.scene_snapshot, Eng.instance()._component_registry)
-                restored.path = self._engine.scene.path if self._engine.scene else info.path
-                self._engine._scene = restored
-                self._engine._plugin_manager.notify_scene_loaded(restored)
-
-        if tab_name == self._active_tab:
-            self._active_tab = None
-
-        self.remove_tab(tab_name)
+            close_act = menu.addAction("Close Tab")
+            close_act.triggered.connect(lambda checked=False, _i=idx: self.close_tab_at(_i))
+            dup = self.duplicate_count(idx)
+            if dup > 0:
+                dup_act = menu.addAction(f"Close Duplicate Tabs ({dup})")
+            else:
+                dup_act = menu.addAction("Close Duplicate Tabs")
+                dup_act.setEnabled(False)
+            dup_act.triggered.connect(lambda checked=False, _i=idx: self.close_duplicate_tabs(_i))
+            multi = menu.addMenu("Close Multiple Tabs")
+            left = idx
+            right = bar.count() - idx - 1
+            left_act = multi.addAction("Close Tabs to the Left")
+            left_act.setEnabled(left > 0)
+            left_act.triggered.connect(lambda checked=False, _i=idx: self.close_tabs_left(_i))
+            if right > 0:
+                right_act = multi.addAction(f"Close Tabs to the Right ({right})")
+            else:
+                right_act = multi.addAction("Close Tabs to the Right")
+                right_act.setEnabled(False)
+            right_act.triggered.connect(lambda checked=False, _i=idx: self.close_tabs_right(_i))
+            other_act = multi.addAction("Close Other Tabs")
+            other_act.setEnabled(bar.count() > 1)
+            other_act.triggered.connect(lambda checked=False, _i=idx: self.close_other_tabs(_i))
+            reopen_act = menu.addAction("Reopen Closed Tab")
+            reopen_act.setEnabled(self.can_reopen())
+            reopen_act.triggered.connect(lambda: self.reopen_closed_tab())
+            try:
+                menu.exec(bar.mapToGlobal(pos))
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _load_scene(self, info: SceneTabInfo):
         if info.scene is None:

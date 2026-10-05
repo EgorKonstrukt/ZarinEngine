@@ -1034,7 +1034,11 @@ class SceneRendererMixin:
             prof.stop("render_text_world")
         if prof:
             prof.start("render_sprites")
-        self._sprites.render_snapshot(snap.sprite_items, view_mat, proj_mat)
+        try:
+            _sprite_key = (id(scene), scene._render_version, scene._transform_version) if scene is not None else None
+        except Exception:
+            _sprite_key = None
+        self._sprites.render_snapshot(snap.sprite_items, view_mat, proj_mat, _sprite_key)
         if prof:
             prof.stop("render_sprites")
         if prof:

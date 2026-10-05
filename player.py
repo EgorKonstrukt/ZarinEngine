@@ -9,6 +9,8 @@ import os
 import traceback
 import json
 import multiprocessing
+import threading
+import time
 from datetime import datetime
 
 from PyQt6.QtGui import QSurfaceFormat
@@ -137,7 +139,123 @@ def _deduce_project_root(scene_path: str, fallback: str) -> str:
     return fallback
 
 
+_DEFERRED_PLUGIN_TOPS = (
+    "example_plugin",
+    "mesh_editor_plugin",
+    "network_plugin",
+    "physics_drag_plugin",
+    "physics_visualisation_plugin",
+    "plotter_plugin",
+    "zarin_mcp",
+)
+
+_PHYSICS_MODULE = "plugins.physics_plugin"
+
+
+def _collect_plugin_jobs():
+    import importlib
+    import pkgutil
+    jobs = []
+    try:
+        pkg = importlib.import_module("plugins")
+        try:
+            entries = list(pkgutil.iter_modules(pkg.__path__))
+        except Exception:
+            entries = []
+        for _imp, modname, ispkg in entries:
+            if modname.startswith("_"):
+                continue
+            jobs.append("plugins." + modname)
+            if ispkg:
+                try:
+                    subpkg = importlib.import_module("plugins." + modname)
+                except Exception as e:
+                    _log(f"Plugin package skipped: {modname}: {e}")
+                    continue
+                try:
+                    subs = list(pkgutil.iter_modules(subpkg.__path__))
+                except Exception:
+                    continue
+                for _, subname, _ in subs:
+                    if not subname.startswith("_"):
+                        jobs.append(f"plugins.{modname}.{subname}")
+    except Exception as e:
+        _log(f"Plugin scan failed: {e}")
+    return jobs
+
+
+def _split_deferred(jobs):
+    critical = []
+    deferred = []
+    for module_name in jobs:
+        top = module_name.split(".")[1] if module_name.startswith("plugins.") else ""
+        if top in _DEFERRED_PLUGIN_TOPS:
+            deferred.append(module_name)
+        else:
+            critical.append(module_name)
+    return critical, deferred
+
+
+def _start_physics_load(engine):
+    state = {}
+    def _run():
+        try:
+            engine.plugin_manager.load_module(_PHYSICS_MODULE)
+            state["ok"] = True
+        except Exception as e:
+            state["error"] = e
+    thr = threading.Thread(target=_run, name="player-physics-load", daemon=True)
+    thr.start()
+    return thr, state
+
+
+def _load_deferred(engine, modules, viewport):
+    if not modules:
+        return
+    try:
+        before = set(engine.plugin_manager._plugins.keys())
+    except Exception:
+        before = set()
+    for module_name in modules:
+        try:
+            engine.plugin_manager.load_module(module_name)
+        except Exception as e:
+            _log(f"Deferred plugin failed: {module_name}: {e}")
+    try:
+        added = [p for p in engine.plugin_manager.get_all() if p.NAME not in before]
+    except Exception:
+        added = []
+    if not added:
+        return
+    try:
+        scene_now = engine.scene
+    except Exception:
+        scene_now = None
+    try:
+        playing = bool(engine.play_mode)
+    except Exception:
+        playing = False
+    for plugin in added:
+        try:
+            if scene_now is not None:
+                plugin.on_scene_loaded(scene_now)
+        except Exception as e:
+            _log(f"Deferred scene hook failed: {plugin.NAME}: {e}")
+        try:
+            if viewport is not None:
+                plugin.on_viewport_ready(viewport)
+        except Exception as e:
+            _log(f"Deferred viewport hook failed: {plugin.NAME}: {e}")
+        try:
+            if playing:
+                plugin.on_play_start()
+        except Exception as e:
+            _log(f"Deferred play hook failed: {plugin.NAME}: {e}")
+    _log(f"Deferred plugins ready: {[p.NAME for p in added]}")
+
+
 def main():
+    _t_start = time.perf_counter()
     multiprocessing.freeze_support()
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtCore import Qt
@@ -160,23 +278,38 @@ def main():
     from core.engine.game_viewport import GameViewport
     from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
     from PyQt6.QtCore import QTimer
+    from editor.splash import SplashScreen
 
-    project_root = os.path.dirname(os.path.abspath(__file__))
+    splash = SplashScreen(show_tip=False, footer="Powered by Zarin Engine")
+    splash.set_total_steps(6)
+    splash.show()
+    app.processEvents()
+    _log(f"Splash shown in {(time.perf_counter() - _t_start) * 1000:.0f}ms")
+
+    code_root = os.path.dirname(os.path.abspath(__file__))
     _log(f"__file__ = {__file__}")
     _log(f"sys.executable = {sys.executable}")
-    _log(f"project_root = {project_root}")
+    _log(f"project_root = {code_root}")
     _log(f"CWD = {os.getcwd()}")
     _log(f"args = {sys.argv}")
 
+    splash.advance("Resolving scene...")
+    app.processEvents()
+    scene_path = _resolve_startup_scene(code_root)
+    _log(f"Final scene_path: {scene_path}")
+    project_root = _deduce_project_root(scene_path, code_root)
+    _log(f"Project root: {project_root}")
+
+    splash.advance("Initializing engine...")
+    app.processEvents()
     engine = Engine()
-    engine._project_path = project_root
+    engine._project_path = code_root
     engine.initialize()
     from core.audio.audio_system import AudioSystem
     audio = AudioSystem.instance()
     if audio:
         audio.apply_project_audio_config()
-    # Load plugins listed in BuildSettings.json
-    build_settings_path = os.path.join(project_root, "BuildSettings.json")
+    build_settings_path = os.path.join(code_root, "BuildSettings.json")
     build_plugins = []
     if os.path.exists(build_settings_path):
         try:
@@ -186,25 +319,39 @@ def main():
         except Exception as e:
             _log(f"Error reading BuildSettings plugins: {e}")
     _log(f"Build plugins: {build_plugins}")
+    deferred = []
     if build_plugins:
         for name in build_plugins:
             module_name = "plugins." + name if not name.startswith("plugins.") else name
-            engine.plugin_manager.load_module(module_name)
+            try:
+                engine.plugin_manager.load_module(module_name)
+            except Exception as e:
+                _log(f"Plugin failed: {module_name}: {e}")
     else:
-        import importlib, pkgutil
-        try:
-            pkg = importlib.import_module("plugins")
-            for importer, modname, ispkg in pkgutil.iter_modules(pkg.__path__):
-                if modname.startswith("_"):
-                    continue
-                engine.plugin_manager.load_module("plugins." + modname)
-                if ispkg:
-                    subpkg = importlib.import_module("plugins." + modname)
-                    for _, subname, _ in pkgutil.iter_modules(subpkg.__path__):
-                        if not subname.startswith("_"):
-                            engine.plugin_manager.load_module(f"plugins.{modname}.{subname}")
-        except Exception:
-            pass
+        splash.advance("Loading plugins...")
+        app.processEvents()
+        jobs = _collect_plugin_jobs()
+        critical, deferred = _split_deferred(jobs)
+        phys_thr = None
+        phys_state = {}
+        rest = list(critical)
+        if _PHYSICS_MODULE in rest:
+            rest.remove(_PHYSICS_MODULE)
+            phys_thr, phys_state = _start_physics_load(engine)
+        for module_name in rest:
+            try:
+                engine.plugin_manager.load_module(module_name)
+            except Exception as e:
+                _log(f"Plugin failed: {module_name}: {e}")
+        if phys_thr is not None:
+            _t_phys = time.perf_counter()
+            phys_thr.join()
+            _log(f"Physics load joined in {(time.perf_counter() - _t_phys) * 1000:.0f}ms")
+            if phys_state.get("error") is not None and engine.plugin_manager.get("PhysicsPlugin") is None:
+                try:
+                    engine.plugin_manager.load_module(_PHYSICS_MODULE)
+                except Exception as e:
+                    _log(f"Physics retry failed: {e}")
     _log(f"Registered plugins: {list(engine.plugin_manager._plugins.keys())}")
     physics = engine.plugin_manager.get("PhysicsPlugin")
     if physics:
@@ -212,12 +359,10 @@ def main():
     else:
         _log("PhysicsPlugin: NOT FOUND")
 
-    scene_path = _resolve_startup_scene(project_root)
-    _log(f"Final scene_path: {scene_path}")
-    project_root = _deduce_project_root(scene_path, project_root)
-    _log(f"Project root: {project_root}")
     engine.project_root = project_root
 
+    splash.advance("Building window...")
+    app.processEvents()
     window = QMainWindow()
     window.setWindowTitle("Zarin Player")
     container = QWidget()
@@ -234,26 +379,35 @@ def main():
         window.resize(screen.size() * 0.8)
     else:
         window.resize(1280, 720)
-    window.show()
 
+    splash.advance("Loading scene...")
+    app.processEvents()
     _log(f"Loading scene: {scene_path}")
     if os.path.exists(scene_path):
         scene = engine.load_scene(scene_path)
         _log(f"engine.load_scene returned: {scene}")
         if scene:
             _log(f"Scene loaded OK: {scene_path}")
-            def _on_start_play():
-                _log(f"Timer fired: starting play, scene={engine.scene is not None}")
-                engine.start_play()
-                _log(f"start_play done")
-                physics = engine.plugin_manager.get("PhysicsPlugin")
-                if physics:
-                    _log(f"After start_play: physics_scene={physics._physics_scene is not None}, bodies_loaded={len(physics._physics_scene._entity_to_body) if physics._physics_scene else 0}")
-            QTimer.singleShot(100, _on_start_play)
         else:
             _log(f"Scene FAILED to load (returned None)")
     else:
         _log(f"Startup scene NOT FOUND: {scene_path}")
+
+    splash.advance("Starting game...")
+    app.processEvents()
+    _log(f"Starting play after {(time.perf_counter() - _t_start) * 1000:.0f}ms")
+    if engine.scene is not None:
+        engine.start_play()
+        _log(f"start_play done")
+        physics = engine.plugin_manager.get("PhysicsPlugin")
+        if physics:
+            _log(f"After start_play: physics_scene={physics._physics_scene is not None}, bodies_loaded={len(physics._physics_scene._entity_to_body) if physics._physics_scene else 0}")
+
+    window.show()
+    SplashScreen.hide_splash()
+
+    if deferred:
+        QTimer.singleShot(0, lambda: _load_deferred(engine, deferred, viewport))
 
     sys.exit(app.exec())
 

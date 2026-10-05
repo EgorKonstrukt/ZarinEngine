@@ -263,16 +263,21 @@ class SceneCollectorMixin:
                 snap.skinned_renderables.append([ent, tr, mesh, smr, wm, armature, -1])
             if needs_shadow and smr.cast_shadows:
                 snap.skinned_shadow_renderables.append([mesh, ent, armature, wm])
+        _sprite_append = snap.sprite_items.append
+        _SpriteItemLocal = _SpriteItem
         for ent in scene.get_entities_with_component(SpriteRenderer):
-            if not ent.active:
+            if not ent._active:
                 continue
-            sr = ent.get_component(SpriteRenderer)
-            if not sr or not sr.enabled:
+            tm = ent._type_map.get(SpriteRenderer)
+            sr = tm[0] if tm else None
+            if sr is None or not sr.enabled:
                 continue
-            tr = ent.transform
-            if not tr:
-                continue
-            snap.sprite_items.append(_SpriteItem(
+            tr = ent._transform
+            if tr is None:
+                tr = ent.transform
+                if tr is None:
+                    continue
+            _sprite_append(_SpriteItemLocal(
                 tr.world_matrix, sr.color, sr.flip_x, sr.flip_y, sr.texture_path, tr))
         for ent in scene.get_entities_with_component(VideoRenderer):
             if not ent.active:

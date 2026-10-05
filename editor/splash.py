@@ -22,8 +22,9 @@ from editor.constants import (
     PROGRESS_BAR_RADIUS, PROGRESS_FILL_RADIUS,
     STATUS_TEXT_Y_OFFSET, STATUS_TEXT_MARGIN,
     VERSION_Y, ACCENT_BAR_Y, DID_YOU_KNOW_Y, DID_YOU_KNOW_WIDTH_MAX,
+    POWERED_Y,
     TIPS, BG_GRADIENT, GLOW_SPOTS, LOGO_GLOW, CENTER_GLOW,
-    TEXT_VERSION, TEXT_STATUS, TEXT_TIP, ACCENT_BAR_COLORS,
+    TEXT_VERSION, TEXT_STATUS, TEXT_TIP, TEXT_POWERED, ACCENT_BAR_COLORS,
     PB_TRACK, PB_TRACK_FILL, PB_FILL_COLORS,
 )
 
@@ -43,7 +44,7 @@ def _render_logo(target_width: int) -> QPixmap | None:
     return pm
 
 
-def _build_base_pixmap(tip: str = ""):
+def _build_base_pixmap(tip: str = "", footer: str = ""):
     pixmap = QPixmap(SPLASH_WIDTH, SPLASH_HEIGHT)
     pixmap.fill(Qt.GlobalColor.transparent)
     p = QPainter(pixmap)
@@ -113,6 +114,13 @@ def _build_base_pixmap(tip: str = ""):
                          DID_YOU_KNOW_WIDTH_MAX, 20)
         p.drawText(tip_rect, Qt.AlignmentFlag.AlignCenter, tip)
 
+    if footer:
+        fr, fg, fb, fa = TEXT_POWERED
+        ff = QFont("Segoe UI", 9)
+        p.setFont(ff)
+        p.setPen(QColor(fr, fg, fb, fa))
+        p.drawText(QRect(0, POWERED_Y, SPLASH_WIDTH, 16), Qt.AlignmentFlag.AlignCenter, footer)
+
     p.setClipping(False)
     p.end()
     return pixmap
@@ -121,10 +129,12 @@ def _build_base_pixmap(tip: str = ""):
 class SplashScreen(QSplashScreen):
     _instance: SplashScreen | None = None
 
-    def __init__(self, tip: str = ""):
-        if not tip:
+    def __init__(self, tip: str = "", show_tip: bool = True, footer: str = ""):
+        if show_tip and not tip:
             tip = random.choice(TIPS)
-        self._base = _build_base_pixmap(tip)
+        if not show_tip:
+            tip = ""
+        self._base = _build_base_pixmap(tip, footer)
         super().__init__(self._base)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         # self.setWindowOpacity removed вЂ” only the background has alpha
