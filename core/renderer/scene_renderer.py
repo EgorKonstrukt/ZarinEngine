@@ -1264,12 +1264,14 @@ class SceneRendererMixin:
                 else:
                     model = Mat4.identity()
                 try:
-                    m, _ = self._gaussians.prepare(
+                    m, _, indirect = self._gaussians.prepare(
                         self._gaussian_ply_path(gs, eng), model, view_mat, proj_mat,
                         cam_pos, viewport_w, viewport_h,
                         gs.opacity_threshold, gs.sh_degree,
                     )
-                    if m > 0:
+                    if indirect:
+                        self._gaussians.draw_indirect(self._gaussian_ply_path(gs, eng))
+                    elif m > 0:
                         self._gaussians.draw_color(m)
                 except Exception as e:
                     Logger.error(f"Gaussian Splat render error: {e}")

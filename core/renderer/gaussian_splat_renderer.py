@@ -61,6 +61,252 @@ _GC_IDLE_S = 30.0
 _GC_MAX_PATHS = 4
 _SPLAT_UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024
 _SPLAT_MAX_SORTS_PER_FRAME = 2
+_SPLAT_GPU_MIN_N = 131072
+_SPLAT_GPU_SORTS_PER_FRAME = 4
+_SPLAT_GPU_GROUPS = 128
+
+_GS_B_POS = 2
+_GS_B_OPA = 3
+_GS_B_SRAD = 4
+_GS_B_KEYS = 5
+_GS_B_VALS = 6
+_GS_B_COUNT = 7
+_GS_B_HIST = 8
+_GS_B_OFFS = 9
+_GS_B_KEYS2 = 10
+_GS_B_VALS2 = 11
+_GS_B_CMD = 12
+
+_GS_CULL_SRC = """#version 430 core
+layout(local_size_x = 256) in;
+layout(std430, binding = 2) readonly buffer GsPos { float gs_pos[]; };
+layout(std430, binding = 3) readonly buffer GsOpa { float gs_opa[]; };
+layout(std430, binding = 4) readonly buffer GsSrad { float gs_srad[]; };
+layout(std430, binding = 5) buffer GsKeys { uint gs_keys[]; };
+layout(std430, binding = 6) buffer GsVals { uint gs_vals[]; };
+layout(std430, binding = 7) buffer GsCount { uint gs_count; };
+uniform mat4 u_mv;
+uniform float u_p00;
+uniform float u_p11;
+uniform float u_p20;
+uniform float u_p21;
+uniform float u_thr;
+uniform float u_ms;
+uniform int u_persp;
+uniform int u_n;
+shared uint shc;
+uint fkey(float w) {
+    uint u = floatBitsToUint(w);
+    uint o = ((u & 0x80000000u) != 0u) ? (u ^ 0xFFFFFFFFu) : (u ^ 0x80000000u);
+    return 0xFFFFFFFFu - o;
+}
+void main() {
+    if (gl_LocalInvocationID.x == 0u) {
+        shc = 0u;
+    }
+    barrier();
+    uint i = gl_GlobalInvocationID.x;
+    if (int(i) < u_n) {
+        uint key = 0xFFFFFFFFu;
+        if (gs_opa[i] > u_thr) {
+            vec3 p = vec3(gs_pos[i * 3u], gs_pos[i * 3u + 1u], gs_pos[i * 3u + 2u]);
+            vec4 vp = u_mv * vec4(p, 1.0);
+            float ww = -vp.z;
+            float rr = gs_srad[i] * u_ms;
+            if (ww + rr > 0.2) {
+                bool vis = true;
+                if (u_persp == 1) {
+                    if (ww > 0.000001) {
+                        float inv = 1.0 / ww;
+                        float nx = (vp.x * u_p00 + vp.z * u_p20) * inv;
+                        float ny = (vp.y * u_p11 + vp.z * u_p21) * inv;
+                        float mx = rr * abs(u_p00) * inv + 0.02;
+                        float my = rr * abs(u_p11) * inv + 0.02;
+                        if (nx < -1.0 - mx || nx > 1.0 + mx || ny < -1.0 - my || ny > 1.0 + my) {
+                            vis = false;
+                        }
+                    } else {
+                        float nx = vp.x * u_p00 + vp.z * u_p20;
+                        float ny = vp.y * u_p11 + vp.z * u_p21;
+                        float mx = rr * abs(u_p00) + 0.0000011;
+                        float my = rr * abs(u_p11) + 0.0000011;
+                        if (nx < -mx || nx > mx || ny < -my || ny > my) {
+                            vis = false;
+                        }
+                    }
+                }
+                if (vis) {
+                    key = fkey(ww);
+                    atomicAdd(shc, 1u);
+                }
+            }
+        }
+        gs_keys[i] = key;
+        gs_vals[i] = i;
+    }
+    barrier();
+    if (gl_LocalInvocationID.x == 0u) {
+        atomicAdd(gs_count, shc);
+    }
+}
+"""
+
+_GS_HIST_SRC = """#version 430 core
+layout(local_size_x = 256) in;
+layout(std430, binding = 5) readonly buffer GsKeys { uint gs_keys[]; };
+layout(std430, binding = 8) buffer GsHist { uint gs_hist[]; };
+uniform int u_n;
+uniform int u_shift;
+shared uint sh[256];
+void main() {
+    uint lid = gl_LocalInvocationID.x;
+    uint wid = gl_WorkGroupID.x;
+    uint G = gl_NumWorkGroups.x;
+    uint S = (uint(u_n) + G - 1u) / G;
+    uint C0 = wid * S;
+    uint C1 = C0 + S;
+    if (C1 > uint(u_n)) {
+        C1 = uint(u_n);
+    }
+    sh[lid] = 0u;
+    barrier();
+    for (uint idx = C0 + lid; idx < C1; idx += 256u) {
+        uint bin = (gs_keys[idx] >> uint(u_shift)) & 255u;
+        atomicAdd(sh[bin], 1u);
+    }
+    barrier();
+    gs_hist[wid * 256u + lid] = sh[lid];
+}
+"""
+
+_GS_SCAN_SRC = """#version 430 core
+layout(local_size_x = 256) in;
+layout(std430, binding = 8) readonly buffer GsHist { uint gs_hist[]; };
+layout(std430, binding = 9) buffer GsOffs { uint gs_offs[]; };
+uniform int u_groups;
+shared uint tot[256];
+void main() {
+    uint b = gl_LocalInvocationID.x;
+    uint t = 0u;
+    for (int g = 0; g < u_groups; g++) {
+        t += gs_hist[uint(g) * 256u + b];
+    }
+    tot[b] = t;
+    barrier();
+    if (b == 0u) {
+        uint run = 0u;
+        for (uint i = 0u; i < 256u; i++) {
+            uint v = tot[i];
+            tot[i] = run;
+            run += v;
+        }
+    }
+    barrier();
+    uint pre = tot[b];
+    uint run = 0u;
+    for (int g = 0; g < u_groups; g++) {
+        gs_offs[uint(g) * 256u + b] = pre + run;
+        run += gs_hist[uint(g) * 256u + b];
+    }
+}
+"""
+
+_GS_SCATTER_SRC = """#version 430 core
+layout(local_size_x = 128) in;
+layout(std430, binding = 5) readonly buffer GsKeysA { uint ka[]; };
+layout(std430, binding = 6) readonly buffer GsValsA { uint va[]; };
+layout(std430, binding = 9) readonly buffer GsOffs { uint offs[]; };
+layout(std430, binding = 10) buffer GsKeysB { uint kb[]; };
+layout(std430, binding = 11) buffer GsValsB { uint vb[]; };
+uniform int u_n;
+uniform int u_shift;
+shared uint cnt[2048];
+shared uint pos[2048];
+void main() {
+    uint lid = gl_LocalInvocationID.x;
+    uint wid = gl_WorkGroupID.x;
+    uint G = gl_NumWorkGroups.x;
+    uint S = (uint(u_n) + G - 1u) / G;
+    uint C0 = wid * S;
+    uint C1 = C0 + S;
+    if (C1 > uint(u_n)) {
+        C1 = uint(u_n);
+    }
+    uint T = (S + 127u) / 128u;
+    uint lo = C0 + lid * T;
+    uint hi = lo + T;
+    if (hi > C1) {
+        hi = C1;
+    }
+    for (uint r = 0u; r < 16u; r++) {
+        for (uint k = 0u; k < 16u; k++) {
+            cnt[lid * 16u + k] = 0u;
+        }
+        barrier();
+        for (uint e = lo; e < hi; e++) {
+            uint kk = ka[e];
+            uint bb = (kk >> uint(u_shift)) & 255u;
+            if (bb >= r * 16u && bb < r * 16u + 16u) {
+                cnt[lid * 16u + (bb - r * 16u)] += 1u;
+            }
+        }
+        barrier();
+        if (lid < 16u) {
+            uint bb = r * 16u + lid;
+            uint base = offs[wid * 256u + bb];
+            uint run = 0u;
+            for (uint t = 0u; t < 128u; t++) {
+                pos[t * 16u + lid] = base + run;
+                run += cnt[t * 16u + lid];
+            }
+        }
+        barrier();
+        for (uint e = lo; e < hi; e++) {
+            uint kk = ka[e];
+            uint bb = (kk >> uint(u_shift)) & 255u;
+            if (bb >= r * 16u && bb < r * 16u + 16u) {
+                uint dst = pos[lid * 16u + (bb - r * 16u)];
+                pos[lid * 16u + (bb - r * 16u)] = dst + 1u;
+                kb[dst] = kk;
+                vb[dst] = va[e];
+            }
+        }
+        barrier();
+    }
+}
+"""
+
+_GS_COPY_SRC = """#version 430 core
+layout(local_size_x = 256) in;
+layout(std430, binding = 5) readonly buffer GsVals { uint gs_vals[]; };
+layout(std430, binding = 6) buffer GsOrder { uint gs_order[]; };
+uniform int u_n;
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (int(i) >= u_n) {
+        return;
+    }
+    gs_order[i] = gs_vals[i];
+}
+"""
+_GS_INDIRECT_SRC = """#version 430 core
+layout(local_size_x = 1) in;
+layout(std430, binding = 7) readonly buffer GsCount { uint gs_count; };
+layout(std430, binding = 12) buffer GsCmd { uint gs_cmd[]; };
+uniform uint u_cap;
+void main() {
+    uint c = gs_count;
+    if (c > u_cap) {
+        c = u_cap;
+    }
+    gs_cmd[0] = 4u;
+    gs_cmd[1] = c;
+    gs_cmd[2] = 0u;
+    gs_cmd[3] = 0u;
+    gs_cmd[4] = 0u;
+}
+"""
+_SPLAT_GPU_ROWS = 1048576
 _READY_SPLATS: dict = {}
 _READY_KEYS: list = []
 _READY_LOCK = threading.Lock()
@@ -376,6 +622,25 @@ class GaussianSplatRenderer:
         self._upload_progress: dict[str, int] = {}
         self._last_order: dict[str, np.ndarray] = {}
         self._sorts_this_frame: int = 0
+        self._gpu_sorts_this_frame: int = 0
+        self._cs_progs: dict[str, object] = {}
+        self._cs_ok: Optional[bool] = None
+        self._gs_keys0 = None
+        self._gs_keys1 = None
+        self._gs_vals0 = None
+        self._gs_vals1 = None
+        self._gs_hist = None
+        self._gs_offs = None
+        self._gs_counter = None
+        self._gs_indirect = None
+        self._gs_scratch_n: int = 0
+        self._gs_pos: dict[str, object] = {}
+        self._gs_opa: dict[str, object] = {}
+        self._gs_srad: dict[str, object] = {}
+        self._gs_order: dict[str, object] = {}
+        self._gs_cmd: dict[str, object] = {}
+        self._gs_up: dict[str, int] = {}
+        self._gs_key: dict[tuple, bytes] = {}
         self._init_shaders()
         if _cython_available():
             self._sort_backend = "cython"
@@ -398,6 +663,248 @@ class GaussianSplatRenderer:
             Logger.error(f"GaussianSplatRenderer shader init failed (needs OpenGL 4.3+): {e}")
             self._prog = None
             self._vao = None
+
+    def _ensure_compute(self) -> bool:
+        if self._cs_ok is not None:
+            return self._cs_ok
+        try:
+            from core.assets.compute_shader import compile_compute_shader
+            jobs = (
+                ("cull", _GS_CULL_SRC),
+                ("hist", _GS_HIST_SRC),
+                ("scan", _GS_SCAN_SRC),
+                ("scatter", _GS_SCATTER_SRC),
+                ("copy", _GS_COPY_SRC),
+                ("indirect", _GS_INDIRECT_SRC),
+            )
+            for name, src in jobs:
+                prog = compile_compute_shader(self._ctx, src, f"splat_{name}")
+                if prog is None:
+                    raise RuntimeError(f"splat compute {name}")
+                self._cs_progs[name] = prog
+            try:
+                self._gs_hist = self._ctx.buffer(reserve=_SPLAT_GPU_GROUPS * 256 * 4)
+                self._gs_offs = self._ctx.buffer(reserve=_SPLAT_GPU_GROUPS * 256 * 4)
+                self._gs_counter = self._ctx.buffer(reserve=4)
+                self._gs_indirect = self._ctx.buffer(reserve=20)
+            except Exception:
+                raise RuntimeError("splat compute buffers")
+            self._cs_ok = True
+        except Exception as e:
+            try:
+                Logger.error(f"GaussianSplatRenderer GPU sort disabled: {e}")
+            except Exception:
+                pass
+            self._cs_ok = False
+        return bool(self._cs_ok)
+
+    def _ensure_gs_scratch(self, n: int) -> bool:
+        try:
+            if n <= 0:
+                return False
+            if self._gs_scratch_n >= n and self._gs_keys0 is not None:
+                return True
+            cap = max(64, int(n))
+            for attr in ("_gs_keys0", "_gs_keys1", "_gs_vals0", "_gs_vals1"):
+                old = getattr(self, attr)
+                if old is not None:
+                    try:
+                        old.release()
+                    except Exception:
+                        pass
+                setattr(self, attr, self._ctx.buffer(reserve=cap * 4))
+            self._gs_scratch_n = cap
+            return True
+        except Exception:
+            return False
+
+    def _ensure_gpu_bufs(self, path: str, n: int) -> bool:
+        try:
+            if n <= 0:
+                return False
+            ok = True
+            need = ((n * 12, "_gs_pos"), (n * 4, "_gs_opa"), (n * 4, "_gs_srad"),
+                    (n * 4, "_gs_order"), (20, "_gs_cmd"))
+            for size, attr in need:
+                d = getattr(self, attr)
+                buf = d.get(path)
+                if buf is None or buf.size < size:
+                    if buf is not None:
+                        try:
+                            buf.release()
+                        except Exception:
+                            pass
+                    d[path] = self._ctx.buffer(reserve=max(64, int(size)))
+                    if attr != "_gs_cmd":
+                        self._gs_up[path] = 0
+                    else:
+                        try:
+                            d[path].write(np.array([4, 0, 0, 0, 0], dtype=np.uint32).tobytes())
+                        except Exception:
+                            pass
+                ok = ok and d.get(path) is not None
+            return bool(ok)
+        except Exception:
+            return False
+
+    def _gpu_barrier(self):
+        try:
+            self._ctx.memory_barrier(moderngl.SHADER_STORAGE_BARRIER_BIT)
+        except Exception:
+            pass
+
+    def _prepare_gpu(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
+                     proj_f32: np.ndarray, cam_pos, viewport_w, viewport_h,
+                     opacity_threshold: float, sh_degree: int, cache_id, n: int) -> bool:
+        try:
+            if not self._ensure_compute():
+                return None
+            if n < _SPLAT_GPU_MIN_N or not self._ensure_gs_scratch(n):
+                return None
+            if not self._ensure_gpu_bufs(path, n):
+                return None
+            done = int(self._gs_up.get(path, 0))
+            if done < n:
+                pos = self._pos.get(path)
+                opa = self._opa.get(path)
+                srad = self._srad.get(path)
+                if pos is None or opa is None or srad is None:
+                    return None
+                r1 = min(n, done + _SPLAT_GPU_ROWS)
+                try:
+                    self._gs_pos[path].write(np.ascontiguousarray(pos[done:r1]).tobytes(), offset=done * 12)
+                    self._gs_opa[path].write(np.ascontiguousarray(opa[done:r1]).tobytes(), offset=done * 4)
+                    self._gs_srad[path].write(np.ascontiguousarray(srad[done:r1]).tobytes(), offset=done * 4)
+                except Exception:
+                    return None
+                self._gs_up[path] = r1
+                if r1 < n:
+                    return None
+            key = self._frame_key(model_f32, view_f32, proj_f32, opacity_threshold)
+            gk = (path, cache_id)
+            if self._gs_key.get(gk) == key:
+                self._bind_gpu_draw(path, model_f32, view_f32, proj_f32, cam_pos,
+                                    viewport_w, viewport_h, sh_degree, opacity_threshold)
+                return key, True
+            if self._gpu_sorts_this_frame >= _SPLAT_GPU_SORTS_PER_FRAME:
+                return None
+            self._gpu_sorts_this_frame += 1
+            basis = self._sort_basis(model_f32, view_f32, proj_f32)
+            if basis is None:
+                return None
+            mv, _a, _t, ms, p00, p11, p20, p21, perspective = basis
+            groups = _SPLAT_GPU_GROUPS
+            progs = self._cs_progs
+            try:
+                self._gs_counter.write(np.zeros(1, dtype=np.uint32).tobytes())
+            except Exception:
+                return None
+            try:
+                self._gs_pos[path].bind_to_storage_buffer(_GS_B_POS)
+                self._gs_opa[path].bind_to_storage_buffer(_GS_B_OPA)
+                self._gs_srad[path].bind_to_storage_buffer(_GS_B_SRAD)
+                self._gs_keys0.bind_to_storage_buffer(_GS_B_KEYS)
+                self._gs_vals0.bind_to_storage_buffer(_GS_B_VALS)
+                self._gs_counter.bind_to_storage_buffer(_GS_B_COUNT)
+            except Exception:
+                return None
+            try:
+                cu = progs["cull"]
+                cu["u_mv"].write(np.ascontiguousarray(mv, dtype=np.float32).tobytes())
+                cu["u_p00"].value = float(p00)
+                cu["u_p11"].value = float(p11)
+                cu["u_p20"].value = float(p20)
+                cu["u_p21"].value = float(p21)
+                cu["u_thr"].value = float(opacity_threshold)
+                cu["u_ms"].value = float(ms)
+                cu["u_persp"].value = 1 if perspective else 0
+                cu["u_n"].value = int(n)
+                cu.run((n + 255) // 256, 1, 1)
+            except Exception:
+                return None
+            self._gpu_barrier()
+            kb = [self._gs_keys0, self._gs_keys1]
+            vb = [self._gs_vals0, self._gs_vals1]
+            try:
+                hi = progs["hist"]
+                sc = progs["scan"]
+                st = progs["scatter"]
+                for pi, shift in enumerate((0, 8, 16, 24)):
+                    rk = kb[pi % 2]
+                    rv = vb[pi % 2]
+                    wk = kb[1 - pi % 2]
+                    wv = vb[1 - pi % 2]
+                    rk.bind_to_storage_buffer(_GS_B_KEYS)
+                    self._gs_hist.bind_to_storage_buffer(_GS_B_HIST)
+                    self._gs_offs.bind_to_storage_buffer(_GS_B_OFFS)
+                    hi["u_n"].value = int(n)
+                    hi["u_shift"].value = int(shift)
+                    hi.run(groups, 1, 1)
+                    self._gpu_barrier()
+                    sc["u_groups"].value = int(groups)
+                    sc.run(1, 1, 1)
+                    self._gpu_barrier()
+                    rk.bind_to_storage_buffer(_GS_B_KEYS)
+                    rv.bind_to_storage_buffer(_GS_B_VALS)
+                    wk.bind_to_storage_buffer(_GS_B_KEYS2)
+                    wv.bind_to_storage_buffer(_GS_B_VALS2)
+                    self._gs_offs.bind_to_storage_buffer(_GS_B_OFFS)
+                    st["u_n"].value = int(n)
+                    st["u_shift"].value = int(shift)
+                    st.run(groups, 1, 1)
+                    self._gpu_barrier()
+                cp = progs["copy"]
+                self._gs_vals0.bind_to_storage_buffer(_GS_B_KEYS)
+                self._gs_order[path].bind_to_storage_buffer(_GS_B_VALS)
+                cp["u_n"].value = int(n)
+                cp.run((n + 255) // 256, 1, 1)
+                self._gpu_barrier()
+            except Exception:
+                return None
+            try:
+                ind = progs["indirect"]
+                self._gs_counter.bind_to_storage_buffer(_GS_B_COUNT)
+                self._gs_cmd[path].bind_to_storage_buffer(_GS_B_CMD)
+                ind["u_cap"].value = int(n)
+                ind.run(1, 1, 1)
+            except Exception:
+                return None
+            try:
+                self._ctx.memory_barrier(moderngl.SHADER_STORAGE_BARRIER_BIT | moderngl.COMMAND_BARRIER_BIT)
+            except Exception:
+                pass
+            self._gs_key[gk] = key
+            self._bind_gpu_draw(path, model_f32, view_f32, proj_f32, cam_pos,
+                                viewport_w, viewport_h, sh_degree, opacity_threshold)
+            return key, False
+        except Exception:
+            return None
+
+    def draw_indirect(self, path: str):
+        if not self._vao:
+            return
+        self._ctx.disable(moderngl.CULL_FACE)
+        self._ctx.enable(moderngl.BLEND)
+        self._ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
+        self._ctx.depth_mask = False
+        try:
+            cmd = self._gs_cmd.get(path)
+            if cmd is None:
+                return
+            self._vao.render_indirect(cmd, moderngl.TRIANGLE_STRIP, 1, 0)
+        except Exception as e:
+            Logger.error(f"Gaussian Splat indirect render error: {e}")
+        self._ctx.enable(moderngl.CULL_FACE)
+        self._ctx.depth_mask = True
+        self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+
+    def _bind_gpu_draw(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
+                       proj_f32: np.ndarray, cam_pos, viewport_w, viewport_h,
+                       sh_degree: int, opacity_threshold: float):
+        self._ssbo.bind_to_storage_buffer(0)
+        self._gs_order[path].bind_to_storage_buffer(1)
+        self._upload_uniforms(model_f32, view_f32, proj_f32, cam_pos,
+                              viewport_w, viewport_h, sh_degree, opacity_threshold)
 
     def _ensure_buffers(self, num_splats: int):
         needed = max(1, num_splats) * _SPLAT_STRUCT_SIZE
@@ -473,6 +980,7 @@ class GaussianSplatRenderer:
 
     def process_pending(self):
         self._sorts_this_frame = 0
+        self._gpu_sorts_this_frame = 0
         with self._load_lock:
             if not self._completed:
                 done = []
@@ -491,6 +999,14 @@ class GaussianSplatRenderer:
             self._uploaded_path = None
             for k in [k for k in self._sort_cache if k[0] == path]:
                 del self._sort_cache[k]
+            self._last_order.pop(path, None)
+            self._gs_up.pop(path, None)
+            self._gs_key = {k: v for k, v in self._gs_key.items() if k[0] != path}
+            try:
+                if self._idx_key is not None and self._idx_key[0] == path:
+                    self._idx_key = None
+            except Exception:
+                self._idx_key = None
             self._scratch.pop(path, None)
             _publish_splat_arrays(path, payload["pos"], payload["scl"], payload["opa"])
             del payload
@@ -509,6 +1025,16 @@ class GaussianSplatRenderer:
         self._fractions.pop(path, None)
         self._upload_progress.pop(path, None)
         self._last_order.pop(path, None)
+        self._gs_up.pop(path, None)
+        self._gs_key = {k: v for k, v in self._gs_key.items() if k[0] != path}
+        for attr in ("_gs_pos", "_gs_opa", "_gs_srad", "_gs_order", "_gs_cmd"):
+            d = getattr(self, attr)
+            buf = d.pop(path, None)
+            if buf is not None:
+                try:
+                    buf.release()
+                except Exception:
+                    pass
         for k in [k for k in self._sort_cache if k[0] == path]:
             try:
                 del self._sort_cache[k]
@@ -758,16 +1284,16 @@ class GaussianSplatRenderer:
             prog["u_opacity_threshold"].value = float(opacity_threshold)
 
     def prepare(self, path: str, model_matrix, view_mat, proj_mat, cam_pos, viewport_w, viewport_h,
-                opacity_threshold=0.005, sh_degree=3, cache_id=None) -> tuple[int, int]:
+                opacity_threshold=0.005, sh_degree=3, cache_id=None) -> tuple:
         if not self._prog or not self._vao:
-            return 0, 0
+            return 0, 0, False
         if path not in self._gpu_data:
             if not self.load_data(path):
-                return 0, 0
+                return 0, 0, False
 
         gpu = self._gpu_data.get(path)
         if gpu is None or len(gpu) == 0:
-            return 0, 0
+            return 0, 0, False
         try:
             self._last_used[path] = time.monotonic()
         except Exception:
@@ -800,11 +1326,15 @@ class GaussianSplatRenderer:
                     self._upload_progress.pop(path, None)
                 else:
                     self._upload_progress[path] = done
-                    return 0, n
+                    return 0, n, False
             else:
                 self._uploaded_path = path
                 self._uploaded_n = n
                 self._upload_progress.pop(path, None)
+        if n >= _SPLAT_GPU_MIN_N and self._prepare_gpu(path, model_f32, view_f32, proj_f32, cam_pos,
+                                                       viewport_w, viewport_h, opacity_threshold,
+                                                       sh_degree, cache_id, n):
+            return 0, n, True
         key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold, cache_id)
         m = len(order)
         if m == 0:
@@ -820,7 +1350,7 @@ class GaussianSplatRenderer:
         self._idx_ssbo.bind_to_storage_buffer(1)
         self._upload_uniforms(model_f32, view_f32, proj_f32, cam_pos,
                               viewport_w, viewport_h, sh_degree, opacity_threshold)
-        return m, n
+        return m, n, False
 
     def draw_color(self, m: int):
         if not self._vao or m <= 0:
@@ -841,9 +1371,12 @@ class GaussianSplatRenderer:
 
     def render(self, path: str, model_matrix, view_mat, proj_mat, cam_pos, viewport_w, viewport_h,
                opacity_threshold=0.005, sh_degree=3, cache_id=None):
-        m, _ = self.prepare(path, model_matrix, view_mat, proj_mat, cam_pos,
-                             viewport_w, viewport_h, opacity_threshold, sh_degree, cache_id)
-        self.draw_color(m)
+        m, _, indirect = self.prepare(path, model_matrix, view_mat, proj_mat, cam_pos,
+                                      viewport_w, viewport_h, opacity_threshold, sh_degree, cache_id)
+        if indirect:
+            self.draw_indirect(path)
+        else:
+            self.draw_color(m)
 
     def release(self):
         with self._load_lock:
@@ -865,6 +1398,39 @@ class GaussianSplatRenderer:
             self._idx_ssbo.release()
         if self._prog:
             self._prog.release()
+        for prog in self._cs_progs.values():
+            try:
+                prog.release()
+            except Exception:
+                pass
+        self._cs_progs = {}
+        self._cs_ok = None
+        for attr in ("_gs_keys0", "_gs_keys1", "_gs_vals0", "_gs_vals1",
+                     "_gs_hist", "_gs_offs", "_gs_counter"):
+            buf = getattr(self, attr)
+            if buf is not None:
+                try:
+                    buf.release()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        for attr in ("_gs_pos", "_gs_opa", "_gs_srad", "_gs_order", "_gs_cmd"):
+            d = getattr(self, attr)
+            for buf in d.values():
+                try:
+                    buf.release()
+                except Exception:
+                    pass
+            d.clear()
+        self._gs_scratch_n = 0
+        self._gs_pos.clear()
+        self._gs_opa.clear()
+        self._gs_srad.clear()
+        self._gs_order.clear()
+        self._gs_cmd.clear()
+        self._gs_up.clear()
+        self._gs_key.clear()
+        self._gpu_sorts_this_frame = 0
         self._vao = None
         self._ssbo = None
         self._idx_ssbo = None
