@@ -9,7 +9,7 @@ import qtawesome as qta
 from PyQt6.QtGui import QAction, QIcon
 
 from editor.scene_toolbar import SceneToolbar, RenderToolbar
-from editor.main_window.handlers import toggle_play_stop, reset_camera, on_gizmo_vis_toggled
+from editor.main_window.handlers import toggle_play_stop, reset_camera, on_gizmo_vis_toggled, launch_external_player
 
 
 def _set_play_btn_style(btn, text):
@@ -95,6 +95,13 @@ def setup_toolbar(mw):
     mw._pause_btn.setFixedWidth(scale(90))
     mw._pause_btn.setEnabled(False)
     lay.addWidget(mw._pause_btn)
+
+    mw._player_btn = QPushButton(qta.icon("fa5s.gamepad", color="white"), " Player")
+    mw._player_btn.setStyleSheet("QPushButton { background: rgb(106,27,154); color: rgb(255,255,255); }")
+    mw._player_btn.setFixedWidth(scale(90))
+    mw._player_btn.setToolTip("Launch in standalone Player")
+    mw._player_btn.clicked.connect(lambda: launch_external_player(mw))
+    lay.addWidget(mw._player_btn)
 
     ts_label = QLabel(" TS:")
     lay.addWidget(ts_label)

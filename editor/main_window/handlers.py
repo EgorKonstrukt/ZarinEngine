@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import threading
 
 import qtawesome as qta
@@ -875,6 +877,149 @@ def toggle_pause(mw):
         e = mw._engine.scene.get_entity(mw._pre_play_selected_id)
         if e:
             on_entity_selected(mw, e)
+
+
+def _find_engine_root():
+    base = ""
+    try:
+        base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if os.path.isfile(os.path.join(base, "player.py")):
+            return base
+    except Exception:
+        pass
+    try:
+        cwd = os.getcwd()
+        if os.path.isfile(os.path.join(cwd, "player.py")):
+            return os.path.abspath(cwd)
+    except Exception:
+        pass
+    try:
+        for p in list(sys.path):
+            try:
+                if not p:
+                    continue
+                cand_root = os.path.abspath(p)
+                if os.path.isfile(os.path.join(cand_root, "player.py")):
+                    return cand_root
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return base
+
+
+def _resolve_player_command(scene_path: str):
+    try:
+        frozen = bool(getattr(sys, "frozen", False))
+    except Exception:
+        frozen = False
+    if frozen:
+        try:
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            for name in ("ZarinPlayer.exe", "ZarinPlayer", "player.exe", "player"):
+                cand = os.path.join(exe_dir, name)
+                if os.path.isfile(cand):
+                    return [cand, scene_path]
+            exe_base = os.path.splitext(os.path.basename(sys.executable))[0].lower()
+            if "player" in exe_base:
+                return [sys.executable, scene_path]
+        except Exception:
+            pass
+    root = _find_engine_root()
+    player_py = os.path.join(root, "player.py") if root else ""
+    if player_py and os.path.isfile(player_py):
+        return [sys.executable, player_py, scene_path]
+    return []
+
+
+def _write_player_preview(mw, project_root: str):
+    scene = mw._engine.scene
+    snapshot = scene.serialize()
+    try:
+        embedded = getattr(scene, "embedded_resources", None)
+        if embedded:
+            snapshot["embedded_resources"] = dict(embedded)
+    except Exception:
+        pass
+    try:
+        mw._engine.relativize_scene_paths(snapshot)
+    except Exception:
+        pass
+    preview_dir = os.path.join(project_root, "cache")
+    try:
+        os.makedirs(preview_dir, exist_ok=True)
+    except Exception:
+        pass
+    preview_path = os.path.join(preview_dir, "player_preview.zpes")
+    tmp_path = preview_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f)
+    os.replace(tmp_path, preview_path)
+    return os.path.abspath(preview_path)
+
+
+def launch_external_player(mw):
+    try:
+        playing = bool(mw._engine.play_mode)
+    except Exception:
+        playing = False
+    if playing:
+        QMessageBox.information(mw, "Player", "Stop Play Mode before launching Player.")
+        return
+    scene = getattr(mw._engine, "scene", None)
+    if scene is None:
+        QMessageBox.warning(mw, "Player", "No scene to play.")
+        return
+    try:
+        project_root = getattr(mw._engine, "_project_path", "") or ""
+    except Exception:
+        project_root = ""
+    if not project_root or not os.path.isdir(project_root):
+        try:
+            project_root = str(mw._engine.project_root)
+        except Exception:
+            project_root = ""
+    if not project_root or not os.path.isdir(project_root):
+        project_root = os.getcwd()
+    project_root = os.path.abspath(project_root)
+    scene_path = ""
+    try:
+        current_path = getattr(scene, "path", "") or ""
+        is_dirty = bool(getattr(scene, "dirty", False))
+        if current_path and os.path.isfile(current_path) and not is_dirty:
+            scene_path = os.path.abspath(current_path)
+        else:
+            scene_path = _write_player_preview(mw, project_root)
+    except Exception as e:
+        Logger.error(f"Failed to prepare preview scene for Player: {e}", e)
+        QMessageBox.warning(mw, "Player", f"Failed to prepare scene: {e}")
+        return
+    cmd = _resolve_player_command(scene_path)
+    if not cmd:
+        QMessageBox.warning(mw, "Player", "Player entry not found.")
+        return
+    try:
+        old = getattr(mw, "_external_player_proc", None)
+        if old is not None:
+            try:
+                if old.poll() is None:
+                    try:
+                        old.terminate()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        root = _find_engine_root()
+        cwd = root if root and os.path.isdir(root) else project_root
+        proc = subprocess.Popen(cmd, cwd=cwd)
+        mw._external_player_proc = proc
+        Logger.info(f"Player launched: {scene_path}")
+    except Exception as e:
+        Logger.error(f"Failed to launch Player: {e}", e)
+        QMessageBox.warning(mw, "Player", f"Failed to launch Player: {e}")
 
 
 def new_scene(mw):

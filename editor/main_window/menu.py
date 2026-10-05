@@ -17,7 +17,7 @@ from editor.panels.vcs_panel import _Git, _DiffView, _find_git
 
 from editor.main_window.handlers import (
     new_scene, open_scene, save_scene, save_scene_as,
-    toggle_play_stop,
+    toggle_play_stop, launch_external_player,
     undo, redo,
     open_global_settings, open_project_settings,
     show_build_dialog, show_about,
@@ -107,6 +107,10 @@ def setup_menu(mw):
     play_stop_act.setShortcut(QKeySequence("Shift+F10"))
     play_stop_act.triggered.connect(lambda: toggle_play_stop(mw))
     game_menu.addAction(play_stop_act)
+    player_act = QAction(_qta("fa5s.gamepad"), "Launch in Player", mw)
+    player_act.setShortcut(QKeySequence("F10"))
+    player_act.triggered.connect(lambda: launch_external_player(mw))
+    game_menu.addAction(player_act)
 
     view_menu = mb.addMenu("View")
     for dock in mw._docks:
