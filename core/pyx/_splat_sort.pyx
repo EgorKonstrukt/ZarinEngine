@@ -23,6 +23,8 @@ def splat_cull_depth(cnp.float32_t[:, :] pos,
                      float thr,
                      float ms,
                      bint persp,
+                     float px_scale,
+                     float min_px,
                      cnp.uint8_t[:] keep,
                      cnp.float32_t[:] wout):
     cdef Py_ssize_t n = pos.shape[0]
@@ -43,7 +45,9 @@ def splat_cull_depth(cnp.float32_t[:, :] pos,
     cdef float ap11 = p11 if p11 >= 0.0 else -p11
     cdef float fms = ms
     cdef float fthr = thr
-    cdef float x, y, z, vx, vy, vz, ww, rr, inv, nx, ny, mx, my
+    cdef float x, y, z, vx, vy, vz, ww, rr, inv, nx, ny, mx, my, pr, maxc
+    maxc = ap00 if ap00 >= ap11 else ap11
+    cdef bint use_min = (min_px > 0.0) and (px_scale > 0.0)
     with nogil:
         for i in prange(n, schedule='static'):
             if opa[i] <= fthr:
@@ -70,12 +74,23 @@ def splat_cull_depth(cnp.float32_t[:, :] pos,
                     if nx < -1.0 - mx or nx > 1.0 + mx or ny < -1.0 - my or ny > 1.0 + my:
                         keep[i] = 0
                         continue
+                    if use_min:
+                        pr = rr * maxc / ww * px_scale
+                        if pr < min_px:
+                            keep[i] = 0
+                            continue
                 else:
                     nx = vx * p00 + vz * p20
                     ny = vy * p11 + vz * p21
                     mx = rr * ap00 + 0.0000011
                     my = rr * ap11 + 0.0000011
                     if nx < -mx or nx > mx or ny < -my or ny > my:
+                        keep[i] = 0
+                        continue
+            else:
+                if use_min:
+                    pr = rr * maxc * px_scale
+                    if pr < min_px:
                         keep[i] = 0
                         continue
             keep[i] = 1

@@ -64,6 +64,8 @@ _SPLAT_MAX_SORTS_PER_FRAME = 2
 _SPLAT_GPU_MIN_N = 131072
 _SPLAT_GPU_SORTS_PER_FRAME = 4
 _SPLAT_GPU_GROUPS = 128
+_SPLAT_SORT_INTERVAL = 1.0 / 30.0
+_SPLAT_MIN_PX = 0.5
 
 _GS_B_POS = 2
 _GS_B_OPA = 3
@@ -94,6 +96,8 @@ uniform float u_thr;
 uniform float u_ms;
 uniform int u_persp;
 uniform int u_n;
+uniform float u_px;
+uniform float u_min_px;
 shared uint shc;
 uint fkey(float w) {
     uint u = floatBitsToUint(w);
@@ -133,6 +137,21 @@ void main() {
                         if (nx < -mx || nx > mx || ny < -my || ny > my) {
                             vis = false;
                         }
+                    }
+                }
+                if (vis && u_min_px > 0.0) {
+                    float pr;
+                    if (u_persp == 1) {
+                        if (ww > 0.000001) {
+                            pr = rr * max(abs(u_p00), abs(u_p11)) / ww * u_px;
+                        } else {
+                            pr = 1e30;
+                        }
+                    } else {
+                        pr = rr * max(abs(u_p00), abs(u_p11)) * u_px;
+                    }
+                    if (pr < u_min_px) {
+                        vis = false;
                     }
                 }
                 if (vis) {
@@ -641,6 +660,7 @@ class GaussianSplatRenderer:
         self._gs_cmd: dict[str, object] = {}
         self._gs_up: dict[str, int] = {}
         self._gs_key: dict[tuple, bytes] = {}
+        self._gs_sort_time: dict[str, float] = {}
         self._init_shaders()
         if _cython_available():
             self._sort_backend = "cython"
@@ -755,7 +775,8 @@ class GaussianSplatRenderer:
 
     def _prepare_gpu(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
                      proj_f32: np.ndarray, cam_pos, viewport_w, viewport_h,
-                     opacity_threshold: float, sh_degree: int, cache_id, n: int) -> bool:
+                     opacity_threshold: float, sh_degree: int, cache_id, n: int,
+                     px_scale: float = 0.0) -> bool:
         try:
             if not self._ensure_compute():
                 return None
@@ -783,6 +804,14 @@ class GaussianSplatRenderer:
             key = self._frame_key(model_f32, view_f32, proj_f32, opacity_threshold)
             gk = (path, cache_id)
             if self._gs_key.get(gk) == key:
+                self._bind_gpu_draw(path, model_f32, view_f32, proj_f32, cam_pos,
+                                    viewport_w, viewport_h, sh_degree, opacity_threshold)
+                return key, True
+            try:
+                _now = time.monotonic()
+            except Exception:
+                _now = 0.0
+            if _now - float(self._gs_sort_time.get(path, 0.0)) < _SPLAT_SORT_INTERVAL:
                 self._bind_gpu_draw(path, model_f32, view_f32, proj_f32, cam_pos,
                                     viewport_w, viewport_h, sh_degree, opacity_threshold)
                 return key, True
@@ -819,6 +848,16 @@ class GaussianSplatRenderer:
                 cu["u_ms"].value = float(ms)
                 cu["u_persp"].value = 1 if perspective else 0
                 cu["u_n"].value = int(n)
+                try:
+                    _px = float(px_scale)
+                except Exception:
+                    _px = 0.0
+                cu["u_px"].value = _px
+                try:
+                    _mpx = float(_SPLAT_MIN_PX) if _px > 0.0 else 0.0
+                except Exception:
+                    _mpx = 0.0
+                cu["u_min_px"].value = _mpx
                 cu.run((n + 255) // 256, 1, 1)
             except Exception:
                 return None
@@ -874,6 +913,10 @@ class GaussianSplatRenderer:
             except Exception:
                 pass
             self._gs_key[gk] = key
+            try:
+                self._gs_sort_time[path] = _now
+            except Exception:
+                pass
             self._bind_gpu_draw(path, model_f32, view_f32, proj_f32, cam_pos,
                                 viewport_w, viewport_h, sh_degree, opacity_threshold)
             return key, False
@@ -1026,6 +1069,7 @@ class GaussianSplatRenderer:
         self._upload_progress.pop(path, None)
         self._last_order.pop(path, None)
         self._gs_up.pop(path, None)
+        self._gs_sort_time.pop(path, None)
         self._gs_key = {k: v for k, v in self._gs_key.items() if k[0] != path}
         for attr in ("_gs_pos", "_gs_opa", "_gs_srad", "_gs_order", "_gs_cmd"):
             d = getattr(self, attr)
@@ -1139,8 +1183,12 @@ class GaussianSplatRenderer:
 
     def _visible_order(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
                        proj_f32: np.ndarray, opacity_threshold: float,
-                       cache_id=None) -> tuple[bytes, np.ndarray]:
+                       cache_id=None, px_scale: float = 0.0, min_px: float = 0.0) -> tuple[bytes, np.ndarray]:
         key = self._frame_key(model_f32, view_f32, proj_f32, opacity_threshold)
+        try:
+            key = key + np.float32(px_scale).tobytes() + np.float32(min_px).tobytes()
+        except Exception:
+            pass
         slot_id = (path, key[:64], cache_id)
         slot = self._sort_cache.get(slot_id)
         if slot is not None and slot[0] == key:
@@ -1154,7 +1202,8 @@ class GaussianSplatRenderer:
             return key, _EMPTY_U32
         self._sorts_this_frame += 1
         reuse = slot[1] if slot is not None else None
-        order = self._compute_order(path, model_f32, view_f32, proj_f32, opacity_threshold, reuse)
+        order = self._compute_order(path, model_f32, view_f32, proj_f32, opacity_threshold, reuse,
+                                    px_scale, min_px)
         if slot is None and len(self._sort_cache) >= 12:
             self._sort_cache.pop(next(iter(self._sort_cache)))
         self._sort_cache[slot_id] = [key, order]
@@ -1179,7 +1228,8 @@ class GaussianSplatRenderer:
 
     def _compute_order(self, path: str, model_f32: np.ndarray, view_f32: np.ndarray,
                        proj_f32: np.ndarray, opacity_threshold: float,
-                       reuse: Optional[np.ndarray] = None) -> np.ndarray:
+                       reuse: Optional[np.ndarray] = None,
+                       px_scale: float = 0.0, min_px: float = 0.0) -> np.ndarray:
         pos = self._pos.get(path)
         opa = self._opa.get(path)
         srad = self._srad.get(path)
@@ -1200,7 +1250,8 @@ class GaussianSplatRenderer:
             _cython_cull_depth(pos, opa, srad, mv, np.float32(p00), np.float32(p11),
                                np.float32(p20), np.float32(p21),
                                np.float32(opacity_threshold), np.float32(ms),
-                               bool(perspective), sc["keep"], sc["wbuf"])
+                               bool(perspective), np.float32(px_scale), np.float32(min_px),
+                               sc["keep"], sc["wbuf"])
             count = int(_cython_compact(sc["keep"], sc["wbuf"], sc["cidx"], sc["cdep"]))
             if count == 0:
                 return _EMPTY_U32
@@ -1244,6 +1295,24 @@ class GaussianSplatRenderer:
                 loc = np.flatnonzero((nx >= -1.0 - mx) & (nx <= 1.0 + mx) & (ny >= -1.0 - my) & (ny <= 1.0 + my))
                 if loc.size == 0:
                     return _EMPTY_U32
+                if min_px > 0.0 and px_scale > 0.0:
+                    fpx = np.float32(px_scale)
+                    fmp = np.float32(min_px)
+                    ap0 = np.float32(abs(float(fp00)))
+                    ap1 = np.float32(abs(float(fp11)))
+                    pmax = ap0 if ap0 >= ap1 else ap1
+                    wl = w[loc]
+                    rl = r[loc]
+                    big = wl > np.float32(1e-6)
+                    pr = np.empty_like(wl)
+                    bv = wl[big]
+                    pr[big] = rl[big] * pmax / bv * fpx
+                    pr[~big] = np.float32(1e30)
+                    keepm = pr >= fmp
+                    if not bool(keepm.all()):
+                        loc = loc[keepm]
+                        if loc.size == 0:
+                            return _EMPTY_U32
                 w = w[loc]
                 if idx is not None:
                     idx = idx[loc]
@@ -1257,6 +1326,19 @@ class GaussianSplatRenderer:
                     w = w[idx]
                 else:
                     idx = None
+                if min_px > 0.0 and px_scale > 0.0:
+                    fpx = np.float32(px_scale)
+                    fmp = np.float32(min_px)
+                    ap0 = np.float32(abs(float(p00)))
+                    ap1 = np.float32(abs(float(p11)))
+                    pmax = ap0 if ap0 >= ap1 else ap1
+                    rr = (srad * fms)[idx] if idx is not None else (srad * fms)
+                    keepm = (rr * pmax * fpx) >= fmp
+                    if not bool(keepm.all()):
+                        w = w[keepm]
+                        if w.size == 0:
+                            return _EMPTY_U32
+                        idx = idx[keepm] if idx is not None else np.flatnonzero(keepm)
         rev = np.argsort(w)[::-1]
         if idx is not None:
             return np.ascontiguousarray(idx[rev], dtype=np.uint32)
@@ -1303,6 +1385,10 @@ class GaussianSplatRenderer:
         model_f32 = np.ascontiguousarray(model_matrix.to_f32(), dtype=np.float32)
         view_f32 = np.ascontiguousarray(view_mat.to_f32(), dtype=np.float32)
         proj_f32 = np.ascontiguousarray(proj_mat.to_f32(), dtype=np.float32)
+        try:
+            px_scale = max(float(viewport_w), float(viewport_h)) * 0.5
+        except Exception:
+            px_scale = 0.0
 
         self._ensure_buffers(n)
         total = int(gpu.nbytes)
@@ -1333,9 +1419,10 @@ class GaussianSplatRenderer:
                 self._upload_progress.pop(path, None)
         if n >= _SPLAT_GPU_MIN_N and self._prepare_gpu(path, model_f32, view_f32, proj_f32, cam_pos,
                                                        viewport_w, viewport_h, opacity_threshold,
-                                                       sh_degree, cache_id, n):
+                                                       sh_degree, cache_id, n, px_scale):
             return 0, n, True
-        key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold, cache_id)
+        key, order = self._visible_order(path, model_f32, view_f32, proj_f32, opacity_threshold, cache_id,
+                                         px_scale, _SPLAT_MIN_PX)
         m = len(order)
         if m == 0:
             return 0, n
@@ -1429,6 +1516,7 @@ class GaussianSplatRenderer:
         self._gs_order.clear()
         self._gs_cmd.clear()
         self._gs_up.clear()
+        self._gs_sort_time.clear()
         self._gs_key.clear()
         self._gpu_sorts_this_frame = 0
         self._vao = None
