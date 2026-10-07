@@ -96,7 +96,7 @@ class Atmosphere(Component):
         return [
             InspectorField("", "Atmosphere", FieldType.HEADER),
             InspectorField("enabled", "Enabled", FieldType.BOOL),
-            InspectorField("_intensity", "Intensity", FieldType.SLIDER, min_val=1.0, max_val=200.0, step=1.0, decimals=0),
+            InspectorField("_intensity", "Intensity", FieldType.SLIDER, min_val=1.0, max_val=60.0, step=1.0, decimals=0),
             InspectorField("", "Sun", FieldType.HEADER),
             InspectorField("_sun_intensity", "Sun Intensity", FieldType.SLIDER, min_val=0.0, max_val=10.0, step=0.1, decimals=1),
             InspectorField("_resolution_scale", "LUT Resolution", FieldType.SLIDER, min_val=0.25, max_val=1.0, step=0.25, decimals=2),
@@ -119,7 +119,7 @@ class Atmosphere(Component):
 
     def __init__(self):
         super().__init__()
-        self._intensity: float = 40.0
+        self._intensity: float = 20.0
         self._sun_intensity: float = 1.0
         self._resolution_scale: float = 1.0
         self._ozone_factor: float = 1.0
@@ -138,6 +138,8 @@ class Atmosphere(Component):
         self._sun_convergence: float = 0.5
         self._color_temperature: float = 5778.0
         self._ctx: Optional[moderngl.Context] = None
+        self._dummy_tex: Optional[moderngl.Texture] = None
+        self._dummy_ctx: Optional[moderngl.Context] = None
         self._program: Optional[moderngl.ComputeShader] = None
         self._transmittance_tex: Optional[moderngl.Texture] = None
         self._sky_tex: Optional[moderngl.Texture] = None
@@ -171,7 +173,7 @@ class Atmosphere(Component):
     @classmethod
     def deserialize(cls, data: dict) -> Atmosphere:
         inst = super().deserialize(data)
-        inst._intensity = float(data.get("_intensity", 40.0))
+        inst._intensity = float(data.get("_intensity", 20.0))
         inst._sun_intensity = float(data.get("_sun_intensity", 1.0))
         inst._resolution_scale = float(data.get("_resolution_scale", 1.0))
         inst._ozone_factor = float(data.get("_ozone_factor", 1.0))
@@ -190,6 +192,8 @@ class Atmosphere(Component):
         inst._sun_convergence = float(data.get("_sun_convergence", 0.5))
         inst._color_temperature = float(data.get("_color_temperature", 5778.0))
         inst._ctx = None
+        inst._dummy_tex = None
+        inst._dummy_ctx = None
         inst._program = None
         inst._transmittance_tex = None
         inst._sky_tex = None
@@ -255,6 +259,18 @@ class Atmosphere(Component):
             self._lut_sizes = (tw, th, sw, sh)
             self._cache_key = None
 
+    def _dummy_image_tex(self, ctx: moderngl.Context) -> moderngl.Texture:
+        if self._dummy_tex is None or self._dummy_ctx is not ctx:
+            if self._dummy_tex is not None:
+                try:
+                    self._dummy_tex.release()
+                except Exception:
+                    pass
+            self._dummy_tex = ctx.texture((1, 1), 4, dtype='f4')
+            self._dummy_tex.write(b"\x00" * 16)
+            self._dummy_ctx = ctx
+        return self._dummy_tex
+
     def _set_uniform(self, prog, name: str, value: float):
         try:
             if name in prog:
@@ -284,12 +300,15 @@ class Atmosphere(Component):
         self._set_uniform(prog, "u_horizon_haze", self._horizon_haze)
         self._set_uniform(prog, "u_camera_height_km", max(float(self._camera_height_m) / 1000.0, 0.005))
         prog["u_pass"].value = 0
+        dummy = self._dummy_image_tex(ctx)
+        dummy.bind_to_image(1, read=True, write=False)
         self._transmittance_tex.bind_to_image(0, read=True, write=True)
         prog.run((tw + 7) // 8, (th + 7) // 8, 1)
         ctx.memory_barrier(moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
         prog["u_pass"].value = 1
         prog["u_transmittance_lut"] = 2
         self._transmittance_tex.use(2)
+        dummy.bind_to_image(0, read=True, write=False)
         self._sky_tex.bind_to_image(1, read=True, write=True)
         prog.run((sw + 7) // 8, (sh + 7) // 8, 1)
         ctx.memory_barrier(moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
@@ -360,6 +379,13 @@ class Atmosphere(Component):
                 self._program.release()
             except Exception:
                 pass
+        if self._dummy_tex is not None:
+            try:
+                self._dummy_tex.release()
+            except Exception:
+                pass
+        self._dummy_tex = None
+        self._dummy_ctx = None
         self._ctx = None
         self._transmittance_tex = None
         self._sky_tex = None
