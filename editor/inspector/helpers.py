@@ -118,8 +118,8 @@ _PICKER_BTN_STYLE = """
 def _style_picker_btn(btn):
     btn.setStyleSheet(_PICKER_BTN_STYLE)
 
-_SPIN_MIN = -2147483647.0
-_SPIN_MAX = 2147483647.0
+_SPIN_MIN = -9223372036854775808.0
+_SPIN_MAX = 9223372036854775807.0
 
 def make_spinbox(val: float, lo: float = _SPIN_MIN, hi: float = _SPIN_MAX, step: float = 0.1, decimals: int = 4) -> QDoubleSpinBox:
     sb = _FocusSpinBox()

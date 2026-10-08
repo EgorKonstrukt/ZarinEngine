@@ -72,7 +72,11 @@ class Mat4:
     def __mul__(self, o): return Mat4(self._d @ o._d)
     def __matmul__(self, o): return self.__mul__(o)
     def transposed(self): return Mat4(self._d.T)
-    def inverted(self): return Mat4(np.linalg.inv(self._d))
+    def inverted(self):
+        try:
+            return Mat4(np.linalg.inv(self._d))
+        except np.linalg.LinAlgError:
+            return Mat4.identity()
     def to_array(self): return self._d.copy()
     def to_f32(self):
         return self._d.astype(np.float32).reshape(-1)

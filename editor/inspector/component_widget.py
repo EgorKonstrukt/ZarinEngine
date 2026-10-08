@@ -796,13 +796,13 @@ class ComponentWidget(QWidget):
                 self._add_field(field.label, lbl)
             else:
                 sb = QSpinBox()
-                min_i = max(-2147483648, min(2147483647, int(field.min_val)))
-                max_i = max(-2147483648, min(2147483647, int(field.max_val)))
+                min_i = max(-9223372036854775808, min(9223372036854775807, int(field.min_val)))
+                max_i = max(-9223372036854775808, min(9223372036854775807, int(field.max_val)))
                 natural_min = min_i
                 natural_max = max_i
                 if field.on_set and hasattr(c, field.on_set):
-                    min_i = max(-2147483648, min_i - 1)
-                    max_i = min(2147483647, max_i + 1)
+                    min_i = max(-9223372036854775808, min_i - 1)
+                    max_i = min(9223372036854775807, max_i + 1)
                 sb.setRange(min_i, max_i)
                 sb.setValue(max(natural_min, min(natural_max, int(value))))
                 sb.setMinimumWidth(60)
@@ -859,8 +859,8 @@ class ComponentWidget(QWidget):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 0, 0, 0)
             rl.setSpacing(4)
-            min_i = max(-2147483648, min(2147483647, int(field.min_val)))
-            max_i = max(-2147483648, min(2147483647, int(field.max_val)))
+            min_i = max(-9223372036854775808, min(9223372036854775807, int(field.min_val)))
+            max_i = max(-9223372036854775808, min(9223372036854775807, int(field.max_val)))
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(min_i, max_i)
             slider.setValue(max(min_i, min(max_i, int(value))))
@@ -1423,7 +1423,7 @@ class ComponentWidget(QWidget):
             return sb
         elif ef.field_type.value == "int":
             sb = QSpinBox()
-            sb.setRange(-2147483648, 2147483647)
+            sb.setRange(-9223372036854775808, 9223372036854775807)
             sb.setValue(val.get(ef.name, 0) if isinstance(val, dict) else 0)
             sb.setStyleSheet(f"""
                 QSpinBox {{
@@ -1725,7 +1725,7 @@ class ComponentWidget(QWidget):
             self._add_field(field.label or prop_name, sb)
         elif field.field_type.value == "int":
             sb = QSpinBox()
-            sb.setRange(-2147483648, 2147483647)
+            sb.setRange(-9223372036854775808, 9223372036854775807)
             sb.setValue(int(value) if isinstance(value, (int, float)) else 0)
             def _on_int_changed(v, n=prop_name):
                 comp.set_field_value(n, v)
@@ -1783,8 +1783,8 @@ class ComponentWidget(QWidget):
             self._add_field(field.label or prop_name, row)
         elif field.field_type.value == "int_slider":
             try:
-                min_i = max(-2147483648, min(2147483647, int(field.min_val)))
-                max_i = max(-2147483648, min(2147483647, int(field.max_val)))
+                min_i = max(-9223372036854775808, min(9223372036854775807, int(field.min_val)))
+                max_i = max(-9223372036854775808, min(9223372036854775807, int(field.max_val)))
             except Exception:
                 min_i, max_i = 0, 100
             if max_i <= min_i:
