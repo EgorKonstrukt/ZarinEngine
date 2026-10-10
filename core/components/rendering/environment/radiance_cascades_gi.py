@@ -3,10 +3,6 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2026 Zarrakun
-#
-# Radiance Cascades Global Illumination
-# Based on the paper by Alexander Sannikov (Grinding Gear Games)
-# Implements temporal reprojection and edge-aware denoising (PoE2-style)
 
 from __future__ import annotations
 
@@ -41,6 +37,7 @@ class RadianceCascadesGI(Component):
             InspectorField("_step_size", "Step Size", FieldType.FLOAT, 0.1, 2.0),
             InspectorField("_depth_threshold", "Depth Threshold", FieldType.FLOAT, 0.01, 1.0),
             InspectorField("_temporal_factor", "Temporal Blend", FieldType.FLOAT, 0.0, 0.99),
+            InspectorField("_sky_intensity", "Sky Intensity", FieldType.FLOAT, 0.0, 4.0),
             InspectorField("_show_overlay", "Show Overlay", FieldType.BOOL),
             InspectorField("_debug_mode", "Debug Mode", FieldType.BOOL),
         ]
@@ -52,7 +49,8 @@ class RadianceCascadesGI(Component):
         self._intensity: float = 1.0
         self._step_size: float = 0.5
         self._depth_threshold: float = 0.15
-        self._temporal_factor: float = 0.9
+        self._temporal_factor: float = 0.85
+        self._sky_intensity: float = 1.0
         self._show_overlay: bool = False
         self._debug_mode: bool = False
 
@@ -82,26 +80,57 @@ class RadianceCascadesGI(Component):
             "step_size": self._step_size,
             "depth_threshold": self._depth_threshold,
             "temporal_factor": self._temporal_factor,
+            "sky_intensity": self._sky_intensity,
             "show_overlay": self._show_overlay,
             "debug_mode": self._debug_mode,
         })
         return d
 
     @classmethod
+    def _resolve_shader_path(cls, path: str) -> str:
+        if path and not os.path.isabs(path) and not os.path.exists(os.path.abspath(path)):
+            cand = "core/shaders/compute/" + os.path.basename(path).replace("\\", "/")
+            if os.path.exists(os.path.abspath(cand)):
+                return cand
+        return path
+
+    @classmethod
     def deserialize(cls, data: dict) -> RadianceCascadesGI:
         r = cls()
         r.enabled = data.get("enabled", True)
-        r._compute_shader_path = data.get("compute_shader_path", "core/shaders/compute/RadianceCascades.compute")
+        r._compute_shader_path = cls._resolve_shader_path(
+            data.get("compute_shader_path", "core/shaders/compute/RadianceCascades.compute"))
         r._resolution_scale = float(data.get("resolution_scale", 0.5))
         r._intensity = float(data.get("intensity", 1.0))
         r._step_size = float(data.get("step_size", 0.5))
         r._depth_threshold = float(data.get("depth_threshold", 0.15))
-        r._temporal_factor = float(data.get("temporal_factor", 0.9))
+        r._temporal_factor = float(data.get("temporal_factor", 0.85))
+        r._sky_intensity = float(data.get("sky_intensity", 1.0))
         r._show_overlay = data.get("show_overlay", False)
         r._debug_mode = data.get("debug_mode", False)
         return r
 
+    def _set_opt(self, prog, name, value) -> bool:
+        try:
+            prog[name] = value
+            return True
+        except KeyError:
+            return False
+        except Exception:
+            return False
+
+    def _write_opt(self, prog, name, data: bytes) -> bool:
+        try:
+            prog[name].write(data)
+            return True
+        except KeyError:
+            return False
+        except Exception:
+            return False
+
     def _compile_compute(self, ctx: moderngl.Context, path: str) -> Optional[moderngl.ComputeShader]:
+        path = self._resolve_shader_path(path)
+        self._compute_shader_path = path
         abs_path = os.path.abspath(path)
         if not os.path.exists(abs_path):
             Logger.error(f"Compute shader not found: {abs_path}")
@@ -185,6 +214,14 @@ class RadianceCascadesGI(Component):
             self._history_fbo = ctx.framebuffer(color_attachments=[self._history_tex])
             self._prev_width = rw
             self._prev_height = rh
+            self._frame = 0
+            self._prev_view_proj = None
+            try:
+                self._history_fbo.clear(0.0, 0.0, 0.0, 0.0)
+                self._gi_output_fbo.clear(0.0, 0.0, 0.0, 0.0)
+                self._gi_temp_fbo.clear(0.0, 0.0, 0.0, 0.0)
+            except Exception:
+                pass
 
         if (self._cascade_atlas is None or self._cascade_atlas.width != rw or self._cascade_atlas.height != rh):
             if self._cascade_atlas:
@@ -200,8 +237,45 @@ class RadianceCascadesGI(Component):
         tex.repeat_y = False
         return tex
 
+    def _gather_environment(self, scene, renderer):
+        sky_ambient = [0.26, 0.28, 0.34]
+        try:
+            amb = getattr(renderer, "_ambient", None)
+            if amb is not None and len(amb) >= 3:
+                sky_ambient = [float(amb[0]), float(amb[1]), float(amb[2])]
+        except Exception:
+            pass
+        sun_dir = (0.0, 1.0, 0.0)
+        sun_color = [1.0, 1.0, 1.0]
+        sun_intensity = 0.0
+        try:
+            from core.components import LightType
+            from core.components.lighting import Light
+            ents = scene.get_entities_with_component(Light)
+            for ent in ents:
+                if not ent.active:
+                    continue
+                l = ent.get_component(Light)
+                t = ent.transform
+                if not l or not l.enabled or not t:
+                    continue
+                if l.light_type == LightType.DIRECTIONAL:
+                    f = t.forward
+                    sun_dir = (float(-f.x), float(-f.y), float(-f.z))
+                    try:
+                        c, ii = Light.shader_radiance(l, t)
+                        sun_color = [float(c[0]), float(c[1]), float(c[2])]
+                        sun_intensity = float(ii)
+                    except Exception:
+                        pass
+                    break
+        except Exception:
+            pass
+        return sky_ambient, sun_dir, sun_color, sun_intensity
+
     def _dispatch(self, ctx: moderngl.Context, width: int, height: int,
-                  view_mat, proj_mat, cam_pos, scene, renderer) -> bool:
+                  view_mat, proj_mat, cam_pos, scene, renderer,
+                  cam_near: float = 0.01, cam_far: float = 1000.0) -> bool:
         ctx_id = id(ctx)
         if self._ctx_id != ctx_id:
             self._release_gl()
@@ -217,17 +291,12 @@ class RadianceCascadesGI(Component):
         if prog is None:
             return False
 
-        d = view_mat._d
-        cam_right = (float(d[0, 0]), float(d[1, 0]), float(d[2, 0]))
-        cam_forward = (-float(d[0, 2]), -float(d[1, 2]), -float(d[2, 2]))
         cam_pos_tuple = (cam_pos.x, cam_pos.y, cam_pos.z)
 
         ctx.disable(moderngl.DEPTH_TEST)
 
         try:
             prog["u_screen_size"] = (float(rw), float(rh))
-            prog["u_camera_right"] = cam_right
-            prog["u_camera_forward"] = cam_forward
             prog["u_camera_pos"] = cam_pos_tuple
             prog["u_step_size"] = self._step_size
             prog["u_depth_threshold"] = self._depth_threshold
@@ -235,23 +304,36 @@ class RadianceCascadesGI(Component):
             prog["u_temporal_factor"] = self._temporal_factor
             prog["u_num_cascades"] = self.NUM_CASCADES
             prog["u_frame"] = self._frame
+        except KeyError as e:
+            Logger.warning(f"RadianceCascades uniform missing: {e}")
+            return False
 
-            view_f32 = view_mat.to_f32().reshape(4, 4).T
-            proj_f32 = proj_mat.to_f32().reshape(4, 4).T
-            vp = proj_f32 @ view_f32
+        sky_ambient, sun_dir, sun_color, sun_intensity = self._gather_environment(scene, renderer)
+        self._set_opt(prog, "u_sky_ambient", (sky_ambient[0], sky_ambient[1], sky_ambient[2]))
+        self._set_opt(prog, "u_sun_dir", sun_dir)
+        self._set_opt(prog, "u_sun_color", (sun_color[0], sun_color[1], sun_color[2]))
+        self._set_opt(prog, "u_sun_intensity", float(sun_intensity))
+        self._set_opt(prog, "u_sky_intensity", float(self._sky_intensity))
+        self._set_opt(prog, "u_cam_near", float(cam_near))
+        self._set_opt(prog, "u_cam_far", float(cam_far))
+
+        try:
+            vp = (view_mat @ proj_mat)._d
             inv_vp = np.linalg.inv(vp)
-            prog["u_inv_view_proj"].write(inv_vp.astype(np.float32).flatten(order='F').tobytes())
-            prog["u_view_proj"].write(vp.astype(np.float32).flatten(order='F').tobytes())
-
+            prog["u_inv_view_proj"].write(inv_vp.astype(np.float32).tobytes())
+            prog["u_view_proj"].write(vp.astype(np.float32).tobytes())
             if self._prev_view_proj is not None:
                 prog["u_prev_view_proj"].write(
-                    self._prev_view_proj.astype(np.float32).flatten(order='F').tobytes()
+                    self._prev_view_proj.astype(np.float32).tobytes()
                 )
             else:
-                prog["u_prev_view_proj"].write(vp.astype(np.float32).flatten(order='F').tobytes())
+                prog["u_prev_view_proj"].write(vp.astype(np.float32).tobytes())
             self._prev_view_proj = vp.copy()
         except KeyError as e:
             Logger.warning(f"RadianceCascades uniform missing: {e}")
+            return False
+        except Exception as e:
+            Logger.warning(f"RadianceCascades matrix setup failed: {e}")
             return False
 
         depth_tex = getattr(renderer, '_scene_depth_tex', None)
@@ -271,8 +353,12 @@ class RadianceCascadesGI(Component):
         groups_x = (rw + 7) // 8
         groups_y = (rh + 7) // 8
 
+        try:
+            prog["u_mode"] = 0
+        except KeyError as e:
+            Logger.warning(f"RadianceCascades texture uniform missing: {e}")
+            return False
         self._cascade_atlas.bind_to_image(2, read=False, write=True)
-        prog["u_mode"] = 0
         prog.run(groups_x, groups_y, 1)
         ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
 
@@ -280,41 +366,50 @@ class RadianceCascadesGI(Component):
         self._gi_output_tex.bind_to_image(3, read=False, write=True)
 
         if self._debug_mode:
-            prog["u_mode"] = 2
+            if not self._set_opt(prog, "u_mode", 2):
+                return False
             prog.run(groups_x, groups_y, 1)
             ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
         elif self._show_overlay:
-            prog["u_mode"] = 6
+            if not self._set_opt(prog, "u_mode", 6):
+                return False
             prog.run(groups_x, groups_y, 1)
             ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
         else:
-            prog["u_mode"] = 1
+            if not self._set_opt(prog, "u_mode", 1):
+                return False
             prog.run(groups_x, groups_y, 1)
             ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
 
             if self._frame > 0:
                 self._history_tex.use(4)
-                prog["u_history_tex"] = 4
-                prog["u_mode"] = 5
-                prog.run(groups_x, groups_y, 1)
-                ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
+                if self._set_opt(prog, "u_history_tex", 4):
+                    if not self._set_opt(prog, "u_mode", 5):
+                        return False
+                    prog.run(groups_x, groups_y, 1)
+                    ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
 
             self._gi_temp_tex.bind_to_image(3, read=False, write=True)
             self._gi_output_tex.use(5)
-            prog["u_gi_input_tex"] = 5
-            prog["u_mode"] = 3
-            prog.run(groups_x, groups_y, 1)
-            ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
+            if self._set_opt(prog, "u_gi_input_tex", 5):
+                if not self._set_opt(prog, "u_mode", 3):
+                    return False
+                prog.run(groups_x, groups_y, 1)
+                ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
 
-            self._gi_output_tex.bind_to_image(3, read=False, write=True)
-            self._gi_temp_tex.use(5)
-            prog["u_gi_input_tex"] = 5
-            prog["u_mode"] = 4
-            prog.run(groups_x, groups_y, 1)
-            ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
+                self._gi_output_tex.bind_to_image(3, read=False, write=True)
+                self._gi_temp_tex.use(5)
+                if self._set_opt(prog, "u_gi_input_tex", 5):
+                    if not self._set_opt(prog, "u_mode", 4):
+                        return False
+                    prog.run(groups_x, groups_y, 1)
+                    ctx.memory_barrier(moderngl.ALL_BARRIER_BITS)
 
             if self._history_fbo and self._gi_output_fbo:
-                ctx.copy_framebuffer(self._history_fbo, self._gi_output_fbo)
+                try:
+                    ctx.copy_framebuffer(self._history_fbo, self._gi_output_fbo)
+                except Exception:
+                    pass
 
         self._frame += 1
         return True

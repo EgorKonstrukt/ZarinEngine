@@ -1342,7 +1342,7 @@ class SceneRendererMixin:
                     continue
                 gi = ent.get_component(RadianceCascadesGI)
                 if gi and gi.enabled:
-                    if gi._dispatch(self._ctx, viewport_w, viewport_h, view_mat, proj_mat, cam_pos, scene, self):
+                    if gi._dispatch(self._ctx, viewport_w, viewport_h, view_mat, proj_mat, cam_pos, scene, self, cam_near, cam_far):
                         gi._blit_to_fbo(self._ctx, self._scene_fbo, viewport_w, viewport_h)
                         gi.blit_to_screen(self._ctx, viewport_w, viewport_h)
                     break

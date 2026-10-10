@@ -126,11 +126,20 @@ class RaytracingRenderer(Component):
         })
         return d
 
+    @staticmethod
+    def _resolve_shader_path(path: str) -> str:
+        if path and not os.path.isabs(path) and not os.path.exists(os.path.abspath(path)):
+            cand = "core/shaders/compute/" + os.path.basename(path).replace("\\", "/")
+            if os.path.exists(os.path.abspath(cand)):
+                return cand
+        return path
+
     @classmethod
     def deserialize(cls, data: dict) -> RaytracingRenderer:
         r = cls()
         r.enabled = data.get("enabled", True)
-        r._compute_shader_path = data.get("compute_shader_path", "core/shaders/compute/Raytracing.compute")
+        r._compute_shader_path = cls._resolve_shader_path(
+            data.get("compute_shader_path", "core/shaders/compute/Raytracing.compute"))
         r._resolution_scale = float(data.get("resolution_scale", 0.5))
         r._samples_per_pixel = int(data.get("samples_per_pixel", 1))
         r._accumulate = data.get("accumulate", False)
@@ -144,6 +153,7 @@ class RaytracingRenderer(Component):
         rh = max(1, int(height * self._resolution_scale))
 
         if self._program is None:
+            self._compute_shader_path = self._resolve_shader_path(self._compute_shader_path)
             path = os.path.abspath(self._compute_shader_path)
             if not os.path.exists(path):
                 Logger.error(f"Raytracing compute shader not found: {path}")
