@@ -1981,9 +1981,10 @@ class Scene:
             chunk = (len(items) + workers - 1) // workers
             def task(part):
                 res = []
+                append = res.append
                 for eid, ed in part:
                     try:
-                        res.append((eid, Entity.deserialize(ed, registry), ed.get("parent")))
+                        append((eid, Entity.deserialize(ed, registry), ed.get("parent")))
                     except Exception:
                         pass
                 return res
@@ -2001,11 +2002,20 @@ class Scene:
                 e = Entity.deserialize(ed, registry)
                 entities[eid] = e
                 parent_map[eid] = ed.get("parent")
+        store = s._entities
+        dirty_roots = s._dirty_roots
         for eid, e in entities.items():
             pid = parent_map.get(eid)
             if pid and pid in entities:
-                e.set_parent(entities[pid], preserve_world=False)
-            s._entities[e.id] = e
+                parent = entities[pid]
+                e._parent = parent
+                parent._children.append(e)
+            store[e.id] = e
             e._scene = s
+            t = e._transform
+            if t is not None and getattr(t, "_dirty", False):
+                dirty_roots.add(t)
+        if dirty_roots:
+            s._transform_version_pending = True
         s._batch_sync_entities(entities)
         return s

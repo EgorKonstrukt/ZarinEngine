@@ -150,15 +150,23 @@ class SceneRendererMixin:
             prof.start("render_shadow_pass")
         shadow_groups = {}
         self._apply_shadow_system_state(update=True)
+        _shadow_warm = False
+        try:
+            if self._shadow_warmup > 0:
+                _shadow_warm = True
+                if not self._rendering_cubemap_face:
+                    self._shadow_warmup -= 1
+        except Exception:
+            _shadow_warm = False
         if not self._shadow_enabled:
             try:
                 self._shadows.reset_shadow_state()
             except Exception:
                 pass
-        elif shared_cache is not None and 'shadow_groups' in shared_cache:
+        elif shared_cache is not None and 'shadow_groups' in shared_cache and not _shadow_warm:
             shadow_groups = shared_cache['shadow_groups']
         else:
-            needs_shadow = (bool(snap.shadow_renderables) or bool(snap.skinned_shadow_renderables)
+            needs_shadow = False if _shadow_warm else (bool(snap.shadow_renderables) or bool(snap.skinned_shadow_renderables)
                             or any(getattr(l, "cast_shadows", False) for l, _ in snap.lights))
             if needs_shadow:
                 try:

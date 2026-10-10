@@ -136,6 +136,8 @@ class Renderer(RendererConfigMixin, RendererProgramsMixin, VoxelPassMixin, Objec
         self._clear_color: list = [0.18, 0.18, 0.18]
         self._import_meta_cache: dict[str, tuple] = {}
         self._import_meta_mtime: dict[str, float] = {}
+        self._import_meta_path_cache: dict[str, str] = {}
+        self._shadow_warmup: int = 0
         self._snap_cache: Optional[_RenderSnapshot] = None
         self._snap_cache_reuse: Optional[_RenderSnapshot] = None
         self._snap_version: int = -1

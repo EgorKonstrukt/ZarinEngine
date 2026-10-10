@@ -861,6 +861,10 @@ class SceneViewport(QOpenGLWidget):
 
     def _on_scene_loaded(self, scene):
         self._gizmos_api.clear()
+        try:
+            self._post_load_warmup = 2
+        except Exception:
+            pass
         Logger.info(f"_on_scene_loaded: selected={len(self._selected_entities)} scene_entities={len(scene._entities)}")
         old_ids = [e.id for e in self._selected_entities]
         resolved = [scene.get_entity(eid) for eid in old_ids if scene.get_entity(eid)]
@@ -1056,8 +1060,15 @@ class SceneViewport(QOpenGLWidget):
                 _play = bool(getattr(eng, "play_mode", False))
                 _acquired = eng._scene_lock.acquire(blocking=False)
                 try:
+                    _warm = False
+                    if scene is not None and getattr(self, "_post_load_warmup", 0) > 0:
+                        try:
+                            self._post_load_warmup -= 1
+                            _warm = True
+                        except Exception:
+                            _warm = False
                     if _acquired:
-                        if self._gizmo_visible:
+                        if self._gizmo_visible and not _warm:
                             render_component_gizmos(self, vp_mat)
                         if not _play:
                             render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
@@ -1074,7 +1085,7 @@ class SceneViewport(QOpenGLWidget):
                         else:
                             self._render_api_gizmos()
                     elif not _play:
-                        if self._gizmo_visible:
+                        if self._gizmo_visible and not _warm:
                             render_component_gizmos(self, vp_mat)
                         render_selection_bounds(self, vp_mat, time.perf_counter(), self._last_dt)
                 finally:

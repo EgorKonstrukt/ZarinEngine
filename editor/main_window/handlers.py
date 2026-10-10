@@ -1079,9 +1079,17 @@ def _do_open_scene(mw, path):
     task_id = "scene:open"
     task_start(task_id, f"Opening {os.path.basename(path)}...", fraction=0.0, total=1.0)
     def _report():
+        import time as _t
+        state = [0.0, -1.0]
         def _cb(done: int, total_: int, name: str):
-            frac = None if total_ <= 0 else done / max(1, total_)
-            task_update(task_id, fraction=frac, detail=name)
+            if total_ <= 0:
+                return
+            frac = done / max(1, total_)
+            now = _t.monotonic()
+            if done >= total_ or (frac - state[1]) >= 0.02 or (now - state[0]) >= 0.08:
+                state[0] = now
+                state[1] = frac
+                task_update(task_id, fraction=frac, detail=name)
         return _cb
     def _worker():
         try:

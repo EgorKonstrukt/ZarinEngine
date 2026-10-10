@@ -25,19 +25,61 @@ _COMPONENT_MIME = "application/x-zpe-component"
 import os
 from core.config.editor_scale import scale, scale_xy
 
+_ICON_PIXMAP_CACHE: dict = {}
+_ICON_PATH_CACHE: dict = {}
+_ICON_QICON_CACHE: dict = {}
+def _cached_icon(cls) -> QIcon | None:
+    key = (getattr(cls, "__name__", ""), getattr(cls, "_icon", None))
+    hit = _ICON_QICON_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        pix = _get_component_icon_pixmap(cls, 16)
+    except Exception:
+        return None
+    try:
+        icon = QIcon(pix)
+    except Exception:
+        return None
+    _ICON_QICON_CACHE[key] = icon
+    return icon
 def _get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
-    icon_name = getattr(cls, '_icon', None)
-    if icon_name:
-        icons_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'core', 'components', 'icons')
-        icon_path = os.path.join(icons_dir, icon_name)
-        if os.path.exists(icon_path):
-            return QPixmap(icon_path).scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-    gizmo_dir = os.path.join(os.path.dirname(__file__), '..', 'gizmo_icons')
-    icon_path = os.path.join(gizmo_dir, f'{cls.__name__}.png')
-    if os.path.exists(icon_path):
-        return QPixmap(icon_path).scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-    r, g, b = getattr(cls, '_gizmo_icon_color', (140, 60, 200))
-    label = getattr(cls, '_gizmo_icon_label', '?')
+    cache_key = (getattr(cls, "__name__", ""), getattr(cls, "_icon", None), int(size))
+    cached = _ICON_PIXMAP_CACHE.get(cache_key)
+    if cached is not None and not cached.isNull():
+        return cached
+    resolved = _ICON_PATH_CACHE.get(cache_key)
+    if resolved is None and cache_key not in _ICON_PATH_CACHE:
+        icon_name = getattr(cls, "_icon", None)
+        found = ""
+        if icon_name:
+            icons_dir = os.path.join(os.path.dirname(__file__), "..", "..", "core", "components", "icons")
+            icon_path = os.path.join(icons_dir, icon_name)
+            try:
+                if os.path.exists(icon_path):
+                    found = icon_path
+            except Exception:
+                found = ""
+        if not found:
+            gizmo_dir = os.path.join(os.path.dirname(__file__), "..", "gizmo_icons")
+            alt = os.path.join(gizmo_dir, f"{getattr(cls, '__name__', '')}.png")
+            try:
+                if os.path.exists(alt):
+                    found = alt
+            except Exception:
+                found = ""
+        _ICON_PATH_CACHE[cache_key] = found
+        resolved = found
+    if resolved:
+        try:
+            pix = QPixmap(resolved).scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            if not pix.isNull():
+                _ICON_PIXMAP_CACHE[cache_key] = pix
+                return pix
+        except Exception:
+            pass
+    r, g, b = getattr(cls, "_gizmo_icon_color", (140, 60, 200))
+    label = getattr(cls, "_gizmo_icon_label", "?")
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     from PyQt6.QtGui import QPainter, QColor as QC, QFont as QF, QBrush as QB
@@ -53,6 +95,7 @@ def _get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
         p.setFont(f)
         p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, label[0].upper())
     p.end()
+    _ICON_PIXMAP_CACHE[cache_key] = pix
     return pix
 class HierarchyTree(QTreeWidget):
     entity_reparented = pyqtSignal(object, object)
@@ -393,45 +436,181 @@ class HierarchyPanel(QDockWidget):
             self._tree.clear()
             self._selected_entity = None
             return
-        self._last_render_version = getattr(self._scene, '_render_version', -1)
-        old_expanded = self._get_expanded_ids()
+        self._last_render_version = getattr(self._scene, "_render_version", -1)
+        try:
+            has_items = self._tree.topLevelItemCount() > 0
+        except Exception:
+            has_items = True
+        old_expanded: set = set()
+        if has_items:
+            try:
+                old_expanded = self._get_expanded_ids()
+            except Exception:
+                old_expanded = set()
         old_selection = self._selected_entity.id if self._selected_entity else None
         self._tree.blockSignals(True)
-        self._tree.clear()
-        filter_text = self._search.text().strip().lower()
-        root_entities = self._scene.get_root_entities()
-        live_ids = set(self._scene._entities.keys())
-        system_roots = [e for e in root_entities if e.system]
-        normal_roots = [e for e in root_entities if not e.system]
-        for entity in normal_roots:
-            if entity.id not in live_ids:
-                continue
-            self._add_entity_item(entity, self._tree.invisibleRootItem(), filter_text, live_ids)
-        if system_roots:
-            sys_item = QTreeWidgetItem(self._tree.invisibleRootItem())
-            sys_item.setText(0, "System")
-            sys_item.setFlags(sys_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            sys_item.setExpanded(True)
-            for entity in system_roots:
+        try:
+            self._tree.setUpdatesEnabled(False)
+        except Exception:
+            pass
+        try:
+            try:
+                self._tree.setUniformRowHeights(True)
+            except Exception:
+                pass
+            self._tree.clear()
+            filter_text = self._search.text().strip().lower()
+            root_entities = self._scene.get_root_entities()
+            live_ids = set(self._scene._entities.keys())
+            prefab_index: dict = {}
+            override_cache: dict = {}
+            try:
+                from core.ecs.prefab import Prefab as _Prefab
+                from core.ecs.prefab import PrefabLibrary as _PrefabLib
+                guids: set = set()
+                for e in self._scene._entities.values():
+                    g = getattr(e, "_prefab_guid", None)
+                    if g:
+                        guids.add(g)
+                for g in guids:
+                    try:
+                        ppath = _PrefabLib.path_for_guid(g)
+                        if not ppath:
+                            continue
+                        prefab = _PrefabLib.load(ppath)
+                        if prefab is None:
+                            continue
+                        flat: dict = {}
+                        stack = list(getattr(prefab, "roots_data", []) or [])
+                        while stack:
+                            item = stack.pop()
+                            try:
+                                sid = item.get("source_id") or item.get("id")
+                                if sid and sid not in flat:
+                                    flat[sid] = item
+                                kids = item.get("children") or []
+                                if kids:
+                                    stack.extend(kids)
+                            except Exception:
+                                continue
+                        prefab_index[g] = flat
+                    except Exception:
+                        continue
+            except Exception:
+                prefab_index = {}
+            system_roots = [e for e in root_entities if e.system]
+            normal_roots = [e for e in root_entities if not e.system]
+            root_item = self._tree.invisibleRootItem()
+            for entity in normal_roots:
                 if entity.id not in live_ids:
                     continue
-                self._add_entity_item(entity, sys_item, filter_text, live_ids)
-        self._restore_expanded(old_expanded)
-        if old_selection and old_selection in live_ids:
-            self._restore_selection(old_selection)
-        else:
-            self._selected_entity = None
-        self._tree.blockSignals(False)
-    def _add_entity_item(self, entity: Entity, parent_item, filter_text: str, live_ids: set) -> bool:
-        name = entity.name
+                self._add_entity_item(entity, root_item, filter_text, live_ids, prefab_index, override_cache)
+            if system_roots:
+                sys_item = QTreeWidgetItem(root_item)
+                sys_item.setText(0, "System")
+                sys_item.setFlags(sys_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                sys_item.setExpanded(True)
+                for entity in system_roots:
+                    if entity.id not in live_ids:
+                        continue
+                    self._add_entity_item(entity, sys_item, filter_text, live_ids, prefab_index, override_cache)
+            if old_expanded:
+                self._restore_expanded(old_expanded)
+            if old_selection and old_selection in live_ids:
+                self._restore_selection(old_selection)
+            else:
+                self._selected_entity = None
+        finally:
+            try:
+                self._tree.setUpdatesEnabled(True)
+            except Exception:
+                pass
+            self._tree.blockSignals(False)
+    def _prefab_mark(self, entity: Entity, prefab_index: dict, override_cache: dict) -> str:
+        try:
+            if not getattr(entity, "_prefab_guid", None):
+                return ""
+            eid = getattr(entity, "_id", None) or entity.id
+            hit = override_cache.get(eid)
+            if hit is not None:
+                return " *" if hit else ""
+            guid = entity._prefab_guid
+            src = entity._prefab_source_id
+            flat = prefab_index.get(guid)
+            if flat is None:
+                from core.ecs.prefab import Prefab
+                try:
+                    has = bool(Prefab.compute_overrides(entity))
+                except Exception:
+                    has = False
+                override_cache[eid] = has
+                return " *" if has else ""
+            pdata = flat.get(src) if src else None
+            if pdata is None:
+                override_cache[eid] = False
+                return ""
+            from core.ecs.prefab import Prefab as _P
+            try:
+                current = entity.serialize()
+                is_root = _P._is_root_of_instance(entity)
+                has = bool(_P._diff_entity(current, pdata, entity, is_root))
+            except Exception:
+                has = False
+            override_cache[eid] = has
+            return " *" if has else ""
+        except Exception:
+            return ""
+    def _add_entity_item(self, entity: Entity, parent_item, filter_text: str, live_ids: set, prefab_index: dict | None = None, override_cache: dict | None = None) -> bool:
+        base_name = entity.name
         if entity.is_prefab_instance:
-            from core.ecs.prefab import Prefab
-            overrides = Prefab.compute_overrides(entity)
-            override_mark = " *" if overrides else ""
-            name = f"{name}{override_mark}"
+            if prefab_index is None:
+                prefab_index = {}
+            if override_cache is None:
+                override_cache = {}
+            name = f"{base_name}{self._prefab_mark(entity, prefab_index, override_cache)}"
+        else:
+            name = base_name
+        if not filter_text:
+            item = QTreeWidgetItem(parent_item)
+            item.setText(0, name)
+            item.setData(0, Qt.ItemDataRole.UserRole, entity.id)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsUserCheckable)
+            try:
+                item.setCheckState(1, Qt.CheckState.Checked if entity.embed_resources else Qt.CheckState.Unchecked)
+            except Exception:
+                pass
+            item.setToolTip(1, "Embed entity resources into the scene file on save")
+            icon_cls = None
+            if len(entity._components) > 1:
+                for c in entity._components.values():
+                    tc = type(c)
+                    if getattr(tc, "_show_gizmo_icon", True) and tc.__name__ != "Transform":
+                        icon_cls = tc
+                        break
+            if icon_cls is not None:
+                try:
+                    icon = _cached_icon(icon_cls)
+                    if icon is not None:
+                        item.setIcon(0, icon)
+                except Exception:
+                    pass
+            if entity.is_prefab_instance:
+                item.setForeground(0, QBrush(QColor("#88ccff")))
+            if not entity.active:
+                try:
+                    gray = self._tree.palette().color(self._tree.palette().ColorRole.PlaceholderText)
+                    item.setForeground(0, QBrush(gray))
+                except Exception:
+                    pass
+            for child in entity.children:
+                if child.id not in live_ids:
+                    continue
+                self._add_entity_item(child, item, filter_text, live_ids, prefab_index, override_cache)
+            item.setExpanded(True)
+            return True
         children = [c for c in entity.children if c.id in live_ids]
         has_visible_child = any(self._entity_matches_filter(c, filter_text, live_ids) for c in children)
-        matches_filter = (not filter_text) or (filter_text in name.lower()) or has_visible_child
+        matches_filter = (filter_text in name.lower()) or has_visible_child
         if not matches_filter:
             return False
         item = QTreeWidgetItem(parent_item)
@@ -442,20 +621,26 @@ class HierarchyPanel(QDockWidget):
         item.setToolTip(1, "Embed entity resources into the scene file on save")
         icon_cls = None
         if len(entity._components) > 1:
-            for c in entity.get_all_components():
-                if getattr(type(c), '_show_gizmo_icon', True) and type(c).__name__ != "Transform":
-                    icon_cls = type(c)
+            for c in entity._components.values():
+                tc = type(c)
+                if getattr(tc, "_show_gizmo_icon", True) and tc.__name__ != "Transform":
+                    icon_cls = tc
                     break
-        if icon_cls:
-            item.setIcon(0, QIcon(_get_component_icon_pixmap(icon_cls, 16)))
+        if icon_cls is not None:
+            try:
+                icon = _cached_icon(icon_cls)
+                if icon is not None:
+                    item.setIcon(0, icon)
+            except Exception:
+                pass
         if entity.is_prefab_instance:
             item.setForeground(0, QBrush(QColor("#88ccff")))
         if not entity.active:
             gray = self._tree.palette().color(self._tree.palette().ColorRole.PlaceholderText)
             item.setForeground(0, QBrush(gray))
-        child_filter = "" if (has_visible_child and filter_text) else filter_text
+        child_filter = "" if has_visible_child else filter_text
         for child in children:
-            self._add_entity_item(child, item, child_filter, live_ids)
+            self._add_entity_item(child, item, child_filter, live_ids, prefab_index, override_cache)
         item.setExpanded(True)
         return True
     def _entity_matches_filter(self, entity: Entity, filter_text: str, live_ids: set = None) -> bool:

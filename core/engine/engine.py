@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import gc
 import time
 import json
 import os
@@ -157,6 +158,12 @@ class Engine:
             poster(fn)
         else:
             fn()
+    @staticmethod
+    def _settle_scene_heap():
+        try:
+            gc.freeze()
+        except Exception:
+            pass
     def _persist_scene_data(self, data: dict, path: str, level: int, task_id: str,
                             existing_storage: Optional[dict] = None) -> dict:
         def _cb(done: int, total_: int, name: str) -> None:
@@ -210,9 +217,18 @@ class Engine:
                          on_done: Optional[Any] = None):
         task_id = "scene:load"
         task_start(task_id, f"Loading scene {os.path.basename(path)}...", fraction=0.0, total=1.0)
+        throttle_state = [0.0, -1.0]
         def _cb(done: int, total_: int, name: str) -> None:
-            frac = None if total_ <= 0 else done / max(1, total_)
-            task_update(task_id, fraction=frac, detail=name)
+            if total_ <= 0:
+                return
+            frac = done / max(1, total_)
+            now = time.monotonic()
+            last_t = throttle_state[0]
+            last_f = throttle_state[1]
+            if done >= total_ or (frac - last_f) >= 0.02 or (now - last_t) >= 0.08:
+                throttle_state[0] = now
+                throttle_state[1] = frac
+                task_update(task_id, fraction=frac, detail=name)
         def _worker(snapshot: dict | None):
             if snapshot is None:
                 try:
@@ -240,21 +256,42 @@ class Engine:
                     task_complete(task_id)
                 self._defer_gui(_err)
                 return
-            self._defer_gui(lambda: self._apply_loaded(snapshot, embedded, path, task_id, on_done))
+            gc_was_enabled = gc.isenabled()
+            if gc_was_enabled:
+                gc.disable()
+            try:
+                new_scene = Scene.deserialize(snapshot, self._component_registry)
+                new_scene.embedded_resources = embedded
+                new_scene.path = path
+                new_scene.name = os.path.splitext(os.path.basename(path))[0]
+                self._ensure_shadow_system(new_scene)
+                new_scene.mark_clean()
+            except Exception as ex:
+                msg = str(ex)
+                Logger.error(f"Failed to load scene '{path}': {ex}", ex)
+                def _err():
+                    from core.foundation import progress
+                    progress.notify_error(f"Failed to load scene: {msg}")
+                    task_complete(task_id)
+                self._defer_gui(_err)
+                return
+            finally:
+                if gc_was_enabled:
+                    gc.enable()
+            self._defer_gui(lambda: self._swap_loaded(new_scene, path, task_id, on_done))
         threading.Thread(target=_worker, args=(data,), name="scene-load-worker", daemon=True).start()
-    def _apply_loaded(self, data: dict, embedded: dict, path: str, task_id: str,
-                      on_done: Optional[Any] = None):
+    def _swap_loaded(self, new_scene: Scene, path: str, task_id: str,
+                     on_done: Optional[Any] = None):
         try:
-            if self._scene:
-                self._plugin_manager.notify_scene_unloaded(self._scene)
+            old = None
+            with self._scene_lock:
+                old = self._scene
+            if old is not None:
+                self._plugin_manager.notify_scene_unloaded(old)
             from core.components.rendering.postfx.graphics_effect import GraphicsEffect
             GraphicsEffect.cleanup_registry()
-            self._scene = Scene.deserialize(data, self._component_registry)
-            self._scene.embedded_resources = embedded
-            self._scene.path = path
-            self._scene.name = os.path.splitext(os.path.basename(path))[0]
-            self._ensure_shadow_system(self._scene)
-            self._scene.mark_clean()
+            with self._scene_lock:
+                self._scene = new_scene
             self._plugin_manager.notify_scene_loaded(self._scene)
             Logger.info(f"Scene loaded: {path}")
             self._emit_event("scene_loaded", self._scene)
@@ -262,6 +299,57 @@ class Engine:
             Logger.error(f"Failed to load scene '{path}': {e}", e)
             return None
         finally:
+            Engine._settle_scene_heap()
+            task_complete(task_id)
+        if callable(on_done):
+            on_done(self._scene)
+    def _apply_loaded(self, data: dict, embedded: dict, path: str, task_id: str,
+                      on_done: Optional[Any] = None):
+        try:
+            if isinstance(data, Scene):
+                new_scene = data
+                new_scene.embedded_resources = embedded
+                new_scene.path = path
+                old = None
+                with self._scene_lock:
+                    old = self._scene
+                if old is not None:
+                    self._plugin_manager.notify_scene_unloaded(old)
+                from core.components.rendering.postfx.graphics_effect import GraphicsEffect as _GE
+                _GE.cleanup_registry()
+                with self._scene_lock:
+                    self._scene = new_scene
+                self._plugin_manager.notify_scene_loaded(self._scene)
+                Logger.info(f"Scene loaded: {path}")
+                self._emit_event("scene_loaded", self._scene)
+            else:
+                gc_enabled = gc.isenabled()
+                if gc_enabled:
+                    gc.disable()
+                try:
+                    if self._scene:
+                        self._plugin_manager.notify_scene_unloaded(self._scene)
+                    from core.components.rendering.postfx.graphics_effect import GraphicsEffect
+                    GraphicsEffect.cleanup_registry()
+                    new_scene = Scene.deserialize(data, self._component_registry)
+                    new_scene.embedded_resources = embedded
+                    new_scene.path = path
+                    new_scene.name = os.path.splitext(os.path.basename(path))[0]
+                    self._ensure_shadow_system(new_scene)
+                    new_scene.mark_clean()
+                finally:
+                    if gc_enabled:
+                        gc.enable()
+                self._plugin_manager.notify_scene_loaded(new_scene)
+                with self._scene_lock:
+                    self._scene = new_scene
+                Logger.info(f"Scene loaded: {path}")
+                self._emit_event("scene_loaded", new_scene)
+        except Exception as e:
+            Logger.error(f"Failed to load scene '{path}': {e}", e)
+            return None
+        finally:
+            Engine._settle_scene_heap()
             task_complete(task_id)
         if callable(on_done):
             on_done(self._scene)
@@ -276,25 +364,103 @@ class Engine:
                 continue
             for comp in cl:
                 comps.append(comp)
-        if len(comps) <= 32:
-            for comp in comps:
-                self._resolve_component_paths(comp, root)
+        if not comps:
             return
-        import concurrent.futures
-        import os as _os
-        workers = min(8, max(2, _os.cpu_count() or 4))
-        chunk = (len(comps) + workers - 1) // workers
-        cache: dict = {}
-        def task(part):
-            for c in part:
-                self._resolve_component_paths(c, root, cache)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-            futs = [ex.submit(task, comps[i:i+chunk]) for i in range(0, len(comps), chunk)]
-            for fu in concurrent.futures.as_completed(futs):
-                try:
-                    fu.result()
-                except Exception:
-                    pass
+        uniq: set[str] = set()
+        for comp in comps:
+            for key, val in comp.items():
+                if key in _PATH_FIELDS and val and isinstance(val, str):
+                    uniq.add(val)
+            mats = comp.get("materials")
+            if isinstance(mats, list):
+                for entry in mats:
+                    if isinstance(entry, dict):
+                        pv = entry.get("path")
+                        if pv and isinstance(pv, str):
+                            uniq.add(pv)
+            elif isinstance(mats, dict):
+                for entry in mats.values():
+                    if isinstance(entry, dict):
+                        pv = entry.get("path")
+                        if pv and isinstance(pv, str):
+                            uniq.add(pv)
+        if not uniq:
+            return
+        root_norm = os.path.normpath(root) if root else ""
+        resolved: dict[str, str] = {}
+        def _resolve_one(val: str) -> str:
+            try:
+                if os.path.exists(val):
+                    return val
+                candidate = os.path.normpath(os.path.join(root_norm, val)) if root_norm else os.path.normpath(val)
+                if os.path.exists(candidate):
+                    return candidate.replace("\\", "/")
+                if len(val) > 1 and val[1] == ":":
+                    parts = val.replace("\\", "/").split("/")
+                    for i in range(len(parts)):
+                        sub = "/".join(parts[i:])
+                        if sub:
+                            c = os.path.normpath(os.path.join(root_norm, sub)) if root_norm else os.path.normpath(sub)
+                            if os.path.exists(c):
+                                return c.replace("\\", "/")
+                return val
+            except Exception:
+                return val
+        uniq_list = list(uniq)
+        if len(uniq_list) > 64:
+            import concurrent.futures as _cf
+            import os as _os
+            workers = min(8, max(2, (_os.cpu_count() or 4)))
+            chunk = (len(uniq_list) + workers - 1) // workers
+            def _chunk_task(part):
+                out = []
+                for v in part:
+                    out.append((v, _resolve_one(v)))
+                return out
+            with _cf.ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = [ex.submit(_chunk_task, uniq_list[i:i + chunk]) for i in range(0, len(uniq_list), chunk)]
+                for fu in _cf.as_completed(futs):
+                    try:
+                        for v, r in fu.result():
+                            resolved[v] = r
+                    except Exception:
+                        pass
+        else:
+            for val in uniq_list:
+                resolved[val] = _resolve_one(val)
+        for comp in comps:
+            for key, val in list(comp.items()):
+                if key in _PATH_FIELDS and val and isinstance(val, str):
+                    nv = resolved.get(val)
+                    if nv is not None and nv != val:
+                        comp[key] = nv
+            mats = comp.get("materials")
+            if isinstance(mats, list):
+                dirty = False
+                rebuilt = []
+                for entry in mats:
+                    if isinstance(entry, dict) and isinstance(entry.get("path"), str) and entry["path"]:
+                        nv = resolved.get(entry["path"])
+                        if nv is not None and nv != entry["path"]:
+                            entry = dict(entry)
+                            entry["path"] = nv
+                            dirty = True
+                    rebuilt.append(entry)
+                if dirty:
+                    comp["materials"] = rebuilt
+            elif isinstance(mats, dict):
+                dirty = False
+                rebuilt_d = {}
+                for k, entry in mats.items():
+                    if isinstance(entry, dict) and isinstance(entry.get("path"), str) and entry["path"]:
+                        nv = resolved.get(entry["path"])
+                        if nv is not None and nv != entry["path"]:
+                            entry = dict(entry)
+                            entry["path"] = nv
+                            dirty = True
+                    rebuilt_d[k] = entry
+                if dirty:
+                    comp["materials"] = rebuilt_d
     def relativize_scene_paths(self, data: dict):
         root = self.project_root
         entities = data.get("entities", {})
@@ -306,25 +472,73 @@ class Engine:
                 continue
             for comp in cl:
                 comps.append(comp)
-        if len(comps) <= 32:
-            for comp in comps:
-                self._relativize_component_paths(comp, root)
+        if not comps:
             return
-        import concurrent.futures
-        import os as _os2
-        workers = min(8, max(2, _os2.cpu_count() or 4))
-        chunk = (len(comps) + workers - 1) // workers
-        cache: dict = {}
-        def task(part):
-            for c in part:
-                self._relativize_component_paths(c, root, cache)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-            futs = [ex.submit(task, comps[i:i+chunk]) for i in range(0, len(comps), chunk)]
-            for fu in concurrent.futures.as_completed(futs):
+        uniq: set[str] = set()
+        for comp in comps:
+            for key, val in comp.items():
+                if key in _PATH_FIELDS and val and isinstance(val, str):
+                    uniq.add(val)
+            mats = comp.get("materials")
+            if isinstance(mats, list):
+                for entry in mats:
+                    if isinstance(entry, dict):
+                        pv = entry.get("path")
+                        if pv and isinstance(pv, str):
+                            uniq.add(pv)
+            elif isinstance(mats, dict):
+                for entry in mats.values():
+                    if isinstance(entry, dict):
+                        pv = entry.get("path")
+                        if pv and isinstance(pv, str):
+                            uniq.add(pv)
+        if not uniq:
+            return
+        root_norm = os.path.normpath(root) if root else ""
+        mapped: dict[str, str] = {}
+        for val in uniq:
+            if not val:
+                mapped[val] = ""
+            elif not os.path.isabs(val):
+                mapped[val] = val.replace("\\", "/")
+            else:
                 try:
-                    fu.result()
-                except Exception:
-                    pass
+                    mapped[val] = os.path.relpath(val, root_norm if root_norm else ".").replace("\\", "/")
+                except ValueError:
+                    mapped[val] = val
+        for comp in comps:
+            for key, val in list(comp.items()):
+                if key in _PATH_FIELDS and val and isinstance(val, str):
+                    nv = mapped.get(val)
+                    if nv is not None and nv != val:
+                        comp[key] = nv
+            mats = comp.get("materials")
+            if isinstance(mats, list):
+                dirty = False
+                rebuilt = []
+                for entry in mats:
+                    if isinstance(entry, dict) and isinstance(entry.get("path"), str) and entry["path"]:
+                        nv = mapped.get(entry["path"])
+                        if nv is not None and nv != entry["path"]:
+                            entry = dict(entry)
+                            entry["path"] = nv
+                            dirty = True
+                    rebuilt.append(entry)
+                if dirty:
+                    comp["materials"] = rebuilt
+            elif isinstance(mats, dict):
+                dirty = False
+                rebuilt_d = {}
+                for k, entry in mats.items():
+                    if isinstance(entry, dict) and isinstance(entry.get("path"), str) and entry["path"]:
+                        nv = mapped.get(entry["path"])
+                        if nv is not None and nv != entry["path"]:
+                            entry = dict(entry)
+                            entry["path"] = nv
+                            dirty = True
+                    rebuilt_d[k] = entry
+                if dirty:
+                    comp["materials"] = rebuilt_d
     @staticmethod
     def _resolve_component_paths(comp: dict, root: str, cache: dict | None = None):
         for key, val in comp.items():
@@ -436,6 +650,9 @@ class Engine:
         Logger.info("Zarin Engine initialized.")
     def load_scene(self, path: str) -> Optional[Scene]:
         task_start("scene:load", f"Loading scene {os.path.basename(path)}...")
+        gc_enabled = gc.isenabled()
+        if gc_enabled:
+            gc.disable()
         try:
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -461,9 +678,15 @@ class Engine:
                 Logger.error(f"Failed to load scene '{path}': {e}", e)
                 return None
         finally:
+            if gc_enabled:
+                gc.enable()
+            Engine._settle_scene_heap()
             task_complete("scene:load")
     def load_scene_from_data(self, data: dict) -> Optional[Scene]:
         task_start("scene:load_data", "Loading scene data...")
+        gc_enabled = gc.isenabled()
+        if gc_enabled:
+            gc.disable()
         try:
             try:
                 if self._scene:
@@ -481,6 +704,9 @@ class Engine:
                 Logger.error(f"Failed to load synced scene: {e}", e)
                 return None
         finally:
+            if gc_enabled:
+                gc.enable()
+            Engine._settle_scene_heap()
             task_complete("scene:load_data")
     def save_scene(self, path: Optional[str] = None):
         if not self._scene: return
@@ -516,6 +742,7 @@ class Engine:
         self._plugin_manager.notify_scene_loaded(self._scene)
         self._emit_event("scene_loaded", self._scene)
         Logger.info(f"New scene created: {name}")
+        Engine._settle_scene_heap()
         return self._scene
     def _ensure_shadow_system(self, scene):
         try:

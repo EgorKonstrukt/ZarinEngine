@@ -470,27 +470,58 @@ def extract_embedded_resources(data: dict, root: str, cache_mode: str = "project
     flagged_ids = _flagged_entity_ids(data, entities)
     needed_keys: dict[str, list[tuple]] = {}
     bname_index: dict[str, str] = {}
+    norm_index: dict[str, str] = {}
+    storage_set = set(storage.keys())
     for k, e in storage.items():
         try:
             dg = e.get("digest")
             nm = _sanitize_name(str(e.get("name") or os.path.basename(k)))
             if dg:
                 bname_index[f"{dg}_{nm}"] = k
-            bname_index[nm] = k
+            if nm not in bname_index:
+                bname_index[nm] = k
+            nk = _norm(k).lstrip("/")
+            if nk not in norm_index:
+                norm_index[nk] = k
+            lk = nk.lower()
+            if lk not in norm_index:
+                norm_index[lk] = k
         except Exception:
             pass
+    step = max(1, total // 100)
     for ed, comp, path, val in fields:
         if ed.get("id") not in flagged_ids:
             done += 1
+            if done % step == 0 or done >= total:
+                progress_cb(done, total, "")
             continue
-        storage_key = next((k for k in _key_candidates(val, root) if k in storage), None)
-        if storage_key is None:
-            bname = _sanitize_name(os.path.basename(_norm(val).rstrip("/")))
-            storage_key = bname_index.get(bname)
+        storage_key = None
+        if val in storage_set:
+            storage_key = val
+        else:
+            vn = _norm(val).lstrip("/")
+            hit = norm_index.get(vn)
+            if hit is None:
+                hit = norm_index.get(vn.lower())
+            if hit is None and "/" in vn:
+                parts = vn.split("/")
+                for i in range(1, len(parts)):
+                    sub = "/".join(parts[i:])
+                    hit = norm_index.get(sub)
+                    if hit is None:
+                        hit = norm_index.get(sub.lower())
+                    if hit is not None:
+                        break
+            if hit is not None:
+                storage_key = hit
+            else:
+                bname = _sanitize_name(os.path.basename(vn.rstrip("/")))
+                storage_key = bname_index.get(bname)
         if storage_key is not None:
             needed_keys.setdefault(storage_key, []).append((ed, comp, path, val))
         done += 1
-        progress_cb(done, total, os.path.basename(str(val)))
+        if done % step == 0 or done >= total:
+            progress_cb(done, total, os.path.basename(str(val)))
     if needed_keys:
         keys = list(needed_keys.keys())
         ready: dict[str, str] = {}
@@ -533,14 +564,16 @@ def extract_embedded_resources(data: dict, root: str, cache_mode: str = "project
                     except OSError:
                         continue
                 ready[storage_key] = _norm(os.path.abspath(path))
+        rewritten: set[str] = set()
         for storage_key, usages in needed_keys.items():
             cache_path = ready.get(storage_key)
             if not cache_path:
                 continue
             for ed, comp, pth, val in usages:
                 _set_nested(comp, pth, cache_path)
-                if _is_material_file(storage_key):
-                    _rewrite_material_textures(cache_path, storage, root, cache_dir)
+            if _is_material_file(storage_key) and cache_path not in rewritten:
+                rewritten.add(cache_path)
+                _rewrite_material_textures(cache_path, storage, root, cache_dir)
     data.pop("embedded_resources", None)
     return storage
 
@@ -554,11 +587,54 @@ def _rewrite_material_textures(mat_cache_path: str, storage: dict, root: str, ca
     textures = mat.get("textures")
     if not isinstance(textures, dict) or not textures:
         return
+    norm_index: dict[str, str] = {}
+    bnames: dict[str, str] = {}
+    try:
+        for k, e in storage.items():
+            nk = _norm(k).lstrip("/")
+            if nk not in norm_index:
+                norm_index[nk] = k
+            lk = nk.lower()
+            if lk not in norm_index:
+                norm_index[lk] = k
+            try:
+                nm = _sanitize_name(str(e.get("name") or os.path.basename(k)))
+                if nm not in bnames:
+                    bnames[nm] = k
+            except Exception:
+                pass
+    except Exception:
+        pass
+    storage_set = set(storage.keys())
     changed = False
     for slot, tex in textures.items():
         if not isinstance(tex, str) or not tex:
             continue
-        storage_key = next((k for k in _key_candidates(tex, root) if k in storage), None)
+        storage_key = None
+        if tex in storage_set:
+            storage_key = tex
+        else:
+            vn = _norm(tex).lstrip("/")
+            hit = norm_index.get(vn)
+            if hit is None:
+                hit = norm_index.get(vn.lower())
+            if hit is None and "/" in vn:
+                parts = vn.split("/")
+                for i in range(1, len(parts)):
+                    sub = "/".join(parts[i:])
+                    hit = norm_index.get(sub)
+                    if hit is None:
+                        hit = norm_index.get(sub.lower())
+                    if hit is not None:
+                        break
+            if hit is not None:
+                storage_key = hit
+            else:
+                try:
+                    bname = _sanitize_name(os.path.basename(vn.rstrip("/")))
+                    storage_key = bnames.get(bname)
+                except Exception:
+                    storage_key = None
         if storage_key is None:
             continue
         tex_cache = _cache_path_for(storage_key, storage, cache_dir)

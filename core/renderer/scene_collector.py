@@ -167,6 +167,7 @@ class SceneCollectorMixin:
         shadow_list = snap.shadow_renderables
         splitext = os.path.splitext
         basename = os.path.basename
+        meta_lut: dict[str, tuple] = {}
         for ent in scene.get_entities_with_component(MeshFilter):
             if not ent._active:
                 continue
@@ -191,7 +192,10 @@ class SceneCollectorMixin:
             mesh_name = mf.mesh_name
             mesh_path = mf.mesh_path or ""
             if mesh_path:
-                _meta = sync_meta(mesh_path)
+                _meta = meta_lut.get(mesh_path)
+                if _meta is None:
+                    _meta = sync_meta(mesh_path)
+                    meta_lut[mesh_path] = _meta
                 scale, cp, fuvs = _meta[0], _meta[1], _meta[2]
             else:
                 scale, cp, fuvs = 1.0, False, False
@@ -239,7 +243,10 @@ class SceneCollectorMixin:
             mesh_name = smr.mesh_name
             mesh_path = smr.mesh_path or ""
             if mesh_path:
-                _meta = self._sync_import_meta(mesh_path)
+                _meta = meta_lut.get(mesh_path)
+                if _meta is None:
+                    _meta = self._sync_import_meta(mesh_path)
+                    meta_lut[mesh_path] = _meta
                 scale, cp, fuvs = _meta[0], _meta[1], _meta[2]
             else:
                 scale, cp, fuvs = 1.0, False, False

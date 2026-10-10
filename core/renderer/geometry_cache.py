@@ -36,31 +36,88 @@ class GeometryCacheMixin:
 
 
     def _resolve_import_meta_path(self, mesh_path: str) -> str:
-        direct = mesh_path + ".import"
-        if os.path.exists(direct):
-            return direct
+        try:
+            path_cache = self._import_meta_path_cache
+        except Exception:
+            path_cache = None
+            try:
+                self._import_meta_path_cache = path_cache = {}
+            except Exception:
+                pass
         eng = None
         try:
             from core.engine.engine import Engine
             eng = Engine.instance()
         except Exception:
             pass
-        root = (eng.project_root if eng and getattr(eng, "project_root", None) else os.getcwd())
+        try:
+            root = (eng.project_root if eng and getattr(eng, "project_root", None) else os.getcwd())
+        except Exception:
+            root = os.getcwd()
+        if path_cache is not None:
+            hit = path_cache.get(mesh_path)
+            if isinstance(hit, tuple) and len(hit) == 2 and hit[0] == root:
+                return hit[1]
+        direct = mesh_path + ".import"
+        if os.path.exists(direct):
+            if path_cache is not None:
+                try:
+                    path_cache[mesh_path] = (root, direct)
+                except Exception:
+                    pass
+            return direct
         base = os.path.basename(mesh_path)
-        candidates = [os.path.join(root, mesh_path + ".import")]
+        cand = os.path.join(root, mesh_path + ".import")
+        if os.path.exists(cand):
+            if path_cache is not None:
+                try:
+                    path_cache[mesh_path] = (root, cand)
+                except Exception:
+                    pass
+            return cand
         for sub in ["", "assets/", "assets/models/", "models/"]:
-            candidates.append(os.path.join(root, sub, mesh_path + ".import"))
-            candidates.append(os.path.join(root, sub, base + ".import"))
-        for c in candidates:
-            if os.path.exists(c):
-                return c
+            c1 = os.path.join(root, sub, mesh_path + ".import")
+            if os.path.exists(c1):
+                if path_cache is not None:
+                    try:
+                        path_cache[mesh_path] = (root, c1)
+                    except Exception:
+                        pass
+                return c1
+            c2 = os.path.join(root, sub, base + ".import")
+            if os.path.exists(c2):
+                if path_cache is not None:
+                    try:
+                        path_cache[mesh_path] = (root, c2)
+                    except Exception:
+                        pass
+                return c2
+        if path_cache is not None:
+            try:
+                path_cache[mesh_path] = (root, direct)
+            except Exception:
+                pass
         return direct
 
 
     def _sync_import_meta(self, mesh_path: str) -> tuple:
         if not mesh_path:
             return (1.0, False, True, 30.0, True, True)
-        import_cache = self._resolve_import_meta_path(mesh_path)
+        try:
+            path_cache = self._import_meta_path_cache
+        except Exception:
+            path_cache = {}
+            try:
+                self._import_meta_path_cache = path_cache
+            except Exception:
+                pass
+        import_cache = path_cache.get(mesh_path) if isinstance(path_cache, dict) else None
+        if isinstance(import_cache, tuple) and len(import_cache) == 2:
+            import_cache = import_cache[1]
+        if import_cache is None or not isinstance(import_cache, str):
+            import_cache = self._resolve_import_meta_path(mesh_path)
+            if isinstance(import_cache, tuple) and len(import_cache) == 2:
+                import_cache = import_cache[1]
         try:
             mtime = os.path.getmtime(import_cache) if os.path.exists(import_cache) else -1.0
         except OSError:
@@ -69,7 +126,7 @@ class GeometryCacheMixin:
         if cached_mtime == mtime and mesh_path in self._import_meta_cache:
             return self._import_meta_cache[mesh_path]
         self._import_meta_mtime[mesh_path] = mtime
-        if os.path.exists(import_cache):
+        if mtime >= 0.0:
             try:
                 with open(import_cache) as _f:
                     _s = json.load(_f)
@@ -100,9 +157,16 @@ class GeometryCacheMixin:
 
     def _preload_import_meta(self, scene):
         paths = set()
-        for ent in scene.get_entities_with_component(MeshFilter):
-            mf = ent.get_component(MeshFilter)
-            if mf and mf.mesh_path:
+        try:
+            ents = scene.get_entities_with_component(MeshFilter)
+        except Exception:
+            return
+        for ent in ents:
+            try:
+                mf = ent.get_component(MeshFilter)
+            except Exception:
+                continue
+            if mf and getattr(mf, "mesh_path", ""):
                 paths.add(mf.mesh_path)
         for mesh_path in paths:
             self._sync_import_meta(mesh_path)

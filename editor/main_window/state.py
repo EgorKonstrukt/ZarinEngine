@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import base64
@@ -276,17 +277,28 @@ def _read_state_data():
 def _load_scene_file(eng, path: str):
     from core.ecs.ecs import Scene, ComponentRegistry
     from core.ecs.embedded_resources import extract_embedded_resources
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    data["_source"] = path
-    embedded = extract_embedded_resources(data, eng.project_root, eng._embedded_cache_mode())
-    eng.resolve_scene_paths(data)
-    scene = Scene.deserialize(data, ComponentRegistry)
-    scene.embedded_resources = embedded
-    scene.path = path
-    scene.name = os.path.splitext(os.path.basename(path))[0]
-    scene.mark_clean()
-    return scene
+    was_enabled = gc.isenabled()
+    if was_enabled:
+        gc.disable()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["_source"] = path
+        embedded = extract_embedded_resources(data, eng.project_root, eng._embedded_cache_mode())
+        eng.resolve_scene_paths(data)
+        scene = Scene.deserialize(data, ComponentRegistry)
+        scene.embedded_resources = embedded
+        scene.path = path
+        scene.name = os.path.splitext(os.path.basename(path))[0]
+        scene.mark_clean()
+        return scene
+    finally:
+        if was_enabled:
+            gc.enable()
+        try:
+            gc.freeze()
+        except Exception:
+            pass
 
 
 def _migrate_snapshot_to_pkl(snapshot_path: str, data: dict) -> str:

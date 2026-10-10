@@ -343,6 +343,10 @@ class RendererConfigMixin:
         self._snap_scene = None
         self._release_morph_cache()
         self._snap_morph_sig = ()
+        try:
+            self._shadow_warmup = 2
+        except Exception:
+            pass
 
 
     def release_all_caches(self):
