@@ -632,6 +632,57 @@ def _render_cubemap_from_sky(ctx: moderngl.Context, sky_prog: moderngl.Program,
 
 _PROC_SKY_IBL_CACHE: "OrderedDict[str, SkyIbl]" = OrderedDict()
 _PROC_SKY_IBL_CACHE_MAX = 8
+_IBL_SLICE_BUDGET_MS = 3.0
+_IBL_JOBS: dict[int, tuple] = {}
+_IBL_SRC_POOL: dict = {}
+_IBL_SRC_POOL_MAX = 8
+
+
+def _take_pooled_src_cube(ctx, res):
+    try:
+        lst = _IBL_SRC_POOL.get((id(ctx), res))
+    except Exception:
+        return None
+    if not lst:
+        return None
+    while lst:
+        try:
+            cent, cube = lst.pop()
+        except Exception:
+            return None
+        try:
+            alive = cent is ctx
+        except Exception:
+            alive = False
+        if alive and cube is not None:
+            return cube
+        try:
+            if cube is not None:
+                cube.release()
+        except Exception:
+            pass
+    return None
+
+
+def _give_pooled_src_cube(ctx, res, cube):
+    if cube is None:
+        return
+    try:
+        if len(_IBL_SRC_POOL) >= _IBL_SRC_POOL_MAX:
+            _IBL_SRC_POOL.pop(next(iter(_IBL_SRC_POOL)), None)
+        lst = _IBL_SRC_POOL.get((id(ctx), res))
+        if lst is None:
+            lst = []
+            _IBL_SRC_POOL[(id(ctx), res)] = lst
+        if len(lst) < 2:
+            lst.append((ctx, cube))
+        else:
+            try:
+                cube.release()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 _PROC_SUN_DEFAULT_DIR = np.array([0.0, -0.3, -1.0], dtype=np.float32)
 _PROC_SUN_DEFAULT_COLOR = np.array([1.0, 0.95, 0.85], dtype=np.float32)
@@ -667,6 +718,403 @@ def _ang_deg(a, b):
 
 def _quant(v, ndig: int):
     return tuple(round(float(x), ndig) for x in np.asarray(v).ravel())
+
+
+_IBL_SLICE_BUDGET_MS = 3.0
+_IBL_JOBS: dict[int, tuple] = {}
+
+
+def _note_ibl_regen(cid: int, key: str, now: float, true_dir, ibl, settings_ident):
+    try:
+        _PROC_SKY_IBL_CACHE[key] = ibl
+    except Exception:
+        pass
+    try:
+        _prev = _PROC_LAST_GEN.get(cid)
+        _pstreak = 0
+        if _prev is not None and len(_prev) >= 6:
+            try:
+                _gap = now - _prev[5]
+            except Exception:
+                _gap = 99.0
+            try:
+                _ps = int(_prev[4])
+            except Exception:
+                _ps = 0
+            if _gap < _PROC_REGEN_STREAK_WINDOW:
+                _pstreak = _ps + 1
+                if _pstreak > 8:
+                    _pstreak = 8
+        _PROC_LAST_GEN[cid] = (now, true_dir, ibl, settings_ident, _pstreak, now)
+    except Exception:
+        try:
+            _PROC_LAST_GEN[cid] = (now, true_dir, ibl, settings_ident, 0, now)
+        except Exception:
+            pass
+    try:
+        while len(_PROC_SKY_IBL_CACHE) > _PROC_SKY_IBL_CACHE_MAX:
+            _old_key, _old = _PROC_SKY_IBL_CACHE.popitem(last=False)
+            try:
+                _old.release()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _release_ibl_job(job):
+    try:
+        ctx = job.get("ctx")
+        res = job.get("res", 128)
+    except Exception:
+        ctx = None
+        res = 128
+    try:
+        src = job.get("cube")
+    except Exception:
+        src = None
+    if src is not None and ctx is not None:
+        try:
+            _give_pooled_src_cube(ctx, res, src)
+        except Exception:
+            pass
+    else:
+        try:
+            if src is not None:
+                src.release()
+        except Exception:
+            pass
+    try:
+        for tex in (job.get("pref"), job.get("irr")):
+            if tex is not None:
+                try:
+                    tex.release()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    try:
+        for owned in (job.get("sky_res"), job.get("face_res"), job.get("irr_own")):
+            if not owned:
+                continue
+            for obj in owned:
+                try:
+                    obj.release()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    except Exception:
+        pass
+
+
+def _create_ibl_job(ctx, prog, material_path, res, sun_dir, sun_color, sun_intensity,
+                    settings_key, key, true_dir, prev):
+    from core.maths.math3d import Mat4, Vec3
+    try:
+        cube = _take_pooled_src_cube(ctx, res)
+    except Exception:
+        cube = None
+    if cube is None:
+        try:
+            cube = ctx.texture_cube((res, res), 4, dtype="f4")
+            cube.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            cube.repeat_x = False
+            cube.repeat_y = False
+        except Exception:
+            return None
+    try:
+        pref = ctx.texture_cube((res, res), 4, dtype="f4")
+        pref.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        pref.repeat_x = False
+        pref.repeat_y = False
+        _allocate_cube_mip_levels(pref, res, _PREFILTER_MAX_LOD)
+    except Exception:
+        try:
+            cube.release()
+        except Exception:
+            pass
+        return None
+    try:
+        irr_res = max(32, res // 4)
+        irr = ctx.texture_cube((irr_res, irr_res), 4, dtype="f4")
+        irr.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        irr.repeat_x = False
+        irr.repeat_y = False
+    except Exception:
+        try:
+            cube.release()
+        except Exception:
+            pass
+        try:
+            pref.release()
+        except Exception:
+            pass
+        return None
+    try:
+        rec = _get_scratch(ctx)
+        sky_vao = None
+        sky_res = []
+        if rec is not None:
+            try:
+                sent = _scratch_sky_mesh(ctx, rec, prog)
+                if sent is not None:
+                    sky_vao = sent[0]
+            except Exception:
+                sky_vao = None
+        if sky_vao is None:
+            from core.renderer.meshes import make_cube_mesh
+            mesh = make_cube_mesh()
+            vbo = ctx.buffer(mesh.vertices.tobytes())
+            ibo = ctx.buffer(mesh.indices.astype(np.uint32).tobytes())
+            sky_vao = ctx.vertex_array(prog, [(vbo, "3f", "in_position")], ibo)
+            sky_res = [sky_vao, vbo, ibo]
+        fprogs = _get_ibl_progs(ctx)
+        face_vao = None
+        face_res = []
+        if rec is not None:
+            try:
+                fent = _scratch_face_vao(ctx, rec, fprogs[1])
+                if fent is not None:
+                    face_vao = fent[0]
+            except Exception:
+                face_vao = None
+        if face_vao is None:
+            fvao, fvbo = _make_face_vao(ctx, fprogs[1])
+            face_vao = fvao
+            face_res = [fvao, fvbo]
+        irr_vao = None
+        irr_own = []
+        if rec is not None:
+            try:
+                ient = _scratch_face_vao(ctx, rec, fprogs[2])
+                if ient is not None:
+                    irr_vao = ient[0]
+            except Exception:
+                irr_vao = None
+        if irr_vao is None:
+            ivao, ivbo = _make_face_vao(ctx, fprogs[2])
+            irr_vao = ivao
+            irr_own = [ivao, ivbo]
+    except Exception:
+        try:
+            cube.release()
+        except Exception:
+            pass
+        try:
+            pref.release()
+        except Exception:
+            pass
+        try:
+            irr.release()
+        except Exception:
+            pass
+        return None
+    try:
+        mvps = []
+        for face in range(6):
+            fwd, up = _FACE_DIRS[face]
+            face_view = Mat4.look_at(Vec3(0.0, 0.0, 0.0),
+                                     Vec3(fwd.x, fwd.y, fwd.z),
+                                     Vec3(up.x, up.y, up.z))
+            face_proj = Mat4.perspective(90.0, 1.0, 0.1, 100.0)
+            mvps.append((face_view * face_proj).to_f32().tobytes())
+    except Exception:
+        try:
+            cube.release()
+        except Exception:
+            pass
+        try:
+            pref.release()
+        except Exception:
+            pass
+        try:
+            irr.release()
+        except Exception:
+            pass
+        return None
+    try:
+        sun_b = np.asarray(sun_dir, dtype=np.float32).reshape(3).tobytes()
+        col_a = np.asarray(sun_color, dtype=np.float32).reshape(-1)[:3]
+        col_b = col_a.tobytes()
+        col_t = (float(col_a[0]), float(col_a[1]), float(col_a[2]))
+    except Exception:
+        sun_b = b""
+        col_b = b""
+        col_t = (1.0, 0.95, 0.85)
+    phases = [("cube", f) for f in range(6)]
+    phases.append(("mips",))
+    for level in range(_PREFILTER_MAX_LOD + 1):
+        for face in range(6):
+            phases.append(("pref", level, face))
+    for face in range(6):
+        phases.append(("irr", face))
+    try:
+        sun_key = np.asarray(sun_dir, dtype=np.float32).reshape(3).tobytes()
+    except Exception:
+        sun_key = b""
+    params = (material_path or "", res, prog, sun_key, col_t, float(sun_intensity), settings_key)
+    return {"ctx": ctx, "prog": prog, "material": material_path or "", "res": res,
+            "sun": sun_b, "sunc": col_b, "color": col_t, "intensity": float(sun_intensity),
+            "skey": settings_key, "key": key,
+            "true": np.asarray(true_dir, dtype=np.float64).reshape(3).copy(),
+            "settings_ident": (material_path or "", settings_key,
+                               repr(_quant(np.asarray(sun_color, dtype=np.float32).reshape(-1)[:3], 2)),
+                               str(round(float(sun_intensity), 2))),
+            "params": params, "pending": None, "prev": prev,
+            "cube": cube, "pref": pref, "irr": irr, "irr_res": irr_res,
+            "sky_vao": sky_vao, "sky_res": sky_res,
+            "face_vao": face_vao, "face_res": face_res,
+            "irr_vao": irr_vao, "irr_own": irr_own,
+            "fprogs": fprogs, "mvps": mvps, "phases": phases, "pos": 0}
+
+
+def _run_ibl_phase(ctx, job, phase):
+    prog = job["prog"]
+    fprogs = job["fprogs"]
+    kind = phase[0]
+    if kind == "cube":
+        face = phase[1]
+        vao = job["sky_vao"]
+        prog["u_mvp"].write(job["mvps"][face])
+        try:
+            prog["u_use_env"].value = 0.0
+        except Exception:
+            pass
+        try:
+            prog["_SunDirection"].write(job["sun"])
+            prog["_SunColor"].write(job["sunc"])
+            prog["_SunIntensity"].value = job["intensity"]
+        except Exception:
+            pass
+        rec = _get_scratch(ctx)
+        direct = None
+        if rec is not None:
+            direct = _begin_cube_face(ctx, rec, job["cube"], face, 0, job["res"])
+        if direct is not None:
+            ctx.clear(0.0, 0.0, 0.0, 1.0)
+            vao.render(moderngl.TRIANGLES)
+        else:
+            def draw():
+                vao.render(moderngl.TRIANGLES)
+            _blit_cube_face_fallback(ctx, job["cube"], face, 0, job["res"], draw)
+    elif kind == "mips":
+        try:
+            job["cube"].build_mipmaps()
+        except Exception:
+            pass
+    elif kind == "pref":
+        _, level, face = phase
+        s = max(1, job["res"] >> level)
+        roughness = level / float(_PREFILTER_MAX_LOD)
+        pprog = fprogs[1]
+        vao = job["face_vao"]
+        fx, fy, fz = _FACE_BASIS[face]
+        pprog["u_roughness"].value = roughness
+        pprog["u_face_x"].value = fx
+        pprog["u_face_y"].value = fy
+        pprog["u_face_z"].value = fz
+        pprog["u_cubemap"].value = 0
+        job["cube"].use(0)
+        rec = _get_scratch(ctx)
+        direct = None
+        if rec is not None:
+            direct = _begin_cube_face(ctx, rec, job["pref"], face, level, s)
+        if direct is not None:
+            ctx.clear(0.0, 0.0, 0.0, 1.0)
+            vao.render(moderngl.TRIANGLES)
+        else:
+            def draw():
+                vao.render(moderngl.TRIANGLES)
+            _blit_cube_face_fallback(ctx, job["pref"], face, level, s, draw)
+    elif kind == "irr":
+        face = phase[1]
+        iprog = fprogs[2]
+        vao = job["irr_vao"]
+        fx, fy, fz = _FACE_BASIS[face]
+        iprog["u_face_x"].value = fx
+        iprog["u_face_y"].value = fy
+        iprog["u_face_z"].value = fz
+        iprog["u_cubemap"].value = 0
+        job["cube"].use(0)
+        rec = _get_scratch(ctx)
+        direct = None
+        if rec is not None:
+            direct = _begin_cube_face(ctx, rec, job["irr"], face, 0, job["irr_res"])
+        if direct is not None:
+            ctx.clear(0.0, 0.0, 0.0, 1.0)
+            vao.render(moderngl.TRIANGLES)
+        else:
+            def draw():
+                vao.render(moderngl.TRIANGLES)
+            _blit_cube_face_fallback(ctx, job["irr"], face, 0, job["irr_res"], draw)
+
+
+def _pump_ibl_job(ctx, job, budget_ms):
+    try:
+        ctx.disable(moderngl.DEPTH_TEST)
+        ctx.disable(moderngl.CULL_FACE)
+        prev_fbo = ctx.fbo
+    except Exception:
+        return False
+    try:
+        t_end = time.perf_counter() + max(budget_ms, 0.5) / 1000.0
+        phases = job["phases"]
+        pos = job["pos"]
+        n = len(phases)
+        while pos < n:
+            _run_ibl_phase(ctx, job, phases[pos])
+            pos += 1
+            job["pos"] = pos
+            if pos < n and time.perf_counter() >= t_end:
+                break
+        return pos >= n
+    except Exception:
+        return False
+    finally:
+        try:
+            ctx.enable(moderngl.DEPTH_TEST)
+            ctx.enable(moderngl.CULL_FACE)
+            _restore_framebuffer(ctx, prev_fbo)
+        except Exception:
+            pass
+
+
+def _finish_ibl_job(ctx, job):
+    try:
+        brdf = _get_brdf_lut_tex(ctx)
+    except Exception:
+        brdf = None
+    if brdf is None:
+        _release_ibl_job(job)
+        return None
+    ibl = SkyIbl()
+    ibl._prefilter_tex = job["pref"]
+    ibl._irradiance_tex = job["irr"]
+    ibl._brdf_lut_tex = brdf
+    ibl.ready = True
+    try:
+        _give_pooled_src_cube(job.get("ctx"), job.get("res", 128), job.get("cube"))
+    except Exception:
+        pass
+    try:
+        _note_ibl_regen(id(ctx), job["key"], time.perf_counter(), job["true"], ibl, job["settings_ident"])
+    except Exception:
+        pass
+    return ibl
+
+
+def _drop_ibl_job(ctx, job):
+    try:
+        _release_ibl_job(job)
+    except Exception:
+        pass
+    try:
+        cid = id(ctx)
+        if _IBL_JOBS.get(cid) is job:
+            _IBL_JOBS.pop(cid, None)
+    except Exception:
+        pass
 
 
 def get_procedural_sky_ibl(ctx: moderngl.Context, sky_prog: moderngl.Program,
@@ -721,51 +1169,89 @@ def get_procedural_sky_ibl(ctx: moderngl.Context, sky_prog: moderngl.Program,
                 settings_match = False
             if (settings_match or mat_match) and _ang_deg(last_dir, true_dir) < _PROC_REGEN_CAP_DEG:
                 return last_ibl
-    src_cube = None
-    ibl = None
     try:
-        src_cube = _render_cubemap_from_sky(ctx, sky_prog, sun_dir, sun_color, sun_intensity, res)
-        src_cube.build_mipmaps()
-        ibl = _generate_ibl_from_cube(ctx, src_cube, res)
+        _prev_ibl = last_ibl if last_ibl is not None and last_ibl.ready else None
     except Exception:
-        ibl = None
-    finally:
-        if src_cube is not None:
-            try:
-                src_cube.release()
-            except Exception:
-                pass
-    if ibl is not None:
-        _PROC_SKY_IBL_CACHE[key] = ibl
+        _prev_ibl = None
+    try:
+        _sun_b = np.asarray(sun_dir, dtype=np.float32).reshape(3).tobytes()
+    except Exception:
+        _sun_b = b""
+    try:
+        _col_a = np.asarray(sun_color, dtype=np.float32).reshape(-1)[:3]
+        _col_t = (float(_col_a[0]), float(_col_a[1]), float(_col_a[2]))
+    except Exception:
+        _col_t = (1.0, 0.95, 0.85)
+    try:
+        _sint = float(sun_intensity)
+    except Exception:
+        _sint = 1.0
+    _params = (material_path or "", res, sky_prog, _sun_b, _col_t, _sint, settings_key)
+    try:
+        _job = _IBL_JOBS.get(cid)
+    except Exception:
+        _job = None
+    if _job is not None:
         try:
-            _prev = _PROC_LAST_GEN.get(cid)
-            _pstreak = 0
-            if _prev is not None and len(_prev) >= 6:
-                try:
-                    _gap = now - _prev[5]
-                except Exception:
-                    _gap = 99.0
-                try:
-                    _ps = int(_prev[4])
-                except Exception:
-                    _ps = 0
-                if _gap < _PROC_REGEN_STREAK_WINDOW:
-                    _pstreak = _ps + 1
-                    if _pstreak > 8:
-                        _pstreak = 8
-            _PROC_LAST_GEN[cid] = (now, true_dir, ibl, settings_ident, _pstreak, now)
+            _same = _job.get("params") == _params and _job.get("prog") is sky_prog
         except Exception:
+            _same = False
+        if not _same:
+            _drop_ibl_job(ctx, _job)
+            _job = None
+    if _job is None:
+        _job = _create_ibl_job(ctx, sky_prog, material_path, res, sun_dir, sun_color,
+                               sun_intensity, settings_key, key, true_dir, _prev_ibl)
+        if _job is None:
+            return _prev_ibl
+        try:
+            if len(_IBL_JOBS) > 8:
+                _IBL_JOBS.clear()
+            _IBL_JOBS[cid] = _job
+        except Exception:
+            pass
+    try:
+        _pos_before = _job.get("pos", 0)
+    except Exception:
+        _pos_before = 0
+    try:
+        _budget = 1e9 if _prev_ibl is None else _IBL_SLICE_BUDGET_MS
+    except Exception:
+        _budget = _IBL_SLICE_BUDGET_MS
+    try:
+        _done = _pump_ibl_job(ctx, _job, _budget)
+    except Exception:
+        _done = False
+    if _done:
+        try:
+            _new = _finish_ibl_job(ctx, _job)
+        except Exception:
+            _new = None
+        try:
+            if _IBL_JOBS.get(cid) is _job:
+                _IBL_JOBS.pop(cid, None)
+        except Exception:
+            pass
+        if _new is not None and _new.ready:
+            return _new
+        return _prev_ibl
+    try:
+        _pos_after = _job.get("pos", 0)
+    except Exception:
+        _pos_after = _pos_before
+    if _pos_after <= _pos_before:
+        try:
+            _fails = int(_job.get("fails", 0)) + 1
+        except Exception:
+            _fails = 1
+        if _fails >= 3:
+            _drop_ibl_job(ctx, _job)
+        else:
             try:
-                _PROC_LAST_GEN[cid] = (now, true_dir, ibl, settings_ident, 0, now)
+                _job["fails"] = _fails
             except Exception:
                 pass
-        while len(_PROC_SKY_IBL_CACHE) > _PROC_SKY_IBL_CACHE_MAX:
-            _old_key, _old = _PROC_SKY_IBL_CACHE.popitem(last=False)
-            try:
-                _old.release()
-            except Exception:
-                pass
-    return ibl
+    return _prev_ibl
 
 
 def get_sky_ibl(ctx: moderngl.Context, env_path: str, env_tex: Optional[moderngl.Texture] = None, grade_key: str = "", grade=None) -> Optional[SkyIbl]:
