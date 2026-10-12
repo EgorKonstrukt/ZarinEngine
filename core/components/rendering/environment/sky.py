@@ -345,6 +345,22 @@ _DEFAULT_UTC_OFFSET = 3.0
 
 _J2000_JD = 2451545.0
 
+_ASTRO_KEYS = (
+    "obliquity_deg", "obliquity_drift",
+    "sun_ml_epoch", "sun_ml_rate", "sun_ma_epoch", "sun_ma_rate",
+    "sun_ecc", "sun_ecc2",
+    "moon_ml_epoch", "moon_ml_rate", "moon_ma_epoch", "moon_ma_rate",
+    "moon_el_epoch", "moon_el_rate", "moon_af_epoch", "moon_af_rate",
+    "moon_lon1", "moon_lon2", "moon_lon3", "moon_lon4", "moon_lon5",
+    "moon_lat1", "moon_lat2", "moon_lat3", "moon_lat4",
+    "synodic_month", "new_moon_jd", "gmst_epoch", "gmst_rate",
+)
+
+try:
+    from core._sky_astro import sky_astro_update as _sky_astro_cy
+except ImportError:
+    _sky_astro_cy = None
+
 # Advanced celestial-model parameters. Every value mirrors the constants used
 # by the astronomy functions below; the ProceduralSky component exposes them in the
 # inspector ("Celestial Model (Advanced)") so orbits can be tuned per scene.
@@ -873,10 +889,21 @@ class ProceduralSky(Component):
                 self._astro_params_key())
 
     def _update_time_cache(self):
-        key = self._time_fields_key()
-        if key == self._time_cache_key:
+        tkey = (self.year, self.month, self.day, self.hour, self.minute,
+                self.second, self.latitude, self.longitude, self.utc_offset)
+        ck = self._time_cache_key
+        if ck is not None and ck[0] == tkey:
             return
-        self._time_cache_key = key
+        akey = self._astro_params_key()
+        if ck is not None and ck[0] == tkey and ck[1] == akey:
+            return
+        self._time_cache_key = (tkey, akey)
+        if _sky_astro_cy is not None:
+            try:
+                if self._update_time_cache_cy():
+                    return
+            except Exception:
+                pass
         p = self._astro_params()
         jd = _julian_day(self.year, self.month, self.day)
         civil = self.hour + self.minute / 60.0 + self.second / 3600.0
@@ -894,6 +921,28 @@ class ProceduralSky(Component):
         mal, maz = _alt_az_from_equatorial(moon_ra, moon_dec, lst, self.latitude)
         self._moon_dir = _dir_from_alt_az(mal, maz)
         self._moon_phase = _moon_phase_from_days(d, p)
+        self._update_eclipse()
+
+    def _update_time_cache_cy(self):
+        import numpy as _np
+        p = self._astro_params()
+        arr = _np.empty(29, dtype=_np.float64)
+        for i, k in enumerate(_ASTRO_KEYS):
+            arr[i] = float(p[k])
+        r = _sky_astro_cy(int(self.year), int(self.month), int(self.day),
+                          float(self.hour), float(self.minute), float(self.second),
+                          float(self.latitude), float(self.longitude), float(self.utc_offset), arr)
+        self._sun_dir = Vec3(r[0], r[1], r[2])
+        self._moon_dir = Vec3(r[3], r[4], r[5])
+        self._moon_phase = r[6]
+        self._star_rotation = r[7]
+        self._day_seconds = r[8]
+        self._sim_seconds = r[9]
+        self._star_pole = Vec3(r[10], r[11], r[12])
+        self._update_eclipse()
+        return True
+
+    def _update_eclipse(self):
         sun_r_deg = 0.27
         try:
             from core.components.rendering.environment.atmosphere import Atmosphere

@@ -641,7 +641,7 @@ _SUN_DIR_GRID = 1024.0
 
 _PROC_REGEN_COOLDOWN = 0.15
 _PROC_REGEN_COOLDOWN_MAX = 2.0
-_PROC_REGEN_STREAK_WINDOW = 0.6
+_PROC_REGEN_STREAK_WINDOW = 2.5
 _PROC_REGEN_CAP_DEG = 2.0
 _PROC_LAST_GEN: dict[int, tuple] = {}
 
@@ -690,21 +690,36 @@ def get_procedural_sky_ibl(ctx: moderngl.Context, sky_prog: moderngl.Program,
     if settings_key is not None:
         key += "|" + repr(settings_key)
     key = f"{id(ctx)}|{key}"
+    cid = id(ctx)
     if key in _PROC_SKY_IBL_CACHE:
         ibl = _PROC_SKY_IBL_CACHE.pop(key)
         _PROC_SKY_IBL_CACHE[key] = ibl
         return ibl
-    cid = id(ctx)
     settings_ident = (material_path or "", settings_key,
                       repr(_quant(sun_color, 2)), str(round(float(sun_intensity), 2)))
     now = time.perf_counter()
     last = _PROC_LAST_GEN.get(cid)
     if last is not None:
-        last_t, last_dir, last_ibl, last_settings = last
-        if (last_ibl is not None and last_ibl.ready
-                and last_settings == settings_ident
-                and (now - last_t) < _PROC_REGEN_COOLDOWN):
-            if _ang_deg(last_dir, true_dir) < _PROC_REGEN_CAP_DEG:
+        try:
+            last_t, last_dir, last_ibl, last_settings = last[0], last[1], last[2], last[3]
+            streak = last[4] if len(last) >= 6 else 0
+            last_regen = last[5] if len(last) >= 6 else last_t
+        except Exception:
+            last_t, last_dir, last_ibl, last_settings, streak, last_regen = now, true_dir, None, None, 0, now
+        try:
+            cooldown = min(_PROC_REGEN_COOLDOWN * (2.0 ** streak), _PROC_REGEN_COOLDOWN_MAX)
+        except Exception:
+            cooldown = _PROC_REGEN_COOLDOWN
+        try:
+            mat_match = last_settings is not None and last_settings[0] == (material_path or "")
+        except Exception:
+            mat_match = False
+        if last_ibl is not None and last_ibl.ready and (now - last_regen) < cooldown:
+            try:
+                settings_match = (last_settings == settings_ident)
+            except Exception:
+                settings_match = False
+            if (settings_match or mat_match) and _ang_deg(last_dir, true_dir) < _PROC_REGEN_CAP_DEG:
                 return last_ibl
     src_cube = None
     ibl = None
@@ -722,7 +737,28 @@ def get_procedural_sky_ibl(ctx: moderngl.Context, sky_prog: moderngl.Program,
                 pass
     if ibl is not None:
         _PROC_SKY_IBL_CACHE[key] = ibl
-        _PROC_LAST_GEN[cid] = (now, true_dir, ibl, settings_ident)
+        try:
+            _prev = _PROC_LAST_GEN.get(cid)
+            _pstreak = 0
+            if _prev is not None and len(_prev) >= 6:
+                try:
+                    _gap = now - _prev[5]
+                except Exception:
+                    _gap = 99.0
+                try:
+                    _ps = int(_prev[4])
+                except Exception:
+                    _ps = 0
+                if _gap < _PROC_REGEN_STREAK_WINDOW:
+                    _pstreak = _ps + 1
+                    if _pstreak > 8:
+                        _pstreak = 8
+            _PROC_LAST_GEN[cid] = (now, true_dir, ibl, settings_ident, _pstreak, now)
+        except Exception:
+            try:
+                _PROC_LAST_GEN[cid] = (now, true_dir, ibl, settings_ident, 0, now)
+            except Exception:
+                pass
         while len(_PROC_SKY_IBL_CACHE) > _PROC_SKY_IBL_CACHE_MAX:
             _old_key, _old = _PROC_SKY_IBL_CACHE.popitem(last=False)
             try:

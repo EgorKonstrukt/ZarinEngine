@@ -352,6 +352,10 @@ class Atmosphere(Component):
             st["sky"].repeat_y = False
             st["sizes"] = (tw, th, sw, sh)
             st["cache"] = None
+            try:
+                st.pop("pkey", None)
+            except Exception:
+                pass
         return st
 
     def _dummy_image_tex(self, ctx: moderngl.Context) -> moderngl.Texture:
@@ -370,7 +374,7 @@ class Atmosphere(Component):
         except Exception:
             pass
 
-    def _dispatch(self, ctx: moderngl.Context, sun_dir, sun_color, sun_intensity):
+    def _dispatch(self, ctx: moderngl.Context, sun_dir, sun_color, sun_intensity, skip_transmittance: bool = False):
         st = self._gl_state(ctx)
         if st is None:
             return False
@@ -394,12 +398,13 @@ class Atmosphere(Component):
         self._set_uniform(prog, "u_ms_strength", self._multiscatter_strength)
         self._set_uniform(prog, "u_horizon_haze", self._horizon_haze)
         self._set_uniform(prog, "u_camera_height_km", max(float(self._camera_height_m) / 1000.0, 0.005))
-        prog["u_pass"].value = 0
         dummy = self._dummy_image_tex(ctx)
-        dummy.bind_to_image(1, read=True, write=False)
-        st["trans"].bind_to_image(0, read=True, write=True)
-        prog.run((tw + 7) // 8, (th + 7) // 8, 1)
-        ctx.memory_barrier(moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
+        if not skip_transmittance or st["trans"] is None:
+            prog["u_pass"].value = 0
+            dummy.bind_to_image(1, read=True, write=False)
+            st["trans"].bind_to_image(0, read=True, write=True)
+            prog.run((tw + 7) // 8, (th + 7) // 8, 1)
+            ctx.memory_barrier(moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
         prog["u_pass"].value = 1
         prog["u_transmittance_lut"] = 2
         st["trans"].use(2)
@@ -420,15 +425,21 @@ class Atmosphere(Component):
                round(float(sun_intensity), 3),
                self.ibl_key(), st["sizes"])
         if key != st["cache"]:
+            pkey = (self.ibl_key(), st["sizes"])
+            sky_only = st["trans"] is not None and st.get("pkey") == pkey
             st["cache"] = key
             try:
-                if not self._dispatch(ctx, sun_dir, sun_color, sun_intensity):
+                if not self._dispatch(ctx, sun_dir, sun_color, sun_intensity, skip_transmittance=sky_only):
                     st["cache"] = None
                     return False
             except Exception as e:
                 Logger.error(f"Atmosphere dispatch error: {e}")
                 st["cache"] = None
                 return False
+            try:
+                st["pkey"] = pkey
+            except Exception:
+                pass
         return True
 
     def bind_sky(self, prog: moderngl.Program):
