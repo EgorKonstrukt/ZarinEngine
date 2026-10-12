@@ -727,6 +727,8 @@ class ProceduralSky(Component):
         self.moon_intensity: float = 1.0
         self.moon_texture_path: str = "core/textures/moon.tga"
         self._sky_ibl = None
+        self._sun_light_cache = None
+        self._synced_sun = None
         self._time_cache_key = None
         self._sun_dir: Vec3 = Vec3(0.0, 0.3, 1.0)
         self._moon_dir: Vec3 = Vec3(0.25, 0.6, 0.75)
@@ -963,10 +965,33 @@ class ProceduralSky(Component):
             if l and l.enabled and t and l.light_type == LightType.DIRECTIONAL:
                 return (l, t)
         if scene:
+            try:
+                cached = self._sun_light_cache
+            except Exception:
+                cached = None
+            if cached is not None:
+                try:
+                    crv, ceid, cl, ct = cached
+                    if scene._render_version == crv:
+                        ce = scene.get_entity(ceid)
+                        if ce is not None and ce._active and ce.transform is ct:
+                            curl = ce.get_component(Light)
+                            if curl is cl and cl.enabled and cl.light_type == LightType.DIRECTIONAL:
+                                return (cl, ct)
+                except Exception:
+                    pass
+                try:
+                    self._sun_light_cache = None
+                except Exception:
+                    pass
             for e in scene.get_entities_with_component(Light):
                 l = e.get_component(Light)
                 t = e.transform
                 if l and l.enabled and t and l.light_type == LightType.DIRECTIONAL:
+                    try:
+                        self._sun_light_cache = (scene._render_version, e.id, l, t)
+                    except Exception:
+                        pass
                     return (l, t)
         return None
 
@@ -978,7 +1003,22 @@ class ProceduralSky(Component):
         if sl is None:
             return
         _l, tr = sl
-        f = self._sun_dir * -1.0
+        try:
+            sd = self._sun_dir
+            last = self._synced_sun
+            ent = tr._entity if tr is not None else None
+            eid = ent._id if ent is not None else None
+            if last is not None and eid is not None and last == (sd._x, sd._y, sd._z, eid):
+                return
+        except Exception:
+            sd = None
+            eid = None
+        if sd is None:
+            try:
+                sd = self._sun_dir
+            except Exception:
+                return
+        f = sd * -1.0
         r = f.cross(Vec3.up())
         rl = r.length()
         if rl < 1e-6:
@@ -991,23 +1031,32 @@ class ProceduralSky(Component):
         m3[1] = [u.x, u.y, u.z]
         m3[2] = [-f.x, -f.y, -f.z]
         tr.local_rotation = Quat._from_rotation_matrix3(m3.T)
+        try:
+            self._synced_sun = (sd._x, sd._y, sd._z, eid)
+        except Exception:
+            pass
 
     def on_update(self, dt: float):
         self._sync_sun_light()
 
     def _night_settings_key(self) -> tuple:
         self._update_time_cache()
+        try:
+            _md = self._moon_dir
+            _mqt = (round(float(_md.x), 4), round(float(_md.y), 4), round(float(_md.z), 4))
+        except Exception:
+            _mqt = tuple(self._moon_dir)
         return (
             self.night_sky_enabled, self.night_exposure,
             self.star_enabled, self.star_density, self.star_intensity,
             self.star_scale, self.star_twinkle, self.star_twinkle_speed, self.star_seed,
             tuple(self.star_color),
-            tuple(self.star_pole), round(self.star_rotation, 6),
+            tuple(self.star_pole), round(self.star_rotation, 3),
             self.milky_way_enabled, self.milky_way_intensity,
             tuple(self.milky_way_pole),
-            self.moon_enabled, tuple(self._moon_dir),
+            self.moon_enabled, _mqt,
             self.moon_size, self.moon_intensity,
-            self._moon_phase, self.moon_texture_path,
+            round(float(self._moon_phase), 4), self.moon_texture_path,
         )
 
     def _ibl_settings_key(self, atmos) -> tuple:

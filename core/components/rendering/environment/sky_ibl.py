@@ -14,6 +14,7 @@ import moderngl
 from typing import Optional
 from core.components.rendering.environment.dynamic_cubemap import (
     _allocate_cube_mip_levels,
+    _attach_cubemap_face,
     _BRDF_LUT_FRAG,
     _FACE_BASIS,
     _FACE_DIRS,
@@ -130,6 +131,141 @@ def _make_face_vao(ctx: moderngl.Context, prog: moderngl.Program):
     return vao, vbo
 
 
+_SCRATCH: dict[int, tuple] = {}
+_SCRATCH_MAX: int = 8
+_BRDF_BYTES: dict[int, tuple] = {}
+_BRDF_BYTES: dict[int, tuple] = {}
+
+
+def _get_scratch(ctx: moderngl.Context):
+    import weakref
+    cid = id(ctx)
+    ent = _SCRATCH.get(cid)
+    if ent is not None:
+        try:
+            if ent[0]() is ctx:
+                return ent[1]
+        except Exception:
+            pass
+    try:
+        ref = weakref.ref(ctx)
+    except Exception:
+        ref = None
+    try:
+        dummy = ctx.texture((1, 1), 4, dtype="f4")
+        fbo = ctx.framebuffer(color_attachments=[dummy])
+    except Exception:
+        return None
+    rec = {"fbo": fbo, "dummy": dummy, "face_vaos": {}, "sky_mesh": None, "sky_vaos": {}}
+    try:
+        if len(_SCRATCH) >= _SCRATCH_MAX:
+            for k in [k for k, v in _SCRATCH.items() if v[0] is None or v[0]() is None]:
+                _SCRATCH.pop(k, None)
+        if len(_SCRATCH) >= _SCRATCH_MAX:
+            _SCRATCH.pop(next(iter(_SCRATCH)), None)
+        _SCRATCH[cid] = (ref, rec)
+    except Exception:
+        pass
+    return rec
+
+
+def _scratch_face_vao(ctx: moderngl.Context, rec, prog):
+    try:
+        d = rec["face_vaos"]
+    except Exception:
+        return None
+    try:
+        ent = d.get(id(prog))
+    except Exception:
+        ent = None
+    if ent is not None:
+        return ent
+    try:
+        vao, vbo = _make_face_vao(ctx, prog)
+    except Exception:
+        return None
+    try:
+        if len(d) >= 32:
+            d.clear()
+        d[id(prog)] = (vao, vbo)
+    except Exception:
+        pass
+    return (vao, vbo)
+
+
+def _scratch_sky_mesh(ctx: moderngl.Context, rec, prog):
+    try:
+        cached = rec.get("sky_mesh")
+    except Exception:
+        cached = None
+    if cached is not None:
+        vbo, ibo = cached
+        try:
+            vao = rec["sky_vaos"].get(id(prog))
+        except Exception:
+            vao = None
+        if vao is not None:
+            return vao
+        try:
+            vao = ctx.vertex_array(prog, [(vbo, "3f", "in_position")], ibo)
+            rec["sky_vaos"][id(prog)] = vao
+            return vao
+        except Exception:
+            return None
+    try:
+        from core.renderer.meshes import make_cube_mesh
+        mesh = make_cube_mesh()
+        vbo = ctx.buffer(mesh.vertices.tobytes())
+        ibo = ctx.buffer(mesh.indices.astype(np.uint32).tobytes())
+        vao = ctx.vertex_array(prog, [(vbo, "3f", "in_position")], ibo)
+    except Exception:
+        return None
+    try:
+        rec["sky_mesh"] = (vbo, ibo)
+        rec["sky_vaos"][id(prog)] = vao
+    except Exception:
+        pass
+    return vao
+
+
+def _begin_cube_face(ctx: moderngl.Context, rec, tex, face: int, level: int, size: int):
+    try:
+        fbo = rec["fbo"]
+    except Exception:
+        return None
+    try:
+        fbo.use()
+    except Exception:
+        return None
+    try:
+        ok = _attach_cubemap_face(tex.glo, face, level)
+    except Exception:
+        ok = False
+    if not ok:
+        return None
+    try:
+        fbo.viewport = (0, 0, size, size)
+    except Exception:
+        pass
+    return fbo
+
+
+def _blit_cube_face_fallback(ctx: moderngl.Context, tex, face: int, level: int, size: int, draw):
+    try:
+        face_tex = ctx.texture((size, size), 4, dtype="f4")
+        fbo = ctx.framebuffer(color_attachments=[face_tex])
+        fbo.use()
+        fbo.viewport = (0, 0, size, size)
+        ctx.clear(0.0, 0.0, 0.0, 1.0)
+        draw()
+        _write_cube_face_mip(tex, face, level, size, face_tex.read())
+        fbo.release()
+        face_tex.release()
+        return True
+    except Exception:
+        return False
+
+
 _IBL_PROGS: dict[int, tuple] = {}
 
 
@@ -227,7 +363,14 @@ def _render_irradiance(ctx: moderngl.Context, src_tex: moderngl.TextureCube, res
     irr_tex.repeat_x = False
     irr_tex.repeat_y = False
     prog = _get_ibl_progs(ctx)[2]
-    vao, vbo = _make_face_vao(ctx, prog)
+    rec = _get_scratch(ctx)
+    fe = _scratch_face_vao(ctx, rec, prog) if rec is not None else None
+    if fe is None:
+        vao, vbo = _make_face_vao(ctx, prog)
+        own = True
+    else:
+        vao, vbo = fe
+        own = False
     src_tex.use(0)
     prog["u_cubemap"].value = 0
     ctx.disable(moderngl.DEPTH_TEST)
@@ -236,26 +379,68 @@ def _render_irradiance(ctx: moderngl.Context, src_tex: moderngl.TextureCube, res
     try:
         for face in range(6):
             fx, fy, fz = _FACE_BASIS[face]
-            face_tex = ctx.texture((irr_res, irr_res), 4, dtype="f4")
-            fbo = ctx.framebuffer(color_attachments=[face_tex])
-            fbo.use()
-            fbo.viewport = (0, 0, irr_res, irr_res)
-            ctx.clear(0.0, 0.0, 0.0, 1.0)
             prog["u_face_x"].value = fx
             prog["u_face_y"].value = fy
             prog["u_face_z"].value = fz
             src_tex.use(0)
-            vao.render(moderngl.TRIANGLES)
-            irr_tex.write(face, face_tex.read())
-            fbo.release()
-            face_tex.release()
+            direct = None
+            if rec is not None:
+                direct = _begin_cube_face(ctx, rec, irr_tex, face, 0, irr_res)
+            if direct is not None:
+                ctx.clear(0.0, 0.0, 0.0, 1.0)
+                vao.render(moderngl.TRIANGLES)
+            else:
+                def draw():
+                    vao.render(moderngl.TRIANGLES)
+                _blit_cube_face_fallback(ctx, irr_tex, face, 0, irr_res, draw)
     finally:
         ctx.enable(moderngl.DEPTH_TEST)
         ctx.enable(moderngl.CULL_FACE)
         _restore_framebuffer(ctx, prev_fbo)
-        vao.release()
-        vbo.release()
+        if own:
+            vao.release()
+            vbo.release()
     return irr_tex
+
+
+def _get_brdf_lut_tex(ctx: moderngl.Context):
+    import weakref
+    cid = id(ctx)
+    try:
+        ent = _BRDF_BYTES.get(cid)
+    except Exception:
+        ent = None
+    if ent is not None:
+        try:
+            if ent[0]() is ctx:
+                tex = ctx.texture((256, 256), 2, dtype="f4")
+                tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+                tex.repeat_x = False
+                tex.repeat_y = False
+                tex.write(ent[1])
+                return tex
+        except Exception:
+            pass
+    tex = _render_brdf_lut(ctx)
+    try:
+        payload = tex.read()
+    except Exception:
+        payload = None
+    if payload is not None:
+        try:
+            ref = weakref.ref(ctx)
+        except Exception:
+            ref = None
+        try:
+            if len(_BRDF_BYTES) >= 8:
+                for k in [k for k, v in _BRDF_BYTES.items() if v[0] is None or v[0]() is None]:
+                    _BRDF_BYTES.pop(k, None)
+            if len(_BRDF_BYTES) >= 8:
+                _BRDF_BYTES.pop(next(iter(_BRDF_BYTES)), None)
+            _BRDF_BYTES[cid] = (ref, payload)
+        except Exception:
+            pass
+    return tex
 
 
 def _render_brdf_lut(ctx: moderngl.Context):
@@ -292,7 +477,14 @@ def _render_prefilter(ctx: moderngl.Context, src_cube: moderngl.TextureCube, res
     pref.repeat_y = False
     _allocate_cube_mip_levels(pref, res, _PREFILTER_MAX_LOD)
     prog = _get_ibl_progs(ctx)[1]
-    vao, vbo = _make_face_vao(ctx, prog)
+    rec = _get_scratch(ctx)
+    fe = _scratch_face_vao(ctx, rec, prog) if rec is not None else None
+    if fe is None:
+        vao, vbo = _make_face_vao(ctx, prog)
+        own = True
+    else:
+        vao, vbo = fe
+        own = False
     src_cube.use(0)
     prog["u_cubemap"].value = 0
     ctx.disable(moderngl.DEPTH_TEST)
@@ -304,26 +496,28 @@ def _render_prefilter(ctx: moderngl.Context, src_cube: moderngl.TextureCube, res
             roughness = level / float(_PREFILTER_MAX_LOD)
             for face in range(6):
                 fx, fy, fz = _FACE_BASIS[face]
-                face_tex = ctx.texture((s, s), 4, dtype="f4")
-                fbo = ctx.framebuffer(color_attachments=[face_tex])
-                fbo.use()
-                fbo.viewport = (0, 0, s, s)
-                ctx.clear(0.0, 0.0, 0.0, 1.0)
                 prog["u_roughness"].value = roughness
                 prog["u_face_x"].value = fx
                 prog["u_face_y"].value = fy
                 prog["u_face_z"].value = fz
                 src_cube.use(0)
-                vao.render(moderngl.TRIANGLES)
-                _write_cube_face_mip(pref, face, level, s, face_tex.read())
-                fbo.release()
-                face_tex.release()
+                direct = None
+                if rec is not None:
+                    direct = _begin_cube_face(ctx, rec, pref, face, level, s)
+                if direct is not None:
+                    ctx.clear(0.0, 0.0, 0.0, 1.0)
+                    vao.render(moderngl.TRIANGLES)
+                else:
+                    def draw():
+                        vao.render(moderngl.TRIANGLES)
+                    _blit_cube_face_fallback(ctx, pref, face, level, s, draw)
     finally:
         ctx.enable(moderngl.DEPTH_TEST)
         ctx.enable(moderngl.CULL_FACE)
         _restore_framebuffer(ctx, prev_fbo)
-        vao.release()
-        vbo.release()
+        if own:
+            vao.release()
+            vbo.release()
     return pref
 
 
@@ -332,7 +526,7 @@ def _generate_ibl_from_cube(ctx: moderngl.Context, src_cube: moderngl.TextureCub
     try:
         ibl._prefilter_tex = _render_prefilter(ctx, src_cube, res)
         ibl._irradiance_tex = _render_irradiance(ctx, src_cube, res)
-        ibl._brdf_lut_tex = _render_brdf_lut(ctx)
+        ibl._brdf_lut_tex = _get_brdf_lut_tex(ctx)
         ibl.ready = True
     except Exception:
         ibl.release()
@@ -359,16 +553,32 @@ def _generate_ibl(ctx: moderngl.Context, env_tex: moderngl.Texture, res: int = 1
 def _render_cubemap_from_sky(ctx: moderngl.Context, sky_prog: moderngl.Program,
                              sun_dir, sun_color, sun_intensity, res: int = 128) -> moderngl.TextureCube:
     from core.maths.math3d import Mat4, Vec3
-    from core.renderer.meshes import make_cube_mesh
 
     cube_tex = ctx.texture_cube((res, res), 4, dtype="f4")
     cube_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
     cube_tex.repeat_x = False
     cube_tex.repeat_y = False
-    mesh = make_cube_mesh()
-    vbo = ctx.buffer(mesh.vertices.tobytes())
-    ibo = ctx.buffer(mesh.indices.astype(np.uint32).tobytes())
-    vao = ctx.vertex_array(sky_prog, [(vbo, "3f", "in_position")], ibo)
+    rec = _get_scratch(ctx)
+    if rec is not None:
+        vao = _scratch_sky_mesh(ctx, rec, sky_prog)
+    else:
+        vao = None
+    own_mesh = False
+    if vao is None:
+        try:
+            from core.renderer.meshes import make_cube_mesh
+            mesh = make_cube_mesh()
+            vbo = ctx.buffer(mesh.vertices.tobytes())
+            ibo = ctx.buffer(mesh.indices.astype(np.uint32).tobytes())
+            vao = ctx.vertex_array(sky_prog, [(vbo, "3f", "in_position")], ibo)
+            own_mesh = True
+        except Exception:
+            cube_tex.release()
+            raise
+    else:
+        vbo = None
+        ibo = None
+        mesh = None
     sun_dir = np.asarray(sun_dir, dtype=np.float32).reshape(3)
     sun_color = np.asarray(sun_color, dtype=np.float32).reshape(-1)[:3]
     ctx.disable(moderngl.DEPTH_TEST)
@@ -382,11 +592,6 @@ def _render_cubemap_from_sky(ctx: moderngl.Context, sky_prog: moderngl.Program,
                                      Vec3(up.x, up.y, up.z))
             face_proj = Mat4.perspective(90.0, 1.0, 0.1, 100.0)
             mvp = face_view * face_proj
-            face_tex = ctx.texture((res, res), 4, dtype="f4")
-            fbo = ctx.framebuffer(color_attachments=[face_tex])
-            fbo.use()
-            fbo.viewport = (0, 0, res, res)
-            ctx.clear(0.0, 0.0, 0.0, 1.0)
             sky_prog["u_mvp"].write(mvp.to_f32().tobytes())
             try:
                 sky_prog["u_use_env"].value = 0.0
@@ -398,17 +603,30 @@ def _render_cubemap_from_sky(ctx: moderngl.Context, sky_prog: moderngl.Program,
                 sky_prog["_SunIntensity"].value = float(sun_intensity)
             except Exception:
                 pass
-            vao.render(moderngl.TRIANGLES, vertices=mesh.indices.size)
-            cube_tex.write(face, face_tex.read())
-            fbo.release()
-            face_tex.release()
+            direct = None
+            if rec is not None:
+                direct = _begin_cube_face(ctx, rec, cube_tex, face, 0, res)
+            if direct is not None:
+                ctx.clear(0.0, 0.0, 0.0, 1.0)
+                if mesh is not None:
+                    vao.render(moderngl.TRIANGLES, vertices=mesh.indices.size)
+                else:
+                    vao.render(moderngl.TRIANGLES)
+            else:
+                if mesh is None:
+                    from core.renderer.meshes import make_cube_mesh as _mcm
+                    mesh = _mcm()
+                def draw():
+                    vao.render(moderngl.TRIANGLES, vertices=mesh.indices.size)
+                _blit_cube_face_fallback(ctx, cube_tex, face, 0, res, draw)
     finally:
         ctx.enable(moderngl.DEPTH_TEST)
         ctx.enable(moderngl.CULL_FACE)
         _restore_framebuffer(ctx, prev_fbo)
-        vao.release()
-        vbo.release()
-        ibo.release()
+        if own_mesh:
+            vao.release()
+            vbo.release()
+            ibo.release()
     return cube_tex
 
 
@@ -422,6 +640,8 @@ _PROC_SUN_DEFAULT_INTENSITY = 1.0
 _SUN_DIR_GRID = 1024.0
 
 _PROC_REGEN_COOLDOWN = 0.15
+_PROC_REGEN_COOLDOWN_MAX = 2.0
+_PROC_REGEN_STREAK_WINDOW = 0.6
 _PROC_REGEN_CAP_DEG = 2.0
 _PROC_LAST_GEN: dict[int, tuple] = {}
 
