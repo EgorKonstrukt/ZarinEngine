@@ -182,6 +182,9 @@ class Component:
     def gizmo_instances(self):
         return None
 
+    def live_inspector_fields(self) -> tuple:
+        return ()
+
     def gizmo_cache_sig(self):
         attrs = getattr(type(self), "_gizmo_cache_attrs", None)
         if not attrs:

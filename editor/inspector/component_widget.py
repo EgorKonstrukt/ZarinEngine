@@ -1592,6 +1592,76 @@ class ComponentWidget(QWidget):
     def refresh_vec3_field(self, prop_name: str):
         pass
 
+    def refresh_scalar_field(self, prop_name: str):
+        if self._updating:
+            return
+        c = self._component
+        try:
+            value = getattr(c, prop_name)
+        except Exception:
+            return
+        if isinstance(value, bool):
+            return
+        self._updating = True
+        try:
+            for r in self._field_rows:
+                try:
+                    if r.get("prop_name", "") != prop_name:
+                        continue
+                except Exception:
+                    continue
+                cell = r.get("field_widget")
+                child = getattr(cell, "_field_child", None) if cell is not None else None
+                if child is None:
+                    continue
+                targets = []
+                try:
+                    if isinstance(child, (QSpinBox, QDoubleSpinBox, QSlider)):
+                        targets.append(child)
+                    elif isinstance(child, QWidget):
+                        for w in child.findChildren(QSpinBox):
+                            targets.append(w)
+                        for w in child.findChildren(QDoubleSpinBox):
+                            targets.append(w)
+                        for w in child.findChildren(QSlider):
+                            targets.append(w)
+                except Exception:
+                    continue
+                for w in targets:
+                    try:
+                        if w.hasFocus():
+                            continue
+                        try:
+                            le = w.lineEdit()
+                        except Exception:
+                            le = None
+                        if le is not None:
+                            try:
+                                if le.hasFocus():
+                                    continue
+                            except Exception:
+                                pass
+                        if isinstance(w, (QSpinBox, QSlider)):
+                            w.blockSignals(True)
+                            try:
+                                w.setValue(int(value))
+                            finally:
+                                w.blockSignals(False)
+                        else:
+                            w.blockSignals(True)
+                            try:
+                                w.setValue(float(value))
+                            finally:
+                                w.blockSignals(False)
+                    except Exception:
+                        try:
+                            w.blockSignals(False)
+                        except Exception:
+                            pass
+                        continue
+        finally:
+            self._updating = False
+
     def refresh_split_gradient_fields(self):
         c = self._component
         for r in self._field_rows:

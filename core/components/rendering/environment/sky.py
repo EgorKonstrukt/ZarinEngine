@@ -665,6 +665,7 @@ class ProceduralSky(Component):
             InspectorField("hour", "Hour", FieldType.INT, min_val=0, max_val=23, step=1, on_set="_on_time_field_set"),
             InspectorField("minute", "Minute", FieldType.INT, min_val=0, max_val=59, step=1, on_set="_on_time_field_set"),
             InspectorField("second", "Second", FieldType.INT, min_val=0, max_val=59, step=1, on_set="_on_time_field_set"),
+            InspectorField("time_speed", "Time Speed (game-sec/sec)", FieldType.FLOAT),
             InspectorField("_btn_nearest_solar_eclipse", "Nearest Solar Eclipse", FieldType.BUTTON),
             InspectorField("latitude", "Latitude (deg)", FieldType.SLIDER, min_val=-90.0, max_val=90.0, step=0.1, decimals=2),
             InspectorField("longitude", "Longitude (deg)", FieldType.SLIDER, min_val=-180.0, max_val=180.0, step=0.1, decimals=2),
@@ -737,6 +738,9 @@ class ProceduralSky(Component):
         self.latitude: float = _DEFAULT_LATITUDE
         self.longitude: float = _DEFAULT_LONGITUDE
         self.utc_offset: float = _DEFAULT_UTC_OFFSET
+        self.time_speed: float = 0.0
+        self._time_frac: float = 0.0
+        self._time_transition = None
         self.sun_light_entity_id: str = ""
         self.moon_enabled: bool = True
         self.moon_size: float = 0.27
@@ -771,6 +775,116 @@ class ProceduralSky(Component):
             self.minute = int(minute)
         if second is not None:
             self.second = int(second)
+        self._time_frac = 0.0
+        try:
+            self._time_transition = None
+        except Exception:
+            pass
+        self._invalidate_time()
+
+    def live_inspector_fields(self) -> tuple:
+        return ("year", "month", "day", "hour", "minute", "second")
+
+    def _clock_total(self) -> float:
+        ty = int(self.year)
+        carry, tm = divmod(int(self.month) - 1, 12)
+        tm += 1
+        ty += carry
+        base = (_julian_day(ty, tm, int(self.day)) - _J2000_JD - 0.5) * 86400.0
+        return base + int(self.hour) * 3600.0 + int(self.minute) * 60.0 + int(self.second) + float(getattr(self, "_time_frac", 0.0) or 0.0)
+
+    def _apply_clock_total(self, total: float):
+        days = math.floor(total / 86400.0)
+        sod = total - days * 86400.0
+        y, m, d = _julian_day_to_ymd(days + _J2000_JD + 0.5)
+        h = int(sod // 3600)
+        rem = sod - h * 3600.0
+        mi = int(rem // 60)
+        s = int(rem - mi * 60.0)
+        if h < 0:
+            h = 0
+        elif h > 23:
+            h = 23
+        if mi < 0:
+            mi = 0
+        elif mi > 59:
+            mi = 59
+        if s < 0:
+            s = 0
+        elif s > 59:
+            s = 59
+        self.year, self.month, self.day, self.hour, self.minute = int(y), int(m), int(d), h, mi
+        self.second = s
+        frac = rem - mi * 60.0 - s
+        if frac < 0.0 or frac >= 1.0:
+            frac = 0.0
+        self._time_frac = frac
+
+    def transition_to_time(self, year=None, month=None, day=None,
+                           hour=None, minute=None, second=None,
+                           duration: float = 1.0, smooth: bool = True):
+        try:
+            ty = int(self.year) if year is None else int(year)
+            tm = int(self.month) if month is None else int(month)
+            td = int(self.day) if day is None else int(day)
+            th = int(self.hour) if hour is None else int(hour)
+            tmi = int(self.minute) if minute is None else int(minute)
+            ts = int(self.second) if second is None else int(second)
+            dur = float(duration)
+        except Exception:
+            return False
+        carry, tm = divmod(tm - 1, 12)
+        tm += 1
+        ty += carry
+        try:
+            start = self._clock_total()
+        except Exception:
+            return False
+        end = (_julian_day(ty, tm, td) - _J2000_JD - 0.5) * 86400.0 + th * 3600.0 + tmi * 60.0 + ts
+        if dur <= 0.0 or end == start:
+            try:
+                self._time_transition = None
+            except Exception:
+                pass
+            self._apply_clock_total(end)
+            self._invalidate_time()
+            return True
+        try:
+            self._time_transition = (start, end, dur, 0.0, bool(smooth))
+        except Exception:
+            return False
+        return True
+
+    def cancel_time_transition(self):
+        try:
+            self._time_transition = None
+        except Exception:
+            pass
+        return True
+
+    def advance_time(self, dt_seconds: float):
+        try:
+            step = float(dt_seconds)
+        except Exception:
+            return
+        if step == 0.0:
+            return
+        try:
+            self._time_transition = None
+        except Exception:
+            pass
+        try:
+            acc = float(getattr(self, "_time_frac", 0.0)) + step
+        except Exception:
+            acc = step
+        import math as _m
+        frac, full = _m.modf(acc)
+        full = int(full)
+        if full != 0:
+            total = self.second + full
+            carry, self.second = divmod(total, 60)
+            self._carry_minutes(carry)
+        self._time_frac = frac
         self._invalidate_time()
 
     def _days_in_month(self, y: int, m: int) -> int:
@@ -834,6 +948,7 @@ class ProceduralSky(Component):
             self.year += carry
         else:
             return False
+        self._time_frac = 0.0
         self._invalidate_time()
         return self._time_fields_key() != before
 
@@ -1086,6 +1201,68 @@ class ProceduralSky(Component):
             pass
 
     def on_update(self, dt: float):
+        try:
+            tr = self._time_transition
+        except Exception:
+            tr = None
+        if tr is not None:
+            try:
+                start, end, dur, elapsed = tr[0], tr[1], tr[2], tr[3]
+                smooth = tr[4] if len(tr) > 4 else True
+            except Exception:
+                tr = None
+        if tr is not None:
+            try:
+                step = float(dt)
+            except Exception:
+                step = 0.0
+            if step < 0.0:
+                step = 0.0
+            if dur <= 0.0:
+                try:
+                    self._apply_clock_total(end)
+                except Exception:
+                    pass
+                try:
+                    self._time_transition = None
+                except Exception:
+                    pass
+                self._invalidate_time()
+            else:
+                elapsed += step
+                if elapsed + 1e-9 >= dur:
+                    try:
+                        self._apply_clock_total(end)
+                    except Exception:
+                        pass
+                    try:
+                        self._time_transition = None
+                    except Exception:
+                        pass
+                    self._invalidate_time()
+                else:
+                    k = elapsed / dur
+                    if smooth:
+                        k = k * k * (3.0 - 2.0 * k)
+                    try:
+                        self._apply_clock_total(start + (end - start) * k)
+                    except Exception:
+                        pass
+                    try:
+                        self._time_transition = (start, end, dur, elapsed, smooth)
+                    except Exception:
+                        pass
+                    self._invalidate_time()
+        else:
+            try:
+                spd = float(self.time_speed)
+            except Exception:
+                spd = 0.0
+            if spd != 0.0:
+                try:
+                    self.advance_time(dt * spd)
+                except Exception:
+                    pass
         self._sync_sun_light()
 
     def _night_settings_key(self) -> tuple:
@@ -1283,6 +1460,7 @@ class ProceduralSky(Component):
         d["latitude"] = self.latitude
         d["longitude"] = self.longitude
         d["utc_offset"] = self.utc_offset
+        d["time_speed"] = self.time_speed
         d["sun_light_entity_id"] = self.sun_light_entity_id
         d["moon_enabled"] = self.moon_enabled
         d["moon_size"] = self.moon_size
@@ -1320,6 +1498,7 @@ class ProceduralSky(Component):
         c.latitude = data.get("latitude", _DEFAULT_LATITUDE)
         c.longitude = data.get("longitude", _DEFAULT_LONGITUDE)
         c.utc_offset = data.get("utc_offset", _DEFAULT_UTC_OFFSET)
+        c.time_speed = float(data.get("time_speed", 0.0))
         c.sun_light_entity_id = data.get("sun_light_entity_id", "")
         c.moon_enabled = data.get("moon_enabled", True)
         c.moon_size = data.get("moon_size", 0.27)

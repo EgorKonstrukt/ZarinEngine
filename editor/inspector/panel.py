@@ -1431,6 +1431,14 @@ class InspectorPanel(QDockWidget):
                     elif f.field_type.value in ("vec2_slider", "vec3_slider"):
                         try: cw.refresh_vec2_field(f.name) if f.field_type.value == "vec2_slider" else cw.refresh_vec3_field(f.name)
                         except Exception: pass
+                try:
+                    live = cw._component.live_inspector_fields()
+                except Exception:
+                    live = ()
+                if live:
+                    for _ln in live:
+                        try: cw.refresh_scalar_field(_ln)
+                        except Exception: pass
 
     def _on_active_changed(self, checked: bool):
         if self._updating or not self._entity: return
