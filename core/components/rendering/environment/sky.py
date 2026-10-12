@@ -894,8 +894,13 @@ class ProceduralSky(Component):
         self._moon_phase = _moon_phase_from_days(d, p)
         sun_r_deg = 0.27
         try:
-            atmos = next((a for a in Atmosphere._registry
-                          if a.enabled and a.entity and a.entity.active), None)
+            from core.components.rendering.environment.atmosphere import Atmosphere
+            try:
+                _ent = self._entity
+                _sc = _ent._scene if _ent is not None else None
+            except Exception:
+                _sc = None
+            atmos = Atmosphere.for_scene(_sc)
             if atmos is not None:
                 sun_r_deg = float(getattr(atmos, "_sun_angular_radius", 0.27))
         except Exception:
@@ -1105,8 +1110,12 @@ class ProceduralSky(Component):
             sun_world = (0.0, -0.3, -1.0)
             sun_color = [1.0, 0.95, 0.85]
             sun_intensity = 1.0
-        atmos = next((a for a in Atmosphere._registry
-                      if a.enabled and a.entity and a.entity.active), None)
+        try:
+            _ent = self._entity
+            _sc = _ent._scene if _ent is not None else None
+        except Exception:
+            _sc = None
+        atmos = Atmosphere.for_scene(_sc)
         if atmos is not None and "u_use_atmosphere" in prog:
             if atmos.ensure_luts(ctx, sun_world, sun_color, sun_intensity):
                 atmos.bind_sky(prog)

@@ -37,6 +37,7 @@ _SKY_H = 128
 
 _SUN_DIR_QUANT = 10000.0
 _SUN_COLOR_QUANT = 1000.0
+_GL_STATES_MAX = 4
 
 
 def _quant_dir(v) -> tuple:
@@ -137,14 +138,104 @@ class Atmosphere(Component):
         self._sun_limb_darkening: float = 0.7
         self._sun_convergence: float = 0.5
         self._color_temperature: float = 5778.0
-        self._ctx: Optional[moderngl.Context] = None
-        self._dummy_tex: Optional[moderngl.Texture] = None
-        self._dummy_ctx: Optional[moderngl.Context] = None
-        self._program: Optional[moderngl.ComputeShader] = None
-        self._transmittance_tex: Optional[moderngl.Texture] = None
-        self._sky_tex: Optional[moderngl.Texture] = None
-        self._lut_sizes: tuple[int, int, int, int] = (0, 0, 0, 0)
-        self._cache_key: Optional[tuple] = None
+        self._gl_states: dict = {}
+
+    @classmethod
+    def for_scene(cls, scene):
+        try:
+            found = None
+            for a in cls._registry:
+                try:
+                    ok = a.enabled and a.entity and a.entity.active
+                except Exception:
+                    continue
+                if not ok:
+                    continue
+                if found is None:
+                    found = a
+                try:
+                    ent = a.entity
+                    sc = ent._scene if ent is not None else None
+                except Exception:
+                    sc = None
+                if sc is scene:
+                    return a
+            return found
+        except Exception:
+            return None
+
+    def _gl_state(self, ctx):
+        try:
+            key = id(ctx)
+        except Exception:
+            return None
+        try:
+            st = self._gl_states.get(key)
+        except Exception:
+            return None
+        if st is not None:
+            try:
+                if st.get("ctx") is ctx:
+                    return st
+            except Exception:
+                pass
+            try:
+                self._release_state(st)
+            except Exception:
+                pass
+        st = {"ctx": ctx, "program": None, "trans": None, "sky": None, "dummy": None, "sizes": (0, 0, 0, 0), "cache": None}
+        try:
+            if len(self._gl_states) >= _GL_STATES_MAX:
+                old_key = next(iter(self._gl_states))
+                old = self._gl_states.pop(old_key, None)
+                if old is not None:
+                    try:
+                        self._release_state(old)
+                    except Exception:
+                        pass
+            self._gl_states[key] = st
+        except Exception:
+            pass
+        return st
+
+    @staticmethod
+    def _release_state(st):
+        try:
+            for tex in (st.get("trans"), st.get("sky"), st.get("dummy")):
+                if tex is not None:
+                    try:
+                        tex.release()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            prog = st.get("program")
+            if prog is not None:
+                try:
+                    prog.release()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _gl_state_for_program(self, prog):
+        try:
+            ctx = prog.ctx
+        except Exception:
+            return None
+        try:
+            st = self._gl_states.get(id(ctx))
+        except Exception:
+            return None
+        if st is None:
+            return None
+        try:
+            if st.get("ctx") is not ctx:
+                return None
+        except Exception:
+            return None
+        return st
 
     def serialize(self) -> dict:
         d = super().serialize()
@@ -191,13 +282,7 @@ class Atmosphere(Component):
         inst._sun_limb_darkening = float(data.get("_sun_limb_darkening", 0.7))
         inst._sun_convergence = float(data.get("_sun_convergence", 0.5))
         inst._color_temperature = float(data.get("_color_temperature", 5778.0))
-        inst._ctx = None
-        inst._dummy_tex = None
-        inst._dummy_ctx = None
-        inst._program = None
-        inst._transmittance_tex = None
-        inst._sky_tex = None
-        inst._cache_key = None
+        inst._gl_states = {}
         return inst
 
     def on_awake(self):
@@ -243,33 +328,40 @@ class Atmosphere(Component):
         return max(8, int(base * self._resolution_scale))
 
     def _ensure_textures(self, ctx: moderngl.Context):
+        st = self._gl_state(ctx)
+        if st is None:
+            return None
         tw, th = self._lut_size(_TRANSMITTANCE_W), self._lut_size(_TRANSMITTANCE_H)
         sw, sh = self._lut_size(_SKY_W), self._lut_size(_SKY_H)
-        if self._transmittance_tex is None or self._lut_sizes != (tw, th, sw, sh):
-            if self._transmittance_tex is not None:
-                self._transmittance_tex.release()
-            if self._sky_tex is not None:
-                self._sky_tex.release()
-            self._transmittance_tex = ctx.texture((tw, th), 4, dtype='f4')
-            self._transmittance_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-            self._sky_tex = ctx.texture((sw, sh), 4, dtype='f4')
-            self._sky_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-            self._sky_tex.repeat_x = True
-            self._sky_tex.repeat_y = False
-            self._lut_sizes = (tw, th, sw, sh)
-            self._cache_key = None
-
-    def _dummy_image_tex(self, ctx: moderngl.Context) -> moderngl.Texture:
-        if self._dummy_tex is None or self._dummy_ctx is not ctx:
-            if self._dummy_tex is not None:
+        if st["trans"] is None or st["sizes"] != (tw, th, sw, sh):
+            if st["trans"] is not None:
                 try:
-                    self._dummy_tex.release()
+                    st["trans"].release()
                 except Exception:
                     pass
-            self._dummy_tex = ctx.texture((1, 1), 4, dtype='f4')
-            self._dummy_tex.write(b"\x00" * 16)
-            self._dummy_ctx = ctx
-        return self._dummy_tex
+            if st["sky"] is not None:
+                try:
+                    st["sky"].release()
+                except Exception:
+                    pass
+            st["trans"] = ctx.texture((tw, th), 4, dtype='f4')
+            st["trans"].filter = (moderngl.LINEAR, moderngl.LINEAR)
+            st["sky"] = ctx.texture((sw, sh), 4, dtype='f4')
+            st["sky"].filter = (moderngl.LINEAR, moderngl.LINEAR)
+            st["sky"].repeat_x = True
+            st["sky"].repeat_y = False
+            st["sizes"] = (tw, th, sw, sh)
+            st["cache"] = None
+        return st
+
+    def _dummy_image_tex(self, ctx: moderngl.Context) -> moderngl.Texture:
+        st = self._gl_state(ctx)
+        if st is None:
+            return ctx.texture((1, 1), 4, dtype='f4')
+        if st["dummy"] is None:
+            st["dummy"] = ctx.texture((1, 1), 4, dtype='f4')
+            st["dummy"].write(b"\x00" * 16)
+        return st["dummy"]
 
     def _set_uniform(self, prog, name: str, value: float):
         try:
@@ -279,12 +371,15 @@ class Atmosphere(Component):
             pass
 
     def _dispatch(self, ctx: moderngl.Context, sun_dir, sun_color, sun_intensity):
-        tw, th, sw, sh = self._lut_sizes
-        if self._program is None:
-            self._program = _compile_atmosphere_compute(ctx)
-            if self._program is None:
+        st = self._gl_state(ctx)
+        if st is None:
+            return False
+        tw, th, sw, sh = st["sizes"]
+        if st["program"] is None:
+            st["program"] = _compile_atmosphere_compute(ctx)
+            if st["program"] is None:
                 return False
-        prog = self._program
+        prog = st["program"]
         prog["u_sun_direction"].write(np.array(sun_dir, dtype=np.float32).tobytes())
         prog["u_sun_color"].write(np.array(sun_color, dtype=np.float32).tobytes())
         prog["u_sun_intensity"].value = float(sun_intensity) * float(self._sun_intensity)
@@ -302,14 +397,14 @@ class Atmosphere(Component):
         prog["u_pass"].value = 0
         dummy = self._dummy_image_tex(ctx)
         dummy.bind_to_image(1, read=True, write=False)
-        self._transmittance_tex.bind_to_image(0, read=True, write=True)
+        st["trans"].bind_to_image(0, read=True, write=True)
         prog.run((tw + 7) // 8, (th + 7) // 8, 1)
         ctx.memory_barrier(moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
         prog["u_pass"].value = 1
         prog["u_transmittance_lut"] = 2
-        self._transmittance_tex.use(2)
+        st["trans"].use(2)
         dummy.bind_to_image(0, read=True, write=False)
-        self._sky_tex.bind_to_image(1, read=True, write=True)
+        st["sky"].bind_to_image(1, read=True, write=True)
         prog.run((sw + 7) // 8, (sh + 7) // 8, 1)
         ctx.memory_barrier(moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
         return True
@@ -317,31 +412,34 @@ class Atmosphere(Component):
     def ensure_luts(self, ctx: moderngl.Context, sun_dir, sun_color, sun_intensity) -> bool:
         if not self.enabled:
             return False
-        self._ensure_textures(ctx)
+        st = self._ensure_textures(ctx)
+        if st is None:
+            return False
         key = (_quant_dir(sun_dir),
                _quant_color(sun_color),
                round(float(sun_intensity), 3),
-               self.ibl_key(), self._lut_sizes)
-        if key != self._cache_key:
-            self._cache_key = key
+               self.ibl_key(), st["sizes"])
+        if key != st["cache"]:
+            st["cache"] = key
             try:
                 if not self._dispatch(ctx, sun_dir, sun_color, sun_intensity):
-                    self._cache_key = None
+                    st["cache"] = None
                     return False
             except Exception as e:
                 Logger.error(f"Atmosphere dispatch error: {e}")
-                self._cache_key = None
+                st["cache"] = None
                 return False
         return True
 
     def bind_sky(self, prog: moderngl.Program):
-        if self._sky_tex is None or self._transmittance_tex is None:
+        st = self._gl_state_for_program(prog)
+        if st is None or st["sky"] is None or st["trans"] is None:
             return
         try:
-            self._sky_tex.use(3)
+            st["sky"].use(3)
             if "u_sky_lut" in prog:
                 prog["u_sky_lut"] = 3
-            self._transmittance_tex.use(2)
+            st["trans"].use(2)
             if "u_transmittance_lut" in prog:
                 prog["u_transmittance_lut"] = 2
             if "u_use_atmosphere" in prog:
@@ -368,26 +466,16 @@ class Atmosphere(Component):
             Logger.error(f"Atmosphere.bind_sky error: {e}")
 
     def _release_gl(self):
-        for tex in (self._transmittance_tex, self._sky_tex):
-            if tex is not None:
-                try:
-                    tex.release()
-                except Exception:
-                    pass
-        if self._program is not None:
+        try:
+            states = list(self._gl_states.values())
+        except Exception:
+            states = []
+        for st in states:
             try:
-                self._program.release()
+                self._release_state(st)
             except Exception:
                 pass
-        if self._dummy_tex is not None:
-            try:
-                self._dummy_tex.release()
-            except Exception:
-                pass
-        self._dummy_tex = None
-        self._dummy_ctx = None
-        self._ctx = None
-        self._transmittance_tex = None
-        self._sky_tex = None
-        self._program = None
-        self._cache_key = None
+        try:
+            self._gl_states.clear()
+        except Exception:
+            pass

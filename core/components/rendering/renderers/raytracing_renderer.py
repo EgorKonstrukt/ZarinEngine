@@ -626,8 +626,7 @@ class RaytracingRenderer(Component):
         sun_conv = 0.5
         try:
             from core.components.rendering.environment.atmosphere import Atmosphere
-            atmos = next((a for a in Atmosphere._registry
-                          if a.enabled and a.entity and a.entity.active), None)
+            atmos = Atmosphere.for_scene(scene)
             if atmos is not None:
                 sky_intensity = sky_intensity * float(getattr(atmos, "_sun_intensity", 1.0))
                 sun_radius = float(getattr(atmos, "_sun_angular_radius", 0.27))

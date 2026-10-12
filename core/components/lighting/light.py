@@ -326,8 +326,12 @@ class Light(Component):
                 albedo = 0.9
                 try:
                     from core.components.rendering.environment.atmosphere import Atmosphere
-                    atmos = next((a for a in Atmosphere._registry
-                                  if a.enabled and a.entity and a.entity.active), None)
+                    try:
+                        _ent = transform.entity if transform is not None else None
+                        _sc = _ent._scene if _ent is not None else None
+                    except Exception:
+                        _sc = None
+                    atmos = Atmosphere.for_scene(_sc)
                     if atmos is not None:
                         color_temp = float(getattr(atmos, "_color_temperature", 5778.0))
                         aerosol = float(getattr(atmos, "_aerosol_scale", 1.0))
