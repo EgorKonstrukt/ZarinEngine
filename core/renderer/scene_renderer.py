@@ -671,6 +671,7 @@ class SceneRendererMixin:
             self._materials._transmission_bg = None
         except Exception:
             pass
+        _refresh_bg_for_transmission = None
         for _is_trans_phase, _phase_entries in ((False, opaque_entries), (True, transparent_entries)):
             if not _phase_entries:
                 continue
@@ -680,6 +681,20 @@ class SceneRendererMixin:
                 self._ctx.enable(moderngl.BLEND)
                 self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
                 self._ctx.depth_mask = False
+                try:
+                    _sr_self = self
+                    def _refresh_bg_for_transmission(_m=None):
+                        try:
+                            _sr_self._ensure_transmission_fbo(rw, rh)
+                            _sr_self._ctx.copy_framebuffer(_sr_self._transmission_fbo, _sr_self._scene_fbo)
+                            try:
+                                _sr_self._materials._transmission_bg = (_sr_self._transmission_tex, rw, rh)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                except Exception:
+                    _refresh_bg_for_transmission = None
                 if transparent_entries:
                     try:
                         _need_bg = False
@@ -850,7 +865,8 @@ class SceneRendererMixin:
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
                     sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=_skip_cull,
-                    sort_groups=not _is_trans_phase)
+                    sort_groups=not _is_trans_phase, transparent_pass=bool(_is_trans_phase),
+                    transmission_hook=_refresh_bg_for_transmission)
                 _stats_groups.append(groups)
                 try:
                     if _is_trans_phase:
@@ -960,6 +976,30 @@ class SceneRendererMixin:
                     ent, tr, mesh, mr = entry[:4]
                     wm = entry[4]
                     try:
+                        if _is_trans_phase and mr is not None:
+                            try:
+                                _mp0 = mr.get_material_path(0)
+                            except Exception:
+                                _mp0 = ""
+                            try:
+                                _mm0 = self._materials.load_material(_mp0)
+                                _pp0 = _mm0.properties if _mm0 is not None else {}
+                                _tt0 = float(_pp0.get("_Transmission", _pp0.get("transmission", 0.0)))
+                            except Exception:
+                                _tt0 = 0.0
+                            if _tt0 > 0.001:
+                                try:
+                                    self._ensure_transmission_fbo(rw, rh)
+                                    self._ctx.copy_framebuffer(self._transmission_fbo, self._scene_fbo)
+                                    try:
+                                        self._materials._transmission_bg = (self._transmission_tex, rw, rh)
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                    try:
                         mat = self._materials.load_material(mr.get_material_path(0))
                         shader_path = mat.shader_path if mat else ""
                         prog = self._shaders.get_or_compile(shader_path if shader_path else "") or self._default_prog
@@ -994,7 +1034,11 @@ class SceneRendererMixin:
                             prog["u_normal_matrix"].write(nm.tobytes())
                         self._materials.apply_material(mat, prog, mr)
                         ds = self._mat_double_sided(mat)
-                        self._render_mesh_double_sided(prog, mesh, ds)
+                        try:
+                            _tp = bool(_is_trans_phase)
+                        except Exception:
+                            _tp = False
+                        self._render_mesh_double_sided(prog, mesh, ds, two_pass=bool(_tp and ds))
                         if selected_entities and ent in selected_entities:
                             outline_queue.append((mesh, wm))
                     except Exception:

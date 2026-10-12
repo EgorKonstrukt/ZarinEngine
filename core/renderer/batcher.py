@@ -579,7 +579,8 @@ class RenderBatcher:
                       apply_material_fn, normal_cache: dict,
                       selected_entities: set, outline_queue: list,
                       gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None, skip_cull=False, skip_inst_upload=False,
-                      sort_groups=True, group_skip=None, group_patches=None):
+                      sort_groups=True, group_skip=None, group_patches=None, transparent_pass=False,
+                      transmission_hook=None):
         self.reset_stats()
         try:
             if selected_entities is not None and len(selected_entities) > 256:
@@ -626,6 +627,20 @@ class RenderBatcher:
         apply_material_fn = cached_apply
         for key, group in items:
             _, _, mesh, _, mat, prog, _, _ = group[0]
+            try:
+                if transparent_pass and transmission_hook is not None and mat is not None:
+                    try:
+                        _tv = mat.properties.get("_Transmission", mat.properties.get("transmission", 0.0))
+                    except Exception:
+                        _tv = 0.0
+                    try:
+                        _tvf = float(_tv)
+                    except Exception:
+                        _tvf = 0.0
+                    if _tvf > 0.001:
+                        transmission_hook(mat)
+            except Exception:
+                pass
             dyn_ref = key[5] if len(key) > 5 else False
             self._stats_batches += 1
             n = len(group)
@@ -668,7 +683,7 @@ class RenderBatcher:
                                     group_disable_shadows, set_scene_uniforms_fn,
                                     apply_material_fn, normal_cache,
                                     selected_entities, outline_queue,
-                                    set_scene=False)
+                                    set_scene=False, transparent_pass=transparent_pass)
             elif _supports_instancing(prog):
                 gpu_eligible = (gpu_storage is not None
                                 and gpu_storage.is_gpu_driven()
@@ -688,7 +703,7 @@ class RenderBatcher:
                                             group_disable_shadows, set_scene_uniforms_fn,
                                             apply_material_fn, normal_cache,
                                             selected_entities, outline_queue,
-                                            set_scene=False)
+                                            set_scene=False, transparent_pass=transparent_pass)
                         continue
                     if visible is group:
                         try:
@@ -712,7 +727,8 @@ class RenderBatcher:
                                        apply_material_fn,
                                        selected_entities, outline_queue,
                                        gpu_storage=gpu_storage, set_scene=False, skip_upload=skip_up,
-                                       group_key=key, group_patches=_gp, group_skip=_gs)
+                                       group_key=key, group_patches=_gp, group_skip=_gs,
+                                       transparent_pass=transparent_pass)
             else:
                 for item in group:
                     self._render_single(item, prog, mesh, mat,
@@ -720,7 +736,7 @@ class RenderBatcher:
                                         group_disable_shadows, set_scene_uniforms_fn,
                                         apply_material_fn, normal_cache,
                                         selected_entities, outline_queue,
-                                        set_scene=False)
+                                        set_scene=False, transparent_pass=transparent_pass)
 
     def _render_instanced(self, group, prog, mesh, mat,
                           view_f32, proj_f32, cam_pos, lights,
@@ -728,14 +744,16 @@ class RenderBatcher:
                           apply_material_fn,
                           selected_entities, outline_queue,
                           gpu_storage=None, set_scene=True, skip_upload=False,
-                          group_key=None, group_patches=None, group_skip=False):
+                          group_key=None, group_patches=None, group_skip=False,
+                          transparent_pass=False):
         names = self._uniform_names(prog)
         if not skip_upload and (gpu_storage is not None and gpu_storage.is_gpu_driven()
                 and len(group) >= self._gpu_driven_min_instances
                 and self._try_render_gpu_driven(
                     group, prog, mesh, mat, view_f32, proj_f32, cam_pos,
                     lights, disable_shadows, set_scene_uniforms_fn,
-                    apply_material_fn, gpu_storage, set_scene=set_scene)):
+                    apply_material_fn, gpu_storage, set_scene=set_scene,
+                    transparent_pass=transparent_pass)):
             return
         if gpu_storage is not None and gpu_storage.is_gpu_driven():
             frustum_planes = self._get_frustum_planes(view_f32, proj_f32)
@@ -848,21 +866,46 @@ class RenderBatcher:
         ranges = mesh.sub_mesh_ranges
         ds = bool(mat.properties.get("double_sided") or mat.properties.get("_double_sided")) if mat else False
         cull_on = bool(self._ctx.cull_face)
-        if ds and cull_on:
+        two_pass = bool(ds and cull_on and transparent_pass)
+        if ds and cull_on and not two_pass:
             self._ctx.disable(moderngl.CULL_FACE)
-        try:
-            if "u_double_sided" in names:
-                try:
-                    prog["u_double_sided"].value = 1 if ds else 0
-                except Exception:
-                    pass
+        if "u_double_sided" in names:
+            try:
+                prog["u_double_sided"].value = 1 if ds else 0
+            except Exception:
+                pass
+        def _draw_inst():
             if ranges and sub_idx >= 0 and sub_idx < len(ranges):
                 start, count = ranges[sub_idx]
                 vao.render(instances=len(group), vertices=count, first=start)
             else:
                 vao.render(instances=len(group))
+        try:
+            if two_pass:
+                try:
+                    self._ctx.cull_face = "front"
+                except Exception:
+                    pass
+                _draw_inst()
+                try:
+                    self._ctx.cull_face = "back"
+                except Exception:
+                    pass
+                _draw_inst()
+                self._stats_draw_calls += 1
+            else:
+                _draw_inst()
         finally:
-            if ds and cull_on:
+            if two_pass:
+                try:
+                    self._ctx.cull_face = "back"
+                except Exception:
+                    pass
+                try:
+                    self._ctx.enable(moderngl.CULL_FACE)
+                except Exception:
+                    pass
+            elif ds and cull_on:
                 self._ctx.enable(moderngl.CULL_FACE)
         self._stats_draw_calls += 1
         self._stats_instanced += len(group)
@@ -891,7 +934,7 @@ class RenderBatcher:
                                view_f32, proj_f32, cam_pos, lights,
                                disable_shadows, set_scene_uniforms_fn,
                                apply_material_fn, gpu_storage,
-                               set_scene=True) -> bool:
+                               set_scene=True, transparent_pass=False) -> bool:
         """Frustum-cull on the GPU and draw via glDrawElementsIndirect.
 
         Returns True when the GPU-driven path fully handled the draw (this
@@ -926,7 +969,8 @@ class RenderBatcher:
                 prog["u_use_skinning"].value = 0
             ds = bool(mat.properties.get("double_sided") or mat.properties.get("_double_sided")) if mat else False
             cull_on = bool(self._ctx.cull_face)
-            if ds and cull_on:
+            two_pass = bool(ds and cull_on and transparent_pass)
+            if ds and cull_on and not two_pass:
                 self._ctx.disable(moderngl.CULL_FACE)
             if "u_double_sided" in names:
                 try:
@@ -950,12 +994,34 @@ class RenderBatcher:
                 self._write_indirect_command(count, visible, start)
 
                 vao = self._get_vao(prog, mesh)
-                vao.render_indirect(self._indirect_buf, moderngl.TRIANGLES, 1, 0)
-                self._stats_draw_calls += 1
+                if two_pass:
+                    try:
+                        self._ctx.cull_face = "front"
+                    except Exception:
+                        pass
+                    vao.render_indirect(self._indirect_buf, moderngl.TRIANGLES, 1, 0)
+                    try:
+                        self._ctx.cull_face = "back"
+                    except Exception:
+                        pass
+                    vao.render_indirect(self._indirect_buf, moderngl.TRIANGLES, 1, 0)
+                    self._stats_draw_calls += 2
+                else:
+                    vao.render_indirect(self._indirect_buf, moderngl.TRIANGLES, 1, 0)
+                    self._stats_draw_calls += 1
                 self._stats_instanced += visible
                 return True
             finally:
-                if ds and cull_on:
+                if two_pass:
+                    try:
+                        self._ctx.cull_face = "back"
+                    except Exception:
+                        pass
+                    try:
+                        self._ctx.enable(moderngl.CULL_FACE)
+                    except Exception:
+                        pass
+                elif ds and cull_on:
                     self._ctx.enable(moderngl.CULL_FACE)
         except Exception as e:
             print(f"[batcher] gpu-driven draw failed, falling back to CPU: {e!r}")
@@ -965,7 +1031,8 @@ class RenderBatcher:
                         view_f32, proj_f32, cam_pos, lights,
                         disable_shadows, set_scene_uniforms_fn,
                         apply_material_fn, normal_cache,
-                        selected_entities, outline_queue, set_scene=True):
+                        selected_entities, outline_queue, set_scene=True,
+                        transparent_pass=False):
         self._stats_draw_calls += 1
         ent, tr, _, mr, _, _, wm, sub_idx = item
         names = self._uniform_names(prog)
@@ -993,21 +1060,46 @@ class RenderBatcher:
         ranges = mesh.sub_mesh_ranges
         ds = bool(mat.properties.get("double_sided") or mat.properties.get("_double_sided")) if mat else False
         cull_on = bool(self._ctx.cull_face)
-        if ds and cull_on:
+        two_pass = bool(ds and cull_on and transparent_pass)
+        if ds and cull_on and not two_pass:
             self._ctx.disable(moderngl.CULL_FACE)
-        try:
-            if "u_double_sided" in names:
-                try:
-                    prog["u_double_sided"].value = 1 if ds else 0
-                except Exception:
-                    pass
+        if "u_double_sided" in names:
+            try:
+                prog["u_double_sided"].value = 1 if ds else 0
+            except Exception:
+                pass
+        def _draw_single():
             if ranges and sub_idx >= 0 and sub_idx < len(ranges):
                 start, count = ranges[sub_idx]
                 mesh.render_range(prog, start, count)
             else:
                 mesh.render(prog)
+        try:
+            if two_pass:
+                try:
+                    self._ctx.cull_face = "front"
+                except Exception:
+                    pass
+                _draw_single()
+                try:
+                    self._ctx.cull_face = "back"
+                except Exception:
+                    pass
+                _draw_single()
+                self._stats_draw_calls += 1
+            else:
+                _draw_single()
         finally:
-            if ds and cull_on:
+            if two_pass:
+                try:
+                    self._ctx.cull_face = "back"
+                except Exception:
+                    pass
+                try:
+                    self._ctx.enable(moderngl.CULL_FACE)
+                except Exception:
+                    pass
+            elif ds and cull_on:
                 self._ctx.enable(moderngl.CULL_FACE)
         if selected_entities and ent in selected_entities:
             outline_queue.append((mesh, wm))

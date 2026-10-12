@@ -204,10 +204,10 @@ class SceneUniformsMixin:
         return names
 
 
-    def _render_mesh_double_sided(self, prog, mesh, double_sided: bool):
+    def _render_mesh_double_sided(self, prog, mesh, double_sided: bool, two_pass: bool = False):
         ctx = self._ctx
         cull_on = bool(ctx.cull_face)
-        if double_sided and cull_on:
+        if double_sided and cull_on and not two_pass:
             ctx.disable(moderngl.CULL_FACE)
         try:
             if "u_double_sided" in self._uniform_names(prog):
@@ -215,9 +215,30 @@ class SceneUniformsMixin:
                     prog["u_double_sided"].value = 1 if double_sided else 0
                 except Exception:
                     pass
-            mesh.render(prog)
+            if double_sided and cull_on and two_pass:
+                try:
+                    ctx.cull_face = "front"
+                except Exception:
+                    pass
+                mesh.render(prog)
+                try:
+                    ctx.cull_face = "back"
+                except Exception:
+                    pass
+                mesh.render(prog)
+            else:
+                mesh.render(prog)
         finally:
-            if double_sided and cull_on:
+            if double_sided and cull_on and two_pass:
+                try:
+                    ctx.cull_face = "back"
+                except Exception:
+                    pass
+                try:
+                    ctx.enable(moderngl.CULL_FACE)
+                except Exception:
+                    pass
+            elif double_sided and cull_on:
                 ctx.enable(moderngl.CULL_FACE)
 
 

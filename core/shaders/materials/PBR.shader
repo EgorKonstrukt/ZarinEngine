@@ -188,6 +188,8 @@ Shader "Zarin/PBR"
             uniform sampler2D u_transmission_bg;
             uniform vec2 u_transmission_bg_texel;
             uniform float u_transmission_bg_active;
+            uniform mat4 u_view;
+            uniform mat4 u_proj;
             uniform int u_double_sided;
 
             uniform vec3 u_camera_pos;
@@ -811,7 +813,7 @@ float compute_point_shadow_for_light(int li) {
                 result += emission;
                 vec3 surf = result / (result + vec3(1.0));
                 surf = pow(surf, vec3(1.0 / 2.2));
-                float _trsTrans = clamp(_Transmission, 0.0, 1.0) * (1.0 - metallic);
+                float _trsTrans = clamp(_Transmission, 0.0, 1.0);
                 vec3 _trsOut = surf;
                 float _trsAlpha = alpha;
                 if (_trsTrans > 0.001 && u_transmission_bg_active > 0.5) {
@@ -823,9 +825,13 @@ float compute_point_shadow_for_light(int li) {
                     float _trsRough = clamp(roughness, 0.0, 1.0);
                     float _trsFrost = clamp((_trsRough - 0.05) / 0.6, 0.0, 1.0);
                     vec2 _trsScreenUV = gl_FragCoord.xy * u_transmission_bg_texel;
-                    vec3 _trsRefr = refract(-V, N, 1.0 / _trsIor);
+                    vec3 _trsNv = normalize(mat3(u_view) * N);
+                    vec3 _trsVv = normalize(-v_view_pos);
+                    vec3 _trsRefr = refract(-_trsVv, _trsNv, 1.0 / _trsIor);
                     float _trsTir = 1.0 - step(dot(_trsRefr, _trsRefr), 0.0001);
-                    vec2 _trsOff = _trsRefr.xy / max(-_trsRefr.z, 0.05) * max(_Thickness, 0.0) * 1.25 * _trsTir;
+                    float _trsDepth = max(-v_view_pos.z, 0.05);
+                    vec2 _trsDisp = _trsRefr.xy / max(-_trsRefr.z, 0.05) * max(_Thickness, 0.0) * _trsTir;
+                    vec2 _trsOff = vec2(u_proj[0][0], u_proj[1][1]) * _trsDisp / _trsDepth * 0.5;
                     vec3 _trsTint = mix(vec3(1.0), clamp(albedo, vec3(0.0), vec3(1.0)), _trsTrans * 0.9);
                     vec2 _trsUvC = clamp(_trsScreenUV + _trsOff, vec2(0.001), vec2(0.999));
                     vec3 _trsAcc = texture(u_transmission_bg, _trsUvC).rgb;
@@ -982,6 +988,8 @@ float compute_point_shadow_for_light(int li) {
             uniform sampler2D u_transmission_bg;
             uniform vec2 u_transmission_bg_texel;
             uniform float u_transmission_bg_active;
+            uniform mat4 u_view;
+            uniform mat4 u_proj;
             uniform int u_double_sided;
 
             uniform vec3 u_camera_pos;
@@ -1641,7 +1649,7 @@ float compute_shadow_improved() {
                 result += emission;
                 vec3 surf = result / (result + vec3(1.0));
                 surf = pow(surf, vec3(1.0 / 2.2));
-                float _trsTrans = clamp(_Transmission, 0.0, 1.0) * (1.0 - metallic);
+                float _trsTrans = clamp(_Transmission, 0.0, 1.0);
                 vec3 _trsOut = surf;
                 float _trsAlpha = alpha;
                 if (_trsTrans > 0.001 && u_transmission_bg_active > 0.5) {
@@ -1653,9 +1661,13 @@ float compute_shadow_improved() {
                     float _trsRough = clamp(roughness, 0.0, 1.0);
                     float _trsFrost = clamp((_trsRough - 0.05) / 0.6, 0.0, 1.0);
                     vec2 _trsScreenUV = gl_FragCoord.xy * u_transmission_bg_texel;
-                    vec3 _trsRefr = refract(-V, N, 1.0 / _trsIor);
+                    vec3 _trsNv = normalize(mat3(u_view) * N);
+                    vec3 _trsVv = normalize(-v_view_pos);
+                    vec3 _trsRefr = refract(-_trsVv, _trsNv, 1.0 / _trsIor);
                     float _trsTir = 1.0 - step(dot(_trsRefr, _trsRefr), 0.0001);
-                    vec2 _trsOff = _trsRefr.xy / max(-_trsRefr.z, 0.05) * max(_Thickness, 0.0) * 1.25 * _trsTir;
+                    float _trsDepth = max(-v_view_pos.z, 0.05);
+                    vec2 _trsDisp = _trsRefr.xy / max(-_trsRefr.z, 0.05) * max(_Thickness, 0.0) * _trsTir;
+                    vec2 _trsOff = vec2(u_proj[0][0], u_proj[1][1]) * _trsDisp / _trsDepth * 0.5;
                     vec3 _trsTint = mix(vec3(1.0), clamp(albedo, vec3(0.0), vec3(1.0)), _trsTrans * 0.9);
                     vec2 _trsUvC = clamp(_trsScreenUV + _trsOff, vec2(0.001), vec2(0.999));
                     vec3 _trsAcc = texture(u_transmission_bg, _trsUvC).rgb;
