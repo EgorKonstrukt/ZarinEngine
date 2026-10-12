@@ -35,6 +35,14 @@ except ImportError:
     _batch_flat = None
     _batch_from_transforms = None
     _collect_dirty = None
+try:
+    from core._ecs_batch import batch_update_flat_soa as _batch_flat_soa
+except ImportError:
+    _batch_flat_soa = None
+try:
+    from core._ecs_batch import batch_update_from_transforms_soa as _batch_from_soa
+except ImportError:
+    _batch_from_soa = None
 
 T = TypeVar("T", bound="Component")
 
@@ -993,46 +1001,45 @@ class Scene:
         except Exception:
             pass
 
+    def _soa_needed(self):
+        ci = self._component_indices
+        if ci.get("Armature"):
+            return True
+        if ci.get("SkinnedMeshRenderer"):
+            return True
+        return False
+
     def _soa_sync_one(self, tr):
-        try:
-            slot = tr._soa
-        except Exception:
+        slot = tr._soa
+        if slot < 0 or slot >= self._soa_cap:
             return
-        if slot is None or slot < 0 or slot >= self._soa_cap:
-            return
-        try:
-            self._soa_world[slot] = tr._world_matrix._d
-        except Exception:
-            pass
+        self._soa_world[slot] = tr._world_matrix._d
 
     def _soa_sync_many(self, transforms):
         world = self._soa_world
         cap = self._soa_cap
         for tr in transforms:
-            try:
-                if tr._dirty:
-                    continue
-                slot = tr._soa
-            except Exception:
+            if tr._dirty:
                 continue
-            if slot is None or slot < 0 or slot >= cap:
+            slot = tr._soa
+            if slot < 0 or slot >= cap:
                 continue
-            try:
-                world[slot] = tr._world_matrix._d
-            except Exception:
-                pass
+            world[slot] = tr._world_matrix._d
+
+    def _soa_sync_many_flushed(self, transforms):
+        world = self._soa_world
+        cap = self._soa_cap
+        for tr in transforms:
+            slot = tr._soa
+            if slot < 0 or slot >= cap:
+                continue
+            world[slot] = tr._world_matrix._d
 
     def _soa_write_world(self, tr):
-        try:
-            idx = tr._soa
-        except Exception:
+        idx = tr._soa
+        if idx < 0 or idx >= self._soa_cap:
             return
-        if idx is None or idx < 0 or idx >= self._soa_cap:
-            return
-        try:
-            self._soa_world[idx] = tr._world_matrix._d
-        except Exception:
-            pass
+        self._soa_world[idx] = tr._world_matrix._d
 
     def _batch_sync_entities(self, entities: dict[str, Entity]):
         idx = self._component_indices
@@ -1155,10 +1162,7 @@ class Scene:
         if not lst:
             return lst
         self._last_flushed = []
-        try:
-            self._last_flushed_set.clear()
-        except Exception:
-            pass
+        self._last_flushed_set.clear()
         return lst
 
     def peek_flushed_transforms(self):
@@ -1197,13 +1201,18 @@ class Scene:
         count = 0
         bf = _batch_flat
         bft = _batch_from_transforms
+        need_soa = self._soa_cap > 0 and self._soa_needed()
         if flat:
             nflat = len(flat)
             if nflat == 1:
                 flat[0]._update_world_matrix()
             elif bf is not None:
-                bf(flat)
-                self._soa_sync_many(flat)
+                if need_soa and _batch_flat_soa is not None:
+                    _batch_flat_soa(flat, self._soa_world, self._soa_cap)
+                else:
+                    bf(flat)
+                    if need_soa:
+                        self._soa_sync_many_flushed(flat)
             else:
                 for t in flat:
                     t._update_world_matrix()
@@ -1261,41 +1270,30 @@ class Scene:
                     for t in hier:
                         t._update_world_matrix()
                 elif bft is not None:
-                    bft(hier)
-                    self._soa_sync_many(hier)
+                    if need_soa and _batch_from_soa is not None:
+                        _batch_from_soa(hier, self._soa_world, self._soa_cap)
+                    else:
+                        bft(hier)
+                        if need_soa:
+                            self._soa_sync_many_flushed(hier)
                 else:
                     for t in hier:
                         t._update_world_matrix()
             count += nhier
         if roots:
             nroots = len(roots)
-            if nroots > 4096:
-                try:
-                    self._last_flushed = []
-                    self._last_flushed_set.clear()
-                except Exception:
-                    pass
+            lf = self._last_flushed
+            lfs = self._last_flushed_set
+            total = len(lf) + nroots
+            if total > 32768:
+                self._last_flushed = []
+                lfs.clear()
                 self._flushed_overflow = True
             else:
-                try:
-                    lf = self._last_flushed
-                    lfs = self._last_flushed_set
-                    total = len(lf) + nroots
-                    if total > 32768:
-                        self._last_flushed = []
-                        try:
-                            lfs.clear()
-                        except Exception:
-                            pass
-                        self._flushed_overflow = True
-                    else:
-                        for t in roots:
-                            tid = id(t)
-                            if tid not in lfs:
-                                lfs.add(tid)
-                                lf.append(t)
-                except Exception:
-                    pass
+                for t in roots:
+                    if t not in lfs:
+                        lfs.add(t)
+                        lf.append(t)
         return count
 
     def _get_entity_depth_key(self, t):
@@ -1650,42 +1648,52 @@ class Scene:
         radius_cache: dict = {}
         spatial = self._spatial
         dirty = self._spatial_dirty_entities
-        if dirty and len(dirty) < len(self._entities) * 0.6:
+        flushed = self._last_flushed
+        try:
+            overflow = bool(self._flushed_overflow)
+        except Exception:
+            overflow = False
+        nent = len(self._entities)
+        use_flushed = flushed and not overflow
+        nd = len(dirty) if dirty else 0
+        nf = len(flushed) if use_flushed else 0
+        if (nd + nf) > 0 and (nd + nf) < nent * 0.6:
             get_e = self._entities.get
-            for eid in list(dirty):
-                spatial.remove(eid)
-                e = get_e(eid)
-                if e is None or not e._active:
-                    continue
-                tr = e._transform
-                if tr is None:
-                    tr = e.transform
-                    if tr is None:
+            done = set()
+            done_add = done.add
+            if dirty:
+                for eid in list(dirty):
+                    e = get_e(eid)
+                    if e is None or not e._active:
                         continue
-                d = tr._world_matrix._d
-                cx = float(d[3, 0])
-                cy = float(d[3, 1])
-                cz = float(d[3, 2])
-                rad = 2.5
-                if _MF is not None and meshes is not None:
-                    ml = e._type_map.get(_MF)
-                    if ml:
-                        mf = ml[0]
-                        rl = e._type_map.get(_MR)
-                        mr = rl[0] if rl else None
-                        if mr is not None and mr.enabled:
-                            name = mf.mesh_name or "cube"
-                            r0 = radius_cache.get(name)
-                            if r0 is None:
-                                m = meshes.get(name)
-                                if m is None and mf.mesh_path:
-                                    m = meshes.get(mf.mesh_path)
-                                try:
-                                    r0 = float(getattr(m, "bounding_radius", 2.5)) if m is not None else 2.5
-                                except Exception:
-                                    r0 = 2.5
-                                radius_cache[name] = r0
-                            try:
+                    tr = e._transform
+                    if tr is None:
+                        tr = e.transform
+                        if tr is None:
+                            continue
+                    d = tr._world_matrix._d
+                    cx = float(d[3, 0])
+                    cy = float(d[3, 1])
+                    cz = float(d[3, 2])
+                    rad = 2.5
+                    if _MF is not None and meshes is not None:
+                        ml = e._type_map.get(_MF)
+                        if ml:
+                            mf = ml[0]
+                            rl = e._type_map.get(_MR)
+                            mr = rl[0] if rl else None
+                            if mr is not None and mr.enabled:
+                                name = mf.mesh_name or "cube"
+                                r0 = radius_cache.get(name)
+                                if r0 is None:
+                                    m = meshes.get(name)
+                                    if m is None and mf.mesh_path:
+                                        m = meshes.get(mf.mesh_path)
+                                    try:
+                                        r0 = float(getattr(m, "bounding_radius", 2.5)) if m is not None else 2.5
+                                    except Exception:
+                                        r0 = 2.5
+                                    radius_cache[name] = r0
                                 sx = d[0, 0] * d[0, 0] + d[1, 0] * d[1, 0] + d[2, 0] * d[2, 0]
                                 sy = d[0, 1] * d[0, 1] + d[1, 1] * d[1, 1] + d[2, 1] * d[2, 1]
                                 sz = d[0, 2] * d[0, 2] + d[1, 2] * d[1, 2] + d[2, 2] * d[2, 2]
@@ -1695,10 +1703,60 @@ class Scene:
                                 if sz > ms:
                                     ms = sz
                                 ms = ms ** 0.5
-                            except Exception:
-                                ms = 1.0
-                            rad = r0 * ms + 0.5
-                spatial.insert(eid, AABB(Vec3(cx - rad, cy - rad, cz - rad), Vec3(cx + rad, cy + rad, cz + rad)))
+                                rad = r0 * ms + 0.5
+                    if spatial.update_xyz(eid, cx, cy, cz, rad):
+                        done_add(eid)
+                        continue
+                    spatial.remove(eid)
+                    spatial.insert(eid, AABB(Vec3(cx - rad, cy - rad, cz - rad), Vec3(cx + rad, cy + rad, cz + rad)))
+                    done_add(eid)
+            if use_flushed:
+                for t in flushed:
+                    e = t._entity
+                    if e is None:
+                        continue
+                    eid = e._id
+                    if eid in done:
+                        continue
+                    if not e._active:
+                        continue
+                    d = t._world_matrix._d
+                    cx = float(d[3, 0])
+                    cy = float(d[3, 1])
+                    cz = float(d[3, 2])
+                    rad = 2.5
+                    if _MF is not None and meshes is not None:
+                        ml = e._type_map.get(_MF)
+                        if ml:
+                            mf = ml[0]
+                            rl = e._type_map.get(_MR)
+                            mr = rl[0] if rl else None
+                            if mr is not None and mr.enabled:
+                                name = mf.mesh_name or "cube"
+                                r0 = radius_cache.get(name)
+                                if r0 is None:
+                                    m = meshes.get(name)
+                                    if m is None and mf.mesh_path:
+                                        m = meshes.get(mf.mesh_path)
+                                    try:
+                                        r0 = float(getattr(m, "bounding_radius", 2.5)) if m is not None else 2.5
+                                    except Exception:
+                                        r0 = 2.5
+                                    radius_cache[name] = r0
+                                sx = d[0, 0] * d[0, 0] + d[1, 0] * d[1, 0] + d[2, 0] * d[2, 0]
+                                sy = d[0, 1] * d[0, 1] + d[1, 1] * d[1, 1] + d[2, 1] * d[2, 1]
+                                sz = d[0, 2] * d[0, 2] + d[1, 2] * d[1, 2] + d[2, 2] * d[2, 2]
+                                ms = sx
+                                if sy > ms:
+                                    ms = sy
+                                if sz > ms:
+                                    ms = sz
+                                ms = ms ** 0.5
+                                rad = r0 * ms + 0.5
+                    if spatial.update_xyz(eid, cx, cy, cz, rad):
+                        continue
+                    spatial.remove(eid)
+                    spatial.insert(eid, AABB(Vec3(cx - rad, cy - rad, cz - rad), Vec3(cx + rad, cy + rad, cz + rad)))
             dirty.clear()
             if not dirty:
                 self._spatial_dirty = False

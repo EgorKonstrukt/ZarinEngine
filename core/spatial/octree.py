@@ -233,6 +233,33 @@ class Octree:
         self._object_count = 0
         self._index: dict = {}
 
+    def update_xyz(self, entity_id: str, cx: float, cy: float, cz: float, rad: float) -> bool:
+        node = self._index.get(entity_id)
+        if node is None:
+            return False
+        cur = node.objects.get(entity_id)
+        if cur is None:
+            return False
+        c = node.center
+        h = node.half
+        x0 = cx - rad
+        x1 = cx + rad
+        y0 = cy - rad
+        y1 = cy + rad
+        z0 = cz - rad
+        z1 = cz + rad
+        if x0 < c._x - h._x or x1 > c._x + h._x or y0 < c._y - h._y or y1 > c._y + h._y or z0 < c._z - h._z or z1 > c._z + h._z:
+            return False
+        mn = cur.min
+        mx = cur.max
+        mn._x = x0
+        mn._y = y0
+        mn._z = z0
+        mx._x = x1
+        mx._y = y1
+        mx._z = z1
+        return True
+
     def insert(self, entity_id: str, aabb: AABB) -> bool:
         old_node = self._index.get(entity_id)
         if old_node is not None:

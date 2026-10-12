@@ -510,84 +510,15 @@ class SceneCollectorMixin:
                     return
             except Exception:
                 pass
-        renderable = snap.renderable
-        n = len(renderable)
-        flushed = None
         try:
-            if hasattr(scene, "peek_flushed_transforms"):
-                flushed = scene.peek_flushed_transforms()
-            else:
-                flushed = None
+            flushed = scene.peek_flushed_transforms() if hasattr(scene, "peek_flushed_transforms") else None
         except Exception:
             flushed = None
         try:
             overflow = bool(getattr(scene, "_flushed_overflow", False))
         except Exception:
             overflow = False
-        if flushed is not None and not overflow and n > 0 and len(flushed) > 0 and len(flushed) * 8 < n:
-            try:
-                index = self._ensure_snapshot_tr_index(snap)
-                for t in flushed:
-                    try:
-                        lst = index.get(id(t))
-                    except Exception:
-                        lst = None
-                    if not lst:
-                        continue
-                    try:
-                        wm = t._world_matrix
-                    except Exception:
-                        continue
-                    for i in lst:
-                        try:
-                            renderable[i][4] = wm
-                        except Exception:
-                            pass
-                for entry in snap.skinned_renderables:
-                    tr = entry[1]
-                    if tr is not None:
-                        if tr._dirty:
-                            tr._update_world_matrix()
-                        entry[4] = tr._world_matrix
-                for entry in snap.skinned_shadow_renderables:
-                    ent = entry[1]
-                    tr = ent._transform if ent is not None and ent._transform is not None else (ent.transform if ent is not None else None)
-                    if tr is not None:
-                        if tr._dirty:
-                            tr._update_world_matrix()
-                        entry[3] = tr._world_matrix
-                for item in snap.sprite_items:
-                    tr = item._tr
-                    if tr is not None:
-                        if tr._dirty:
-                            tr._update_world_matrix()
-                        item.world_matrix = tr._world_matrix
-                for item in snap.video_items:
-                    tr = item._tr
-                    if tr is not None:
-                        if tr._dirty:
-                            tr._update_world_matrix()
-                        item.world_matrix = tr._world_matrix
-                for item in snap.svg_items:
-                    tr = item._tr
-                    if tr is not None:
-                        if tr._dirty:
-                            tr._update_world_matrix()
-                        item.world_matrix = tr._world_matrix
-                for item in snap.projectors:
-                    item.refresh_vp()
-                try:
-                    self._refresh_soft_snapshot_meshes(scene)
-                except Exception:
-                    pass
-                try:
-                    self._snap_refresh_tv = scene._transform_version
-                except Exception:
-                    pass
-                return
-            except Exception:
-                pass
-        if flushed is not None and not overflow and n > 0 and len(flushed) == 0:
+        if flushed is not None and not overflow and len(flushed) == 0:
             try:
                 if not scene._dirty_roots and not scene._transform_version_pending:
                     try:
@@ -609,7 +540,10 @@ class SceneCollectorMixin:
                 except Exception:
                     pass
         for item in snap.projectors:
-            item.refresh_vp()
+            try:
+                item.refresh_vp()
+            except Exception:
+                pass
         try:
             self._refresh_soft_snapshot_meshes(scene)
         except Exception:

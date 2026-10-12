@@ -17,6 +17,10 @@ try:
 except ImportError:
     _batch_from_transforms = None
     _batch_flat = None
+try:
+    from core._ecs_batch import batch_update_from_transforms_soa as _batch_from_soa
+except ImportError:
+    _batch_from_soa = None
 @ComponentRegistry.register
 class Transform(Component):
     _icon = "Transform.png"
@@ -57,7 +61,6 @@ class Transform(Component):
             scene = ent._scene
             if scene is not None:
                 scene._dirty_roots.add(self)
-                scene._spatial_dirty_entities.add(ent._id)
                 scene._spatial_dirty = True
                 scene._transform_version_pending = True
             return
@@ -80,8 +83,6 @@ class Transform(Component):
                         push(ct)
             return
         dirty_add = scene._dirty_roots.add
-        spatial_set = scene._spatial_dirty_entities
-        spatial_add = spatial_set.add
         stack = [self]
         pop = stack.pop
         push = stack.append
@@ -94,7 +95,6 @@ class Transform(Component):
             if e is None:
                 continue
             dirty_add(t)
-            spatial_add(e._id)
             for child in e._children:
                 ct = child._transform
                 if ct is not None and not ct._dirty:
@@ -105,13 +105,63 @@ class Transform(Component):
         if self._dirty:
             return
         ent = self._entity
-        sc = ent._scene if ent is not None else None
+        if ent is None:
+            return
+        sc = ent._scene
         if sc is None:
             return
-        try:
-            sc._soa_sync_one(self)
-        except Exception:
-            pass
+        slot = self._soa
+        if slot < 0 or slot >= sc._soa_cap:
+            return
+        sc._soa_world[slot] = self._world_matrix._d
+    def _write_local_into(self, out):
+        lr = self._local_rot
+        rx = lr._x
+        ry = lr._y
+        rz = lr._z
+        rw = lr._w
+        ls = self._local_scale
+        sx = ls._x
+        sy = ls._y
+        sz = ls._z
+        lp = self._local_pos
+        x2 = rx + rx
+        y2 = ry + ry
+        z2 = rz + rz
+        xx = rx * x2
+        xy = rx * y2
+        xz = rx * z2
+        yy = ry * y2
+        yz = ry * z2
+        zz = rz * z2
+        wx = rw * x2
+        wy = rw * y2
+        wz = rw * z2
+        r00 = 1.0 - (yy + zz)
+        r01 = xy + wz
+        r02 = xz - wy
+        r10 = xy - wz
+        r11 = 1.0 - (xx + zz)
+        r12 = yz + wx
+        r20 = xz + wy
+        r21 = yz - wx
+        r22 = 1.0 - (xx + yy)
+        out[0, 0] = sx * r00
+        out[0, 1] = sx * r01
+        out[0, 2] = sx * r02
+        out[0, 3] = 0.0
+        out[1, 0] = sy * r10
+        out[1, 1] = sy * r11
+        out[1, 2] = sy * r12
+        out[1, 3] = 0.0
+        out[2, 0] = sz * r20
+        out[2, 1] = sz * r21
+        out[2, 2] = sz * r22
+        out[2, 3] = 0.0
+        out[3, 0] = lp._x
+        out[3, 1] = lp._y
+        out[3, 2] = lp._z
+        out[3, 3] = 1.0
     def _update_world_matrix(self):
         if not self._dirty:
             return
@@ -121,14 +171,53 @@ class Transform(Component):
         ent = self._entity
         parent = ent._parent if ent is not None else None
         if parent is None:
-            if _batch_flat is not None:
-                _batch_flat([self])
-                self._soa_sync_self()
-                return
-            local = self._build_local_matrix()
-            self._world_matrix._d[:, :] = local._d
+            wm_d = self._world_matrix._d
+            lp = self._local_pos
+            lr = self._local_rot
+            ls = self._local_scale
+            rx = lr._x
+            ry = lr._y
+            rz = lr._z
+            rw = lr._w
+            sx = ls._x
+            sy = ls._y
+            sz = ls._z
+            x2 = rx + rx
+            y2 = ry + ry
+            z2 = rz + rz
+            xx = rx * x2
+            xy = rx * y2
+            xz = rx * z2
+            yy = ry * y2
+            yz = ry * z2
+            zz = rz * z2
+            wx = rw * x2
+            wy = rw * y2
+            wz = rw * z2
+            wm_d[0, 0] = sx * (1.0 - (yy + zz))
+            wm_d[0, 1] = sx * (xy + wz)
+            wm_d[0, 2] = sx * (xz - wy)
+            wm_d[0, 3] = 0.0
+            wm_d[1, 0] = sy * (xy - wz)
+            wm_d[1, 1] = sy * (1.0 - (xx + zz))
+            wm_d[1, 2] = sy * (yz + wx)
+            wm_d[1, 3] = 0.0
+            wm_d[2, 0] = sz * (xz + wy)
+            wm_d[2, 1] = sz * (yz - wx)
+            wm_d[2, 2] = sz * (1.0 - (xx + yy))
+            wm_d[2, 3] = 0.0
+            wm_d[3, 0] = lp._x
+            wm_d[3, 1] = lp._y
+            wm_d[3, 2] = lp._z
+            wm_d[3, 3] = 1.0
             self._dirty = False
-            self._soa_sync_self()
+            ent2 = self._entity
+            if ent2 is not None:
+                sc = ent2._scene
+                if sc is not None:
+                    slot = self._soa
+                    if slot >= 0 and slot < sc._soa_cap:
+                        sc._soa_world[slot] = wm_d
             return
         chain = [self]
         chain_append = chain.append
@@ -153,25 +242,50 @@ class Transform(Component):
                 chain.reverse()
                 _batch_from_transforms(chain)
                 for node in chain:
-                    node._soa_sync_self()
+                    if node._dirty:
+                        continue
+                    e2 = node._entity
+                    if e2 is None:
+                        continue
+                    sc2 = e2._scene
+                    if sc2 is None:
+                        continue
+                    slot2 = node._soa
+                    if slot2 >= 0 and slot2 < sc2._soa_cap:
+                        sc2._soa_world[slot2] = node._world_matrix._d
                 return
+        tmp = None
         for node in reversed(chain):
             if node._world_target is not None:
                 node._resolve_world_target()
                 continue
-            local = node._build_local_matrix()
             ne = node._entity
             parent_entity = ne._parent if ne is not None else None
             if parent_entity is not None:
                 pt = parent_entity._transform
                 if pt is not None:
-                    np.matmul(local._d, pt._world_matrix._d, out=node._world_matrix._d)
+                    if tmp is None:
+                        tmp = np.empty((4, 4), dtype=FLOAT_TYPE)
+                    node._write_local_into(tmp)
+                    np.matmul(tmp, pt._world_matrix._d, out=node._world_matrix._d)
                     node._dirty = False
-                    node._soa_sync_self()
+                    e3 = node._entity
+                    if e3 is not None:
+                        sc3 = e3._scene
+                        if sc3 is not None:
+                            slot3 = node._soa
+                            if slot3 >= 0 and slot3 < sc3._soa_cap:
+                                sc3._soa_world[slot3] = node._world_matrix._d
                     continue
-            node._world_matrix._d[:, :] = local._d
+            node._write_local_into(node._world_matrix._d)
             node._dirty = False
-            node._soa_sync_self()
+            e4 = node._entity
+            if e4 is not None:
+                sc4 = e4._scene
+                if sc4 is not None:
+                    slot4 = node._soa
+                    if slot4 >= 0 and slot4 < sc4._soa_cap:
+                        sc4._soa_world[slot4] = node._world_matrix._d
 
     def _resolve_world_target(self):
         ent = self._entity
@@ -198,24 +312,9 @@ class Transform(Component):
         self._dirty = False
         self._soa_sync_self()
     def _build_local_matrix(self) -> Mat4:
-        lr = self._local_rot
-        r = mat4_from_quaternion(lr._x, lr._y, lr._z, lr._w)
-        ls = self._local_scale
-        sx = ls._x; sy = ls._y; sz = ls._z
-        lp = self._local_pos
-        m = r
-        if m.base is not None:
-            m = m.copy()
-        if sx != 1.0 or sy != 1.0 or sz != 1.0:
-            m[0, 0] *= sx; m[0, 1] *= sx; m[0, 2] *= sx
-            m[1, 0] *= sy; m[1, 1] *= sy; m[1, 2] *= sy
-            m[2, 0] *= sz; m[2, 1] *= sz; m[2, 2] *= sz
-        m[3, 0] = lp._x
-        m[3, 1] = lp._y
-        m[3, 2] = lp._z
-        m[3, 3] = 1.0
         out = Mat4.__new__(Mat4)
-        out._d = m
+        out._d = np.empty((4, 4), dtype=FLOAT_TYPE)
+        self._write_local_into(out._d)
         return out
     @property
     def local_position(self) -> Vec3: return self._local_pos
@@ -336,20 +435,14 @@ class Transform(Component):
     @world_matrix.setter
     def world_matrix(self, m: Mat4):
         if isinstance(m, Mat4):
-            self._world_target = Mat4.__new__(Mat4)
-            self._world_target._d = m._d.copy()
+            wt = Mat4.__new__(Mat4)
+            wt._d = m._d.copy()
         else:
-            self._world_target = Mat4(m)
-        self._dirty = True
+            wt = Mat4(m)
+        self._world_target = wt
         self._physics_dirty = True
-        ent = self._entity
-        if ent is not None:
-            scene = ent._scene
-            if scene is not None:
-                scene._dirty_roots.add(self)
-                scene._spatial_dirty_entities.add(ent._id)
-                scene._spatial_dirty = True
-                scene._transform_version_pending = True
+        self._dirty = False
+        self._mark_dirty()
     @property
     def forward(self) -> Vec3:
         wm = self._world_matrix
@@ -488,18 +581,24 @@ class Transform(Component):
             return
         bft = _batch_from_transforms
         if bft is not None:
-            need_py = False
             for t in transforms:
                 if t._world_target is not None:
-                    need_py = True
-                    break
-            if need_py:
-                for t in transforms:
-                    t._update_world_matrix()
-            else:
-                bft(transforms)
-                for t in transforms:
-                    t._soa_sync_self()
+                    for u in transforms:
+                        u._update_world_matrix()
+                    return
+            bft(transforms)
+            for t in transforms:
+                if t._dirty:
+                    continue
+                e = t._entity
+                if e is None:
+                    continue
+                sc = e._scene
+                if sc is None:
+                    continue
+                slot = t._soa
+                if slot >= 0 and slot < sc._soa_cap:
+                    sc._soa_world[slot] = t._world_matrix._d
             return
         for t in transforms:
             t._update_world_matrix()
@@ -526,7 +625,6 @@ class Transform(Component):
             sc = ent._scene
             if sc is not None:
                 sc._dirty_roots.add(t)
-                sc._spatial_dirty_entities.add(ent._id)
                 sc._spatial_dirty = True
                 sc._transform_version_pending = True
             children = ent._children

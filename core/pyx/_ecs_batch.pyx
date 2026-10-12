@@ -51,6 +51,16 @@ cdef inline void _local_matrix(
         out[i][2] = a2 + a3*tz
         out[i][3] = a3
 
+def has_world_targets(list transforms):
+    cdef int n = len(transforms)
+    cdef int i
+    cdef object t
+    for i in range(n):
+        t = transforms[i]
+        if t._world_target is not None:
+            return True
+    return False
+
 def extract_transform_soa(list transforms):
     cdef int n = len(transforms)
     if n == 0:
@@ -73,7 +83,7 @@ def extract_transform_soa(list transforms):
     cdef np.ndarray[np.int32_t, ndim=1] parent_idx = np.full(n, -1, dtype=np.int32)
 
     cdef int i
-    cdef object t, e, parent_e
+    cdef object t
     cdef Vec3 p, s
     cdef Quat q
 
@@ -251,6 +261,40 @@ def batch_update_from_transforms(list transforms):
         t._world_target = None
         t._dirty = False
 
+def batch_update_from_transforms_soa(list transforms, np.ndarray[DTYPE_t, ndim=3] soa_world, int soa_cap):
+    cdef int n = len(transforms)
+    if n == 0:
+        return
+    batch_update_from_transforms(transforms)
+    cdef int i
+    cdef object t
+    cdef int slot
+    cdef np.ndarray[DTYPE_t, ndim=2] wmd
+    for i in range(n):
+        t = transforms[i]
+        if t._dirty:
+            continue
+        slot = t._soa
+        if slot < 0 or slot >= soa_cap:
+            continue
+        wmd = t._world_matrix._d
+        soa_world[slot, 0, 0] = wmd[0, 0]
+        soa_world[slot, 0, 1] = wmd[0, 1]
+        soa_world[slot, 0, 2] = wmd[0, 2]
+        soa_world[slot, 0, 3] = wmd[0, 3]
+        soa_world[slot, 1, 0] = wmd[1, 0]
+        soa_world[slot, 1, 1] = wmd[1, 1]
+        soa_world[slot, 1, 2] = wmd[1, 2]
+        soa_world[slot, 1, 3] = wmd[1, 3]
+        soa_world[slot, 2, 0] = wmd[2, 0]
+        soa_world[slot, 2, 1] = wmd[2, 1]
+        soa_world[slot, 2, 2] = wmd[2, 2]
+        soa_world[slot, 2, 3] = wmd[2, 3]
+        soa_world[slot, 3, 0] = wmd[3, 0]
+        soa_world[slot, 3, 1] = wmd[3, 1]
+        soa_world[slot, 3, 2] = wmd[3, 2]
+        soa_world[slot, 3, 3] = wmd[3, 3]
+
 def write_world_matrices(list transforms, np.ndarray[DTYPE_t, ndim=3] world_mats):
     cdef int n = len(transforms)
     cdef int i, j, k
@@ -290,6 +334,40 @@ def batch_update_flat(list transforms):
                 wmd[j, k] = local[j][k]
         t._world_target = None
         t._dirty = False
+
+def batch_update_flat_soa(list transforms, np.ndarray[DTYPE_t, ndim=3] soa_world, int soa_cap):
+    cdef int n = len(transforms)
+    if n == 0:
+        return
+    batch_update_flat(transforms)
+    cdef int i
+    cdef object t
+    cdef int slot
+    cdef np.ndarray[DTYPE_t, ndim=2] wmd
+    for i in range(n):
+        t = transforms[i]
+        if t._dirty:
+            continue
+        slot = t._soa
+        if slot < 0 or slot >= soa_cap:
+            continue
+        wmd = t._world_matrix._d
+        soa_world[slot, 0, 0] = wmd[0, 0]
+        soa_world[slot, 0, 1] = wmd[0, 1]
+        soa_world[slot, 0, 2] = wmd[0, 2]
+        soa_world[slot, 0, 3] = wmd[0, 3]
+        soa_world[slot, 1, 0] = wmd[1, 0]
+        soa_world[slot, 1, 1] = wmd[1, 1]
+        soa_world[slot, 1, 2] = wmd[1, 2]
+        soa_world[slot, 1, 3] = wmd[1, 3]
+        soa_world[slot, 2, 0] = wmd[2, 0]
+        soa_world[slot, 2, 1] = wmd[2, 1]
+        soa_world[slot, 2, 2] = wmd[2, 2]
+        soa_world[slot, 2, 3] = wmd[2, 3]
+        soa_world[slot, 3, 0] = wmd[3, 0]
+        soa_world[slot, 3, 1] = wmd[3, 1]
+        soa_world[slot, 3, 2] = wmd[3, 2]
+        soa_world[slot, 3, 3] = wmd[3, 3]
 
 def collect_dirty_transforms(list all_dirty):
     cdef int n = len(all_dirty)

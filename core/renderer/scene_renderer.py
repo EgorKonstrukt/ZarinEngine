@@ -287,7 +287,7 @@ class SceneRendererMixin:
                                 _centers, _radii = _bfci(cull_entries)
                                 _cull_index = None
                                 self._cull_cache = (_ck, _centers, _radii, _cull_index, _tvg)
-                            elif _flushed and len(_flushed) * 16 < n_ent:
+                            elif _flushed and len(_flushed) * 4 < n_ent:
                                 if _cull_index is None:
                                     _cull_index = {}
                                     for _ci, _ce in enumerate(cull_entries):
