@@ -15,6 +15,9 @@ try:
 except ImportError:
     _raycast_cy = None
 
+_MISS_CACHE: dict = {}
+_MISS_CACHE_MAX: int = 4
+
 
 def _ray_aabb_min(ox: float, oy: float, oz: float,
                   dx: float, dy: float, dz: float,
@@ -396,9 +399,16 @@ def _mesh_of_entity(entity):
     return mesh
 
 
-def _batch_mesh_aabb_miss(entities, ro, rd) -> set:
+def _batch_mesh_aabb_miss(entities, ro, rd, key=None) -> set:
     if _raycast_cy is None:
         return set()
+    if key is not None:
+        try:
+            ck = _MISS_CACHE.get(key[2])
+            if ck is not None and ck[0] == id(entities) and ck[1] == key and ck[2] == len(entities):
+                return set(ck[3])
+        except Exception:
+            pass
     idx = []
     bmins = []
     bmaxs = []
@@ -422,7 +432,15 @@ def _batch_mesh_aabb_miss(entities, ro, rd) -> set:
         np.array(wms, dtype=np.float64),
     )
     hits = _raycast_cy.ray_aabbs(ro[0], ro[1], ro[2], rd[0], rd[1], rd[2], wmn, wmx)
-    return {idx[i] for i in range(len(idx)) if not hits[i]}
+    out = {idx[i] for i in range(len(idx)) if not hits[i]}
+    if key is not None:
+        try:
+            if len(_MISS_CACHE) >= _MISS_CACHE_MAX:
+                _MISS_CACHE.clear()
+            _MISS_CACHE[key[2]] = (id(entities), key, len(entities), frozenset(out))
+        except Exception:
+            pass
+    return out
 
 
 def pick_entity(vp, sx: int, sy: int):
@@ -446,7 +464,11 @@ def pick_entity(vp, sx: int, sy: int):
             best_entity = entity
     all_ents = scene.get_all_entities()
     active = [e for e in all_ents if e.active]
-    miss = _batch_mesh_aabb_miss(active, ro, rd)
+    try:
+        _mkey = (scene._render_version, scene._transform_version, id(scene))
+    except Exception:
+        _mkey = None
+    miss = _batch_mesh_aabb_miss(active, ro, rd, _mkey)
     for i, entity in enumerate(active):
         if entity.id in candidate_ids or i in miss:
             continue
@@ -478,7 +500,11 @@ def pick_entity_hit(vp, sx: int, sy: int):
             best_entity = entity
     all_ents = scene.get_all_entities()
     active = [e for e in all_ents if e.active]
-    miss = _batch_mesh_aabb_miss(active, ro, rd)
+    try:
+        _mkey = (scene._render_version, scene._transform_version, id(scene))
+    except Exception:
+        _mkey = None
+    miss = _batch_mesh_aabb_miss(active, ro, rd, _mkey)
     for i, entity in enumerate(active):
         if entity.id in candidate_ids or i in miss:
             continue

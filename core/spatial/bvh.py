@@ -995,6 +995,9 @@ _BVH_CACHE_RUNTIME_VERSION: int = _BVH_CACHE_VERSION
 _bvh_none_logged: set[str] = set()
 _BVH_FAILED: dict[str, float] = {}
 _BVH_FAIL_BACKOFF = 5.0
+_BVH_ID_MEMO: dict = {}
+_BVH_ID_MEMO_MAX: int = 1024
+_BVH_MAKEDIRS_DONE: set = set()
 
 
 def _bvh_cache_store(key: str, value) -> None:
@@ -1010,6 +1013,27 @@ def _bvh_cache_key(vertices: np.ndarray, indices: np.ndarray) -> str:
     return h.hexdigest()
 
 
+def _bvh_key_memoized(vertices: np.ndarray, indices: np.ndarray) -> str:
+    try:
+        idk = (id(vertices), id(indices))
+        me = _BVH_ID_MEMO.get(idk)
+        if me is not None and me[0]() is vertices and me[1]() is indices and vertices.nbytes == me[2] and indices.nbytes == me[3]:
+            return me[4]
+    except Exception:
+        me = None
+        idk = None
+    key = _bvh_cache_key(vertices, indices)
+    try:
+        import weakref as _wr
+        if idk is not None:
+            if len(_BVH_ID_MEMO) >= _BVH_ID_MEMO_MAX:
+                _BVH_ID_MEMO.clear()
+            _BVH_ID_MEMO[idk] = (_wr.ref(vertices), _wr.ref(indices), vertices.nbytes, indices.nbytes, key)
+    except Exception:
+        pass
+    return key
+
+
 def _bvh_cache_dir() -> str | None:
     try:
         from core.engine.engine import Engine
@@ -1017,8 +1041,11 @@ def _bvh_cache_dir() -> str | None:
         if eng is None:
             return None
         root = eng.project_root
+        if root in _BVH_MAKEDIRS_DONE:
+            return os.path.join(root, "cache", "bvh")
         d = os.path.join(root, "cache", "bvh")
         os.makedirs(d, exist_ok=True)
+        _BVH_MAKEDIRS_DONE.add(root)
         return d
     except (ImportError, OSError, AttributeError, TypeError):
         return None
@@ -1178,6 +1205,7 @@ def _clear_bvh_cache_locked():
     _BVH_CACHE.clear()
     _BVH_FAILED.clear()
     _bvh_none_logged.clear()
+    _BVH_ID_MEMO.clear()
     try:
         from core.ecs.pool import _bvh_pool
         import core.ecs.pool as _pool_mod
@@ -1202,7 +1230,7 @@ def get_mesh_bvh(vertices: np.ndarray, indices: np.ndarray) -> BVH | None:
             _clear_bvh_cache_locked()
             _BVH_CACHE_RUNTIME_VERSION = _BVH_CACHE_VERSION
             _bvh_log(f"CACHE CLEAR version bump {_BVH_CACHE_RUNTIME_VERSION} -> {_BVH_CACHE_VERSION}")
-    key = _bvh_cache_key(vertices, indices)
+    key = _bvh_key_memoized(vertices, indices)
     n_tris = len(indices) // 3
     with _BVH_LOCK:
         _cached_entry = _BVH_CACHE.get(key)
@@ -1339,7 +1367,7 @@ def get_mesh_bvh_sync(vertices: np.ndarray, indices: np.ndarray, timeout: float 
             _clear_bvh_cache_locked()
             _BVH_CACHE_RUNTIME_VERSION = _BVH_CACHE_VERSION
             _bvh_log(f"SYNC CACHE CLEAR version bump")
-    key = _bvh_cache_key(vertices, indices)
+    key = _bvh_key_memoized(vertices, indices)
     with _BVH_LOCK:
         if key not in _BVH_CACHE:
             cache_dir = _bvh_cache_dir()

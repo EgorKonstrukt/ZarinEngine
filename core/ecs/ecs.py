@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 import concurrent.futures
+import gc
 import os
 import uuid
 from dataclasses import dataclass, field
@@ -518,7 +519,14 @@ class Entity:
         sc = self._scene
         if sc:
             sc._roots_cache_valid = False
-            sc._depth_cache.clear()
+            dc = sc._depth_cache
+            stack = [self]
+            while stack:
+                e = stack.pop()
+                dc.pop(e._id, None)
+                ch = e._children
+                for c in ch:
+                    stack.append(c)
 
     def _invalidate_transform_cache(self):
         comps = self._components
@@ -794,11 +802,17 @@ class Entity:
         return None
 
     def serialize(self) -> dict:
+        comps = []
+        comps_append = comps.append
+        for k, c in self._components.items():
+            cd = c.serialize()
+            cd["_key"] = k
+            comps_append(cd)
         d = {
             "id": self._id, "name": self._name, "active": self._active,
             "tags": list(self._tags), "layer": self._layer,
             "parent": self._parent.id if self._parent else None,
-            "components": [{"_key": k, **c.serialize()} for k, c in self._components.items()]
+            "components": comps
         }
         if self._prefab_guid:
             d["prefab_guid"] = self._prefab_guid
@@ -1957,6 +1971,16 @@ class Scene:
         prof.stop("scene_start")
 
     def serialize(self) -> dict:
+        gc_enabled = gc.isenabled()
+        if gc_enabled:
+            gc.disable()
+        try:
+            return self._serialize_inner()
+        finally:
+            if gc_enabled:
+                gc.enable()
+
+    def _serialize_inner(self) -> dict:
         items = list(self._entities.items())
         if len(items) > 64:
             workers = min(8, max(2, (os.cpu_count() or 4)))
@@ -2026,6 +2050,17 @@ class Scene:
 
     @classmethod
     def deserialize(cls, data: dict, registry: ComponentRegistry) -> Scene:
+        gc_enabled = gc.isenabled()
+        if gc_enabled:
+            gc.disable()
+        try:
+            return cls._deserialize_inner(data, registry)
+        finally:
+            if gc_enabled:
+                gc.enable()
+
+    @classmethod
+    def _deserialize_inner(cls, data: dict, registry: ComponentRegistry) -> Scene:
         s = cls(data["name"])
         s._embed_all = bool(data.get("embed_all", False))
         s._compress_resources = bool(data.get("compress_resources", False))

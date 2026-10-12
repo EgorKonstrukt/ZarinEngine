@@ -26,6 +26,7 @@ _INSTANCE_ATTRS = ("in_model0", "in_model1", "in_model2", "in_model3")
 
 _INITIAL_INST_VBO_CAPACITY = 8192
 _MAX_VAO_CACHE = 1024
+_MAX_GROUP_VBOS = 256
 
 _INSTANCING_CACHE: dict[int, bool] = {}
 
@@ -212,6 +213,8 @@ class RenderBatcher:
         self._frustum_cache_key = None
         self._groups_cache_key = None
         self._groups_cache_val = None
+        self._group_vbos: dict = {}
+        self._group_upload_state: dict = {}
         self._last_view_f32 = None
         self._last_proj_f32 = None
         self._last_cam_pos = None
@@ -363,26 +366,6 @@ class RenderBatcher:
         self._index_buf_capacity = needed + 64
         return self._index_buf
 
-    def patch_shared_vbo_single(self, idx: int, mat, origin=None) -> bool:
-        try:
-            vbo = self._shared_inst_vbo
-            if vbo is None:
-                return False
-            try:
-                f32 = relativize_model_f32(mat, origin)
-            except Exception:
-                return False
-            try:
-                vbo.write(f32, offset=int(idx) * 64)
-            except Exception:
-                try:
-                    vbo.write(f32.tobytes(), offset=int(idx) * 64)
-                except Exception:
-                    return False
-            return True
-        except Exception:
-            return False
-
     def _write_shared_vbo(self, matrices, origin=None):
         n = len(matrices)
         if n == 0:
@@ -404,52 +387,9 @@ class RenderBatcher:
                 except Exception:
                     pass
             self._vao_cache.clear()
-        if origin is not None:
-            if _batch_f32_flat_origin is not None:
-                try:
-                    flat = _batch_f32_flat_origin(matrices, float(origin[0]), float(origin[1]), float(origin[2]))
-                    try:
-                        self._shared_inst_vbo.orphan()
-                    except Exception:
-                        pass
-                    self._shared_inst_vbo.write(flat)
-                    return self._shared_inst_vbo
-                except Exception:
-                    pass
-            else:
-                try:
-                    matrices = relativize_models(matrices, origin)
-                except Exception:
-                    pass
-                try:
-                    self._shared_inst_vbo.orphan()
-                except Exception:
-                    pass
-                self._shared_inst_vbo.write(Mat4.batch_to_f32(matrices))
-                return self._shared_inst_vbo
-            try:
-                matrices = relativize_models(matrices, origin)
-            except Exception:
-                pass
-        if _batch_f32_flat is not None:
-            try:
-                flat = _batch_f32_flat(matrices)
-                try:
-                    self._shared_inst_vbo.orphan()
-                except Exception:
-                    pass
-                self._shared_inst_vbo.write(flat)
-                return self._shared_inst_vbo
-            except Exception:
-                pass
-        try:
-            self._shared_inst_vbo.orphan()
-        except Exception:
-            pass
-        self._shared_inst_vbo.write(Mat4.batch_to_f32(matrices))
-        return self._shared_inst_vbo
+        return self._fill_inst_vbo(self._shared_inst_vbo, matrices, origin)
 
-    def _get_vao(self, prog: moderngl.Program, mesh) -> moderngl.VertexArray:
+    def _get_vao(self, prog: moderngl.Program, mesh, inst_vbo=None) -> moderngl.VertexArray:
         try:
             gpu_ver = int(getattr(mesh, "_gpu_version", 0) or 0)
         except Exception:
@@ -460,12 +400,18 @@ class RenderBatcher:
         except Exception:
             vbo_id = 0
             ibo_id = 0
-        key = (id(mesh), id(prog), gpu_ver, vbo_id, ibo_id)
+        if inst_vbo is None:
+            inst_vbo = self._shared_inst_vbo
+        try:
+            inst_id = id(inst_vbo)
+        except Exception:
+            inst_id = 0
+        key = (id(mesh), id(prog), gpu_ver, vbo_id, ibo_id, inst_id)
         cached = self._vao_cache.get(key)
         if cached is not None:
             self._vao_cache.move_to_end(key)
             return cached
-        vao = _make_instanced_vao(self._ctx, prog, mesh, self._shared_inst_vbo)
+        vao = _make_instanced_vao(self._ctx, prog, mesh, inst_vbo)
         self._vao_cache[key] = vao
         if len(self._vao_cache) > _MAX_VAO_CACHE:
             _, old_vao = self._vao_cache.popitem(last=False)
@@ -474,6 +420,150 @@ class RenderBatcher:
             except Exception:
                 pass
         return vao
+
+    def _drop_vaos_for_inst_vbo(self, vbo):
+        try:
+            vid = id(vbo)
+        except Exception:
+            return
+        for k in list(self._vao_cache.keys()):
+            try:
+                if len(k) > 5 and k[5] == vid:
+                    old = self._vao_cache.pop(k, None)
+                    if old is not None:
+                        try:
+                            old.release()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+    def _ensure_group_vbo(self, key, n: int):
+        ent = self._group_vbos.get(key)
+        if ent is not None:
+            vbo, cap = ent
+            if cap >= n:
+                return vbo
+            self._drop_vaos_for_inst_vbo(vbo)
+            try:
+                vbo.release()
+            except Exception:
+                pass
+            new_cap = cap if cap else 64
+            while new_cap < n:
+                new_cap <<= 1
+            vbo = self._ctx.buffer(reserve=new_cap * 64)
+            self._group_vbos[key] = (vbo, new_cap)
+            self._group_upload_state.pop(key, None)
+            return vbo
+        if len(self._group_vbos) >= _MAX_GROUP_VBOS:
+            try:
+                old_key = next(iter(self._group_vbos))
+                old_vbo, _ = self._group_vbos.pop(old_key)
+                self._drop_vaos_for_inst_vbo(old_vbo)
+                try:
+                    old_vbo.release()
+                except Exception:
+                    pass
+                self._group_upload_state.pop(old_key, None)
+            except Exception:
+                pass
+        cap = 64
+        while cap < n:
+            cap <<= 1
+        vbo = self._ctx.buffer(reserve=cap * 64)
+        self._group_vbos[key] = (vbo, cap)
+        return vbo
+
+    def _fill_inst_vbo(self, vbo, matrices, origin=None):
+        n = len(matrices)
+        if n == 0:
+            return vbo
+        if origin is not None:
+            if _batch_f32_flat_origin is not None:
+                try:
+                    flat = _batch_f32_flat_origin(matrices, float(origin[0]), float(origin[1]), float(origin[2]))
+                    try:
+                        vbo.orphan()
+                    except Exception:
+                        pass
+                    vbo.write(flat)
+                    return vbo
+                except Exception:
+                    pass
+            else:
+                try:
+                    matrices = relativize_models(matrices, origin)
+                except Exception:
+                    pass
+                try:
+                    vbo.orphan()
+                except Exception:
+                    pass
+                vbo.write(Mat4.batch_to_f32(matrices))
+                return vbo
+            try:
+                matrices = relativize_models(matrices, origin)
+            except Exception:
+                pass
+        if _batch_f32_flat is not None:
+            try:
+                flat = _batch_f32_flat(matrices)
+                try:
+                    vbo.orphan()
+                except Exception:
+                    pass
+                vbo.write(flat)
+                return vbo
+            except Exception:
+                pass
+        try:
+            vbo.orphan()
+        except Exception:
+            pass
+        vbo.write(Mat4.batch_to_f32(matrices))
+        return vbo
+
+    def _write_group_vbo(self, key, matrices, origin=None):
+        n = len(matrices)
+        if n == 0:
+            return None
+        vbo = self._ensure_group_vbo(key, n)
+        return self._fill_inst_vbo(vbo, matrices, origin)
+
+    def patch_group_vbo(self, key, patches, origin=None) -> bool:
+        try:
+            ent = self._group_vbos.get(key)
+        except Exception:
+            return False
+        if ent is None:
+            return False
+        vbo, cap = ent
+        if vbo is None:
+            return False
+        ok = True
+        for idx, mat in patches:
+            try:
+                ii = int(idx)
+            except Exception:
+                ok = False
+                continue
+            if ii < 0 or ii >= cap:
+                ok = False
+                continue
+            try:
+                f32 = relativize_model_f32(mat, origin)
+            except Exception:
+                ok = False
+                continue
+            try:
+                vbo.write(f32, offset=ii * 64)
+            except Exception:
+                try:
+                    vbo.write(f32.tobytes(), offset=ii * 64)
+                except Exception:
+                    ok = False
+        return ok
 
     def _get_frustum_planes(self, view_f32, proj_f32):
         key = (view_f32.tobytes(), proj_f32.tobytes())
@@ -489,7 +579,7 @@ class RenderBatcher:
                       apply_material_fn, normal_cache: dict,
                       selected_entities: set, outline_queue: list,
                       gpu_storage=None, dynamic_cubemaps=None, sky_ibl=None, skip_cull=False, skip_inst_upload=False,
-                      sort_groups=True):
+                      sort_groups=True, group_skip=None, group_patches=None):
         self.reset_stats()
         try:
             if selected_entities is not None and len(selected_entities) > 256:
@@ -600,13 +690,29 @@ class RenderBatcher:
                                             selected_entities, outline_queue,
                                             set_scene=False)
                         continue
-                    group = visible
+                    if visible is group:
+                        try:
+                            _gp = group_patches.get(key) if group_patches else None
+                        except Exception:
+                            _gp = None
+                        try:
+                            _gs = key in group_skip if group_skip else False
+                        except Exception:
+                            _gs = False
+                    else:
+                        group = visible
+                        _gp = None
+                        _gs = False
+                else:
+                    _gp = None
+                    _gs = False
                 self._render_instanced(group, prog, mesh, mat,
                                        view_f32, proj_f32, cam_pos, lights,
                                        group_disable_shadows, set_scene_uniforms_fn,
                                        apply_material_fn,
                                        selected_entities, outline_queue,
-                                       gpu_storage=gpu_storage, set_scene=False, skip_upload=skip_up)
+                                       gpu_storage=gpu_storage, set_scene=False, skip_upload=skip_up,
+                                       group_key=key, group_patches=_gp, group_skip=_gs)
             else:
                 for item in group:
                     self._render_single(item, prog, mesh, mat,
@@ -621,7 +727,8 @@ class RenderBatcher:
                           disable_shadows, set_scene_uniforms_fn,
                           apply_material_fn,
                           selected_entities, outline_queue,
-                          gpu_storage=None, set_scene=True, skip_upload=False):
+                          gpu_storage=None, set_scene=True, skip_upload=False,
+                          group_key=None, group_patches=None, group_skip=False):
         names = self._uniform_names(prog)
         if not skip_upload and (gpu_storage is not None and gpu_storage.is_gpu_driven()
                 and len(group) >= self._gpu_driven_min_instances
@@ -660,6 +767,59 @@ class RenderBatcher:
                 idx_buf.bind_to_storage_buffer(INDEX_BINDING)
                 if "u_use_instancing" in names:
                     prog["u_use_instancing"].value = 2
+            inst_vbo = self._shared_inst_vbo
+        elif group_key is not None:
+            _org = origin_for(cam_pos)
+            try:
+                if _org is None:
+                    _org_key = None
+                else:
+                    _org_key = (float(_org[0]), float(_org[1]), float(_org[2]))
+            except Exception:
+                _org_key = None
+            _ng = len(group)
+            _vbo = None
+            try:
+                _st = self._group_upload_state.get(group_key)
+            except Exception:
+                _st = None
+            if group_patches:
+                _vbo = self._ensure_group_vbo(group_key, _ng)
+                if self.patch_group_vbo(group_key, group_patches, _org):
+                    try:
+                        self._group_upload_state[group_key] = (id(group), _ng, _org_key)
+                    except Exception:
+                        pass
+                else:
+                    _vbo = self._write_group_vbo(group_key, [item[6] for item in group], _org)
+                    try:
+                        self._group_upload_state[group_key] = (id(group), _ng, _org_key)
+                    except Exception:
+                        pass
+            elif group_skip and _st is not None and _st == (id(group), _ng, _org_key):
+                try:
+                    _vbo = self._group_vbos[group_key][0]
+                except Exception:
+                    _vbo = None
+                if _vbo is None:
+                    _vbo = self._write_group_vbo(group_key, [item[6] for item in group], _org)
+                    try:
+                        self._group_upload_state[group_key] = (id(group), _ng, _org_key)
+                    except Exception:
+                        pass
+            else:
+                _vbo = self._write_group_vbo(group_key, [item[6] for item in group], _org)
+                try:
+                    self._group_upload_state[group_key] = (id(group), _ng, _org_key)
+                except Exception:
+                    pass
+            if _vbo is None:
+                _org2 = origin_for(cam_pos)
+                self._write_shared_vbo([item[6] for item in group], _org2)
+                _vbo = self._shared_inst_vbo
+            inst_vbo = _vbo
+            if "u_use_instancing" in names:
+                prog["u_use_instancing"].value = 1
         else:
             if not skip_upload:
                 _org = origin_for(cam_pos)
@@ -667,10 +827,11 @@ class RenderBatcher:
                 self._write_shared_vbo(model_mats, _org)
             if "u_use_instancing" in names:
                 prog["u_use_instancing"].value = 1
+            inst_vbo = self._shared_inst_vbo
         if "u_use_skinning" in names:
             prog["u_use_skinning"].value = 0
 
-        vao = self._get_vao(prog, mesh)
+        vao = self._get_vao(prog, mesh, inst_vbo)
 
         if set_scene:
             set_scene_uniforms_fn(prog, view_f32, proj_f32, cam_pos, lights,
@@ -871,6 +1032,19 @@ class RenderBatcher:
                 pass
         self._vao_cache.clear()
         self._prog_member_cache.clear()
+        try:
+            for vbo, _ in self._group_vbos.values():
+                try:
+                    vbo.release()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            self._group_vbos.clear()
+            self._group_upload_state.clear()
+        except Exception:
+            pass
         if self._shared_inst_vbo:
             try:
                 self._shared_inst_vbo.release()

@@ -106,6 +106,9 @@ class PhysicsScene:
         self._shape_check_counter: int = 0
         self._body_items: list[tuple[str, int]] = []
         self._body_items_dirty: bool = False
+        self._sync_items: list[tuple] | None = None
+        self._reg_count: int = -1
+        self._reg_rv = None
         self._has_collision_scripts: bool = False
         self._collision_scripts_checked: bool = False
         self._collision_listener_sig: tuple = None
@@ -136,6 +139,11 @@ class PhysicsScene:
         self._joint_to_entity.clear()
         self._cached_shape.clear()
         self._cached_shape_info.clear()
+        self._sync_items = None
+        self._body_items = []
+        self._body_items_dirty = False
+        self._reg_count = -1
+        self._reg_rv = None
         self._prev_frame_contacts.clear()
         self._2d_bodies.clear()
         self._has_collision_scripts = False
@@ -160,6 +168,11 @@ class PhysicsScene:
         self._joint_to_entity.clear()
         self._cached_shape.clear()
         self._cached_shape_info.clear()
+        self._sync_items = None
+        self._body_items = []
+        self._body_items_dirty = False
+        self._reg_count = -1
+        self._reg_rv = None
         self._2d_bodies.clear()
         self._has_collision_scripts = False
         self._collision_scripts_checked = False
@@ -1177,12 +1190,17 @@ class PhysicsScene:
     def _register_new_entities(self):
         if not self._scene:
             return
-        # NOTE: no count-based early-out. A remove+add in the same frame keeps
-        # the count identical but still leaves a new (soft-only) entity without
-        # a body -> it would never simulate. The loop below is just dict
-        # lookups, cheap even every frame.
+        all_ents = self._scene.get_all_entities()
+        try:
+            rv = self._scene._render_version
+        except Exception:
+            rv = None
+        if len(all_ents) == self._reg_count and rv == self._reg_rv:
+            return
+        self._reg_count = len(all_ents)
+        self._reg_rv = rv
         need_reset = False
-        for entity in self._scene.get_all_entities():
+        for entity in all_ents:
             if entity.id not in self._entity_to_body:
                 before = len(self._entity_to_body)
                 self._create_entity_bodies(entity)
@@ -1347,6 +1365,19 @@ class PhysicsScene:
     def _mark_body_items_dirty(self):
         self._body_items_dirty = True
 
+    def _get_sync_items(self):
+        if self._body_items_dirty or self._sync_items is None:
+            self._body_items = list(self._entity_to_body.items())
+            self._body_items_dirty = False
+            cache = self._entity_body_cache
+            items = []
+            for eid, bid in self._body_items:
+                c = cache.get(eid)
+                if c is not None:
+                    items.append((eid, bid, c[0], c[1], c[2], c[3]))
+            self._sync_items = items
+        return self._sync_items
+
     def _get_body_items(self):
         if self._body_items_dirty or not self._body_items:
             self._body_items = list(self._entity_to_body.items())
@@ -1357,29 +1388,21 @@ class PhysicsScene:
         try:
             from core._physics_sync import batch_sync_ecs_to_physics
             self._sync_extra_bodies()
-            cache = self._entity_body_cache
-            items = []
-            for entity_id, body_id in self._entity_to_body.items():
-                cached = cache.get(entity_id)
-                if cached is not None:
-                    items.append((entity_id, body_id, cached[0], cached[1], cached[2], cached[3]))
+            items = self._get_sync_items()
             if items:
                 batch_sync_ecs_to_physics(items, self._solver)
             from core.math_helpers import quat_to_euler_rad
-            for entity_id, body_id in list(self._entity_to_body.items()):
-                cached = cache.get(entity_id)
-                if not cached:
-                    continue
-                entity, rb, tr, is_2d = cached
+            for entity_id, body_id, entity, rb, tr, is_2d in items:
                 if not entity._active:
                     continue
                 if not getattr(tr, "_physics_dirty", False):
                     continue
                 p = tr._local_pos
+                q = tr._local_rot
                 if is_2d:
-                    self._solver.set_body_transform(body_id, (p._x, p._y, 0.0), (0.0, 0.0, quat_to_euler_rad(tr._local_rot._x, tr._local_rot._y, tr._local_rot._z, tr._local_rot._w)[2]))
+                    self._solver.set_body_transform(body_id, (p._x, p._y, 0.0), (0.0, 0.0, quat_to_euler_rad(q._x, q._y, q._z, q._w)[2]))
                 else:
-                    e = quat_to_euler_rad(tr._local_rot._x, tr._local_rot._y, tr._local_rot._z, tr._local_rot._w)
+                    e = quat_to_euler_rad(q._x, q._y, q._z, q._w)
                     self._solver.set_body_transform(body_id, (p._x, p._y, p._z), e)
                 try:
                     self._solver.activate(body_id)
@@ -1425,12 +1448,7 @@ class PhysicsScene:
     def _sync_physics_to_ecs(self):
         try:
             from core._physics_sync import batch_sync_physics_to_ecs
-            cache = self._entity_body_cache
-            items = []
-            for entity_id, body_id in self._entity_to_body.items():
-                cached = cache.get(entity_id)
-                if cached is not None:
-                    items.append((entity_id, body_id, cached[0], cached[1], cached[2], cached[3]))
+            items = self._get_sync_items()
             if items:
                 batch_sync_physics_to_ecs(items, self._solver)
         except ImportError:

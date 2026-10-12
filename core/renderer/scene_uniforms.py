@@ -413,13 +413,34 @@ class SceneUniformsMixin:
 
     def _sort_transparent_far_first(self, entries, cam_pos):
         try:
+            n = len(entries)
+        except Exception:
+            return
+        if n < 2:
+            return
+        try:
             cx = float(cam_pos.x)
             cy = float(cam_pos.y)
             cz = float(cam_pos.z)
         except Exception:
             return
         try:
-            entries.sort(key=lambda e: -(((float(e[4]._d[3, 0]) - cx) ** 2) + ((float(e[4]._d[3, 1]) - cy) ** 2) + ((float(e[4]._d[3, 2]) - cz) ** 2)))
+            import numpy as _np
+            try:
+                from core._render_utils import build_frustum_cull_inputs as _bfci
+                centers, _ = _bfci(entries)
+            except Exception:
+                centers = _np.empty((n, 3), dtype=_np.float64)
+                for _i, _e in enumerate(entries):
+                    _d = _e[4]._d
+                    centers[_i, 0] = _d[3, 0]
+                    centers[_i, 1] = _d[3, 1]
+                    centers[_i, 2] = _d[3, 2]
+            _dx = centers[:, 0] - cx
+            _dy = centers[:, 1] - cy
+            _dz = centers[:, 2] - cz
+            _idx = _np.argsort(-(_dx * _dx + _dy * _dy + _dz * _dz), kind="stable")
+            entries[:] = [entries[int(_i)] for _i in _idx]
         except Exception:
             pass
 

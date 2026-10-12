@@ -49,6 +49,7 @@ def batch_sync_ecs_to_physics(list items, object solver):
     cdef double fx, fy, fz
     cdef double rx, ry, rz, rw
     cdef double er_x, er_y, er_z
+    cdef object sq = getattr(solver, "set_body_transform_quat", None)
     for i in range(n):
         entity_id, body_id, entity, rb, tr, is_2d = items[i]
         if not entity._active:
@@ -62,6 +63,10 @@ def batch_sync_ecs_to_physics(list items, object solver):
                 solver.set_body_transform(body_id,
                     (p._x, p._y, 0.0),
                     (0.0, 0.0, er_z))
+            elif sq is not None:
+                q = tr._local_rot
+                sq(body_id,
+                    (p._x, p._y, p._z), (q._x, q._y, q._z, q._w))
             else:
                 _quat_to_euler_rad(tr._local_rot._x, tr._local_rot._y,
                                    tr._local_rot._z, tr._local_rot._w,
@@ -95,27 +100,57 @@ def batch_sync_physics_to_ecs(list items, object solver):
     cdef int body_id
     cdef bint is_2d
     cdef double qr_x, qr_y, qr_z, qr_w
+    cdef double qx, qy, qz, qw, nn, inv
     cdef bint any_dirty = False
     cdef object any_scn = None
     cdef object scn
+    cdef object gq = getattr(solver, "get_body_transform_quat", None)
     for i in range(n):
         entity_id, body_id, entity, rb, tr, is_2d = items[i]
         if not entity._active or rb.is_kinematic or getattr(tr, "_physics_dirty", False):
             continue
-        pos, rot = solver.get_body_transform(body_id)
-        vel = solver.get_velocity(body_id)
-        ang_vel = solver.get_angular_velocity(body_id)
-        tr._local_pos._x = pos[0]
-        tr._local_pos._y = pos[1]
-        tr._local_pos._z = 0.0 if is_2d else pos[2]
-        if is_2d:
-            q = quat_from_euler_rad(0.0, 0.0, rot[2])
+        if gq is not None and not is_2d:
+            pos, q = gq(body_id)
+            vel = solver.get_velocity(body_id)
+            ang_vel = solver.get_angular_velocity(body_id)
+            qx = q[0]
+            qy = q[1]
+            qz = q[2]
+            qw = q[3]
+            nn = qx * qx + qy * qy + qz * qz + qw * qw
+            if nn > 1e-24:
+                inv = 1.0 / (nn ** 0.5)
+                qx *= inv
+                qy *= inv
+                qz *= inv
+                qw *= inv
+            else:
+                qx = 0.0
+                qy = 0.0
+                qz = 0.0
+                qw = 1.0
+            tr._local_pos._x = pos[0]
+            tr._local_pos._y = pos[1]
+            tr._local_pos._z = pos[2]
         else:
-            q = quat_from_euler_rad(rot[0], rot[1], rot[2])
-        tr._local_rot._x = q[0]
-        tr._local_rot._y = q[1]
-        tr._local_rot._z = q[2]
-        tr._local_rot._w = q[3]
+            pos, rot = solver.get_body_transform(body_id)
+            vel = solver.get_velocity(body_id)
+            ang_vel = solver.get_angular_velocity(body_id)
+            tr._local_pos._x = pos[0]
+            tr._local_pos._y = pos[1]
+            tr._local_pos._z = 0.0 if is_2d else pos[2]
+            if is_2d:
+                q = quat_from_euler_rad(0.0, 0.0, rot[2])
+            else:
+                q = quat_from_euler_rad(rot[0], rot[1], rot[2])
+            qx = q[0]
+            qy = q[1]
+            qz = q[2]
+            qw = q[3]
+        tr._local_rot._x = qx
+        tr._local_rot._y = qy
+        tr._local_rot._z = qz
+        tr._local_rot._w = qw
         tr._dirty = True
         rb._velocity._x = vel[0]
         rb._velocity._y = vel[1]

@@ -29,6 +29,8 @@ _GIZMO_INST_CACHE: dict = {}
 
 _FAST_COLLIDER_NAMES = ("BoxCollider", "SphereCollider", "CapsuleCollider")
 _FAST_D = None
+_FAST_COL_CACHE: dict = {}
+_FAST_COL_CACHE_MAX: int = 4
 
 
 def _fast_buf():
@@ -40,6 +42,56 @@ def _fast_buf():
             d = _array("d")
             _FAST_D = d
         return d
+    except Exception:
+        return None
+
+
+def _collider_row(shape, tr, comp):
+    try:
+        lp = tr._local_pos
+        lr = tr._local_rot
+        ls = tr._local_scale
+        ce = comp.center
+        if shape == "box":
+            sz = comp.size
+            ex = sz._x * 0.5
+            ey = sz._y * 0.5
+            ez = sz._z * 0.5
+            cx = ce._x
+            cy = ce._y
+            cz = ce._z
+        elif shape == "sphere":
+            ms = ls._x
+            if ls._y > ms:
+                ms = ls._y
+            if ls._z > ms:
+                ms = ls._z
+            r = comp.radius * ms
+            ex = r
+            ey = r
+            ez = r
+            cx = ce._x * ls._x
+            cy = ce._y * ls._y
+            cz = ce._z * ls._z
+        else:
+            hh = comp.height * 0.5 - comp.radius
+            if hh < 0.0:
+                hh = 0.0
+            ex = comp.radius
+            ey = comp.radius
+            ez = comp.radius
+            dd = comp.direction
+            if dd == 0:
+                ex = hh + comp.radius
+            elif dd == 1:
+                ey = hh + comp.radius
+            else:
+                ez = hh + comp.radius
+            cx = ce._x
+            cy = ce._y
+            cz = ce._z
+        return (lp._x, lp._y, lp._z, lr._x, lr._y, lr._z, lr._w,
+                ls._x, ls._y, ls._z, cx, cy, cz, ex, ey, ez)
     except Exception:
         return None
 
@@ -60,12 +112,97 @@ def _try_fast_colliders(scene):
     except Exception:
         return None
     try:
+        rv = scene._render_version
+    except Exception:
+        rv = None
+    try:
+        sid = id(scene)
+    except Exception:
+        return None
+    ent = _FAST_COL_CACHE.get(sid)
+    if ent is not None and ent[0] is scene and ent[1] == rv:
+        try:
+            flushed = scene.peek_flushed_transforms() if hasattr(scene, "peek_flushed_transforms") else []
+        except Exception:
+            flushed = []
+        try:
+            overflow = bool(getattr(scene, "_flushed_overflow", False))
+        except Exception:
+            overflow = False
+        shapes = ent[2]
+        total = 0
+        for _sh in shapes:
+            total += _sh[2]
+        if not overflow and flushed and total > 0 and len(flushed) * 4 < total:
+            try:
+                index = ent[3]
+                dirty_rows = 0
+                for t in flushed:
+                    try:
+                        lst = index.get(id(t))
+                    except Exception:
+                        lst = None
+                    if not lst:
+                        continue
+                    for _si, _ri in lst:
+                        try:
+                            _shp, _params, _n, _rows, _tids = shapes[_si]
+                        except Exception:
+                            continue
+                        try:
+                            _tr, _comp = _rows[_ri]
+                        except Exception:
+                            continue
+                        row = _collider_row(_shp, _tr, _comp)
+                        if row is None:
+                            continue
+                        _params[_ri, 0] = row[0]
+                        _params[_ri, 1] = row[1]
+                        _params[_ri, 2] = row[2]
+                        _params[_ri, 3] = row[3]
+                        _params[_ri, 4] = row[4]
+                        _params[_ri, 5] = row[5]
+                        _params[_ri, 6] = row[6]
+                        _params[_ri, 7] = row[7]
+                        _params[_ri, 8] = row[8]
+                        _params[_ri, 9] = row[9]
+                        _params[_ri, 10] = row[10]
+                        _params[_ri, 11] = row[11]
+                        _params[_ri, 12] = row[12]
+                        _params[_ri, 13] = row[13]
+                        _params[_ri, 14] = row[14]
+                        _params[_ri, 15] = row[15]
+                        dirty_rows += 1
+                if dirty_rows > 0:
+                    out = []
+                    for _shp, _params, _n, _rows, _tids in shapes:
+                        try:
+                            buf = _build(_params)
+                        except Exception:
+                            return None
+                        out.append((_shp, buf, int(_n)))
+                    try:
+                        _FAST_COL_CACHE[sid] = (scene, rv, shapes, index, list(out))
+                    except Exception:
+                        pass
+                    return out
+                return list(ent[4])
+            except Exception:
+                pass
+        elif not overflow and flushed is not None and len(flushed) == 0:
+            try:
+                return list(ent[4])
+            except Exception:
+                pass
+    try:
         stage = _fast_buf()
         if stage is None:
             return None
     except Exception:
         return None
     out = []
+    shapes = []
+    index = {}
     for shape, cls in classes:
         try:
             ents = scene.get_entities_with_component(cls)
@@ -78,6 +215,8 @@ def _try_fast_colliders(scene):
         except Exception:
             return None
         n = 0
+        rows = []
+        tids = []
         try:
             for ent in ents:
                 try:
@@ -98,50 +237,12 @@ def _try_fast_colliders(scene):
                         tr = comp.transform
                         if not tr:
                             continue
-                        lp = tr._local_pos
-                        lr = tr._local_rot
-                        ls = tr._local_scale
-                        ce = comp.center
-                        if shape == "box":
-                            sz = comp.size
-                            ex = sz._x * 0.5
-                            ey = sz._y * 0.5
-                            ez = sz._z * 0.5
-                            cx = ce._x
-                            cy = ce._y
-                            cz = ce._z
-                        elif shape == "sphere":
-                            ms = ls._x
-                            if ls._y > ms:
-                                ms = ls._y
-                            if ls._z > ms:
-                                ms = ls._z
-                            r = comp.radius * ms
-                            ex = r
-                            ey = r
-                            ez = r
-                            cx = ce._x * ls._x
-                            cy = ce._y * ls._y
-                            cz = ce._z * ls._z
-                        else:
-                            hh = comp.height * 0.5 - comp.radius
-                            if hh < 0.0:
-                                hh = 0.0
-                            ex = comp.radius
-                            ey = comp.radius
-                            ez = comp.radius
-                            dd = comp.direction
-                            if dd == 0:
-                                ex = hh + comp.radius
-                            elif dd == 1:
-                                ey = hh + comp.radius
-                            else:
-                                ez = hh + comp.radius
-                            cx = ce._x
-                            cy = ce._y
-                            cz = ce._z
-                        stage.extend((lp._x, lp._y, lp._z, lr._x, lr._y, lr._z, lr._w,
-                                      ls._x, ls._y, ls._z, cx, cy, cz, ex, ey, ez))
+                        row = _collider_row(shape, tr, comp)
+                        if row is None:
+                            continue
+                        stage.extend(row)
+                        rows.append((tr, comp))
+                        tids.append(id(tr))
                         n += 1
                     except Exception:
                         continue
@@ -151,11 +252,30 @@ def _try_fast_colliders(scene):
             continue
         try:
             params = np.frombuffer(stage, dtype=np.float64).reshape(n, 16)
-            buf = _build(params)
+            own = np.empty((n, 16), dtype=np.float64)
+            own[:, :] = params
             del params
+            buf = _build(own)
         except Exception:
             return None
         out.append((shape, buf, int(n)))
+        shapes.append([shape, own, int(n), rows, tids])
+    if shapes:
+        try:
+            if len(_FAST_COL_CACHE) >= _FAST_COL_CACHE_MAX:
+                _FAST_COL_CACHE.clear()
+            idx = {}
+            for _si, _sh in enumerate(shapes):
+                _tids = _sh[4]
+                for _ri, _tid in enumerate(_tids):
+                    _lst = idx.get(_tid)
+                    if _lst is None:
+                        idx[_tid] = [(_si, _ri)]
+                    else:
+                        _lst.append((_si, _ri))
+            _FAST_COL_CACHE[sid] = (scene, rv, shapes, idx, list(out))
+        except Exception:
+            pass
     return out
 
 

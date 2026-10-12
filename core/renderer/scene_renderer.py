@@ -34,6 +34,35 @@ class SceneRendererMixin:
     """Main scene rendering orchestration."""
 
 
+    def _build_struct_tr_index(self, groups):
+        index = {}
+        try:
+            for gk, grp in groups.items():
+                n = len(grp)
+                for pos in range(n):
+                    try:
+                        tr = grp[pos][1]
+                    except Exception:
+                        continue
+                    if tr is None:
+                        continue
+                    try:
+                        tid = id(tr)
+                    except Exception:
+                        continue
+                    e = index.get(tid)
+                    if e is None:
+                        index[tid] = {gk: [pos]}
+                    else:
+                        lst = e.get(gk)
+                        if lst is None:
+                            e[gk] = [pos]
+                        else:
+                            lst.append(pos)
+        except Exception:
+            pass
+        return index
+
     def render_scene(self, scene, view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3,
                      viewport_w: int, viewport_h: int, fbo=None,
                      selected_entities: Optional[set] = None,
@@ -471,6 +500,10 @@ class SceneRendererMixin:
             groups = fast_groups
             _stats_groups = [groups]
             if self._batcher:
+                try:
+                    _fskip = set(groups.keys())
+                except Exception:
+                    _fskip = None
                 self._batcher.render_groups(
                     groups, view_f32, proj_f32, cam_pos, lights, False,
                     self._set_scene_uniforms, self._materials.apply_material,
@@ -478,7 +511,8 @@ class SceneRendererMixin:
                     selected_entities or set(), outline_queue,
                     gpu_storage=self._gpu_storage,
                     dynamic_cubemaps=dynamic_cubemaps,
-                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=True)
+                    sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=True,
+                    group_skip=_fskip)
             opaque_entries = []
             transparent_entries = []
         else:
@@ -528,7 +562,9 @@ class SceneRendererMixin:
             if use_struct_groups and _s_all_vis:
                 _stats_groups = [struct_groups]
                 if self._batcher:
-                    _patched = False
+                    _skip = None
+                    _patches = None
+                    _up_ok = False
                     try:
                         try:
                             _fl2 = scene.peek_flushed_transforms() if hasattr(scene, "peek_flushed_transforms") else []
@@ -539,55 +575,52 @@ class SceneRendererMixin:
                         except Exception:
                             _ov2 = False
                         if not _fl2 and not _ov2:
-                            _patched = True
-                        elif len(struct_groups) == 1:
-                            _s_idx = getattr(self, "_struct_single_index", None)
-                            _s_snap = getattr(self, "_struct_single_snap", None)
-                            if _s_idx is not None and _s_snap == id(snap):
-                                if _fl2 and not _ov2 and len(_fl2) * 32 < len(renderable):
-                                    _ok_p = True
-                                    for _t in _fl2:
-                                        try:
-                                            _pi = _s_idx.get(id(_t))
-                                        except Exception:
-                                            _pi = None
-                                        if _pi is None:
-                                            continue
-                                        try:
-                                            _wm = _t._world_matrix
-                                        except Exception:
-                                            continue
-                                        if isinstance(_pi, list):
-                                            for _q in _pi:
-                                                if not self._batcher.patch_shared_vbo_single(int(_q), _wm, origin_for(cam_pos)):
-                                                    _ok_p = False
-                                                    break
-                                        else:
-                                            if not self._batcher.patch_shared_vbo_single(int(_pi), _wm, origin_for(cam_pos)):
-                                                _ok_p = False
-                                                break
-                                    if _ok_p:
-                                        _patched = True
+                            _skip = set(struct_groups.keys())
+                            _up_ok = True
+                        else:
+                            _s_idx = getattr(self, "_struct_tr_index", None)
+                            _s_snap = getattr(self, "_struct_tr_snap", None)
+                            if _s_idx is not None and _s_snap == id(snap) and _fl2 and not _ov2:
+                                _gdirty = {}
+                                for _t in _fl2:
+                                    try:
+                                        _m = _s_idx.get(id(_t))
+                                    except Exception:
+                                        _m = None
+                                    if not _m:
+                                        continue
+                                    try:
+                                        _wm = _t._world_matrix
+                                    except Exception:
+                                        continue
+                                    for _gk, _plist in _m.items():
+                                        _gd = _gdirty.get(_gk)
+                                        if _gd is None:
+                                            _gdirty[_gk] = _gd = []
+                                        for _p in _plist:
+                                            _gd.append((int(_p), _wm))
+                                _skip = set()
+                                _patches = {}
+                                for _gk, _grp in struct_groups.items():
+                                    _gd = _gdirty.get(_gk)
+                                    if not _gd:
+                                        _skip.add(_gk)
+                                    elif len(_gd) * 32 < len(_grp):
+                                        _patches[_gk] = _gd
+                                _up_ok = True
                     except Exception:
-                        _patched = False
-                    if _patched:
-                        self._batcher.render_groups(
-                            struct_groups, view_f32, proj_f32, cam_pos, lights, False,
-                            self._set_scene_uniforms, self._materials.apply_material,
-                            self._normal_cache,
-                            selected_entities or set(), outline_queue,
-                            gpu_storage=self._gpu_storage,
-                            dynamic_cubemaps=dynamic_cubemaps,
-                            sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=True)
-                    else:
-                        self._batcher.render_groups(
-                            struct_groups, view_f32, proj_f32, cam_pos, lights, False,
-                            self._set_scene_uniforms, self._materials.apply_material,
-                            self._normal_cache,
-                            selected_entities or set(), outline_queue,
-                            gpu_storage=self._gpu_storage,
-                            dynamic_cubemaps=dynamic_cubemaps,
-                            sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=False)
+                        _skip = None
+                        _patches = None
+                        _up_ok = False
+                    self._batcher.render_groups(
+                        struct_groups, view_f32, proj_f32, cam_pos, lights, False,
+                        self._set_scene_uniforms, self._materials.apply_material,
+                        self._normal_cache,
+                        selected_entities or set(), outline_queue,
+                        gpu_storage=self._gpu_storage,
+                        dynamic_cubemaps=dynamic_cubemaps,
+                        sky_ibl=getattr(sky_component, '_sky_ibl', None) if sky_component else None, skip_cull=True, skip_inst_upload=_up_ok,
+                        group_skip=_skip, group_patches=_patches)
                 opaque_entries = []
                 transparent_entries = []
             elif use_struct_groups:
@@ -834,30 +867,8 @@ class SceneRendererMixin:
                                             self._struct_uniq = _flu
                                             self._struct_mats = dict(_ffm)
                                             try:
-                                                if len(_fgroups) == 1:
-                                                    _only_f = next(iter(_fgroups.values()))
-                                                    _smap_f = {}
-                                                    for _ii_f, _it_f in enumerate(_only_f):
-                                                        try:
-                                                            _tr_f = _it_f[1]
-                                                        except Exception:
-                                                            continue
-                                                        if _tr_f is None:
-                                                            continue
-                                                        _tid_f = id(_tr_f)
-                                                        _ex_f = _smap_f.get(_tid_f)
-                                                        if _ex_f is None:
-                                                            _smap_f[_tid_f] = _ii_f
-                                                        else:
-                                                            if isinstance(_ex_f, list):
-                                                                _ex_f.append(_ii_f)
-                                                            else:
-                                                                _smap_f[_tid_f] = [_ex_f, _ii_f]
-                                                    self._struct_single_index = _smap_f
-                                                    self._struct_single_snap = id(snap)
-                                                else:
-                                                    self._struct_single_index = None
-                                                    self._struct_single_snap = None
+                                                self._struct_tr_index = self._build_struct_tr_index(_fgroups)
+                                                self._struct_tr_snap = id(snap)
                                             except Exception:
                                                 pass
                             except Exception:
@@ -894,30 +905,8 @@ class SceneRendererMixin:
                                 self._struct_uniq = _lu
                                 self._struct_mats = dict(_fm)
                                 try:
-                                    if len(groups) == 1:
-                                        _only = next(iter(groups.values()))
-                                        _smap = {}
-                                        for _ii, _it in enumerate(_only):
-                                            try:
-                                                _tr = _it[1]
-                                            except Exception:
-                                                continue
-                                            if _tr is None:
-                                                continue
-                                            _tid = id(_tr)
-                                            _ex = _smap.get(_tid)
-                                            if _ex is None:
-                                                _smap[_tid] = _ii
-                                            else:
-                                                if isinstance(_ex, list):
-                                                    _ex.append(_ii)
-                                                else:
-                                                    _smap[_tid] = [_ex, _ii]
-                                        self._struct_single_index = _smap
-                                        self._struct_single_snap = id(snap)
-                                    else:
-                                        self._struct_single_index = None
-                                        self._struct_single_snap = None
+                                    self._struct_tr_index = self._build_struct_tr_index(groups)
+                                    self._struct_tr_snap = id(snap)
                                 except Exception:
                                     pass
                             except Exception:
