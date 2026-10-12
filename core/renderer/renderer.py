@@ -177,6 +177,10 @@ class Renderer(RendererConfigMixin, RendererProgramsMixin, VoxelPassMixin, Objec
         self._se_color_tex_b: Optional[moderngl.Texture] = None
         self._se_fbo_size: tuple = (0, 0)
 
+        self._transmission_fbo: Optional[moderngl.Framebuffer] = None
+        self._transmission_tex: Optional[moderngl.Texture] = None
+        self._transmission_fbo_size: tuple = (0, 0)
+
         self._velocity_tex: Optional[moderngl.Texture] = None
         self._velocity_fbo: Optional[moderngl.Framebuffer] = None
         self._velocity_depth: Optional[moderngl.Renderbuffer] = None

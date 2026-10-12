@@ -1,4 +1,4 @@
-﻿# This Source Code Form is subject to the terms of the Mozilla Public
+# This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
@@ -711,8 +711,11 @@ class InspectorPanel(QDockWidget):
         preview.setFixedHeight(200)
         preview_vals = {}
         ac = props.get("albedo_color") or props.get("_BaseColor")
-        if ac:
-            preview_vals["albedo"] = ac[:3] if len(ac) >= 3 else [1.0, 1.0, 1.0]
+        try:
+            if isinstance(ac, (list, tuple)) and len(ac) >= 3:
+                preview_vals["albedo"] = list(ac[:4])
+        except Exception:
+            pass
         m = props.get("metallic") if "metallic" in props else props.get("_Metallic")
         if m is not None:
             preview_vals["metallic"] = m
@@ -733,30 +736,59 @@ class InspectorPanel(QDockWidget):
             preview.set_properties(**preview_vals)
         self._add_asset_widget(preview)
         def _save():
-            mat.save(self._asset_path, self._engine.project_root)
+            try:
+                mat.save(self._asset_path, self._engine.project_root if self._engine else root)
+            except Exception:
+                pass
         def _update_preview():
-            pv = {}
-            ac = props.get("albedo_color") or props.get("_BaseColor")
-            if ac:
-                pv["albedo"] = ac[:3] if len(ac) >= 3 else [1.0, 1.0, 1.0]
-            m = props.get("metallic") if "metallic" in props else props.get("_Metallic")
-            if m is not None:
-                pv["metallic"] = m
-            s = props.get("smoothness") if "smoothness" in props else props.get("_Smoothness")
-            if s is not None:
-                pv["smoothness"] = s
-            ec = props.get("emission_color") or props.get("_EmissionColor")
-            if ec:
-                pv["emission"] = ec
-            ei = props.get("emission_intensity") if "emission_intensity" in props else props.get("_EmissionIntensity")
-            if ei is not None:
-                pv["emit_intensity"] = ei
-            for tex_key in ("albedo_texture", "_BaseMap", "_BaseTex"):
-                if tex_key in props and props[tex_key]:
-                    pv["albedo_tex"] = props[tex_key]
-                    break
-            if pv:
-                preview.set_properties(**pv)
+            try:
+                try:
+                    from PyQt6 import sip as _sip
+                    if _sip.isdeleted(preview):
+                        return
+                except Exception:
+                    try:
+                        import sip as _sip2
+                        if _sip2.isdeleted(preview):
+                            return
+                    except Exception:
+                        pass
+                pv = {}
+                ac = props.get("albedo_color") or props.get("_BaseColor")
+                if ac is not None:
+                    try:
+                        if isinstance(ac, (list, tuple)) and len(ac) >= 3:
+                            pv["albedo"] = list(ac[:4])
+                    except Exception:
+                        pass
+                m = props.get("metallic") if "metallic" in props else props.get("_Metallic")
+                if isinstance(m, (int, float)):
+                    pv["metallic"] = float(m)
+                s = props.get("smoothness") if "smoothness" in props else props.get("_Smoothness")
+                if isinstance(s, (int, float)):
+                    pv["smoothness"] = float(s)
+                ec = props.get("emission_color") or props.get("_EmissionColor")
+                if ec is not None:
+                    try:
+                        if isinstance(ec, (list, tuple)) and len(ec) >= 3:
+                            pv["emission"] = list(ec[:3])
+                    except Exception:
+                        pass
+                ei = props.get("emission_intensity") if "emission_intensity" in props else props.get("_EmissionIntensity")
+                if isinstance(ei, (int, float)):
+                    pv["emit_intensity"] = float(ei)
+                for tex_key in ("albedo_texture", "_BaseMap", "_BaseTex"):
+                    try:
+                        v = props.get(tex_key)
+                        if isinstance(v, str) and v:
+                            pv["albedo_tex"] = v
+                            break
+                    except Exception:
+                        continue
+                if pv:
+                    preview.set_properties(**pv)
+            except Exception:
+                pass
         shader_row = QWidget()
         shader_rl = QHBoxLayout(shader_row)
         shader_rl.setContentsMargins(0, 2, 0, 2)
@@ -784,14 +816,43 @@ class InspectorPanel(QDockWidget):
                     pass
             return p
         def _on_shader_pick(p):
-            p = _store_shader(p)
-            mat.shader_path = p
-            mat.load_shader_properties(p, self._engine.project_root)
-            props.clear()
-            for sp in mat._shader_properties:
-                props[sp.name] = sp.default_value
-            _save()
-            self._rebuild()
+            try:
+                if not p:
+                    return
+                p = _store_shader(p)
+                if p == mat.shader_path:
+                    return
+                proj_root = self._engine.project_root if self._engine else root
+                mat.shader_path = p
+                try:
+                    mat.load_shader_properties(p, proj_root)
+                except Exception:
+                    try:
+                        mat._shader_properties = []
+                    except Exception:
+                        pass
+                try:
+                    props.clear()
+                except Exception:
+                    pass
+                try:
+                    for sp in list(mat._shader_properties):
+                        try:
+                            props[sp.name] = sp.default_value
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                try:
+                    _save()
+                except Exception:
+                    pass
+                try:
+                    self._rebuild()
+                except Exception:
+                    pass
+            except Exception:
+                pass
         shader_picker = make_resource_picker(mat.shader_path, "Shaders (*.shader *.vert *.frag *.glsl *.hlsl *.compute)", _on_shader_pick)
         shader_rl.addWidget(shader_picker, 1)
         self._add_asset_widget(shader_row)
@@ -844,9 +905,18 @@ class InspectorPanel(QDockWidget):
             lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
             rl.addWidget(lbl, 0)
             def _on_pick(p):
-                props[key] = p
-                _save()
-                _update_preview()
+                try:
+                    props[key] = p
+                except Exception:
+                    pass
+                try:
+                    _save()
+                except Exception:
+                    pass
+                try:
+                    _update_preview()
+                except Exception:
+                    pass
             tex_legacy = {
                 "_BaseMap": "albedo_texture",
                 "_NormalMap": "normal_texture",
@@ -870,11 +940,26 @@ class InspectorPanel(QDockWidget):
             lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
             rl.addWidget(lbl, 0)
             from editor.color_picker import ColorLineEdit
-            cl = ColorLineEdit(props.get(key, [1.0, 1.0, 1.0, 1.0]))
+            try:
+                _cc = props.get(key, [1.0, 1.0, 1.0, 1.0])
+                if not isinstance(_cc, (list, tuple)) or len(_cc) < 3:
+                    _cc = [1.0, 1.0, 1.0, 1.0]
+            except Exception:
+                _cc = [1.0, 1.0, 1.0, 1.0]
+            cl = ColorLineEdit(_cc)
             def _on_color(_, _key=key):
-                props[_key] = cl.get_color_rgba()
-                _save()
-                _update_preview()
+                try:
+                    props[_key] = cl.get_color_rgba()
+                except Exception:
+                    pass
+                try:
+                    _save()
+                except Exception:
+                    pass
+                try:
+                    _update_preview()
+                except Exception:
+                    pass
             cl.colorChanged.connect(_on_color)
             rl.addWidget(cl, 1)
             self._add_asset_widget(row)
@@ -890,17 +975,59 @@ class InspectorPanel(QDockWidget):
             lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
             rl.addWidget(lbl, 0)
             sb = QDoubleSpinBox()
-            sb.setRange(sp.range_min, sp.range_max)
-            sb.setSingleStep((sp.range_max - sp.range_min) / 100.0)
+            try:
+                lo = float(sp.range_min)
+                hi = float(sp.range_max)
+            except Exception:
+                lo, hi = 0.0, 1.0
+            try:
+                if not (lo <= hi):
+                    lo, hi = hi, lo
+                if lo == hi:
+                    hi = lo + 1.0
+                sb.setRange(lo, hi)
+            except Exception:
+                try:
+                    sb.setRange(0.0, 1.0)
+                    lo, hi = 0.0, 1.0
+                except Exception:
+                    pass
+            try:
+                step = (hi - lo) / 100.0
+                if not step or step <= 0.0:
+                    step = 0.01
+                sb.setSingleStep(float(step))
+            except Exception:
+                try:
+                    sb.setSingleStep(0.01)
+                except Exception:
+                    pass
             raw = props.get(key, 0.0)
             try:
                 sb.setValue(float(raw))
             except (ValueError, TypeError):
-                sb.setValue(sp.default_value if isinstance(sp.default_value, (int, float)) else 0.0)
+                try:
+                    sb.setValue(float(sp.default_value) if isinstance(sp.default_value, (int, float)) else 0.0)
+                except Exception:
+                    sb.setValue(0.0)
+            except Exception:
+                try:
+                    sb.setValue(0.0)
+                except Exception:
+                    pass
             def _on_change(v, _key=key):
-                props[_key] = v
-                _save()
-                _update_preview()
+                try:
+                    props[_key] = v
+                except Exception:
+                    pass
+                try:
+                    _save()
+                except Exception:
+                    pass
+                try:
+                    _update_preview()
+                except Exception:
+                    pass
             sb.valueChanged.connect(_on_change)
             rl.addWidget(sb, 1)
             self._add_asset_widget(row)
@@ -926,11 +1053,28 @@ class InspectorPanel(QDockWidget):
             try:
                 sb.setValue(int(raw_val) if prop_type == "Int" else float(raw_val))
             except (ValueError, TypeError):
-                sb.setValue(0 if prop_type == "Int" else 0.0)
+                try:
+                    sb.setValue(0 if prop_type == "Int" else 0.0)
+                except Exception:
+                    pass
+            except Exception:
+                try:
+                    sb.setValue(0 if prop_type == "Int" else 0.0)
+                except Exception:
+                    pass
             def _on_change(v, _key=key):
-                props[_key] = v
-                _save()
-                _update_preview()
+                try:
+                    props[_key] = v
+                except Exception:
+                    pass
+                try:
+                    _save()
+                except Exception:
+                    pass
+                try:
+                    _update_preview()
+                except Exception:
+                    pass
             sb.valueChanged.connect(_on_change)
             rl.addWidget(sb, 1)
             self._add_asset_widget(row)
@@ -946,11 +1090,44 @@ class InspectorPanel(QDockWidget):
             lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
             rl.addWidget(lbl, 0)
             from editor.gradient_editor import GradientLineEdit
-            gle = GradientLineEdit(props.get(key, None))
+            try:
+                _gv = props.get(key, None)
+                _valid = False
+                if isinstance(_gv, (list, tuple)) and len(_gv) >= 2:
+                    _valid = True
+                    for _s in _gv:
+                        try:
+                            if not isinstance(_s, (list, tuple)) or len(_s) != 2:
+                                _valid = False
+                                break
+                            float(_s[0])
+                            _c = _s[1]
+                            if not isinstance(_c, (list, tuple)) or len(_c) < 3:
+                                _valid = False
+                                break
+                            for _cc in _c[:4]:
+                                float(_cc)
+                        except Exception:
+                            _valid = False
+                            break
+                if not _valid:
+                    _gv = None
+            except Exception:
+                _gv = None
+            gle = GradientLineEdit(_gv)
             def _on_gradient(_, _key=key):
-                props[_key] = gle.get_stops()
-                _save()
-                _update_preview()
+                try:
+                    props[_key] = gle.get_stops()
+                except Exception:
+                    pass
+                try:
+                    _save()
+                except Exception:
+                    pass
+                try:
+                    _update_preview()
+                except Exception:
+                    pass
             gle.gradientChanged.connect(_on_gradient)
             rl.addWidget(gle, 1)
             self._add_asset_widget(row)
@@ -1280,16 +1457,27 @@ class InspectorPanel(QDockWidget):
         try:
             self._updating = True
             for w in self._comp_widgets:
+                try:
+                    w.blockSignals(True)
+                except Exception:
+                    pass
                 w.hide()
                 w.deleteLater()
             self._comp_widgets.clear()
             while self._content_layout.count():
                 item = self._content_layout.takeAt(0)
                 if item and item.widget():
+                    try:
+                        item.widget().blockSignals(True)
+                    except Exception:
+                        pass
                     item.widget().hide()
                     item.widget().deleteLater()
             self._asset_widgets.clear()
-            stretch = self._content_layout.takeAt(self._content_layout.count() - 1)
+            try:
+                self._mesh_preview = None
+            except Exception:
+                pass
             if self._animator_mode:
                 self._header_widget.setVisible(False)
                 self._add_comp_btn.setVisible(False)

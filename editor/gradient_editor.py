@@ -378,7 +378,21 @@ class GradientLineEdit(QWidget):
 
     def __init__(self, stops=None, parent=None):
         super().__init__(parent)
-        self._stops = [list(s) for s in (stops or _default_gradient())]
+        try:
+            _v = stops or _default_gradient()
+            _n = []
+            for _s in _v:
+                try:
+                    _p = float(_s[0])
+                    _c = list(_s[1])
+                    if len(_c) < 4:
+                        continue
+                    _n.append([max(0.0, min(1.0, _p)), [max(0.0, min(1.0, float(_c[0]))), max(0.0, min(1.0, float(_c[1]))), max(0.0, min(1.0, float(_c[2]))), max(0.0, min(1.0, float(_c[3])))]])
+                except Exception:
+                    continue
+            self._stops = _n if len(_n) >= 2 else [list(s) for s in _default_gradient()]
+        except Exception:
+            self._stops = [list(s) for s in _default_gradient()]
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -420,8 +434,22 @@ class GradientLineEdit(QWidget):
             self.gradientChanged.emit(self._stops)
 
     def set_stops(self, stops):
-        self._stops = [list(s) for s in stops]
-        self._preview.set_stops(self._stops)
+        try:
+            _n = []
+            for _s in (stops or []):
+                try:
+                    _p = float(_s[0])
+                    _c = list(_s[1])
+                    if len(_c) < 4:
+                        continue
+                    _n.append([max(0.0, min(1.0, _p)), [max(0.0, min(1.0, float(_c[0]))), max(0.0, min(1.0, float(_c[1]))), max(0.0, min(1.0, float(_c[2]))), max(0.0, min(1.0, float(_c[3])))]])
+                except Exception:
+                    continue
+            if len(_n) >= 2:
+                self._stops = _n
+                self._preview.set_stops(self._stops)
+        except Exception:
+            pass
 
     def get_stops(self):
         return [tuple(s) for s in self._stops]

@@ -61,6 +61,7 @@ class MaterialManager:
         self._tex_mtime_checked: dict[str, float] = {}
         self._tex_inflight: set[str] = set()
         self._tex_missing: dict[str, float] = {}
+        self._transmission_bg = None
         self._default_white = ctx.texture((1, 1), 4, b'\xff\xff\xff\xff')
 
     def set_async_lock(self, lock):
@@ -618,6 +619,38 @@ class MaterialManager:
             prog["_Transmission"].value = 0.0
         if "_IOR" in names:
             prog["_IOR"].value = 1.5
+        if "_Thickness" in names:
+            prog["_Thickness"].value = 0.1
+        if "_Cutoff" in names:
+            prog["_Cutoff"].value = 0.5
+        if "_NormalStrength" in names:
+            prog["_NormalStrength"].value = 1.0
+        if "_OcclusionStrength" in names:
+            prog["_OcclusionStrength"].value = 1.0
+        if "_HeightScale" in names:
+            prog["_HeightScale"].value = 0.05
+        if "_ClearCoat" in names:
+            prog["_ClearCoat"].value = 0.0
+        if "_ClearCoatRoughness" in names:
+            prog["_ClearCoatRoughness"].value = 0.1
+        if "_Anisotropy" in names:
+            prog["_Anisotropy"].value = 0.0
+        if "_AnisotropyDirection" in names:
+            prog["_AnisotropyDirection"].value = 0.0
+        if "_DetailNormalStrength" in names:
+            prog["_DetailNormalStrength"].value = 1.0
+        if "_DetailUVScale" in names:
+            prog["_DetailUVScale"].value = 4.0
+        if "_SubsurfaceAmount" in names:
+            prog["_SubsurfaceAmount"].value = 0.0
+        if "_SubsurfaceColor" in names:
+            prog["_SubsurfaceColor"].write(np.array([1.0, 1.0, 1.0], dtype=np.float32).tobytes())
+        if "_ThinFilmThickness" in names:
+            prog["_ThinFilmThickness"].value = 0.0
+        if "_ThinFilmIntensity" in names:
+            prog["_ThinFilmIntensity"].value = 0.0
+        if "u_transmission_bg_active" in names:
+            prog["u_transmission_bg_active"].value = 0.0
         if "_NormalMap" in names:
             prog["_NormalMap"].value = 0
         if "_OcclusionMap" in names:
@@ -716,6 +749,33 @@ class MaterialManager:
                         else:
                             self._set_uniform_value(prog, alias, value)
         self._apply_mesh_sprite(prog, names, mr)
+        try:
+            bg = self._transmission_bg
+        except Exception:
+            bg = None
+        if bg is not None and "u_transmission_bg" in names:
+            try:
+                trans = 0.0
+                if mat is not None:
+                    props = mat.properties
+                    trans = float(props.get("_Transmission", props.get("transmission", 0.0)))
+            except Exception:
+                trans = 0.0
+            if trans > 0.001:
+                try:
+                    btex, bw, bh = bg
+                except Exception:
+                    btex, bw, bh = bg, 0, 0
+                try:
+                    unit = tex_unit if tex_unit > 1 else 2
+                    btex.use(unit)
+                    prog["u_transmission_bg"].value = unit
+                    if "u_transmission_bg_texel" in names and bw and bh:
+                        prog["u_transmission_bg_texel"].write(np.array([1.0 / float(bw), 1.0 / float(bh)], dtype=np.float32).tobytes())
+                    if "u_transmission_bg_active" in names:
+                        prog["u_transmission_bg_active"].value = 1.0
+                except Exception:
+                    pass
 
     def _mesh_uv_sprite_state(self, mr):
         sx, sy = 1.0, 1.0
@@ -849,6 +909,7 @@ class MaterialManager:
     def mesh_transparency(self, mr, mat) -> bool:
         alpha = 1.0
         alb = ""
+        trans = 0.0
         try:
             if mat is not None:
                 props = mat.properties
@@ -862,6 +923,13 @@ class MaterialManager:
                     if isinstance(v, str) and v:
                         alb = v
                         break
+                for k in ("_Transmission", "transmission"):
+                    v = props.get(k)
+                    if v is not None:
+                        try:
+                            trans = max(trans, float(v))
+                        except Exception:
+                            pass
         except Exception:
             pass
         sprite = ""
@@ -875,7 +943,11 @@ class MaterialManager:
         except Exception:
             akey = 1.0
         try:
-            ckey = (id(mat) if mat is not None else 0, akey, alb, sprite)
+            tkey = round(float(trans), 3)
+        except Exception:
+            tkey = 0.0
+        try:
+            ckey = (id(mat) if mat is not None else 0, akey, alb, sprite, tkey)
             cached = self._transparency_cache.get(ckey)
             if cached is not None:
                 return cached
@@ -884,6 +956,8 @@ class MaterialManager:
         result = False
         try:
             if akey < 0.999:
+                result = True
+            elif tkey > 0.001:
                 result = True
             elif alb and self.texture_has_alpha(alb):
                 result = True

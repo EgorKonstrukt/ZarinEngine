@@ -667,6 +667,10 @@ class SceneRendererMixin:
                         self._sort_opaque_front_first(opaque_entries, cam_pos)
         self._opaque_draws = 0
         self._trans_draws = 0
+        try:
+            self._materials._transmission_bg = None
+        except Exception:
+            pass
         for _is_trans_phase, _phase_entries in ((False, opaque_entries), (True, transparent_entries)):
             if not _phase_entries:
                 continue
@@ -676,6 +680,44 @@ class SceneRendererMixin:
                 self._ctx.enable(moderngl.BLEND)
                 self._ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
                 self._ctx.depth_mask = False
+                if transparent_entries:
+                    try:
+                        _need_bg = False
+                        _seen_mp = set()
+                        for _te in transparent_entries:
+                            try:
+                                _tmr = _te[3]
+                                _mats = _tmr.materials if _tmr is not None else None
+                            except Exception:
+                                _mats = None
+                            if _mats:
+                                try:
+                                    _sub = _te[5]
+                                    _mp = _mats[_sub].get("path", "") if _sub < len(_mats) else _mats[-1].get("path", "")
+                                except Exception:
+                                    _mp = ""
+                            else:
+                                _mp = ""
+                            if _mp in _seen_mp:
+                                continue
+                            _seen_mp.add(_mp)
+                            try:
+                                _mt = self._materials.load_material(_mp)
+                                _pr = _mt.properties if _mt is not None else {}
+                                if float(_pr.get("_Transmission", _pr.get("transmission", 0.0))) > 0.001:
+                                    _need_bg = True
+                                    break
+                            except Exception:
+                                pass
+                        if _need_bg:
+                            self._ensure_transmission_fbo(rw, rh)
+                            self._ctx.copy_framebuffer(self._transmission_fbo, self._scene_fbo)
+                            try:
+                                self._materials._transmission_bg = (self._transmission_tex, rw, rh)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
             fx_renderable = [e for e in _phase_entries if len(e) > 6 and e[6]]
             if fx_renderable:
                 self._render_object_effects(fx_renderable, view_f32, proj_f32, cam_pos, lights, selected_entities, outline_queue)
@@ -969,6 +1011,10 @@ class SceneRendererMixin:
                         mesh.render(prog)
                         if selected_entities and ent in selected_entities:
                             outline_queue.append((mesh, wm))
+        try:
+            self._materials._transmission_bg = None
+        except Exception:
+            pass
         if transparent_entries:
             self._ctx.depth_mask = True
             self._ctx.disable(moderngl.BLEND)

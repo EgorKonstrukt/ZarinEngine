@@ -354,12 +354,15 @@ def _render_material(path: str, size: int):
         from editor.gl_offscreen import render_sphere
         pm = render_sphere(
             size, size,
-            albedo=albedo,
-            metallic=metallic,
-            smoothness=smoothness,
-            emission=emission,
-            emit_intensity=emit_intensity,
-            tex_path=tex_path,
+            albedo,
+            metallic,
+            smoothness,
+            emission,
+            emit_intensity,
+            0.5,
+            0.3,
+            3.0,
+            tex_path if isinstance(tex_path, str) else "",
         )
         if pm is not None and not pm.isNull():
             return _pm_to_png(pm)

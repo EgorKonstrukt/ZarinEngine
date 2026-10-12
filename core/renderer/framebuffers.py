@@ -38,6 +38,30 @@ class FramebuffersMixin:
         self._scene_fbo_size = (0, 0)
 
 
+    def _ensure_transmission_fbo(self, w: int, h: int):
+        if self._transmission_fbo_size == (w, h) and self._transmission_fbo:
+            return
+        self._release_transmission_fbo()
+        self._transmission_tex = self._ctx.texture((w, h), 4, dtype='f2')
+        self._transmission_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self._transmission_tex.repeat_x = False
+        self._transmission_tex.repeat_y = False
+        self._transmission_fbo = self._ctx.framebuffer(self._transmission_tex)
+        self._transmission_fbo_size = (w, h)
+
+
+    def _release_transmission_fbo(self):
+        for obj in [self._transmission_fbo, self._transmission_tex]:
+            if obj:
+                try:
+                    obj.release()
+                except Exception:
+                    pass
+        self._transmission_fbo = None
+        self._transmission_tex = None
+        self._transmission_fbo_size = (0, 0)
+
+
     def _ensure_pp_fbo(self, w: int, h: int):
         if self._pp_fbo_size == (w, h) and self._pp_fbo_a:
             return

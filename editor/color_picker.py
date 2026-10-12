@@ -54,11 +54,11 @@ def _rgb_to_hsv(r, g, b):
 
 
 def _hue_to_screen_angle(hue_deg):
-    return math.radians((hue_deg + 90) % 360)
+    return math.radians((hue_deg - 90) % 360)
 
 
 def _screen_angle_to_hue(angle_rad):
-    return (math.degrees(angle_rad) - 90 + 360) % 360
+    return (math.degrees(angle_rad) + 90 + 360) % 360
 
 
 class _ColorWheelWidget(QWidget):
@@ -142,18 +142,23 @@ class _ColorWheelWidget(QWidget):
         cx, cy = self._cx, self._cy
         R_out = self._R_outer
         R_in = self._R_inner
-        pm = QPixmap(w, h)
-        pm.fill(Qt.GlobalColor.transparent)
+        img = QImage(w, h, QImage.Format.Format_ARGB32)
+        img.fill(0)
+        for py in range(h):
+            dy = py - cy
+            for px in range(w):
+                dx = px - cx
+                dist = math.hypot(dx, dy)
+                if dist < R_in or dist > R_out:
+                    continue
+                ang = math.atan2(dy, dx)
+                hue = (math.degrees(ang) + 90 + 360) % 360
+                c = QColor.fromHsvF((hue % 360) / 360.0, 1.0, 1.0)
+                img.setPixel(px, py, c.rgba())
+        pm = QPixmap.fromImage(img)
         p = QPainter(pm)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        grad = QConicalGradient(cx, cy, 90)
-        for i in range(361):
-            pos = i / 360
-            hue = i % 360
-            grad.setColorAt(pos, QColor.fromHsvF(hue / 360, 1, 1))
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(grad))
-        p.drawEllipse(int(cx - R_out), int(cy - R_out), int(R_out * 2), int(R_out * 2))
         p.setBrush(QBrush(QApplication.palette().color(QPalette.ColorRole.Window)))
         p.drawEllipse(int(cx - R_in), int(cy - R_in), int(R_in * 2), int(R_in * 2))
         p.end()
@@ -585,15 +590,29 @@ class ColorLineEdit(QWidget):
 
     @staticmethod
     def _parse_color(color):
-        if isinstance(color, QColor):
-            return color.toRgb()
-        if isinstance(color, (list, tuple)):
-            r, g, b, a = (float(v) for v in (color + [1.0, 1.0, 1.0, 1.0])[:4])
-            return QColor.fromRgbF(r, g, b, a).toRgb()
-        if isinstance(color, str):
-            c = QColor(color.strip())
-            if c.isValid():
-                return c.toRgb()
+        try:
+            if isinstance(color, QColor):
+                return color.toRgb()
+            if isinstance(color, (list, tuple)):
+                try:
+                    vals = []
+                    for v in (list(color) + [1.0, 1.0, 1.0, 1.0])[:4]:
+                        try:
+                            vals.append(max(0.0, min(1.0, float(v))))
+                        except Exception:
+                            vals.append(1.0)
+                    return QColor.fromRgbF(vals[0], vals[1], vals[2], vals[3]).toRgb()
+                except Exception:
+                    return QColor.fromRgbF(1, 1, 1)
+            if isinstance(color, str):
+                try:
+                    c = QColor(color.strip())
+                    if c.isValid():
+                        return c.toRgb()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         return QColor.fromRgbF(1, 1, 1)
 
     def _update_swatch(self):

@@ -122,9 +122,27 @@ void main() {
 def _ensure() -> bool:
     global _ctx, _ready, _safe
     if _ready:
+        try:
+            from PyQt6.QtGui import QOpenGLContext
+            try:
+                if QOpenGLContext.currentContext() is not None:
+                    return False
+            except Exception:
+                pass
+        except Exception:
+            pass
         return _safe
     if not _safe:
         return False
+    try:
+        from PyQt6.QtGui import QOpenGLContext
+        try:
+            if QOpenGLContext.currentContext() is not None:
+                return False
+        except Exception:
+            pass
+    except Exception:
+        pass
     try:
         _ctx = moderngl.create_standalone_context(require=430)
         _ctx.pixel_alignment = 1
@@ -207,56 +225,135 @@ def _set_view(prog, theta, phi, dist, aspect):
 def render_sphere(w: int, h: int, albedo, metallic, smoothness,
                   emission, emit_intensity, theta, phi, dist,
                   tex_path: str = "") -> Optional[QPixmap]:
-    if not _ensure() or w < 1 or h < 1:
+    try:
+        if not _ensure() or w < 1 or h < 1:
+            return None
+        try:
+            _ensure_sph()
+        except Exception:
+            return None
+        tex = None
+        try:
+            if tex_path and os.path.exists(tex_path):
+                tex = _load_tex(tex_path)
+        except Exception:
+            tex = None
+        try:
+            fbo = _ctx.framebuffer(
+                color_attachments=[_ctx.texture((w, h), 4)],
+                depth_attachment=_ctx.depth_texture((w, h)),
+            )
+        except Exception:
+            return None
+        try:
+            fbo.use()
+            _ctx.clear(0.1, 0.1, 0.1, 1.0)
+            _ctx.enable(moderngl.DEPTH_TEST)
+            _set_view(_sph_prog, theta, phi, dist, w / h if h > 0 else 1.0)
+            model = Mat4.identity().to_f32()
+            _sph_prog["u_model"].write(model.tobytes())
+            try:
+                c = list(albedo[:3]) if len(albedo) >= 3 else [1.0, 1.0, 1.0]
+            except Exception:
+                c = [1.0, 1.0, 1.0]
+            try:
+                _sph_prog["u_albedo"].value = tuple(c)
+            except Exception:
+                pass
+            try:
+                _sph_prog["u_metallic"].value = float(metallic)
+            except Exception:
+                pass
+            try:
+                _sph_prog["u_smoothness"].value = float(smoothness)
+            except Exception:
+                pass
+            try:
+                if emission is not None and len(emission) >= 3:
+                    _sph_prog["u_emission"].value = (
+                        float(emission[0]) * float(emit_intensity),
+                        float(emission[1]) * float(emit_intensity),
+                        float(emission[2]) * float(emit_intensity),
+                    )
+                else:
+                    _sph_prog["u_emission"].value = (0.0, 0.0, 0.0)
+            except Exception:
+                pass
+            ld = (-0.5, 0.7, 0.8)
+            n = math.sqrt(sum(d * d for d in ld))
+            try:
+                _sph_prog["u_light_dir"].value = (ld[0] / n, ld[1] / n, ld[2] / n)
+            except Exception:
+                pass
+            try:
+                if tex is not None:
+                    tex.use(0)
+                    _sph_prog["u_tex"].value = 0
+                    _sph_prog["u_has_tex"].value = True
+                else:
+                    _sph_prog["u_has_tex"].value = False
+            except Exception:
+                pass
+            try:
+                _sph_vao.render(moderngl.TRIANGLES)
+            except Exception:
+                try:
+                    color_tex = fbo.color_attachments[0]
+                    depth_tex = fbo.depth_attachment
+                    fbo.release()
+                    try:
+                        color_tex.release()
+                    except Exception:
+                        pass
+                    try:
+                        depth_tex.release()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                return None
+            try:
+                data = fbo.read(components=4, dtype="f1")
+            except Exception:
+                data = None
+            try:
+                color_tex = fbo.color_attachments[0]
+                depth_tex = fbo.depth_attachment
+            except Exception:
+                color_tex = None
+                depth_tex = None
+            try:
+                fbo.release()
+            except Exception:
+                pass
+            try:
+                if color_tex is not None:
+                    color_tex.release()
+            except Exception:
+                pass
+            try:
+                if depth_tex is not None:
+                    depth_tex.release()
+            except Exception:
+                pass
+            try:
+                if tex is not None:
+                    tex.release()
+            except Exception:
+                pass
+            if data is None or len(data) < w * h * 4:
+                return None
+            try:
+                img = QImage(data, w, h, QImage.Format.Format_RGBA8888)
+                img = img.copy()
+                pm = QPixmap.fromImage(img)
+                return pm
+            except Exception:
+                return None
+        except Exception:
+            return None
+    except Exception:
         return None
-    _ensure_sph()
-    tex = None
-    if tex_path and os.path.exists(tex_path):
-        tex = _load_tex(tex_path)
-    fbo = _ctx.framebuffer(
-        color_attachments=[_ctx.texture((w, h), 4)],
-        depth_attachment=_ctx.depth_texture((w, h)),
-    )
-    fbo.use()
-    _ctx.clear(0.1, 0.1, 0.1, 1.0)
-    _ctx.enable(moderngl.DEPTH_TEST)
-    _set_view(_sph_prog, theta, phi, dist, w / h if h > 0 else 1.0)
-    model = Mat4.identity().to_f32()
-    _sph_prog["u_model"].write(model.tobytes())
-    c = albedo[:3] if len(albedo) >= 3 else [*albedo, 1.0]
-    _sph_prog["u_albedo"].value = tuple(c)
-    _sph_prog["u_metallic"].value = metallic
-    _sph_prog["u_smoothness"].value = smoothness
-    if emission and len(emission) >= 3:
-        _sph_prog["u_emission"].value = (
-            emission[0] * emit_intensity,
-            emission[1] * emit_intensity,
-            emission[2] * emit_intensity,
-        )
-    else:
-        _sph_prog["u_emission"].value = (0.0, 0.0, 0.0)
-    ld = (-0.5, 0.7, 0.8)
-    n = math.sqrt(sum(d * d for d in ld))
-    _sph_prog["u_light_dir"].value = (ld[0] / n, ld[1] / n, ld[2] / n)
-    if tex is not None:
-        tex.use(0)
-        _sph_prog["u_tex"].value = 0
-        _sph_prog["u_has_tex"].value = True
-    else:
-        _sph_prog["u_has_tex"].value = False
-    _sph_vao.render(moderngl.TRIANGLES)
-    data = fbo.read(components=4, dtype='f1')
-    color_tex = fbo.color_attachments[0]
-    depth_tex = fbo.depth_attachment
-    fbo.release()
-    color_tex.release()
-    depth_tex.release()
-    if tex:
-        tex.release()
-    if data is None or len(data) < w * h * 4:
-        return None
-    img = QImage(data, w, h, QImage.Format.Format_RGBA8888)
-    return QPixmap.fromImage(img)
 
 
 def _compute_normals(pts: np.ndarray, indices: np.ndarray) -> np.ndarray:
@@ -286,58 +383,139 @@ def _compute_normals(pts: np.ndarray, indices: np.ndarray) -> np.ndarray:
 def render_mesh(w: int, h: int, verts: np.ndarray, indices: np.ndarray,
                 theta, phi, dist, color=(0.7, 0.7, 0.7),
                 normals: Optional[np.ndarray] = None) -> Optional[QPixmap]:
-    if not _ensure() or w < 4 or h < 4 or len(verts) < 3 or len(indices) < 3:
+    try:
+        if not _ensure() or w < 4 or h < 4 or len(verts) < 3 or len(indices) < 3:
+            return None
+        global _mdl_prog
+        try:
+            if _mdl_prog is None:
+                _mdl_prog = _ctx.program(vertex_shader=MDL_VSHADER, fragment_shader=MDL_FSHADER)
+        except Exception:
+            return None
+        try:
+            pts = verts.reshape(-1, 3).astype(np.float32)
+            n_vert = len(pts)
+            if normals is not None and len(normals) >= n_vert * 3:
+                nrm = normals.reshape(-1, 3).astype(np.float32)
+            else:
+                nrm = _compute_normals(pts, indices)
+            data = np.zeros((n_vert, 6), dtype=np.float32)
+            data[:, :3] = pts
+            data[:, 3:6] = nrm
+            vbo = _ctx.buffer(data.tobytes())
+            ibo = _ctx.buffer(indices.astype(np.int32).tobytes())
+            vao = _ctx.vertex_array(
+                _mdl_prog,
+                [(vbo, "3f 3f", "in_pos", "in_nrm")],
+                ibo,
+            )
+            fbo = _ctx.framebuffer(
+                color_attachments=[_ctx.texture((w, h), 4)],
+                depth_attachment=_ctx.depth_texture((w, h)),
+            )
+        except Exception:
+            return None
+        try:
+            fbo.use()
+            phi = max(-math.pi / 2 + 0.05, min(math.pi / 2 - 0.05, phi))
+            _ctx.clear(0.1, 0.1, 0.1, 1.0)
+            _ctx.enable(moderngl.DEPTH_TEST)
+            _set_view(_mdl_prog, theta, phi, dist, w / h if h > 0 else 1.0)
+            model = Mat4.identity().to_f32()
+            _mdl_prog["u_model"].write(model.tobytes())
+            _mdl_prog["u_normal_mat"].write(np.eye(3, dtype=np.float32).tobytes())
+            try:
+                _mdl_prog["u_color"].value = tuple(list(color[:3]))
+            except Exception:
+                pass
+            try:
+                _mdl_prog["u_ambient"].value = 0.3
+            except Exception:
+                pass
+            ld = (-0.5, 0.7, 0.8)
+            n = math.sqrt(sum(d * d for d in ld))
+            try:
+                _mdl_prog["u_light_dir"].value = (ld[0] / n, ld[1] / n, ld[2] / n)
+            except Exception:
+                pass
+            try:
+                vao.render(moderngl.TRIANGLES)
+            except Exception:
+                try:
+                    vao.release()
+                except Exception:
+                    pass
+                try:
+                    vbo.release()
+                except Exception:
+                    pass
+                try:
+                    ibo.release()
+                except Exception:
+                    pass
+                try:
+                    color_tex = fbo.color_attachments[0]
+                    depth_tex = fbo.depth_attachment
+                    fbo.release()
+                    try:
+                        color_tex.release()
+                    except Exception:
+                        pass
+                    try:
+                        depth_tex.release()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                return None
+            try:
+                data = fbo.read(components=4, dtype="f1")
+            except Exception:
+                data = None
+            try:
+                vao.release()
+            except Exception:
+                pass
+            try:
+                vbo.release()
+            except Exception:
+                pass
+            try:
+                ibo.release()
+            except Exception:
+                pass
+            try:
+                color_tex = fbo.color_attachments[0]
+                depth_tex = fbo.depth_attachment
+            except Exception:
+                color_tex = None
+                depth_tex = None
+            try:
+                fbo.release()
+            except Exception:
+                pass
+            try:
+                if color_tex is not None:
+                    color_tex.release()
+            except Exception:
+                pass
+            try:
+                if depth_tex is not None:
+                    depth_tex.release()
+            except Exception:
+                pass
+            if data is None or len(data) < w * h * 4:
+                return None
+            try:
+                img = QImage(data, w, h, QImage.Format.Format_RGBA8888)
+                img = img.copy()
+                return QPixmap.fromImage(img)
+            except Exception:
+                return None
+        except Exception:
+            return None
+    except Exception:
         return None
-    global _mdl_prog
-    if _mdl_prog is None:
-        _mdl_prog = _ctx.program(vertex_shader=MDL_VSHADER, fragment_shader=MDL_FSHADER)
-    pts = verts.reshape(-1, 3).astype(np.float32)
-    n_vert = len(pts)
-    if normals is not None and len(normals) >= n_vert * 3:
-        nrm = normals.reshape(-1, 3).astype(np.float32)
-    else:
-        nrm = _compute_normals(pts, indices)
-    data = np.zeros((n_vert, 6), dtype=np.float32)
-    data[:, :3] = pts
-    data[:, 3:6] = nrm
-    vbo = _ctx.buffer(data.tobytes())
-    ibo = _ctx.buffer(indices.astype(np.int32).tobytes())
-    vao = _ctx.vertex_array(
-        _mdl_prog,
-        [(vbo, "3f 3f", "in_pos", "in_nrm")],
-        ibo,
-    )
-    fbo = _ctx.framebuffer(
-        color_attachments=[_ctx.texture((w, h), 4)],
-        depth_attachment=_ctx.depth_texture((w, h)),
-    )
-    fbo.use()
-    phi = max(-math.pi / 2 + 0.05, min(math.pi / 2 - 0.05, phi))
-    _ctx.clear(0.1, 0.1, 0.1, 1.0)
-    _ctx.enable(moderngl.DEPTH_TEST)
-    _set_view(_mdl_prog, theta, phi, dist, w / h if h > 0 else 1.0)
-    model = Mat4.identity().to_f32()
-    _mdl_prog["u_model"].write(model.tobytes())
-    _mdl_prog["u_normal_mat"].write(np.eye(3, dtype=np.float32).tobytes())
-    _mdl_prog["u_color"].value = tuple(color[:3])
-    _mdl_prog["u_ambient"].value = 0.3
-    ld = (-0.5, 0.7, 0.8)
-    n = math.sqrt(sum(d * d for d in ld))
-    _mdl_prog["u_light_dir"].value = (ld[0] / n, ld[1] / n, ld[2] / n)
-    vao.render(moderngl.TRIANGLES)
-    data = fbo.read(components=4, dtype='f1')
-    vao.release()
-    vbo.release()
-    ibo.release()
-    color_tex = fbo.color_attachments[0]
-    depth_tex = fbo.depth_attachment
-    fbo.release()
-    color_tex.release()
-    depth_tex.release()
-    if data is None or len(data) < w * h * 4:
-        return None
-    img = QImage(data, w, h, QImage.Format.Format_RGBA8888)
-    return QPixmap.fromImage(img)
 
 
 _ensure()

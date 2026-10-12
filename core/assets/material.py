@@ -231,6 +231,7 @@ class Material:
             return False
         result = _parse_shader_file(abs_shader)
         if not result:
+            self._shader_properties = []
             return False
         shader_props, vert_src, frag_src = result
         self._shader_properties = shader_props

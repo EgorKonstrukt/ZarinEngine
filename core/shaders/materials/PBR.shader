@@ -36,6 +36,7 @@ Shader "Zarin/PBR"
         _ThinFilmIntensity("Thin Film Intensity", Range(0, 1)) = 0
         _Transmission("Transmission", Range(0, 1)) = 0
         _IOR("IOR", Range(1.0, 3.0)) = 1.5
+        _Thickness("Thickness (m)", Range(0, 2)) = 0.1
         _double_sided("Double Sided", Range(0, 1)) = 0
     }
 
@@ -183,6 +184,10 @@ Shader "Zarin/PBR"
             uniform float _ThinFilmIntensity;
             uniform float _Transmission;
             uniform float _IOR;
+            uniform float _Thickness;
+            uniform sampler2D u_transmission_bg;
+            uniform vec2 u_transmission_bg_texel;
+            uniform float u_transmission_bg_active;
             uniform int u_double_sided;
 
             uniform vec3 u_camera_pos;
@@ -728,7 +733,7 @@ float compute_point_shadow_for_light(int li) {
                 if (_BaseMap_Active == 1) {
                     alpha *= texture(_BaseMap, uv).a;
                 }
-                if (alpha < _Cutoff) discard;
+                if (alpha < _Cutoff && (_BaseMap_Active == 1 || _BaseColor.a >= 0.999)) discard;
                 vec3 T, B;
                 vec3 N = get_tangent_frame(T, B);
                 if (_NormalMap_Active == 1) {
@@ -804,9 +809,47 @@ float compute_point_shadow_for_light(int li) {
                     emission *= texture(_EmissionMap, uv).rgb;
                 }
                 result += emission;
-                result = result / (result + vec3(1.0));
-                result = pow(result, vec3(1.0 / 2.2));
-                frag_color = vec4(result, alpha);
+                vec3 surf = result / (result + vec3(1.0));
+                surf = pow(surf, vec3(1.0 / 2.2));
+                float _trsTrans = clamp(_Transmission, 0.0, 1.0) * (1.0 - metallic);
+                vec3 _trsOut = surf;
+                float _trsAlpha = alpha;
+                if (_trsTrans > 0.001 && u_transmission_bg_active > 0.5) {
+                    float _trsIor = max(_IOR, 1.0);
+                    float _trsF0 = (_trsIor - 1.0) / (_trsIor + 1.0);
+                    _trsF0 *= _trsF0;
+                    float _trsCosNV = clamp(dot(N, V), 0.0, 1.0);
+                    float _trsF = _trsF0 + (1.0 - _trsF0) * pow(1.0 - _trsCosNV, 5.0);
+                    float _trsRough = clamp(roughness, 0.0, 1.0);
+                    float _trsFrost = clamp((_trsRough - 0.05) / 0.6, 0.0, 1.0);
+                    vec2 _trsScreenUV = gl_FragCoord.xy * u_transmission_bg_texel;
+                    vec3 _trsRefr = refract(-V, N, 1.0 / _trsIor);
+                    float _trsTir = 1.0 - step(dot(_trsRefr, _trsRefr), 0.0001);
+                    vec2 _trsOff = _trsRefr.xy / max(-_trsRefr.z, 0.05) * max(_Thickness, 0.0) * 1.25 * _trsTir;
+                    vec3 _trsTint = mix(vec3(1.0), clamp(albedo, vec3(0.0), vec3(1.0)), _trsTrans * 0.9);
+                    vec2 _trsUvC = clamp(_trsScreenUV + _trsOff, vec2(0.001), vec2(0.999));
+                    vec3 _trsAcc = texture(u_transmission_bg, _trsUvC).rgb;
+                    if (_trsFrost > 0.003) {
+                        float _trsIgn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+                        float _trsCa = cos(_trsIgn * 6.28318530718);
+                        float _trsSa = sin(_trsIgn * 6.28318530718);
+                        vec2 _trsRd = (_trsFrost * 10.0) * u_transmission_bg_texel;
+                        _trsAcc = vec3(0.0);
+                        for (int _trsTi = 0; _trsTi < 8; _trsTi++) {
+                            float _trsTa = (float(_trsTi) + 0.5) / 8.0 * 6.28318530718;
+                            vec2 _trsTd = vec2(cos(_trsTa), sin(_trsTa));
+                            _trsTd = vec2(_trsTd.x * _trsCa - _trsTd.y * _trsSa, _trsTd.x * _trsSa + _trsTd.y * _trsCa);
+                            _trsAcc += texture(u_transmission_bg, clamp(_trsScreenUV + (_trsOff + _trsTd * _trsRd), vec2(0.001), vec2(0.999))).rgb;
+                        }
+                        _trsAcc /= 8.0;
+                    }
+                    _trsAcc *= _trsTint;
+                    _trsAcc = mix(_trsAcc, albedo * (0.25 + 0.75 * clamp(dot(_trsAcc, vec3(0.3333)), 0.0, 1.0)), _trsFrost * 0.35);
+                    float _trsAmt = clamp(_trsTrans * (1.0 - _trsF) * _trsTir, 0.0, 1.0);
+                    _trsOut = mix(surf, _trsAcc, _trsAmt);
+                    _trsAlpha = mix(alpha, 1.0, clamp(_trsTrans, 0.0, 1.0));
+                }
+                frag_color = vec4(_trsOut, _trsAlpha);
             }
             ENDGLSL
         }
@@ -935,6 +978,10 @@ float compute_point_shadow_for_light(int li) {
             uniform float _ThinFilmIntensity;
             uniform float _Transmission;
             uniform float _IOR;
+            uniform float _Thickness;
+            uniform sampler2D u_transmission_bg;
+            uniform vec2 u_transmission_bg_texel;
+            uniform float u_transmission_bg_active;
             uniform int u_double_sided;
 
             uniform vec3 u_camera_pos;
@@ -1516,7 +1563,7 @@ float compute_shadow_improved() {
                 if (_BaseMap_Active == 1) {
                     alpha *= texture(_BaseMap, uv).a;
                 }
-                if (alpha < _Cutoff) discard;
+                if (alpha < _Cutoff && (_BaseMap_Active == 1 || _BaseColor.a >= 0.999)) discard;
                 vec3 T, B;
                 vec3 N = get_tangent_frame(T, B);
                 if (_NormalMap_Active == 1) {
@@ -1592,9 +1639,47 @@ float compute_shadow_improved() {
                     emission *= texture(_EmissionMap, uv).rgb;
                 }
                 result += emission;
-                result = result / (result + vec3(1.0));
-                result = pow(result, vec3(1.0 / 2.2));
-                frag_color = vec4(result, alpha);
+                vec3 surf = result / (result + vec3(1.0));
+                surf = pow(surf, vec3(1.0 / 2.2));
+                float _trsTrans = clamp(_Transmission, 0.0, 1.0) * (1.0 - metallic);
+                vec3 _trsOut = surf;
+                float _trsAlpha = alpha;
+                if (_trsTrans > 0.001 && u_transmission_bg_active > 0.5) {
+                    float _trsIor = max(_IOR, 1.0);
+                    float _trsF0 = (_trsIor - 1.0) / (_trsIor + 1.0);
+                    _trsF0 *= _trsF0;
+                    float _trsCosNV = clamp(dot(N, V), 0.0, 1.0);
+                    float _trsF = _trsF0 + (1.0 - _trsF0) * pow(1.0 - _trsCosNV, 5.0);
+                    float _trsRough = clamp(roughness, 0.0, 1.0);
+                    float _trsFrost = clamp((_trsRough - 0.05) / 0.6, 0.0, 1.0);
+                    vec2 _trsScreenUV = gl_FragCoord.xy * u_transmission_bg_texel;
+                    vec3 _trsRefr = refract(-V, N, 1.0 / _trsIor);
+                    float _trsTir = 1.0 - step(dot(_trsRefr, _trsRefr), 0.0001);
+                    vec2 _trsOff = _trsRefr.xy / max(-_trsRefr.z, 0.05) * max(_Thickness, 0.0) * 1.25 * _trsTir;
+                    vec3 _trsTint = mix(vec3(1.0), clamp(albedo, vec3(0.0), vec3(1.0)), _trsTrans * 0.9);
+                    vec2 _trsUvC = clamp(_trsScreenUV + _trsOff, vec2(0.001), vec2(0.999));
+                    vec3 _trsAcc = texture(u_transmission_bg, _trsUvC).rgb;
+                    if (_trsFrost > 0.003) {
+                        float _trsIgn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+                        float _trsCa = cos(_trsIgn * 6.28318530718);
+                        float _trsSa = sin(_trsIgn * 6.28318530718);
+                        vec2 _trsRd = (_trsFrost * 10.0) * u_transmission_bg_texel;
+                        _trsAcc = vec3(0.0);
+                        for (int _trsTi = 0; _trsTi < 8; _trsTi++) {
+                            float _trsTa = (float(_trsTi) + 0.5) / 8.0 * 6.28318530718;
+                            vec2 _trsTd = vec2(cos(_trsTa), sin(_trsTa));
+                            _trsTd = vec2(_trsTd.x * _trsCa - _trsTd.y * _trsSa, _trsTd.x * _trsSa + _trsTd.y * _trsCa);
+                            _trsAcc += texture(u_transmission_bg, clamp(_trsScreenUV + (_trsOff + _trsTd * _trsRd), vec2(0.001), vec2(0.999))).rgb;
+                        }
+                        _trsAcc /= 8.0;
+                    }
+                    _trsAcc *= _trsTint;
+                    _trsAcc = mix(_trsAcc, albedo * (0.25 + 0.75 * clamp(dot(_trsAcc, vec3(0.3333)), 0.0, 1.0)), _trsFrost * 0.35);
+                    float _trsAmt = clamp(_trsTrans * (1.0 - _trsF) * _trsTir, 0.0, 1.0);
+                    _trsOut = mix(surf, _trsAcc, _trsAmt);
+                    _trsAlpha = mix(alpha, 1.0, clamp(_trsTrans, 0.0, 1.0));
+                }
+                frag_color = vec4(_trsOut, _trsAlpha);
             }
             ENDGLSL
         }
