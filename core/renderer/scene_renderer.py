@@ -63,6 +63,24 @@ class SceneRendererMixin:
             pass
         return index
 
+    def _recapture_transmission_bg(self, w: int, h: int):
+        try:
+            self._ensure_transmission_fbo(w, h)
+        except Exception:
+            return
+        try:
+            self._ctx.copy_framebuffer(self._transmission_fbo, self._scene_fbo)
+        except Exception:
+            return
+        try:
+            self._transmission_tex.build_mipmaps()
+        except Exception:
+            pass
+        try:
+            self._materials._transmission_bg = (self._transmission_tex, w, h)
+        except Exception:
+            pass
+
     def render_scene(self, scene, view_mat: Mat4, proj_mat: Mat4, cam_pos: Vec3,
                      viewport_w: int, viewport_h: int, fbo=None,
                      selected_entities: Optional[set] = None,
@@ -199,7 +217,11 @@ class SceneRendererMixin:
                             or any(getattr(l, "cast_shadows", False) for l, _ in snap.lights))
             if needs_shadow:
                 try:
-                    shadow_groups = self._shadows.render_shadow_pass(snap.shadow_renderables, snap.lights, cam_near, cam_far, cam_fov, aspect, view_mat, {}, skinned_entries=snap.skinned_shadow_renderables, scene=scene, skinning_cache=self._skinning_cache)
+                    try:
+                        _tint_casters = snap.transparent_shadow_casters
+                    except Exception:
+                        _tint_casters = None
+                    shadow_groups = self._shadows.render_shadow_pass(snap.shadow_renderables, snap.lights, cam_near, cam_far, cam_fov, aspect, view_mat, {}, skinned_entries=snap.skinned_shadow_renderables, scene=scene, skinning_cache=self._skinning_cache, tint_casters=_tint_casters, material_manager=self._materials)
                     if snap.projectors:
                         self._shadows.render_projector_shadows(snap.projectors, snap.shadow_renderables, shadow_groups)
                 except Exception as _sh_err:
@@ -685,12 +707,7 @@ class SceneRendererMixin:
                     _sr_self = self
                     def _refresh_bg_for_transmission(_m=None):
                         try:
-                            _sr_self._ensure_transmission_fbo(rw, rh)
-                            _sr_self._ctx.copy_framebuffer(_sr_self._transmission_fbo, _sr_self._scene_fbo)
-                            try:
-                                _sr_self._materials._transmission_bg = (_sr_self._transmission_tex, rw, rh)
-                            except Exception:
-                                pass
+                            _sr_self._recapture_transmission_bg(rw, rh)
                         except Exception:
                             pass
                 except Exception:
@@ -725,10 +742,8 @@ class SceneRendererMixin:
                             except Exception:
                                 pass
                         if _need_bg:
-                            self._ensure_transmission_fbo(rw, rh)
-                            self._ctx.copy_framebuffer(self._transmission_fbo, self._scene_fbo)
                             try:
-                                self._materials._transmission_bg = (self._transmission_tex, rw, rh)
+                                self._recapture_transmission_bg(rw, rh)
                             except Exception:
                                 pass
                     except Exception:
@@ -989,12 +1004,7 @@ class SceneRendererMixin:
                                 _tt0 = 0.0
                             if _tt0 > 0.001:
                                 try:
-                                    self._ensure_transmission_fbo(rw, rh)
-                                    self._ctx.copy_framebuffer(self._transmission_fbo, self._scene_fbo)
-                                    try:
-                                        self._materials._transmission_bg = (self._transmission_tex, rw, rh)
-                                    except Exception:
-                                        pass
+                                    self._recapture_transmission_bg(rw, rh)
                                 except Exception:
                                     pass
                     except Exception:

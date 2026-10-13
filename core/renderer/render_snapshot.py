@@ -15,6 +15,7 @@ class _RenderSnapshot:
         'water_components', 'wind_zones', 'renderable', 'shadow_renderables',         'sprite_items', 'video_items',
         'svg_items', 'text_items', 'particle_systems', 'force_fields',
         'projectors', 'skinned_renderables', 'skinned_shadow_renderables',
+        'transparent_shadow_casters',
         'interactors', 'gaussian_splats', 'dynamic_cubemaps',
         'dynamic_cubemaps_pos', 'dynamic_cubemaps_entity',
         'cull_entries', 'cull_offsets', 'cull_counts', '_cull_counts_np',
@@ -31,6 +32,7 @@ class _RenderSnapshot:
         self.shadow_renderables: list = []
         self.skinned_renderables: list = []
         self.skinned_shadow_renderables: list = []
+        self.transparent_shadow_casters: list = []
         self.sprite_items: list = []
         self.video_items: list = []
         self.svg_items: list = []

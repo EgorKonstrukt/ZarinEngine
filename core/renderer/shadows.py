@@ -274,6 +274,14 @@ class ShadowRenderer:
         self._point_static_key = None
         self._spot_static_key = None
         self._area_static_key = None
+        self._stained_tex = None
+        self._stained_fbo = None
+        self._stained_prog = None
+        self._stained_depth_tex = None
+        self._stained_depth_fbo = None
+        self._stained_depth_prog = None
+        self._stained_vp_bytes: bytes = b""
+        self._stained_valid: bool = False
         self._create_csm_resources()
 
     def update_settings(self, shadow_resolution: int = None, shadow_distance: float = None,
@@ -441,6 +449,246 @@ class ShadowRenderer:
             _x += res
         self._cascade_atlas_w = _w
         self._cascade_atlas_h = _h
+
+    def _ensure_stained_resources(self):
+        try:
+            if self._stained_tex is not None and self._stained_fbo is not None and self._stained_prog is not None and self._stained_depth_tex is not None and self._stained_depth_fbo is not None and self._stained_depth_prog is not None:
+                return
+        except Exception:
+            pass
+        try:
+            if self._stained_tex is None:
+                self._stained_tex = self._ctx.texture((1024, 1024), 4)
+                self._stained_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+                self._stained_tex.repeat_x = False
+                self._stained_tex.repeat_y = False
+            if self._stained_fbo is None:
+                self._stained_fbo = self._ctx.framebuffer(self._stained_tex)
+            if self._stained_depth_tex is None:
+                self._stained_depth_tex = self._ctx.texture((1024, 1024), 1, dtype="f4")
+                self._stained_depth_tex.filter = (moderngl.NEAREST, moderngl.NEAREST)
+                self._stained_depth_tex.repeat_x = False
+                self._stained_depth_tex.repeat_y = False
+            if self._stained_depth_fbo is None:
+                self._stained_depth_fbo = self._ctx.framebuffer(self._stained_depth_tex)
+            if self._stained_prog is None:
+                self._stained_prog = self._ctx.program(
+                    vertex_shader="#version 330 core\nin vec3 in_position;\nuniform mat4 u_model;\nuniform mat4 u_tint_vp;\nvoid main() {\n    gl_Position = u_tint_vp * u_model * vec4(in_position, 1.0);\n}\n",
+                    fragment_shader="#version 330 core\nuniform vec4 u_tint_color;\nout vec4 o;\nvoid main() {\n    o = u_tint_color;\n}\n",
+                )
+            if self._stained_depth_prog is None:
+                self._stained_depth_prog = self._ctx.program(
+                    vertex_shader="#version 330 core\nin vec3 in_position;\nuniform mat4 u_model;\nuniform mat4 u_tint_vp;\nout float v_depth01;\nvoid main() {\n    vec4 clip = u_tint_vp * u_model * vec4(in_position, 1.0);\n    gl_Position = clip;\n    v_depth01 = clamp(clip.z / max(clip.w, 1e-5) * 0.5 + 0.5, 0.0, 1.0);\n}\n",
+                    fragment_shader="#version 330 core\nin float v_depth01;\nout float o;\nvoid main() {\n    o = v_depth01;\n}\n",
+                )
+        except Exception:
+            pass
+
+    def _render_stained_pass(self, sun_lt, tint_casters, material_manager,
+                             cam_near, cam_far, cam_fov, aspect, view_mat):
+        try:
+            self._stained_valid = False
+        except Exception:
+            pass
+        try:
+            if not tint_casters or material_manager is None or sun_lt is None:
+                return
+            try:
+                ld_x, ld_y, ld_z = _tr_fwd_xyz(sun_lt)
+            except Exception:
+                try:
+                    _fd = sun_lt.forward.normalized()
+                    ld_x, ld_y, ld_z = float(_fd.x), float(_fd.y), float(_fd.z)
+                except Exception:
+                    return
+            try:
+                from core.maths.math3d import Vec3 as _Vec3
+                _ld = _Vec3(ld_x, ld_y, ld_z)
+            except Exception:
+                return
+            try:
+                vd = view_mat._d
+                if _mat4_inv_fast is not None:
+                    inv_view = _mat4_inv_fast(np.ascontiguousarray(vd, dtype=np.float64))
+                else:
+                    inv_view = np.linalg.inv(vd)
+            except Exception:
+                try:
+                    inv_view = np.linalg.inv(view_mat._d)
+                except Exception:
+                    return
+            try:
+                corners = self._get_frustum_corners(max(cam_near, 0.01), cam_far, cam_fov, aspect, inv_view)
+                vp = self._build_directional_cascade(_ld, corners, max(cam_far - cam_near, 1.0))
+                vp_bytes = np.ascontiguousarray(np.asarray(vp, dtype=np.float32).reshape(4, 4), dtype=np.float32).tobytes()
+            except Exception:
+                return
+            self._ensure_stained_resources()
+            if self._stained_tex is None or self._stained_fbo is None or self._stained_prog is None or self._stained_depth_tex is None or self._stained_depth_fbo is None or self._stained_depth_prog is None:
+                return
+            try:
+                self._stained_vp_bytes = vp_bytes
+            except Exception:
+                pass
+            prog = self._stained_prog
+            try:
+                names = self._uniform_names(prog)
+            except Exception:
+                names = frozenset()
+            try:
+                prog["u_tint_vp"].write(vp_bytes)
+            except Exception:
+                pass
+            dprog = self._stained_depth_prog
+            try:
+                dnames = self._uniform_names(dprog)
+            except Exception:
+                dnames = frozenset()
+            try:
+                dprog["u_tint_vp"].write(vp_bytes)
+            except Exception:
+                pass
+            try:
+                self._stained_fbo.use()
+                self._stained_fbo.viewport = (0, 0, 1024, 1024)
+                self._ctx.viewport = (0, 0, 1024, 1024)
+            except Exception:
+                pass
+            try:
+                self._ctx.disable(moderngl.DEPTH_TEST)
+            except Exception:
+                pass
+            try:
+                self._ctx.disable(moderngl.CULL_FACE)
+            except Exception:
+                pass
+            try:
+                self._ctx.enable(moderngl.BLEND)
+                self._ctx.blend_func = moderngl.ZERO, moderngl.SRC_COLOR
+            except Exception:
+                pass
+            try:
+                self._stained_fbo.clear(1.0, 1.0, 1.0, 1.0)
+            except Exception:
+                pass
+            try:
+                origin = self._shadow_origin
+            except Exception:
+                origin = None
+            drew = False
+            for _tc in tint_casters:
+                try:
+                    _mesh, _tr, _mp = _tc
+                except Exception:
+                    continue
+                try:
+                    _tint = material_manager.stained_tint(_mp)
+                    _trr = float(_tint[0])
+                    _tg = float(_tint[1])
+                    _tb = float(_tint[2])
+                except Exception:
+                    _trr, _tg, _tb = 1.0, 1.0, 1.0
+                try:
+                    _wm = _tr.world_matrix
+                except Exception:
+                    continue
+                try:
+                    from core.renderer.origin import relativize_model_f32
+                    _mb = relativize_model_f32(_wm, origin)
+                except Exception:
+                    try:
+                        _mb = _wm.to_f32()
+                    except Exception:
+                        continue
+                try:
+                    if "u_model" in names:
+                        prog["u_model"].write(_mb)
+                    if "u_tint_color" in names:
+                        prog["u_tint_color"].write(np.array([_trr, _tg, _tb, 1.0], dtype=np.float32).tobytes())
+                    _mesh.render(prog)
+                    drew = True
+                except Exception:
+                    continue
+            try:
+                self._stained_depth_fbo.use()
+                self._stained_depth_fbo.viewport = (0, 0, 1024, 1024)
+                self._ctx.viewport = (0, 0, 1024, 1024)
+            except Exception:
+                pass
+            try:
+                self._ctx.disable(moderngl.BLEND)
+            except Exception:
+                pass
+            try:
+                self._stained_depth_fbo.clear(1.0, 0.0, 0.0, 1.0)
+            except Exception:
+                pass
+            for _tc in tint_casters:
+                try:
+                    _mesh, _tr, _mp = _tc
+                except Exception:
+                    continue
+                try:
+                    _wm = _tr.world_matrix
+                except Exception:
+                    continue
+                try:
+                    from core.renderer.origin import relativize_model_f32 as _rel_f32
+                    _mb = _rel_f32(_wm, origin)
+                except Exception:
+                    try:
+                        _mb = _wm.to_f32()
+                    except Exception:
+                        continue
+                try:
+                    if "u_model" in dnames:
+                        dprog["u_model"].write(_mb)
+                    _mesh.render(dprog)
+                except Exception:
+                    continue
+            try:
+                self._ctx.enable(moderngl.DEPTH_TEST)
+            except Exception:
+                pass
+            try:
+                self._ctx.enable(moderngl.CULL_FACE)
+                self._ctx.cull_face = "back"
+            except Exception:
+                pass
+            try:
+                self._ctx.disable(moderngl.BLEND)
+            except Exception:
+                pass
+            try:
+                self._ctx.depth_mask = True
+            except Exception:
+                pass
+            if drew:
+                try:
+                    self._stained_valid = True
+                except Exception:
+                    pass
+        except Exception:
+            try:
+                self._stained_valid = False
+            except Exception:
+                pass
+            try:
+                self._ctx.enable(moderngl.DEPTH_TEST)
+            except Exception:
+                pass
+            try:
+                self._ctx.enable(moderngl.CULL_FACE)
+            except Exception:
+                pass
+            try:
+                self._ctx.disable(moderngl.BLEND)
+            except Exception:
+                pass
+            try:
+                self._ctx.depth_mask = True
+            except Exception:
+                pass
 
     def _create_point_shadow_resources(self):
         self._ensure_context()
@@ -1750,7 +1998,8 @@ class ShadowRenderer:
     def render_shadow_pass(self, renderable_shadow, lights, cam_near: float, cam_far: float, cam_fov: float,
                            aspect: float, view_mat: Mat4, meshes: object = None,
                            skinned_entries: list = None, scene: object = None,
-                           skinning_cache: dict = None) -> dict:
+                           skinning_cache: dict = None, tint_casters: list = None,
+                           material_manager: object = None) -> dict:
         if not self._prog:
             return {}
         self._pending_skinned = skinned_entries or []
@@ -2042,6 +2291,17 @@ class ShadowRenderer:
         else:
             self._has_area_shadow = False
         try:
+            _sun_lt = None
+            if flags.get('directional', True):
+                for _l, _lt in lights:
+                    if _l.light_type == LightType.DIRECTIONAL and _l.cast_shadows:
+                        _sun_lt = _lt
+                        break
+            self._render_stained_pass(_sun_lt, tint_casters, material_manager,
+                                      cam_near, cam_far, cam_fov, aspect, view_mat)
+        except Exception:
+            pass
+        try:
             self._cache_uniform_bytes()
         except Exception:
             pass
@@ -2063,6 +2323,10 @@ class ShadowRenderer:
         self._has_area_shadow = False
         self._has_area_shadow_back = False
         self._area_shadow_two_sided = 0.0
+        try:
+            self._stained_valid = False
+        except Exception:
+            pass
         try:
             self._last_static_frame_key = None
             self._point_static_key = None
@@ -3073,6 +3337,41 @@ class ShadowRenderer:
         else:
             if "u_cascade_count" in names:
                 prog["u_cascade_count"].value = 0
+        try:
+            _stained_on = bool(self._stained_valid) and self._stained_tex is not None
+        except Exception:
+            _stained_on = False
+        if "u_stained_tex" in names:
+            try:
+                if _stained_on:
+                    self._stained_tex.use(27)
+            except Exception:
+                pass
+            try:
+                prog["u_stained_tex"].value = 27
+            except Exception:
+                pass
+        if "u_stained_vp" in names:
+            try:
+                if _stained_on and self._stained_vp_bytes:
+                    prog["u_stained_vp"].write(shift_vp_bytes(self._stained_vp_bytes, origin))
+            except Exception:
+                pass
+        if "u_stained_depth" in names:
+            try:
+                if _stained_on and self._stained_depth_tex is not None:
+                    self._stained_depth_tex.use(26)
+            except Exception:
+                pass
+            try:
+                prog["u_stained_depth"].value = 26
+            except Exception:
+                pass
+        if "u_stained_active" in names:
+            try:
+                prog["u_stained_active"].value = 1.0 if _stained_on else 0.0
+            except Exception:
+                pass
         if "u_shadow_bias" in names:
             prog["u_shadow_bias"].value = 0.0015
         if "u_shadow_normal_bias" in names:

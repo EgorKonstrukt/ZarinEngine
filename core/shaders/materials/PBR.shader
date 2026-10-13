@@ -76,6 +76,7 @@ Shader "Zarin/PBR"
             out vec2 v_uv;
             out vec3 v_view_pos;
             out vec4 v_color;
+
             void main() {
                 mat4 inst_model = mat4(in_model0, in_model1, in_model2, in_model3);
                 mat4 _model = (u_use_instancing == 1) ? inst_model : ((u_use_instancing == 2 || u_use_instancing == 3) ? _ssbo_models[_ssbo_indices[gl_InstanceID]] : u_model);
@@ -188,6 +189,11 @@ Shader "Zarin/PBR"
             uniform sampler2D u_transmission_bg;
             uniform vec2 u_transmission_bg_texel;
             uniform float u_transmission_bg_active;
+            uniform float u_transmission_bg_lod;
+            uniform sampler2D u_stained_tex;
+            uniform sampler2D u_stained_depth;
+            uniform mat4 u_stained_vp;
+            uniform float u_stained_active;
             uniform mat4 u_view;
             uniform mat4 u_proj;
             uniform int u_double_sided;
@@ -713,6 +719,19 @@ float compute_point_shadow_for_light(int li) {
                 return ambient;
             }
 
+            vec3 stained_tint() {
+                if (u_stained_active < 0.5) return vec3(1.0);
+                vec4 sp = u_stained_vp * vec4(v_world_pos, 1.0);
+                if (sp.w <= 0.0) return vec3(1.0);
+                float rcp = 1.0 / max(sp.w, 1e-5);
+                vec2 suv = sp.xy * rcp * 0.5 + 0.5;
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) return vec3(1.0);
+                float recv_d = clamp(sp.z * rcp * 0.5 + 0.5, 0.0, 1.0);
+                float glass_d = texture(u_stained_depth, suv).r;
+                if (recv_d <= glass_d + 0.0004) return vec3(1.0);
+                return clamp(texture(u_stained_tex, suv).rgb, vec3(0.0), vec3(1.0));
+            }
+
             void main() {
                 vec2 uv = v_uv;
                 float height = 0.0;
@@ -765,6 +784,7 @@ float compute_point_shadow_for_light(int li) {
                 result += ibl_contribution(N, V, albedo, roughness, metallic, F0, occlusion, aniso_T, aniso_B, _Anisotropy, _ClearCoat, cc_roughness);
                 float shadow_factor = compute_shadow_improved();
                 float area_shadow_factor = compute_area_shadow();
+                vec3 sun_tint = stained_tint();
                 for (int i = 0; i < u_light_count && i < MAX_LIGHTS; i++) {
                     float sf = 1.0;
                     if (i == u_shadow_light_index) sf = min(sf, shadow_factor);
@@ -778,7 +798,9 @@ float compute_point_shadow_for_light(int li) {
                     if (u_lights[i].type == 3) {
                     result += calc_area_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount) * sf;
                     } else {
-                        result += calc_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, sf, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount);
+                        vec3 plo = calc_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, sf, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount);
+                        if (i == u_shadow_light_index) plo *= sun_tint;
+                        result += plo;
                     }
                 }
                 if (_ClearCoat > EPS) {
@@ -802,7 +824,7 @@ float compute_point_shadow_for_light(int li) {
                                 attenuation *= clamp((theta - outer) / eps, 0.0, 1.0);
                             }
                         }
-                        cc_spec += calc_light_clearcoat(N, V, light_dir, _ClearCoat, cc_roughness).r * attenuation;
+                        cc_spec += calc_light_clearcoat(N, V, light_dir, _ClearCoat, cc_roughness).r * attenuation * (i == u_shadow_light_index ? dot(sun_tint, vec3(0.3333)) : 1.0);
                     }
                     result += vec3(cc_spec);
                 }
@@ -834,7 +856,8 @@ float compute_point_shadow_for_light(int li) {
                     vec2 _trsOff = vec2(u_proj[0][0], u_proj[1][1]) * _trsDisp / _trsDepth * 0.5;
                     vec3 _trsTint = mix(vec3(1.0), clamp(albedo, vec3(0.0), vec3(1.0)), _trsTrans * 0.9);
                     vec2 _trsUvC = clamp(_trsScreenUV + _trsOff, vec2(0.001), vec2(0.999));
-                    vec3 _trsAcc = texture(u_transmission_bg, _trsUvC).rgb;
+                    float _trsLod = clamp(_trsFrost, 0.0, 1.0) * u_transmission_bg_lod;
+                    vec3 _trsAcc = textureLod(u_transmission_bg, _trsUvC, _trsLod).rgb;
                     if (_trsFrost > 0.003) {
                         float _trsIgn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
                         float _trsCa = cos(_trsIgn * 6.28318530718);
@@ -845,7 +868,7 @@ float compute_point_shadow_for_light(int li) {
                             float _trsTa = (float(_trsTi) + 0.5) / 8.0 * 6.28318530718;
                             vec2 _trsTd = vec2(cos(_trsTa), sin(_trsTa));
                             _trsTd = vec2(_trsTd.x * _trsCa - _trsTd.y * _trsSa, _trsTd.x * _trsSa + _trsTd.y * _trsCa);
-                            _trsAcc += texture(u_transmission_bg, clamp(_trsScreenUV + (_trsOff + _trsTd * _trsRd), vec2(0.001), vec2(0.999))).rgb;
+                            _trsAcc += textureLod(u_transmission_bg, clamp(_trsScreenUV + (_trsOff + _trsTd * _trsRd), vec2(0.001), vec2(0.999)), _trsLod).rgb;
                         }
                         _trsAcc /= 8.0;
                     }
@@ -890,6 +913,7 @@ float compute_point_shadow_for_light(int li) {
             out vec2 v_uv;
             out vec3 v_view_pos;
             out vec4 v_color;
+
             void main() {
                 mat4 inst_model = mat4(in_model0, in_model1, in_model2, in_model3);
                 mat4 _model = (u_use_instancing == 1) ? inst_model : u_model;
@@ -988,6 +1012,11 @@ float compute_point_shadow_for_light(int li) {
             uniform sampler2D u_transmission_bg;
             uniform vec2 u_transmission_bg_texel;
             uniform float u_transmission_bg_active;
+            uniform float u_transmission_bg_lod;
+            uniform sampler2D u_stained_tex;
+            uniform sampler2D u_stained_depth;
+            uniform mat4 u_stained_vp;
+            uniform float u_stained_active;
             uniform mat4 u_view;
             uniform mat4 u_proj;
             uniform int u_double_sided;
@@ -1549,6 +1578,19 @@ float compute_shadow_improved() {
                 return ambient;
             }
 
+            vec3 stained_tint() {
+                if (u_stained_active < 0.5) return vec3(1.0);
+                vec4 sp = u_stained_vp * vec4(v_world_pos, 1.0);
+                if (sp.w <= 0.0) return vec3(1.0);
+                float rcp = 1.0 / max(sp.w, 1e-5);
+                vec2 suv = sp.xy * rcp * 0.5 + 0.5;
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) return vec3(1.0);
+                float recv_d = clamp(sp.z * rcp * 0.5 + 0.5, 0.0, 1.0);
+                float glass_d = texture(u_stained_depth, suv).r;
+                if (recv_d <= glass_d + 0.0004) return vec3(1.0);
+                return clamp(texture(u_stained_tex, suv).rgb, vec3(0.0), vec3(1.0));
+            }
+
             void main() {
                 vec2 uv = v_uv;
                 float height = 0.0;
@@ -1601,6 +1643,7 @@ float compute_shadow_improved() {
                 result += ibl_contribution(N, V, albedo, roughness, metallic, F0, occlusion, aniso_T, aniso_B, _Anisotropy, _ClearCoat, cc_roughness);
                 float shadow_factor = compute_shadow_improved();
                 float area_shadow_factor = compute_area_shadow();
+                vec3 sun_tint = stained_tint();
                 for (int i = 0; i < u_light_count && i < MAX_LIGHTS; i++) {
                     float sf = 1.0;
                     if (i == u_shadow_light_index) sf = min(sf, shadow_factor);
@@ -1614,7 +1657,9 @@ float compute_shadow_improved() {
                     if (u_lights[i].type == 3) {
                     result += calc_area_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount) * sf;
                     } else {
-                        result += calc_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, sf, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount);
+                        vec3 plo = calc_light_pbr(u_lights[i], N, V, albedo, roughness, metallic, F0, sf, aniso_T, aniso_B, _Anisotropy, _SubsurfaceColor, _SubsurfaceAmount);
+                        if (i == u_shadow_light_index) plo *= sun_tint;
+                        result += plo;
                     }
                 }
                 if (_ClearCoat > EPS) {
@@ -1638,7 +1683,7 @@ float compute_shadow_improved() {
                                 attenuation *= clamp((theta - outer) / eps, 0.0, 1.0);
                             }
                         }
-                        cc_spec += calc_light_clearcoat(N, V, light_dir, _ClearCoat, cc_roughness).r * attenuation;
+                        cc_spec += calc_light_clearcoat(N, V, light_dir, _ClearCoat, cc_roughness).r * attenuation * (i == u_shadow_light_index ? dot(sun_tint, vec3(0.3333)) : 1.0);
                     }
                     result += vec3(cc_spec);
                 }
@@ -1670,7 +1715,8 @@ float compute_shadow_improved() {
                     vec2 _trsOff = vec2(u_proj[0][0], u_proj[1][1]) * _trsDisp / _trsDepth * 0.5;
                     vec3 _trsTint = mix(vec3(1.0), clamp(albedo, vec3(0.0), vec3(1.0)), _trsTrans * 0.9);
                     vec2 _trsUvC = clamp(_trsScreenUV + _trsOff, vec2(0.001), vec2(0.999));
-                    vec3 _trsAcc = texture(u_transmission_bg, _trsUvC).rgb;
+                    float _trsLod = clamp(_trsFrost, 0.0, 1.0) * u_transmission_bg_lod;
+                    vec3 _trsAcc = textureLod(u_transmission_bg, _trsUvC, _trsLod).rgb;
                     if (_trsFrost > 0.003) {
                         float _trsIgn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
                         float _trsCa = cos(_trsIgn * 6.28318530718);
@@ -1681,7 +1727,7 @@ float compute_shadow_improved() {
                             float _trsTa = (float(_trsTi) + 0.5) / 8.0 * 6.28318530718;
                             vec2 _trsTd = vec2(cos(_trsTa), sin(_trsTa));
                             _trsTd = vec2(_trsTd.x * _trsCa - _trsTd.y * _trsSa, _trsTd.x * _trsSa + _trsTd.y * _trsCa);
-                            _trsAcc += texture(u_transmission_bg, clamp(_trsScreenUV + (_trsOff + _trsTd * _trsRd), vec2(0.001), vec2(0.999))).rgb;
+                            _trsAcc += textureLod(u_transmission_bg, clamp(_trsScreenUV + (_trsOff + _trsTd * _trsRd), vec2(0.001), vec2(0.999)), _trsLod).rgb;
                         }
                         _trsAcc /= 8.0;
                     }

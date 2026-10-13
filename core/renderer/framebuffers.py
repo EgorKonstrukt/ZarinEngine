@@ -43,7 +43,7 @@ class FramebuffersMixin:
             return
         self._release_transmission_fbo()
         self._transmission_tex = self._ctx.texture((w, h), 4, dtype='f2')
-        self._transmission_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self._transmission_tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
         self._transmission_tex.repeat_x = False
         self._transmission_tex.repeat_y = False
         self._transmission_fbo = self._ctx.framebuffer(self._transmission_tex)

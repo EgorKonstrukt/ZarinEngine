@@ -143,6 +143,10 @@ uniform Light u_lights[MAX_LIGHTS];
 uniform int u_light_count;
 uniform vec3 u_ambient;
 uniform int u_shadow_light_index;
+uniform sampler2D u_stained_tex;
+uniform sampler2D u_stained_depth;
+uniform mat4 u_stained_vp;
+uniform float u_stained_active;
 uniform sampler2D u_albedo_tex;
 uniform int u_use_albedo_tex;
 uniform sampler2D u_normal_tex;
@@ -447,6 +451,18 @@ vec3 calc_light(Light light, vec3 normal, vec3 view_dir, vec3 albedo, float shad
     vec3 specular = spec * light.color * light.intensity * u_metallic * shadow_factor;
     return (diffuse + specular) * attenuation;
 }
+vec3 stained_tint() {
+    if (u_stained_active < 0.5) return vec3(1.0);
+    vec4 sp = u_stained_vp * vec4(v_world_pos, 1.0);
+    if (sp.w <= 0.0) return vec3(1.0);
+    float rcp = 1.0 / max(sp.w, 1e-5);
+    vec2 suv = sp.xy * rcp * 0.5 + 0.5;
+    if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) return vec3(1.0);
+    float recv_d = clamp(sp.z * rcp * 0.5 + 0.5, 0.0, 1.0);
+    float glass_d = texture(u_stained_depth, suv).r;
+    if (recv_d <= glass_d + 0.0004) return vec3(1.0);
+    return clamp(texture(u_stained_tex, suv).rgb, vec3(0.0), vec3(1.0));
+}
 void main() {
     vec3 albedo = u_albedo_color.rgb;
     float salpha = u_albedo_color.a;
@@ -469,6 +485,7 @@ void main() {
     vec3 view_dir = normalize(u_camera_pos - v_world_pos);
     vec3 result = u_ambient * albedo;
     float shadow_factor = compute_shadow();
+    vec3 sun_tint = stained_tint();
     for (int i = 0; i < u_light_count && i < MAX_LIGHTS; i++) {
         float sf = 1.0;
         if (i == u_shadow_light_index) sf = min(sf, shadow_factor);
@@ -483,7 +500,9 @@ void main() {
             if (i == u_area_shadow_light_index) area_sf = compute_area_shadow();
             result += calc_area_light(u_lights[i], normal, view_dir, albedo) * area_sf;
         } else {
-            result += calc_light(u_lights[i], normal, view_dir, albedo, sf);
+            vec3 lo = calc_light(u_lights[i], normal, view_dir, albedo, sf);
+            if (i == u_shadow_light_index) lo *= sun_tint;
+            result += lo;
         }
     }
     result += ibl_contribution(normal, view_dir, albedo, 1.0 - roughness, u_metallic);

@@ -651,6 +651,8 @@ class MaterialManager:
             prog["_ThinFilmIntensity"].value = 0.0
         if "u_transmission_bg_active" in names:
             prog["u_transmission_bg_active"].value = 0.0
+        if "u_transmission_bg_lod" in names:
+            prog["u_transmission_bg_lod"].value = 5.0
         if "_NormalMap" in names:
             prog["_NormalMap"].value = 0
         if "_OcclusionMap" in names:
@@ -772,6 +774,17 @@ class MaterialManager:
                     prog["u_transmission_bg"].value = unit
                     if "u_transmission_bg_texel" in names and bw and bh:
                         prog["u_transmission_bg_texel"].write(np.array([1.0 / float(bw), 1.0 / float(bh)], dtype=np.float32).tobytes())
+                    if "u_transmission_bg_lod" in names:
+                        try:
+                            _mw = max(int(bw), int(bh))
+                            _lod = _mw.bit_length() - 4
+                            if _lod < 2:
+                                _lod = 2
+                            if _lod > 6:
+                                _lod = 6
+                            prog["u_transmission_bg_lod"].value = float(_lod)
+                        except Exception:
+                            pass
                     if "u_transmission_bg_active" in names:
                         prog["u_transmission_bg_active"].value = 1.0
                 except Exception:
@@ -974,6 +987,71 @@ class MaterialManager:
         except Exception:
             pass
         return result
+
+    def shadow_transparency_class(self, path: str) -> int:
+        try:
+            mat = self.load_material(path)
+        except Exception:
+            return 0
+        if mat is None:
+            return 0
+        try:
+            props = mat.properties
+        except Exception:
+            return 0
+        try:
+            alpha = 1.0
+            for k in ("_BaseColor", "albedo_color"):
+                v = props.get(k)
+                if isinstance(v, (list, tuple)) and len(v) > 3:
+                    alpha = float(v[3])
+                    break
+            trans = 0.0
+            for k in ("_Transmission", "transmission"):
+                v = props.get(k)
+                if v is not None:
+                    try:
+                        trans = max(trans, float(v))
+                    except Exception:
+                        pass
+        except Exception:
+            return 0
+        try:
+            if trans > 0.001:
+                return 1
+            if alpha < 0.999:
+                return 1
+        except Exception:
+            pass
+        return 0
+
+    def stained_tint(self, path: str) -> tuple:
+        try:
+            mat = self.load_material(path)
+        except Exception:
+            return (1.0, 1.0, 1.0)
+        if mat is None:
+            return (1.0, 1.0, 1.0)
+        try:
+            props = mat.properties
+            alb = props.get("_BaseColor", props.get("albedo_color", None))
+            if isinstance(alb, (list, tuple)) and len(alb) >= 3:
+                r = max(0.0, min(1.0, float(alb[0])))
+                g = max(0.0, min(1.0, float(alb[1])))
+                b = max(0.0, min(1.0, float(alb[2])))
+                a = float(alb[3]) if len(alb) > 3 else 1.0
+            else:
+                r, g, b, a = 1.0, 1.0, 1.0, 1.0
+            try:
+                trans = max(float(props.get("_Transmission", 0.0)), float(props.get("transmission", 0.0)))
+            except Exception:
+                trans = 0.0
+            if trans > 0.001:
+                return (r, g, b)
+            a = max(0.0, min(1.0, a))
+            return (1.0 + (r - 1.0) * a, 1.0 + (g - 1.0) * a, 1.0 + (b - 1.0) * a)
+        except Exception:
+            return (1.0, 1.0, 1.0)
 
     def _mesh_wants_tiling(self, mr) -> bool:
         if mr is None:

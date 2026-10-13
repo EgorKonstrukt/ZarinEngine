@@ -15,10 +15,81 @@ from PyQt6.QtCore import Qt, QTimer, QEvent, QPoint
 from PyQt6.QtGui import QSurfaceFormat, QKeyEvent, QMouseEvent, QWheelEvent, QCursor, QGuiApplication
 from core.input.input_system import Input
 from core.foundation.logger import Logger
+from core.maths.math3d import Mat4, Vec3
 from core.engine.frame_pacer import FramePacer, needs_software_pacing, normalize_target_fps, timer_interval_ms
 if TYPE_CHECKING:
     from core.engine.engine import Engine
     from core.gui.canvas import GuiCanvas
+
+
+def _fallback_game_view(scene, aspect):
+    try:
+        import math
+        try:
+            ents = scene._entities.values()
+        except Exception:
+            return None
+        sx = sy = sz = 0.0
+        n = 0
+        pts = []
+        for e in ents:
+            try:
+                if not e.active:
+                    continue
+                tr = e.transform
+                if tr is None:
+                    continue
+                p = tr.position
+                x = float(p.x)
+                y = float(p.y)
+                z = float(p.z)
+                sx += x
+                sy += y
+                sz += z
+                n += 1
+                pts.append((x, y, z))
+            except Exception:
+                continue
+        if n <= 0:
+            return None
+        cx = sx / n
+        cy = sy / n
+        cz = sz / n
+        radius = 2.0
+        try:
+            for x, y, z in pts:
+                dx = x - cx
+                dy = y - cy
+                dz = z - cz
+                d = math.sqrt(dx * dx + dy * dy + dz * dz)
+                if d > radius:
+                    radius = d
+            radius = max(1.0, radius + 1.0)
+        except Exception:
+            radius = 5.0
+        fov = 60.0
+        try:
+            dist = radius / max(0.05, math.tan(math.radians(fov) * 0.5)) * 1.3
+        except Exception:
+            dist = radius * 2.5
+        dist = max(dist, 0.5)
+        il = 1.0 / math.sqrt(0.62 * 0.62 + 0.5 * 0.5 + 0.72 * 0.72)
+        dx = 0.62 * il
+        dy = 0.5 * il
+        dz = 0.72 * il
+        pos = Vec3(cx + dx * dist, cy + dy * dist, cz + dz * dist)
+        center = Vec3(cx, cy, cz)
+        view = Mat4.look_at(pos, center, Vec3(0.0, 1.0, 0.0))
+        near = max(0.01, dist * 0.01)
+        far = max(1000.0, dist + radius * 20.0)
+        try:
+            a = max(0.1, float(aspect))
+        except Exception:
+            a = 16.0 / 9.0
+        proj = Mat4.perspective(fov, a, near, far)
+        return view, proj, pos, near, far
+    except Exception:
+        return None
 
 class PlayViewport(QOpenGLWidget):
     def __init__(self, engine: Engine, parent=None):
@@ -180,7 +251,28 @@ class PlayViewport(QOpenGLWidget):
                     cam_entity = e
                     break
             if not cam_entity:
+                fb = None
+                try:
+                    dpr = self.devicePixelRatio()
+                    pw, ph = int(self.width() * dpr), int(self.height() * dpr)
+                    fb_aspect = float(pw) / max(1.0, float(ph))
+                    fb = _fallback_game_view(scene, fb_aspect)
+                except Exception:
+                    fb = None
+                if fb is None:
+                    self._ctx.clear(0.1, 0.1, 0.1, 1.0)
+                    return
+                try:
+                    fb_view, fb_proj, fb_pos, fb_near, fb_far = fb
+                except Exception:
+                    self._ctx.clear(0.1, 0.1, 0.1, 1.0)
+                    return
                 self._ctx.clear(0.1, 0.1, 0.1, 1.0)
+                try:
+                    self._renderer.show_grid = False
+                except Exception:
+                    pass
+                self._renderer.render_scene(scene, fb_view, fb_proj, fb_pos, pw, ph, self._screen_fbo, None, fb_near, fb_far, 60.0, display_w=pw, display_h=ph)
                 return
             cam = cam_entity.get_component(Camera)
             tr = cam_entity.transform

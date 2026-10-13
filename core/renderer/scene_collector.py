@@ -231,7 +231,42 @@ class SceneCollectorMixin:
                 cull_offsets.append(block_start)
                 cull_counts.append(n_sub)
                 if needs_shadow and mr.cast_shadows:
-                    shadow_list.append([mesh, tr])
+                    try:
+                        _mats = mr.materials if mr.materials else []
+                        _tint_paths = []
+                        _any_opaque = False
+                        _nsub = n_sub if n_sub > 0 else 1
+                        _mmgr = getattr(self, "_materials", None)
+                        for _si in range(_nsub):
+                            try:
+                                if _si < len(_mats):
+                                    _mp = _mats[_si].get("path", "")
+                                elif _mats:
+                                    _mp = _mats[-1].get("path", "")
+                                else:
+                                    _mp = ""
+                            except Exception:
+                                _mp = ""
+                            if not _mp:
+                                _any_opaque = True
+                                continue
+                            try:
+                                _cls = _mmgr.shadow_transparency_class(_mp) if _mmgr is not None else 0
+                            except Exception:
+                                _cls = 0
+                            if _cls == 1:
+                                _tint_paths.append(_mp)
+                            else:
+                                _any_opaque = True
+                        if _tint_paths and not _any_opaque:
+                            try:
+                                snap.transparent_shadow_casters.append([mesh, tr, _tint_paths[0]])
+                            except Exception:
+                                shadow_list.append([mesh, tr])
+                        else:
+                            shadow_list.append([mesh, tr])
+                    except Exception:
+                        shadow_list.append([mesh, tr])
         for ent in scene.get_entities_with_component(SkinnedMeshRenderer):
             if not ent.active:
                 continue
