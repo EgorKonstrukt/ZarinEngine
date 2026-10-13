@@ -225,17 +225,22 @@ def _collect_tab_entries(mw):
                     entry = {"type": "scene", "name": info.name, "path": info.path or ""}
                     scene = info.scene
                     pending = getattr(info, "pending_snapshot", "") or ""
+                    carried = getattr(info, "restored_snapshot", "") or ""
                     if scene is None:
                         if pending:
                             entry["snapshot"] = os.path.basename(pending)
-                            entry["dirty"] = True
                             used_names.add(os.path.basename(pending))
                     elif ((not info.path) or not os.path.isfile(info.path or "") or scene.dirty):
                         hit = _reusable_snapshot(scene)
                         if hit:
                             entry["snapshot"] = hit
-                            entry["dirty"] = True
+                            if scene.dirty:
+                                entry["dirty"] = True
                             used_names.add(hit)
+                            try:
+                                info.restored_snapshot = os.path.basename(hit)
+                            except Exception:
+                                pass
                         else:
                             while True:
                                 cand = f"scene_{snapshot_index}.pkl"
@@ -245,8 +250,18 @@ def _collect_tab_entries(mw):
                             filename = _write_scene_snapshot(scene, cand, info.path or "")
                             if filename:
                                 entry["snapshot"] = filename
-                                entry["dirty"] = True
+                                if scene.dirty:
+                                    entry["dirty"] = True
                                 used_names.add(filename)
+                                try:
+                                    info.restored_snapshot = os.path.basename(filename)
+                                except Exception:
+                                    pass
+                    elif carried:
+                        carried_path = os.path.join(_session_dir(), os.path.basename(carried))
+                        if os.path.isfile(carried_path):
+                            entry["snapshot"] = os.path.basename(carried)
+                            used_names.add(os.path.basename(carried))
         if entry is not None:
             entries.append(entry)
             if i == current:
@@ -343,7 +358,7 @@ def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str, entry_name: s
         scene.name = os.path.splitext(os.path.basename(scene_path))[0]
     elif entry_name:
         scene.name = entry_name
-    scene.mark_dirty()
+    scene.mark_clean()
     if migrated:
         _mark_snapshotted(scene, os.path.splitext(snapshot_path)[0] + ".pkl")
     else:
@@ -465,11 +480,14 @@ def restore_tabs(mw) -> bool:
                 snapshot = entry.get("snapshot", "") or ""
                 if pos in eager_positions:
                     scene = None
+                    from_snapshot = False
                     if snapshot:
                         snapshot_path = os.path.join(_session_dir(), os.path.basename(snapshot))
                         if os.path.isfile(snapshot_path):
                             try:
                                 scene = _load_scene_snapshot(eng, snapshot_path, scene_path, name)
+                                if scene is not None:
+                                    from_snapshot = True
                             except Exception as e:
                                 Logger.error(f"Failed to restore scene snapshot: {e}")
                                 scene = None
@@ -510,6 +528,13 @@ def restore_tabs(mw) -> bool:
                     except Exception as e:
                         Logger.error(f"Failed to restore scene tab: {e}")
                         continue
+                    if snapshot and from_snapshot:
+                        try:
+                            info = mgr.get_tab_info(tab_name)
+                            if info is not None:
+                                info.restored_snapshot = os.path.basename(snapshot)
+                        except Exception:
+                            pass
                     _debug_log(
                         f"restore added scene tab={tab_name} source_entities={_live_entity_count(scene)}"
                     )

@@ -356,6 +356,12 @@ class EditorMainWindow(QMainWindow):
         if self._engine.scene and self._engine.scene.dirty:
             name = self._engine.scene.name
             self.setWindowTitle(f"Zarin Engine Editor - {name}*")
+        try:
+            mgr = getattr(self, '_scene_tab_manager', None)
+            if mgr is not None:
+                mgr.refresh_all_tab_titles()
+        except Exception:
+            pass
         from core.foundation.commands import get_history
         h = get_history()
         self._undo_act.setEnabled(h.can_undo)

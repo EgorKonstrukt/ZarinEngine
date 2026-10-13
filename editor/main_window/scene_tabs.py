@@ -63,7 +63,8 @@ def _icon_for_script(path: str) -> QIcon:
 class SceneTabInfo:
     __slots__ = ("name", "path", "scene", "dirty", "camera_state",
                  "selected_entity_ids", "play_mode", "scene_snapshot",
-                 "prefab_path", "origin_tab", "pending_snapshot")
+                 "prefab_path", "origin_tab", "pending_snapshot",
+                 "restored_snapshot")
     def __init__(self, name: str = "Scene", path: Optional[str] = None, scene: Optional[Scene] = None):
         self.name = name
         self.path = path
@@ -76,6 +77,7 @@ class SceneTabInfo:
         self.prefab_path: Optional[str] = None
         self.origin_tab: Optional[str] = None
         self.pending_snapshot: str = ""
+        self.restored_snapshot: str = ""
 
 
 class SceneTabManager(QObject):
@@ -112,6 +114,82 @@ class SceneTabManager(QObject):
         self._reopen_action.triggered.connect(lambda: self.reopen_closed_tab())
         try:
             tab_bar.addAction(self._reopen_action)
+        except Exception:
+            pass
+        try:
+            engine.on("scene_saved", self._on_engine_scene_saved)
+        except Exception:
+            pass
+
+    def _on_engine_scene_saved(self, scene):
+        try:
+            if scene is None:
+                return
+            for tab_name, info in list(self._tabs.items()):
+                if info.scene is not scene:
+                    continue
+                info.restored_snapshot = ""
+                info.pending_snapshot = ""
+                try:
+                    info.dirty = bool(scene.dirty)
+                except Exception:
+                    info.dirty = False
+                try:
+                    sp = getattr(scene, 'path', None)
+                    if sp:
+                        info.path = sp
+                except Exception:
+                    pass
+                self.refresh_tab_title(tab_name)
+        except Exception:
+            pass
+
+    def _is_tab_dirty(self, info: SceneTabInfo) -> bool:
+        try:
+            if info.scene is not None:
+                return bool(info.scene.dirty)
+            return bool(info.pending_snapshot) and not info.path
+        except Exception:
+            return False
+
+    def _tab_title(self, info: SceneTabInfo) -> str:
+        try:
+            if self._is_tab_dirty(info):
+                return "● " + info.name
+        except Exception:
+            pass
+        return info.name
+
+    def _tab_tooltip(self, info: SceneTabInfo) -> str:
+        try:
+            base = info.path if info.path else "Unsaved scene (no file yet)"
+            if self._is_tab_dirty(info):
+                return base + "\n● Unsaved changes"
+            return base
+        except Exception:
+            return info.name
+
+    def refresh_tab_title(self, tab_name: str):
+        try:
+            info = self._tabs.get(tab_name)
+            if info is None:
+                return
+            idx = self._scene_tab_idx(tab_name)
+            if idx < 0:
+                return
+            title = self._tab_title(info)
+            if self._tab_bar.tabText(idx) != title:
+                self._tab_bar.setTabText(idx, title)
+            tip = self._tab_tooltip(info)
+            if self._tab_bar.tabToolTip(idx) != tip:
+                self._tab_bar.setTabToolTip(idx, tip)
+        except Exception:
+            pass
+
+    def refresh_all_tab_titles(self):
+        try:
+            for tab_name in list(self._tab_names):
+                self.refresh_tab_title(tab_name)
         except Exception:
             pass
 
@@ -191,6 +269,7 @@ class SceneTabManager(QObject):
         idx = self._tab_bar.insertTab(pos, tab_name)
         self._tab_bar.setTabData(idx, tab_name)
         self._tab_bar.setTabIcon(idx, self._get_zarin_icon())
+        self.refresh_tab_title(tab_name)
         self._tab_bar.setCurrentIndex(idx)
         if not self._restoring and not self._switching and self._active_tab != tab_name:
             self._on_tab_changed(idx)
@@ -202,13 +281,15 @@ class SceneTabManager(QObject):
         info = SceneTabInfo(tab_name, path, None)
         if snapshot:
             info.pending_snapshot = os.path.basename(snapshot)
-            info.dirty = True
+            info.restored_snapshot = os.path.basename(snapshot)
+            info.dirty = False
         self._tabs[tab_name] = info
         self._tab_names.append(tab_name)
         pos = self._tab_bar.count()
         idx = self._tab_bar.insertTab(pos, tab_name)
         self._tab_bar.setTabData(idx, tab_name)
         self._tab_bar.setTabIcon(idx, self._get_zarin_icon())
+        self.refresh_tab_title(tab_name)
         self.tab_added.emit(tab_name)
         return tab_name
 
@@ -249,7 +330,12 @@ class SceneTabManager(QObject):
         if scene is None:
             return False
         info.scene = scene
+        if snap and os.path.isfile(snap_path):
+            info.restored_snapshot = os.path.basename(snap)
+        else:
+            info.restored_snapshot = ""
         info.pending_snapshot = ""
+        self.refresh_tab_title(tab_name)
         return True
 
     def remove_tab(self, tab_name: str):
@@ -327,6 +413,7 @@ class SceneTabManager(QObject):
             if vp:
                 info.selected_entity_ids = [e.id for e in vp._selected_entities]
             info.play_mode = self._engine.play_mode
+            self.refresh_tab_title(self._active_tab)
 
     def _on_tab_changed(self, idx: int):
         if self._switching or self._restoring:
@@ -712,7 +799,7 @@ class SceneTabManager(QObject):
                 except Exception:
                     pass
                 return True
-            is_dirty = scene.dirty if scene is not None else bool(info.dirty or info.pending_snapshot)
+            is_dirty = self._is_tab_dirty(info)
             if is_dirty:
                 reply = QMessageBox.question(
                     self._mw, "Unsaved Changes",
@@ -725,8 +812,11 @@ class SceneTabManager(QObject):
                     return False
                 if reply == QMessageBox.StandardButton.Yes:
                     if scene is None:
-                        self.ensure_tab_loaded(tab_name)
+                        if not self.ensure_tab_loaded(tab_name):
+                            return False
                         scene = info.scene
+                    if info.scene is not None and self._engine.scene is not info.scene:
+                        self.switch_to_tab(tab_name)
                     self._save_scene_tab(info)
             if tab_name == self._active_tab and self._engine.play_mode:
                 try:
@@ -787,6 +877,10 @@ class SceneTabManager(QObject):
             self._tab_bar.setTabData(idx, name)
             try:
                 self._tab_bar.setTabIcon(idx, self._get_zarin_icon())
+            except Exception:
+                pass
+            try:
+                self.refresh_tab_title(name)
             except Exception:
                 pass
             try:
@@ -1066,13 +1160,16 @@ class SceneTabManager(QObject):
 
         if hasattr(self._mw, '_hierarchy'):
             self._mw._hierarchy.refresh()
-        idx = self._scene_tab_idx(info.name)
-        if idx >= 0:
-            self._tab_bar.setTabText(idx, info.name)
+        self.refresh_tab_title(info.name)
 
     def _save_scene_tab(self, info: SceneTabInfo):
         if info.scene is None:
             return
+        try:
+            if self._engine.scene is not info.scene:
+                self.switch_to_tab(info.name)
+        except Exception:
+            pass
         if info.path:
             from core.engine.engine import Engine
             Engine.instance().save_scene(info.path)
@@ -1142,8 +1239,8 @@ class SceneTabManager(QObject):
         idx = self._scene_tab_idx(old_name)
         if idx >= 0:
             self._tab_bar.setTabData(idx, new_name)
-            self._tab_bar.setTabText(idx, new_name)
         name_idx = self._tab_names.index(old_name)
         self._tab_names[name_idx] = new_name
         if self._active_tab == old_name:
             self._active_tab = new_name
+        self.refresh_tab_title(new_name)

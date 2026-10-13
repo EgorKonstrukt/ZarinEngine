@@ -197,6 +197,13 @@ def setup_toolbar(mw):
     mw._scene_tab_bar.setExpanding(False)
     mw._scene_tab_bar.setTabsClosable(True)
     mw._scene_tab_bar.setMovable(True)
+    mw._scene_tab_bar.setDocumentMode(False)
+    mw._scene_tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
+    mw._scene_tab_bar.setStyleSheet(
+        "QTabBar#SceneTabBar::tab { border-top: 2px solid transparent; }"
+        "QTabBar#SceneTabBar::tab:selected { border-top: 2px solid #007acc; }"
+        "QTabBar#SceneTabBar::close-button:hover { background: #e81123; }"
+    )
 
     main_lay.addWidget(mw._scene_tab_bar)
 
