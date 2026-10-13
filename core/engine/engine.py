@@ -9,6 +9,7 @@ import gc
 import time
 import json
 import os
+import shutil
 import threading
 from typing import Optional, Any, TYPE_CHECKING
 from core.ecs.ecs import Scene, ComponentRegistry
@@ -24,6 +25,45 @@ from core.foundation.progress import task_complete, task_start, task_update
 
 if TYPE_CHECKING:
     from core.engine.engine_worker import GameWorker
+
+_SCENE_BACKUP_KEEP = 2
+
+def _rotate_scene_backups(path: str, keep: int = _SCENE_BACKUP_KEEP) -> None:
+    try:
+        if not path or not os.path.isfile(path):
+            return
+        if keep <= 1:
+            try:
+                shutil.copyfile(path, path + ".bak")
+            except OSError:
+                pass
+            return
+        oldest = f"{path}.bak{keep}"
+        try:
+            if os.path.isfile(oldest):
+                os.remove(oldest)
+        except OSError:
+            pass
+        for i in range(keep, 1, -1):
+            src = f"{path}.bak{i - 1}" if i > 2 else f"{path}.bak"
+            dst = f"{path}.bak{i}"
+            try:
+                if os.path.isfile(src):
+                    os.replace(src, dst)
+            except OSError:
+                pass
+        try:
+            shutil.copyfile(path, path + ".bak")
+        except OSError:
+            pass
+    except Exception:
+        pass
+
+def _atomic_write_scene_json(path: str, data: dict) -> None:
+    tmp_path = path + ".build"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp_path, path)
 
 class Engine:
     _instance: Optional[Engine] = None
@@ -173,6 +213,7 @@ class Engine:
                                compress_level=level, progress_cb=_cb)
         storage = data.get("embedded_resources", {})
         self.relativize_scene_paths(data)
+        _rotate_scene_backups(path)
         build_path = path + ".build"
         with open(build_path, "w", encoding="utf-8") as f:
             json.dump(data, f, separators=(",", ":"))
@@ -722,8 +763,8 @@ class Engine:
             self._scene.embedded_resources = data.get("embedded_resources", {})
             self.relativize_scene_paths(data)
             os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else ".", exist_ok=True)
-            with open(save_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+            _rotate_scene_backups(save_path)
+            _atomic_write_scene_json(save_path, data)
             self._scene.path = save_path
             self._scene.mark_clean()
             Logger.info(f"Scene saved: {save_path}")
@@ -747,8 +788,8 @@ class Engine:
             scene.embedded_resources = data.get("embedded_resources", {})
             self.relativize_scene_paths(data)
             os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else ".", exist_ok=True)
-            with open(save_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+            _rotate_scene_backups(save_path)
+            _atomic_write_scene_json(save_path, data)
             scene.path = save_path
             scene.mark_clean()
             Logger.info(f"Scene saved: {save_path}")

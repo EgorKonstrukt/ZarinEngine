@@ -643,6 +643,7 @@ class TimeTravelPanel(QDockWidget):
 
         from core.ecs.ecs import Scene as SceneCls
         restored = SceneCls.deserialize(snap.data, self._engine._component_registry)
+        restored.mark_dirty()
         old_path = self._engine.scene.path if self._engine.scene else None
         if old_path:
             restored.path = old_path
@@ -719,6 +720,7 @@ class TimeTravelPanel(QDockWidget):
         if self._live_data is not None and self._engine.scene is not None:
             from core.ecs.ecs import Scene as SceneCls
             live = SceneCls.deserialize(self._live_data, self._engine._component_registry)
+            live.mark_dirty()
             old_path = self._engine.scene.path if self._engine.scene else None
             if old_path:
                 live.path = old_path

@@ -1633,6 +1633,12 @@ class SceneViewport(QOpenGLWidget):
                 self._paste_entities()
                 event.accept()
                 return
+            if event.key() == Qt.Key.Key_D:
+                if self._selected_entities:
+                    self._copy_selected_entities()
+                    self._paste_entities()
+                event.accept()
+                return
         if self._im:
             vk = self._qt_key_to_vk(event.key())
             if vk is None:

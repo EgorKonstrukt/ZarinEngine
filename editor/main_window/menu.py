@@ -25,6 +25,7 @@ from editor.main_window.handlers import (
 )
 from editor.main_window.project import open_project_manager, open_project_browse
 from editor.main_window.state import reset_layout
+from editor.main_window.palette import show_command_palette
 
 
 def setup_menu(mw):
@@ -48,6 +49,10 @@ def setup_menu(mw):
     save_as_act.setShortcut(QKeySequence("Ctrl+Shift+S"))
     save_as_act.triggered.connect(lambda: save_scene_as(mw))
     file_menu.addAction(save_as_act)
+    save_all_act = QAction(_qta("fa5s.save"), "Save All Scenes", mw)
+    save_all_act.setShortcut(QKeySequence("Ctrl+Alt+S"))
+    save_all_act.triggered.connect(lambda: mw._scene_tab_manager.save_all_dirty_tabs() if hasattr(mw, '_scene_tab_manager') and mw._scene_tab_manager else None)
+    file_menu.addAction(save_all_act)
     file_menu.addSeparator()
     project_mgr_act = QAction(_qta("fa5s.folder"), "Project Manager...", mw)
     project_mgr_act.triggered.connect(lambda: open_project_manager(mw))
@@ -120,6 +125,10 @@ def setup_menu(mw):
     goto_act.setShortcut(QKeySequence("Ctrl+P"))
     goto_act.triggered.connect(lambda: mw._scene_tab_manager.show_quick_open() if hasattr(mw, '_scene_tab_manager') and mw._scene_tab_manager else None)
     view_menu.addAction(goto_act)
+    palette_act = QAction(_qta("fa5s.terminal"), "Command Palette...", mw)
+    palette_act.setShortcut(QKeySequence("Ctrl+K"))
+    palette_act.triggered.connect(lambda: show_command_palette(mw))
+    view_menu.addAction(palette_act)
     next_act = QAction(_qta("fa5s.arrow-right"), "Next Tab", mw)
     next_act.setShortcut(QKeySequence("Ctrl+Tab"))
     next_act.triggered.connect(lambda: mw._scene_tab_manager.cycle_tab(1) if hasattr(mw, '_scene_tab_manager') and mw._scene_tab_manager else None)

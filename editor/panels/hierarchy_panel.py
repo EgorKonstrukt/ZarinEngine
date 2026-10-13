@@ -283,6 +283,11 @@ class HierarchyTree(QTreeWidget):
             items = self.selectedItems()
             if items:
                 self.editItem(items[0], 0)
+        elif key == Qt.Key.Key_F:
+            try:
+                self._panel._frame_selected()
+            except Exception:
+                pass
         elif key == Qt.Key.Key_Delete:
             items = self.selectedItems()
             eids = []
@@ -405,6 +410,40 @@ class HierarchyPanel(QDockWidget):
         self._compress_btn.setChecked(bool(getattr(scene, 'compress_resources', False)))
         self._update_scene_header()
         self._refresh()
+    def _frame_selected(self):
+        try:
+            ent = self._selected_entity
+            if ent is None:
+                items = self._tree.selectedItems()
+                if items:
+                    eid = items[0].data(0, Qt.ItemDataRole.UserRole)
+                    if eid and self._scene:
+                        ent = self._scene.get_entity(eid)
+            if ent is None:
+                return
+            vp = getattr(self._engine, 'viewport', None)
+            if vp is None or getattr(vp, '_cam', None) is None:
+                return
+            t = ent.transform
+            if t is None:
+                return
+            try:
+                from editor.entity_frame import compute_entity_frame
+                renderer = getattr(vp, '_renderer', None)
+                if renderer is None:
+                    try:
+                        renderer = vp.renderer
+                    except Exception:
+                        renderer = None
+                center, radius = compute_entity_frame(ent, renderer)
+                vp._cam.frame_bounds(center, radius)
+            except Exception:
+                try:
+                    vp._cam.frame_bounds(t.position)
+                except Exception:
+                    pass
+        except Exception:
+            pass
     def _on_history_changed(self, cmd=None):
         if self._scene is None:
             return
