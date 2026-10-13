@@ -2029,6 +2029,19 @@ class ShadowRenderer:
             self._flat_src_list = None
             self.reset_shadow_state()
             self._cache_uniform_bytes()
+            try:
+                _sun_only = None
+                try:
+                    for _l, _lt in lights:
+                        if _l.light_type == LightType.DIRECTIONAL and _l.cast_shadows:
+                            _sun_only = _lt
+                            break
+                except Exception:
+                    _sun_only = None
+                self._render_stained_pass(_sun_only, tint_casters, material_manager,
+                                          cam_near, cam_far, cam_fov, aspect, view_mat)
+            except Exception:
+                pass
             return {}
         if self._flat_cache_valid(scene, renderable_shadow):
             shadow_groups = self._shadow_groups_cache
