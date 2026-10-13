@@ -796,6 +796,11 @@ def toggle_play_stop(mw):
             from core.engine.engine import Engine as Eng
             restored = S.deserialize(info.scene_snapshot, Eng.instance()._component_registry)
             restored.path = mw._engine.scene.path
+            try:
+                if getattr(mw, '_pre_play_dirty', False):
+                    restored.mark_dirty()
+            except Exception:
+                pass
             mw._engine._scene = restored
             mw._engine._plugin_manager.notify_scene_loaded(restored)
             mw._engine._emit_event("scene_loaded", restored)
@@ -809,6 +814,10 @@ def toggle_play_stop(mw):
     else:
         sel = getattr(mw._hierarchy, "_selected_entity", None)
         mw._pre_play_selected_id = sel.id if sel else None
+        try:
+            mw._pre_play_dirty = bool(mw._engine.scene and mw._engine.scene.dirty)
+        except Exception:
+            mw._pre_play_dirty = False
         if mw._engine.scene:
             info = _tab_info(mw)
             if info:
@@ -877,6 +886,11 @@ def toggle_pause(mw):
         from core.engine.engine import Engine as Eng
         restored = S.deserialize(info.scene_snapshot, Eng.instance()._component_registry)
         restored.path = mw._engine.scene.path
+        try:
+            if getattr(mw, '_pre_play_dirty', False):
+                restored.mark_dirty()
+        except Exception:
+            pass
         mw._engine._scene = restored
         mw._engine._plugin_manager.notify_scene_loaded(restored)
         mw._engine._emit_event("scene_loaded", restored)

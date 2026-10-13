@@ -223,7 +223,9 @@ class SnapshotRecorder:
             return None
         try:
             from core.ecs.ecs import Scene
-            return Scene.deserialize(snap.data, registry)
+            scene = Scene.deserialize(snap.data, registry)
+            scene.mark_dirty()
+            return scene
         except Exception as e:
             Logger.error(f"Snapshot restore failed: {e}")
             return None

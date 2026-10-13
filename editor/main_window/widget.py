@@ -300,6 +300,7 @@ class EditorMainWindow(QMainWindow):
                 return
             from core.ecs.ecs import Scene, ComponentRegistry
             scene = Scene.deserialize(scene_data, ComponentRegistry)
+            scene.mark_dirty()
             if path:
                 scene.path = path
             self._tab_add_lock = True

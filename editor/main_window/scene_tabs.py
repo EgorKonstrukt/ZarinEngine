@@ -711,6 +711,11 @@ class SceneTabManager(QObject):
                 if active_info and active_info.scene_snapshot:
                     restored = S.deserialize(active_info.scene_snapshot, Eng.instance()._component_registry)
                     restored.path = self._engine.scene.path if self._engine.scene else active_info.path
+                    try:
+                        if getattr(self._mw, '_pre_play_dirty', False):
+                            restored.mark_dirty()
+                    except Exception:
+                        pass
                     self._engine._scene = restored
                     self._engine._plugin_manager.notify_scene_loaded(restored)
                     active_info.scene = restored
@@ -1119,6 +1124,11 @@ class SceneTabManager(QObject):
                         from core.engine.engine import Engine as Eng
                         restored = S.deserialize(info.scene_snapshot, Eng.instance()._component_registry)
                         restored.path = self._engine.scene.path if self._engine.scene else info.path
+                        try:
+                            if getattr(self._mw, '_pre_play_dirty', False):
+                                restored.mark_dirty()
+                        except Exception:
+                            pass
                         self._engine._scene = restored
                         self._engine._plugin_manager.notify_scene_loaded(restored)
                     except Exception:

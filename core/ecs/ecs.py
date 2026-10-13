@@ -1081,7 +1081,6 @@ class Scene:
         self._spatial_dirty = True
         self._spatial_dirty_entities.update(entities.keys())
         self._invalidate_update_cache()
-        self._dirty = True
         self._render_version += 1
 
     def _invalidate_update_cache(self):
@@ -2114,4 +2113,5 @@ class Scene:
         if dirty_roots:
             s._transform_version_pending = True
         s._batch_sync_entities(entities)
+        s._dirty = False
         return s
