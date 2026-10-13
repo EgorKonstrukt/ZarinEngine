@@ -63,7 +63,7 @@ def _icon_for_script(path: str) -> QIcon:
 class SceneTabInfo:
     __slots__ = ("name", "path", "scene", "dirty", "camera_state",
                  "selected_entity_ids", "play_mode", "scene_snapshot",
-                 "prefab_path", "origin_tab")
+                 "prefab_path", "origin_tab", "pending_snapshot")
     def __init__(self, name: str = "Scene", path: Optional[str] = None, scene: Optional[Scene] = None):
         self.name = name
         self.path = path
@@ -75,6 +75,7 @@ class SceneTabInfo:
         self.scene_snapshot: Optional[dict] = None
         self.prefab_path: Optional[str] = None
         self.origin_tab: Optional[str] = None
+        self.pending_snapshot: str = ""
 
 
 class SceneTabManager(QObject):
@@ -196,6 +197,61 @@ class SceneTabManager(QObject):
         self.tab_added.emit(tab_name)
         return tab_name
 
+    def add_lazy_tab(self, name: str, path: Optional[str] = None, snapshot: str = "") -> str:
+        tab_name = self._unique_name(name)
+        info = SceneTabInfo(tab_name, path, None)
+        if snapshot:
+            info.pending_snapshot = os.path.basename(snapshot)
+            info.dirty = True
+        self._tabs[tab_name] = info
+        self._tab_names.append(tab_name)
+        pos = self._tab_bar.count()
+        idx = self._tab_bar.insertTab(pos, tab_name)
+        self._tab_bar.setTabData(idx, tab_name)
+        self._tab_bar.setTabIcon(idx, self._get_zarin_icon())
+        self.tab_added.emit(tab_name)
+        return tab_name
+
+    def is_tab_loaded(self, tab_name: str) -> bool:
+        info = self._tabs.get(tab_name)
+        if info is None:
+            return False
+        return info.scene is not None
+
+    def ensure_tab_loaded(self, tab_name: str) -> bool:
+        info = self._tabs.get(tab_name)
+        if info is None:
+            return False
+        if info.scene is not None:
+            return True
+        if info.prefab_path:
+            return False
+        from editor.main_window.state import _session_dir, _load_scene_snapshot, _load_scene_file
+        scene = None
+        snap = info.pending_snapshot or ""
+        if snap:
+            snap_path = os.path.join(_session_dir(), os.path.basename(snap))
+            if os.path.isfile(snap_path):
+                try:
+                    scene = _load_scene_snapshot(self._engine, snap_path, info.path or "", info.name)
+                except Exception as e:
+                    Logger.error(f"Failed to lazy-load scene snapshot '{tab_name}': {e}")
+                    scene = None
+        if scene is None and info.path and os.path.isfile(info.path):
+            try:
+                if self._engine.scene is not None and getattr(self._engine.scene, 'path', None) == info.path:
+                    scene = self._engine.scene
+                else:
+                    scene = _load_scene_file(self._engine, info.path)
+            except Exception as e:
+                Logger.error(f"Failed to lazy-load scene file '{tab_name}': {e}")
+                scene = None
+        if scene is None:
+            return False
+        info.scene = scene
+        info.pending_snapshot = ""
+        return True
+
     def remove_tab(self, tab_name: str):
         if tab_name not in self._tabs:
             return
@@ -243,6 +299,8 @@ class SceneTabManager(QObject):
     def _save_current_to_tab(self):
         if self._active_tab and self._active_tab in self._tabs and self._engine.scene:
             info = self._tabs[self._active_tab]
+            if info.scene is None:
+                return
             info.scene = self._engine.scene
             info.dirty = self._engine.scene.dirty
             scene_path = getattr(self._engine.scene, 'path', None)
@@ -654,8 +712,8 @@ class SceneTabManager(QObject):
                 except Exception:
                     pass
                 return True
-            is_dirty = scene.dirty if scene else False
-            if is_dirty and scene:
+            is_dirty = scene.dirty if scene is not None else bool(info.dirty or info.pending_snapshot)
+            if is_dirty:
                 reply = QMessageBox.question(
                     self._mw, "Unsaved Changes",
                     f"Scene '{info.name}' has unsaved changes. Save before closing?",
@@ -666,6 +724,9 @@ class SceneTabManager(QObject):
                 if reply == QMessageBox.StandardButton.Cancel:
                     return False
                 if reply == QMessageBox.StandardButton.Yes:
+                    if scene is None:
+                        self.ensure_tab_loaded(tab_name)
+                        scene = info.scene
                     self._save_scene_tab(info)
             if tab_name == self._active_tab and self._engine.play_mode:
                 try:
@@ -925,12 +986,17 @@ class SceneTabManager(QObject):
             pass
 
     def _load_scene(self, info: SceneTabInfo):
-        if info.scene is None:
-            self._engine.new_scene(info.name)
-            if info.path:
-                self._engine.scene.path = info.path
-            info.scene = self._engine.scene
-        else:
+        if info.scene is None and not info.prefab_path:
+            if info.pending_snapshot or (info.path and os.path.isfile(info.path or "")):
+                if not self.ensure_tab_loaded(info.name):
+                    raise RuntimeError(f"Unable to load scene '{info.name}'")
+            else:
+                self._engine.new_scene(info.name)
+                if info.path:
+                    self._engine.scene.path = info.path
+                info.scene = self._engine.scene
+                info.pending_snapshot = ""
+        if self._engine.scene is not info.scene:
             if self._engine.scene:
                 self._engine._plugin_manager.notify_scene_unloaded(self._engine.scene)
             from core.components.rendering.postfx.graphics_effect import GraphicsEffect

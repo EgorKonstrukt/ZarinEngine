@@ -292,6 +292,9 @@ class EditorMainWindow(QMainWindow):
         locked = getattr(self, '_tab_add_lock', False)
         if locked:
             return
+        mgr = getattr(self, '_scene_tab_manager', None)
+        if mgr is not None and getattr(mgr, '_restoring', False):
+            return
         collab = self._engine.collab_manager
         if collab and collab.connected:
             info = self._scene_tab_manager.get_tab_info(name)
@@ -301,12 +304,9 @@ class EditorMainWindow(QMainWindow):
                     collab.send_scene_open(info.name, info.path or "", data)
                     if collab.is_host:
                         collab.update_server_scene(info.scene)
-                    print(f"[COLLAB] Sent SCENE_OPEN for tab '{info.name}' to peers (host={collab.is_host})", flush=True)
-                except Exception as e:
+                except Exception:
                     import traceback
                     traceback.print_exc()
-        else:
-            print(f"[COLLAB] _on_scene_tab_added '{name}' skipped: collab={collab is not None}, connected={collab.connected if collab else False}", flush=True)
 
     def _on_remote_tab_switch(self, peer_id: str, tab_name: str):
         self._update_tab_peer_indicators()

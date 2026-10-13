@@ -224,7 +224,13 @@ def _collect_tab_entries(mw):
                 if info is not None and not info.prefab_path:
                     entry = {"type": "scene", "name": info.name, "path": info.path or ""}
                     scene = info.scene
-                    if scene is not None and ((not info.path) or not os.path.isfile(info.path or "") or scene.dirty):
+                    pending = getattr(info, "pending_snapshot", "") or ""
+                    if scene is None:
+                        if pending:
+                            entry["snapshot"] = os.path.basename(pending)
+                            entry["dirty"] = True
+                            used_names.add(os.path.basename(pending))
+                    elif ((not info.path) or not os.path.isfile(info.path or "") or scene.dirty):
                         hit = _reusable_snapshot(scene)
                         if hit:
                             entry["snapshot"] = hit
@@ -402,7 +408,28 @@ def restore_tabs(mw) -> bool:
     if mgr is None or bar is None or sw is None:
         return False
     eng = mw._engine
+    valid = [e for e in entries if isinstance(e, dict) and e.get("type") in ("script", "scene")]
+    first_scene_pos = -1
+    for pos, e in enumerate(valid):
+        if e.get("type") == "scene":
+            first_scene_pos = pos
+            break
+    saved_active = data.get("active", -1)
+    target_pos = -1
+    if isinstance(saved_active, int) and 0 <= saved_active < len(entries):
+        cand = entries[saved_active]
+        if isinstance(cand, dict) and cand.get("type") in ("script", "scene"):
+            try:
+                target_pos = valid.index(cand)
+            except ValueError:
+                target_pos = -1
+    eager_positions: set[int] = set()
+    if target_pos >= 0 and valid[target_pos].get("type") == "scene":
+        eager_positions.add(target_pos)
+    elif first_scene_pos >= 0:
+        eager_positions.add(first_scene_pos)
     mgr.begin_restore()
+    bar.blockSignals(True)
     try:
         placeholder = None
         for i in range(sw._tabs.count()):
@@ -412,9 +439,8 @@ def restore_tabs(mw) -> bool:
                 break
         placeholder_used = False
         restored: list = []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
+        valid_to_restored: dict[int, int] = {}
+        for pos, entry in enumerate(valid):
             kind = entry.get("type", "")
             if kind == "script":
                 script_path = entry.get("path", "") or ""
@@ -427,44 +453,99 @@ def restore_tabs(mw) -> bool:
                         except Exception as e:
                             Logger.error(f"Failed to restore script tab: {e}")
                             continue
+                        valid_to_restored[pos] = len(restored)
                         restored.append(("script", script_path))
                 elif placeholder is not None and not placeholder_used:
                     placeholder_used = True
+                    valid_to_restored[pos] = len(restored)
                     restored.append(("script", ""))
             elif kind == "scene":
                 name = entry.get("name", "") or "Scene"
                 scene_path = entry.get("path", "") or ""
                 snapshot = entry.get("snapshot", "") or ""
-                scene = None
-                if snapshot:
-                    snapshot_path = os.path.join(_session_dir(), os.path.basename(snapshot))
-                    if os.path.isfile(snapshot_path):
+                if pos in eager_positions:
+                    scene = None
+                    if snapshot:
+                        snapshot_path = os.path.join(_session_dir(), os.path.basename(snapshot))
+                        if os.path.isfile(snapshot_path):
+                            try:
+                                scene = _load_scene_snapshot(eng, snapshot_path, scene_path, name)
+                            except Exception as e:
+                                Logger.error(f"Failed to restore scene snapshot: {e}")
+                                scene = None
+                    if scene is None and scene_path:
+                        if eng.scene is not None and getattr(eng.scene, 'path', None) == scene_path:
+                            scene = eng.scene
+                        elif os.path.isfile(scene_path):
+                            try:
+                                scene = _load_scene_file(eng, scene_path)
+                            except Exception as e:
+                                Logger.error(f"Failed to restore scene tab: {e}")
+                                scene = None
+                    if scene is None:
+                        if snapshot:
+                            snapshot_path = os.path.join(_session_dir(), os.path.basename(snapshot))
+                            if os.path.isfile(snapshot_path):
+                                try:
+                                    tab_name = mgr.add_lazy_tab(name, path=scene_path or None, snapshot=snapshot)
+                                except Exception as e:
+                                    Logger.error(f"Failed to restore scene tab: {e}")
+                                    continue
+                                valid_to_restored[pos] = len(restored)
+                                restored.append(("scene", tab_name))
+                                continue
+                        if scene_path and os.path.isfile(scene_path):
+                            try:
+                                tab_name = mgr.add_lazy_tab(name, path=scene_path or None, snapshot="")
+                            except Exception as e:
+                                Logger.error(f"Failed to restore scene tab: {e}")
+                                continue
+                            valid_to_restored[pos] = len(restored)
+                            restored.append(("scene", tab_name))
+                            continue
+                        _debug_log(f"restore skip scene name={name} path={scene_path}")
+                        continue
+                    try:
+                        tab_name = mgr.add_tab(name, path=scene_path or None, scene=scene)
+                    except Exception as e:
+                        Logger.error(f"Failed to restore scene tab: {e}")
+                        continue
+                    _debug_log(
+                        f"restore added scene tab={tab_name} source_entities={_live_entity_count(scene)}"
+                    )
+                    valid_to_restored[pos] = len(restored)
+                    restored.append(("scene", tab_name))
+                else:
+                    snapshot_ok = False
+                    if snapshot:
+                        snapshot_path = os.path.join(_session_dir(), os.path.basename(snapshot))
                         try:
-                            scene = _load_scene_snapshot(eng, snapshot_path, scene_path, name)
-                        except Exception as e:
-                            Logger.error(f"Failed to restore scene snapshot: {e}")
-                            scene = None
-                if scene is None and scene_path:
-                    if eng.scene is not None and getattr(eng.scene, 'path', None) == scene_path:
-                        scene = eng.scene
-                    elif os.path.isfile(scene_path):
-                        try:
-                            scene = _load_scene_file(eng, scene_path)
-                        except Exception as e:
-                            Logger.error(f"Failed to restore scene tab: {e}")
-                            scene = None
-                if scene is None:
-                    _debug_log(f"restore skip scene name={name} path={scene_path}")
-                    continue
-                try:
-                    tab_name = mgr.add_tab(name, path=scene_path or None, scene=scene)
-                except Exception as e:
-                    Logger.error(f"Failed to restore scene tab: {e}")
-                    continue
-                _debug_log(
-                    f"restore added scene tab={tab_name} source_entities={_live_entity_count(scene)}"
-                )
-                restored.append(("scene", tab_name))
+                            snapshot_ok = os.path.isfile(snapshot_path)
+                        except Exception:
+                            snapshot_ok = False
+                    file_ok = False
+                    if scene_path:
+                        if eng.scene is not None and getattr(eng.scene, 'path', None) == scene_path:
+                            file_ok = True
+                        else:
+                            try:
+                                file_ok = os.path.isfile(scene_path)
+                            except Exception:
+                                file_ok = False
+                    if not snapshot_ok and not file_ok:
+                        _debug_log(f"restore skip scene name={name} path={scene_path}")
+                        continue
+                    try:
+                        tab_name = mgr.add_lazy_tab(
+                            name,
+                            path=scene_path or None,
+                            snapshot=snapshot if snapshot_ok else "",
+                        )
+                    except Exception as e:
+                        Logger.error(f"Failed to restore scene tab: {e}")
+                        continue
+                    valid_to_restored[pos] = len(restored)
+                    restored.append(("scene", tab_name))
         placeholder_kept = False
         for i in range(sw._tabs.count() - 1, -1, -1):
             tab = sw._tabs.widget(i)
@@ -494,6 +575,10 @@ def restore_tabs(mw) -> bool:
             if idx >= 0 and idx != order:
                 bar.moveTab(idx, order)
     finally:
+        try:
+            bar.blockSignals(False)
+        except Exception:
+            pass
         mgr.end_restore()
     if not restored:
         return False
@@ -502,9 +587,10 @@ def restore_tabs(mw) -> bool:
         if kind == "scene":
             first_scene = key
             break
-    saved_active = data.get("active", -1)
-    if isinstance(saved_active, int) and 0 <= saved_active < len(restored):
-        kind, key = restored[saved_active]
+    kind = ""
+    key = ""
+    if target_pos >= 0 and target_pos in valid_to_restored:
+        kind, key = restored[valid_to_restored[target_pos]]
     elif first_scene is not None:
         kind, key = "scene", first_scene
     else:
