@@ -19,6 +19,9 @@ from PyQt6.QtGui import QGuiApplication
 from core.foundation.logger import Logger
 
 
+SESSION_FORMAT_VERSION = 2
+
+
 def save_state(mw, include_tabs=True):
     path = _window_state_path()
     previous: dict = {}
@@ -41,6 +44,7 @@ def save_state(mw, include_tabs=True):
                 if tab._file_path:
                     script_paths.append(tab._file_path)
         data = {
+            "v": SESSION_FORMAT_VERSION,
             "geometry": [fg.x(), fg.y(), fg.width(), fg.height()],
             "windowState": base64.b64encode(bytes(mw.saveState())).decode("ascii"),
             "scriptPaths": script_paths,
@@ -49,11 +53,18 @@ def save_state(mw, include_tabs=True):
             entries, active = _collect_tab_entries(mw)
             data["tabs"] = entries
             data["active"] = active
-            _prune_session_dir(entries)
+            try:
+                mgr = getattr(mw, '_scene_tab_manager', None)
+                extra = mgr.closed_snapshot_files() if mgr is not None else set()
+            except Exception:
+                extra = set()
+            _prune_session_dir(entries, extra)
         else:
             for key in ("tabs", "active", "scriptPaths"):
                 if key in previous:
                     data[key] = previous[key]
+            if "v" not in data and "v" in previous:
+                data["v"] = previous["v"]
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump(data, f)
@@ -72,8 +83,28 @@ def _debug_path():
     return os.path.join(str(os.path.expanduser("~")), ".zarin", "tab_session_debug.log")
 
 
+_debug_rotated = False
+
+
 def _debug_log(line: str):
+    global _debug_rotated
     try:
+        if not _debug_rotated:
+            _debug_rotated = True
+            try:
+                if os.path.isfile(_debug_path()) and os.path.getsize(_debug_path()) > 1048576:
+                    bak = _debug_path() + ".bak"
+                    try:
+                        if os.path.isfile(bak):
+                            os.remove(bak)
+                    except Exception:
+                        pass
+                    try:
+                        os.replace(_debug_path(), bak)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         with open(_debug_path(), "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception:
@@ -96,7 +127,7 @@ def _clear_session_dir():
             Logger.error(f"Failed to clear session dir: {e}")
 
 
-def _prune_session_dir(entries: list):
+def _prune_session_dir(entries: list, extra_keep=None):
     try:
         keep = set()
         for entry in entries:
@@ -104,6 +135,10 @@ def _prune_session_dir(entries: list):
                 snap = entry.get("snapshot", "") or ""
                 if snap:
                     keep.add(os.path.basename(snap))
+        if extra_keep:
+            for fn in extra_keep:
+                if fn:
+                    keep.add(os.path.basename(fn))
         session_dir = _session_dir()
         if not os.path.isdir(session_dir):
             return
@@ -223,6 +258,8 @@ def _collect_tab_entries(mw):
                 info = mgr.get_tab_info(name)
                 if info is not None and not info.prefab_path:
                     entry = {"type": "scene", "name": info.name, "path": info.path or ""}
+                    if getattr(info, "pinned", False):
+                        entry["pinned"] = True
                     scene = info.scene
                     pending = getattr(info, "pending_snapshot", "") or ""
                     carried = getattr(info, "restored_snapshot", "") or ""
@@ -385,8 +422,57 @@ def _activate_bar_index(mgr, bar, idx: int):
         bar.setCurrentIndex(idx)
 
 
+def _apply_restored_flags(mgr, tab_name: str, entry: dict):
+    try:
+        info = mgr.get_tab_info(tab_name)
+        if info is None:
+            return
+        if entry.get("pinned"):
+            info.pinned = True
+    except Exception:
+        pass
+
+
+def _move_pinned_front(mgr, bar):
+    try:
+        pinned: list[str] = []
+        for i in range(bar.count()):
+            try:
+                if mgr.is_script_tab(i):
+                    continue
+                nm = mgr.tab_name_at(i)
+                if nm is None:
+                    continue
+                info = mgr.get_tab_info(nm)
+                if info is not None and getattr(info, "pinned", False):
+                    pinned.append(nm)
+            except Exception:
+                continue
+        slot = 0
+        for nm in pinned:
+            try:
+                idx = -1
+                for i in range(bar.count()):
+                    if not mgr.is_script_tab(i) and mgr.tab_name_at(i) == nm:
+                        idx = i
+                        break
+                if idx >= 0 and idx != slot:
+                    bar.moveTab(idx, slot)
+                slot += 1
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
 def restore_tabs(mw) -> bool:
     data = _read_state_data()
+    try:
+        if int(data.get("v", 1)) > SESSION_FORMAT_VERSION:
+            Logger.warning("Ignoring session state from a newer format version.")
+            return False
+    except Exception:
+        pass
     entries = data.get("tabs") or []
     if not entries:
         legacy = data.get("scriptPaths") or []
@@ -509,6 +595,7 @@ def restore_tabs(mw) -> bool:
                                 except Exception as e:
                                     Logger.error(f"Failed to restore scene tab: {e}")
                                     continue
+                                _apply_restored_flags(mgr, tab_name, entry)
                                 valid_to_restored[pos] = len(restored)
                                 restored.append(("scene", tab_name))
                                 continue
@@ -518,6 +605,7 @@ def restore_tabs(mw) -> bool:
                             except Exception as e:
                                 Logger.error(f"Failed to restore scene tab: {e}")
                                 continue
+                            _apply_restored_flags(mgr, tab_name, entry)
                             valid_to_restored[pos] = len(restored)
                             restored.append(("scene", tab_name))
                             continue
@@ -535,6 +623,7 @@ def restore_tabs(mw) -> bool:
                                 info.restored_snapshot = os.path.basename(snapshot)
                         except Exception:
                             pass
+                    _apply_restored_flags(mgr, tab_name, entry)
                     _debug_log(
                         f"restore added scene tab={tab_name} source_entities={_live_entity_count(scene)}"
                     )
@@ -569,6 +658,7 @@ def restore_tabs(mw) -> bool:
                     except Exception as e:
                         Logger.error(f"Failed to restore scene tab: {e}")
                         continue
+                    _apply_restored_flags(mgr, tab_name, entry)
                     valid_to_restored[pos] = len(restored)
                     restored.append(("scene", tab_name))
         placeholder_kept = False
@@ -599,6 +689,7 @@ def restore_tabs(mw) -> bool:
             idx = _bar_index_of(mgr, bar, kind, key)
             if idx >= 0 and idx != order:
                 bar.moveTab(idx, order)
+        _move_pinned_front(mgr, bar)
     finally:
         try:
             bar.blockSignals(False)

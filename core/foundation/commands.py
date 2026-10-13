@@ -18,6 +18,12 @@ class Command:
     @property
     def description(self) -> str:
         return self.__class__.__name__
+_global_on_undo: list = []
+_global_on_redo: list = []
+_history_provider = None
+def set_history_provider(fn) -> None:
+    global _history_provider
+    _history_provider = fn
 class CompoundCommand(Command):
     def __init__(self, commands: list[Command], description: str = "Compound"):
         self._commands = commands
@@ -417,23 +423,21 @@ class CommandHistory:
         self._last_affected_entity = None
         self._current_selection = None
         self._recording = True
-        self._on_undo: list[Callable[[Command], None]] = []
-        self._on_redo: list[Callable[[Command], None]] = []
     def set_on_undo(self, cb: Optional[Callable[[Command], None]]):
         if cb is None:
-            self._on_undo = []
-        elif cb not in self._on_undo:
-            self._on_undo.append(cb)
+            _global_on_undo.clear()
+        elif cb not in _global_on_undo:
+            _global_on_undo.append(cb)
     def set_on_redo(self, cb: Optional[Callable[[Command], None]]):
         if cb is None:
-            self._on_redo = []
-        elif cb not in self._on_redo:
-            self._on_redo.append(cb)
+            _global_on_redo.clear()
+        elif cb not in _global_on_redo:
+            _global_on_redo.append(cb)
     def add_on_change(self, cb: Callable[[Command], None]):
-        if cb not in self._on_undo:
-            self._on_undo.append(cb)
-        if cb not in self._on_redo:
-            self._on_redo.append(cb)
+        if cb not in _global_on_undo:
+            _global_on_undo.append(cb)
+        if cb not in _global_on_redo:
+            _global_on_redo.append(cb)
     @property
     def can_undo(self) -> bool: return len(self._undo_stack) > 0
     @property
@@ -517,8 +521,8 @@ class CommandHistory:
         self._current_selection = pre_sel
         self._last_affected_entity = self._extract_entity(cmd) or pre_sel
         self._recording = was_recording
-        if was_recording and self._on_undo:
-            for cb in self._on_undo:
+        if was_recording and _global_on_undo:
+            for cb in list(_global_on_undo):
                 cb(cmd)
             self._emit_history_changed()
     def redo(self):
@@ -534,8 +538,8 @@ class CommandHistory:
         self._current_selection = post_sel
         self._last_affected_entity = self._extract_entity(cmd) or post_sel
         self._recording = was_recording
-        if was_recording and self._on_redo:
-            for cb in self._on_redo:
+        if was_recording and _global_on_redo:
+            for cb in list(_global_on_redo):
                 cb(cmd)
             self._emit_history_changed()
     @property
@@ -595,6 +599,13 @@ class CommandHistory:
 _history: Optional[CommandHistory] = None
 def get_history() -> CommandHistory:
     global _history
+    if _history_provider is not None:
+        try:
+            provided = _history_provider()
+        except Exception:
+            provided = None
+        if provided is not None:
+            return provided
     if _history is None:
         _history = CommandHistory()
     return _history

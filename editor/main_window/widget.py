@@ -123,10 +123,36 @@ class EditorMainWindow(QMainWindow):
         restore_camera(self)
         if not self._layout_restored:
             save_state(self, include_tabs=False)
+        self._session_save_pending = False
+        self._session_timer = QTimer(self)
+        self._session_timer.setTimerType(Qt.TimerType.CoarseTimer)
+        self._session_timer.timeout.connect(self._flush_session_autosave)
+        self._session_timer.start(60000)
         engine.on("scene_loaded", lambda s: on_scene_loaded(self, s))
         self._setup_engine_events()
         QTimer.singleShot(0, lambda: post_init(self))
         engine.set_main_window(self)
+
+    def _schedule_session_autosave(self, delay_ms: int = 5000):
+        try:
+            if self._session_save_pending:
+                return
+            self._session_save_pending = True
+            QTimer.singleShot(delay_ms, self._flush_session_autosave)
+        except Exception:
+            pass
+
+    def _flush_session_autosave(self):
+        self._session_save_pending = False
+        try:
+            mgr = getattr(self, '_scene_tab_manager', None)
+            if mgr is not None and getattr(mgr, '_restoring', False):
+                return
+            if getattr(self._engine, 'play_mode', False):
+                return
+            save_state(self)
+        except Exception:
+            pass
 
     def _init_collab_scene_tabs(self):
         mgr = self._scene_tab_manager
@@ -329,6 +355,7 @@ class EditorMainWindow(QMainWindow):
             collab.set_current_tab(name)
             if collab.connected:
                 collab.send_scene_tab_switch(name)
+        self._schedule_session_autosave()
 
     def _setup_engine_events(self):
         from editor.main_window.handlers import on_play_start, on_play_stop
@@ -389,16 +416,34 @@ class EditorMainWindow(QMainWindow):
         if hasattr(self, '_project'):
             self._project.save_config(cfg)
         cfg.save()
-        if self._engine.scene and self._engine.scene.dirty:
+        try:
+            mgr = getattr(self, '_scene_tab_manager', None)
+            dirty = mgr.dirty_scene_tabs() if mgr is not None else []
+        except Exception:
+            dirty = []
+        if dirty:
             from PyQt6.QtWidgets import QMessageBox
-            reply = QMessageBox.question(self, "Unsaved Changes",
-                                         "Scene has unsaved changes. Save before closing?",
-                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
-            if reply == QMessageBox.StandardButton.Cancel:
+            shown = list(dirty[:10])
+            names = "\n".join(f"• {n}" for n in shown)
+            if len(dirty) > 10:
+                names += f"\n… and {len(dirty) - 10} more"
+            box = QMessageBox(self)
+            box.setWindowTitle("Unsaved Changes")
+            box.setText(f"{len(dirty)} scenes have unsaved changes:\n{names}\n\nSave them before closing?")
+            box.addButton("Save All", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Close without Saving", QMessageBox.ButtonRole.DestructiveRole)
+            box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is None:
                 event.ignore()
                 return
-            if reply == QMessageBox.StandardButton.Yes:
-                self._engine.save_scene()
+            role = box.buttonRole(clicked)
+            if role == QMessageBox.ButtonRole.RejectRole:
+                event.ignore()
+                return
+            if role == QMessageBox.ButtonRole.AcceptRole and mgr is not None:
+                mgr.save_all_dirty_tabs()
         save_state(self)
         try:
             vp = getattr(self, "_viewport", None)

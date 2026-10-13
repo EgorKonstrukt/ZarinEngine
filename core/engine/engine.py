@@ -732,6 +732,33 @@ class Engine:
             Logger.error(f"Failed to save scene: {e}", e)
         finally:
             task_complete("scene:save")
+    def save_scene_object(self, scene, path: Optional[str] = None) -> bool:
+        if scene is None:
+            return False
+        save_path = path or getattr(scene, 'path', None)
+        if not save_path:
+            Logger.warning("No path for scene save.")
+            return False
+        level = self._compress_level()
+        task_start("scene:save", f"Saving scene {os.path.basename(save_path)}...")
+        try:
+            data = scene.serialize()
+            _embed_scene_resources(data, self.project_root, scene.embedded_resources, compress_level=level)
+            scene.embedded_resources = data.get("embedded_resources", {})
+            self.relativize_scene_paths(data)
+            os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else ".", exist_ok=True)
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            scene.path = save_path
+            scene.mark_clean()
+            Logger.info(f"Scene saved: {save_path}")
+            self._emit_event("scene_saved", scene)
+            return True
+        except Exception as e:
+            Logger.error(f"Failed to save scene: {e}", e)
+            return False
+        finally:
+            task_complete("scene:save")
     def new_scene(self, name: str = "NewScene") -> Scene:
         if self._scene:
             self._plugin_manager.notify_scene_unloaded(self._scene)

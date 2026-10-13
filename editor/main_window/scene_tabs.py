@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QTabBar, QMessageBox, QMenu
 
 from core.ecs.ecs import Scene
 from core.foundation.logger import Logger
+from core.foundation.commands import CommandHistory, set_history_provider
 from core.maths.math3d import Vec3
 
 try:
@@ -64,7 +65,7 @@ class SceneTabInfo:
     __slots__ = ("name", "path", "scene", "dirty", "camera_state",
                  "selected_entity_ids", "play_mode", "scene_snapshot",
                  "prefab_path", "origin_tab", "pending_snapshot",
-                 "restored_snapshot")
+                 "restored_snapshot", "history", "pinned")
     def __init__(self, name: str = "Scene", path: Optional[str] = None, scene: Optional[Scene] = None):
         self.name = name
         self.path = path
@@ -78,6 +79,8 @@ class SceneTabInfo:
         self.origin_tab: Optional[str] = None
         self.pending_snapshot: str = ""
         self.restored_snapshot: str = ""
+        self.history = CommandHistory()
+        self.pinned: bool = False
 
 
 class SceneTabManager(QObject):
@@ -116,10 +119,23 @@ class SceneTabManager(QObject):
             tab_bar.addAction(self._reopen_action)
         except Exception:
             pass
+        self._fallback_history = CommandHistory()
+        try:
+            set_history_provider(self._resolve_active_history)
+        except Exception:
+            pass
         try:
             engine.on("scene_saved", self._on_engine_scene_saved)
         except Exception:
             pass
+
+    def _resolve_active_history(self):
+        try:
+            if self._active_tab and self._active_tab in self._tabs:
+                return self._tabs[self._active_tab].history
+        except Exception:
+            pass
+        return self._fallback_history
 
     def _on_engine_scene_saved(self, scene):
         try:
@@ -154,18 +170,61 @@ class SceneTabManager(QObject):
 
     def _tab_title(self, info: SceneTabInfo) -> str:
         try:
+            title = info.name
             if self._is_tab_dirty(info):
-                return "● " + info.name
+                title = "● " + title
+            dup_index, dup_total = self._dup_position(info.name)
+            if dup_total > 1:
+                title = f"{title} ({dup_index})"
+            return title
         except Exception:
             pass
         return info.name
 
+    def _dup_key(self, info: SceneTabInfo):
+        try:
+            if info.path:
+                return ("scene-file", self._norm_path(info.path))
+            import re
+            base = re.sub(r"\s+\d+$", "", info.name or "")
+            return ("scene-unsaved", base.lower())
+        except Exception:
+            return ("scene-name", info.name)
+
+    def _dup_position(self, tab_name: str) -> tuple[int, int]:
+        try:
+            info = self._tabs.get(tab_name)
+            if info is None:
+                return 1, 1
+            key = self._dup_key(info)
+            order: list[str] = []
+            for i in range(self._tab_bar.count()):
+                nm = self.tab_name_at(i)
+                if nm is None:
+                    continue
+                other = self._tabs.get(nm)
+                if other is None:
+                    continue
+                if self._dup_key(other) == key:
+                    order.append(nm)
+            if len(order) <= 1:
+                return 1, 1
+            return order.index(tab_name) + 1, len(order)
+        except Exception:
+            return 1, 1
+
     def _tab_tooltip(self, info: SceneTabInfo) -> str:
         try:
             base = info.path if info.path else "Unsaved scene (no file yet)"
+            parts = [base]
+            if info.pinned:
+                parts.append("Pinned")
+            idx, total = self._dup_position(info.name)
+            if total > 1:
+                parts.append(f"Duplicate {idx} of {total}")
             if self._is_tab_dirty(info):
-                return base + "\n● Unsaved changes"
-            return base
+                parts.append("● Unsaved changes")
+            return "\n".join(parts)
         except Exception:
             return info.name
 
@@ -356,6 +415,219 @@ class SceneTabManager(QObject):
                 self._on_tab_changed(idx)
             else:
                 self._tab_bar.setCurrentIndex(idx)
+
+    def cycle_tab(self, delta: int):
+        try:
+            n = self._tab_bar.count()
+            if n <= 1:
+                return
+            self._tab_bar.setCurrentIndex((self._tab_bar.currentIndex() + delta) % n)
+        except Exception:
+            pass
+
+    def show_quick_open(self):
+        try:
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem
+            bar = self._tab_bar
+            if bar.count() == 0:
+                return
+            rows: list[tuple[str, str, str]] = []
+            for i in range(bar.count()):
+                if self.is_script_tab(i):
+                    p = self.script_path_at(i)
+                    rows.append(("script", p, os.path.basename(p) or "Untitled"))
+                else:
+                    nm = self.tab_name_at(i)
+                    if nm is None:
+                        continue
+                    info = self._tabs.get(nm)
+                    sub = (info.path or "") if info is not None else ""
+                    rows.append(("scene", nm, sub))
+            dlg = QDialog(self._mw)
+            dlg.setWindowTitle("Go to Tab")
+            dlg.resize(520, 380)
+            lay = QVBoxLayout(dlg)
+            edit = QLineEdit(dlg)
+            edit.setPlaceholderText("Type to filter tabs...")
+            edit.setClearButtonEnabled(True)
+            lay.addWidget(edit)
+            lst = QListWidget(dlg)
+            lay.addWidget(lst)
+            state = {"rows": rows}
+
+            def refilter(text: str):
+                lst.clear()
+                q = (text or "").lower()
+                for kind, key, sub in state["rows"]:
+                    hay = (key + " " + sub).lower()
+                    if q and q not in hay:
+                        continue
+                    shown = key + ("  —  " + sub if sub else "")
+                    item = QListWidgetItem(shown)
+                    item.setData(Qt.ItemDataRole.UserRole, (kind, key))
+                    lst.addItem(item)
+                if lst.count() > 0:
+                    lst.setCurrentRow(0)
+
+            def activate_current():
+                item = lst.currentItem()
+                if item is None:
+                    return
+                kind, key = item.data(Qt.ItemDataRole.UserRole)
+                dlg.accept()
+                if kind == "script":
+                    try:
+                        self._mw._script_editor._script_widget.open_script(key)
+                    except Exception:
+                        pass
+                else:
+                    self.switch_to_tab(key)
+
+            edit.textChanged.connect(refilter)
+            edit.returnPressed.connect(activate_current)
+            lst.itemDoubleClicked.connect(lambda _item: activate_current())
+            refilter("")
+            edit.setFocus()
+            dlg.exec()
+        except Exception:
+            pass
+
+    def is_pinned(self, tab_name: str) -> bool:
+        try:
+            info = self._tabs.get(tab_name)
+            return bool(info is not None and info.pinned)
+        except Exception:
+            return False
+
+    def set_pinned(self, tab_name: str, pinned: bool):
+        try:
+            info = self._tabs.get(tab_name)
+            if info is None or info.prefab_path:
+                return
+            info.pinned = bool(pinned)
+            self._move_bar_tab_silent(self._scene_tab_idx(tab_name), self._pinned_slot(exclude=tab_name))
+            self.refresh_tab_title(tab_name)
+        except Exception:
+            pass
+
+    def toggle_pin(self, tab_name: str):
+        try:
+            self.set_pinned(tab_name, not self.is_pinned(tab_name))
+        except Exception:
+            pass
+
+    def _pinned_slot(self, exclude: str = "") -> int:
+        try:
+            n = 0
+            for i in range(self._tab_bar.count()):
+                nm = self.tab_name_at(i)
+                if nm is not None and nm != exclude and self.is_pinned(nm):
+                    n += 1
+            return n
+        except Exception:
+            return 0
+
+    def _move_bar_tab_silent(self, from_idx: int, to_idx: int):
+        try:
+            bar = self._tab_bar
+            if from_idx < 0 or to_idx < 0 or from_idx >= bar.count():
+                return
+            to_idx = max(0, min(to_idx, bar.count() - 1))
+            if from_idx == to_idx:
+                return
+            cur_data = bar.tabData(bar.currentIndex())
+            bar.blockSignals(True)
+            try:
+                bar.moveTab(from_idx, to_idx)
+                for i in range(bar.count()):
+                    if bar.tabData(i) == cur_data:
+                        bar.setCurrentIndex(i)
+                        break
+            finally:
+                bar.blockSignals(False)
+        except Exception:
+            pass
+
+    def sort_scene_tabs(self):
+        try:
+            bar = self._tab_bar
+            pinned = sorted([n for n in self._tab_names if self.is_pinned(n)], key=str.lower)
+            rest = sorted([n for n in self._tab_names if not self.is_pinned(n)], key=str.lower)
+            order = pinned + rest
+            if order == list(self._tab_names):
+                self.refresh_all_tab_titles()
+                return
+            cur_data = bar.tabData(bar.currentIndex())
+            bar.blockSignals(True)
+            self.begin_restore()
+            try:
+                for i in range(bar.count() - 1, -1, -1):
+                    if not self.is_script_tab(i):
+                        bar.removeTab(i)
+                self._tab_names = []
+                for pos, name in enumerate(order):
+                    self._tab_names.append(name)
+                    idx = bar.insertTab(pos, self._tab_title(self._tabs[name]))
+                    bar.setTabData(idx, name)
+                    bar.setTabIcon(idx, self._get_zarin_icon())
+                    self.refresh_tab_title(name)
+                for i in range(bar.count()):
+                    if bar.tabData(i) == cur_data:
+                        bar.setCurrentIndex(i)
+                        break
+            finally:
+                self.end_restore()
+                bar.blockSignals(False)
+            self.refresh_all_tab_titles()
+        except Exception:
+            pass
+
+    def close_fileless_tabs(self):
+        try:
+            bar = self._tab_bar
+            indices = []
+            for i in range(bar.count()):
+                if self.is_script_tab(i):
+                    continue
+                nm = self.tab_name_at(i)
+                if nm is None:
+                    continue
+                info = self._tabs.get(nm)
+                if info is None or info.prefab_path or info.pinned:
+                    continue
+                if not info.path:
+                    indices.append(i)
+            indices.sort(reverse=True)
+            for i in indices:
+                if i < 0 or i >= bar.count():
+                    continue
+                if not self.close_tab_at(i):
+                    break
+        except Exception:
+            pass
+
+    def closed_snapshot_files(self) -> set:
+        out: set = set()
+        try:
+            for entry in list(self._closed_stack):
+                try:
+                    if not isinstance(entry, dict):
+                        continue
+                    for k in ("reopen_snapshot",):
+                        v = entry.get(k) or ""
+                        if v:
+                            out.add(os.path.basename(v))
+                    info = entry.get("info")
+                    if info is not None:
+                        for v in (getattr(info, "pending_snapshot", "") or "",
+                                  getattr(info, "restored_snapshot", "") or ""):
+                            if v:
+                                out.add(os.path.basename(v))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return out
 
     def tab_name_at(self, idx: int) -> Optional[str]:
         data = self._tab_bar.tabData(idx)
@@ -592,7 +864,10 @@ class SceneTabManager(QObject):
             info = self._tabs.get(name)
             if info is None:
                 return None
-            return {"kind": "scene", "info": info, "bar_index": idx, "was_active": (name == self._active_tab)}
+            snap = info.pending_snapshot or info.restored_snapshot or ""
+            return {"kind": "scene", "info": info, "bar_index": idx,
+                    "was_active": (name == self._active_tab),
+                    "reopen_snapshot": os.path.basename(snap) if snap else ""}
         except Exception:
             return None
 
@@ -618,6 +893,15 @@ class SceneTabManager(QObject):
         except Exception:
             return False
 
+    def _bulk_skips(self, i: int) -> bool:
+        try:
+            if self.is_script_tab(i):
+                return False
+            nm = self.tab_name_at(i)
+            return nm is not None and self.is_pinned(nm)
+        except Exception:
+            return False
+
     def close_other_tabs(self, keep_idx: int):
         try:
             bar = self._tab_bar
@@ -627,6 +911,8 @@ class SceneTabManager(QObject):
             indices.sort(reverse=True)
             for i in indices:
                 if i < 0 or i >= bar.count():
+                    continue
+                if self._bulk_skips(i):
                     continue
                 ok = self.close_tab_at(i)
                 if not ok:
@@ -654,6 +940,8 @@ class SceneTabManager(QObject):
             for i in indices:
                 if i < 0 or i >= bar.count():
                     continue
+                if self._bulk_skips(i):
+                    continue
                 ok = self.close_tab_at(i)
                 if not ok:
                     break
@@ -669,6 +957,8 @@ class SceneTabManager(QObject):
             for i in indices:
                 if i < 0 or i >= bar.count():
                     continue
+                if self._bulk_skips(i):
+                    continue
                 ok = self.close_tab_at(i)
                 if not ok:
                     break
@@ -681,6 +971,8 @@ class SceneTabManager(QObject):
             dup.sort(reverse=True)
             for i in dup:
                 if i < 0 or i >= self._tab_bar.count():
+                    continue
+                if self._bulk_skips(i):
                     continue
                 ok = self.close_tab_at(i)
                 if not ok:
@@ -815,8 +1107,6 @@ class SceneTabManager(QObject):
                         if not self.ensure_tab_loaded(tab_name):
                             return False
                         scene = info.scene
-                    if info.scene is not None and self._engine.scene is not info.scene:
-                        self.switch_to_tab(tab_name)
                     self._save_scene_tab(info)
             if tab_name == self._active_tab and self._engine.play_mode:
                 try:
@@ -846,6 +1136,19 @@ class SceneTabManager(QObject):
             orig = int(entry.get("bar_index", 0))
             if info is None:
                 return False
+            if getattr(info, "scene", None) is None:
+                for cand in (getattr(info, "pending_snapshot", "") or "",
+                             entry.get("reopen_snapshot", "") or "",
+                             getattr(info, "restored_snapshot", "") or ""):
+                    if not cand:
+                        continue
+                    try:
+                        from editor.main_window.state import _session_dir
+                        if os.path.isfile(os.path.join(_session_dir(), os.path.basename(cand))):
+                            info.pending_snapshot = os.path.basename(cand)
+                            break
+                    except Exception:
+                        continue
             name = getattr(info, "name", "Scene") or "Scene"
             if name in self._tabs:
                 name = self._unique_name(name)
@@ -1031,6 +1334,16 @@ class SceneTabManager(QObject):
         except Exception:
             return False
 
+    def _toggle_pin_at(self, idx: int):
+        try:
+            if self.is_script_tab(idx):
+                return
+            nm = self.tab_name_at(idx)
+            if nm is not None:
+                self.toggle_pin(nm)
+        except Exception:
+            pass
+
     def _on_context_menu(self, pos):
         try:
             bar = self._tab_bar
@@ -1047,6 +1360,10 @@ class SceneTabManager(QObject):
                 return
             close_act = menu.addAction("Close Tab")
             close_act.triggered.connect(lambda checked=False, _i=idx: self.close_tab_at(_i))
+            if not self.is_script_tab(idx):
+                nm = self.tab_name_at(idx)
+                pin_act = menu.addAction("Unpin Tab" if (nm is not None and self.is_pinned(nm)) else "Pin Tab")
+                pin_act.triggered.connect(lambda checked=False, _i=idx: self._toggle_pin_at(_i))
             dup = self.duplicate_count(idx)
             if dup > 0:
                 dup_act = menu.addAction(f"Close Duplicate Tabs ({dup})")
@@ -1069,6 +1386,10 @@ class SceneTabManager(QObject):
             other_act = multi.addAction("Close Other Tabs")
             other_act.setEnabled(bar.count() > 1)
             other_act.triggered.connect(lambda checked=False, _i=idx: self.close_other_tabs(_i))
+            nofile_act = multi.addAction("Close Tabs without File")
+            nofile_act.triggered.connect(lambda checked=False: self.close_fileless_tabs())
+            sort_act = menu.addAction("Sort Scene Tabs by Name")
+            sort_act.triggered.connect(lambda checked=False: self.sort_scene_tabs())
             reopen_act = menu.addAction("Reopen Closed Tab")
             reopen_act.setEnabled(self.can_reopen())
             reopen_act.triggered.connect(lambda: self.reopen_closed_tab())
@@ -1165,28 +1486,71 @@ class SceneTabManager(QObject):
     def _save_scene_tab(self, info: SceneTabInfo):
         if info.scene is None:
             return
-        try:
-            if self._engine.scene is not info.scene:
-                self.switch_to_tab(info.name)
-        except Exception:
-            pass
-        if info.path:
-            from core.engine.engine import Engine
-            Engine.instance().save_scene(info.path)
-        else:
+        if not info.path:
             from PyQt6.QtWidgets import QFileDialog
             path, _ = QFileDialog.getSaveFileName(self._mw, "Save Scene", "scenes/", "Scenes (*.zpes)")
-            if path:
-                if not path.endswith(".zpes"):
-                    path += ".zpes"
-                info.path = path
-                Engine.instance().save_scene(path)
+            if not path:
+                return
+            if not path.endswith(".zpes"):
+                path += ".zpes"
+            info.path = path
+        try:
+            self._engine.save_scene_object(info.scene, info.path)
+        except Exception as e:
+            Logger.error(f"Failed to save scene tab '{info.name}': {e}")
+        self.refresh_tab_title(info.name)
 
     def find_prefab_tab(self) -> Optional[str]:
         for name, info in self._tabs.items():
             if info.prefab_path:
                 return name
         return None
+
+    def dirty_scene_tabs(self) -> list[str]:
+        out: list[str] = []
+        try:
+            for tab_name in list(self._tab_names):
+                info = self._tabs.get(tab_name)
+                if info is None or info.prefab_path:
+                    continue
+                if self._is_tab_dirty(info):
+                    out.append(tab_name)
+        except Exception:
+            pass
+        return out
+
+    def save_all_dirty_tabs(self) -> tuple[int, list[str]]:
+        saved = 0
+        failed: list[str] = []
+        try:
+            from PyQt6.QtWidgets import QApplication
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        except Exception:
+            pass
+        try:
+            for tab_name in self.dirty_scene_tabs():
+                try:
+                    info = self._tabs.get(tab_name)
+                    if info is None:
+                        continue
+                    if info.scene is None:
+                        if not self.ensure_tab_loaded(tab_name):
+                            failed.append(tab_name)
+                            continue
+                    before = bool(info.scene is not None and info.scene.dirty)
+                    self._save_scene_tab(info)
+                    after = bool(info.scene is not None and info.scene.dirty)
+                    if before and not after:
+                        saved += 1
+                except Exception:
+                    failed.append(tab_name)
+        finally:
+            try:
+                from PyQt6.QtWidgets import QApplication
+                QApplication.restoreOverrideCursor()
+            except Exception:
+                pass
+        return saved, failed
 
     def update_peer_indicators(self, tab_peers: dict[str, list[list[float]]]):
         DOT_SIZE = 8
