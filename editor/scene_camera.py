@@ -9,11 +9,15 @@ import math
 from typing import Optional
 from core.maths.math3d import Vec3, Mat4
 from core.input.input_manager import InputManager
-from core.input.constants import KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q, KEY_E, KEY_SHIFT, MOUSE_R, MOUSE_M, MOUSE_L
+from core.input.constants import KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q, KEY_E, KEY_SHIFT, KEY_CTRL, MOUSE_R, MOUSE_M, MOUSE_L
 from core.components.rendering.cameras.camera_base import CameraBase
 
 
 class SceneCamera(CameraBase):
+    NAV_FLY = "fly"
+    NAV_ORBIT = "orbit"
+    ORBIT_MIN_DIST = 0.1
+    ORBIT_MAX_DIST = 1000.0
     PERSPECTIVE_TO_ORTHO_FOV = 179.0
     TRANSITION_SPEED = 2.5
     MOVE_SPEED = 5.0
@@ -51,7 +55,11 @@ class SceneCamera(CameraBase):
         self._vel: Vec3 = Vec3.zero()
         self._orbit_target: Vec3 = Vec3.zero()
         self._orbit_dist: float = 10.0
+        self._orbit_dist_target: float = 10.0
         self._orbiting: bool = False
+        self._nav_mode: str = self.NAV_FLY
+        self._fly_dolly_remaining: float = 0.0
+        self._on_nav_mode_changed = None
         self._transition_blend: float = 0.0
         self._transition_active: bool = False
         self._transition_to_ortho: bool = False
@@ -109,6 +117,9 @@ class SceneCamera(CameraBase):
         self._resolution_mode = config.get("camera.resolution_mode", "native")
         self._resolution_w = int(config.get("camera.resolution_w", 1920))
         self._resolution_h = int(config.get("camera.resolution_h", 1080))
+        nav = config.get("camera.nav_mode", self._nav_mode)
+        if nav in (self.NAV_FLY, self.NAV_ORBIT):
+            self._nav_mode = nav
 
     @property
     def forward(self) -> Vec3:
@@ -129,6 +140,113 @@ class SceneCamera(CameraBase):
     @property
     def is_2d_mode(self) -> bool:
         return self._is_2d_mode
+
+    @property
+    def nav_mode(self) -> str:
+        return self._nav_mode
+
+    @property
+    def is_orbit_mode(self) -> bool:
+        return self._nav_mode == self.NAV_ORBIT
+
+    @property
+    def cursor(self) -> Vec3:
+        return self._orbit_target
+
+    def set_cursor(self, pos: Vec3) -> None:
+        try:
+            cx = float(pos.x)
+            cy = float(pos.y)
+            cz = float(pos.z)
+        except Exception:
+            return
+        target = Vec3(cx, cy, cz)
+        delta = target - self._position
+        dist = delta.length()
+        if dist < 1e-6:
+            return
+        direction = delta.normalized()
+        self._orbit_target = target
+        self._focus_active = False
+        self._focus_transition_blend = 1.0
+        self._fly_dolly_remaining = 0.0
+        self._yaw = math.degrees(math.atan2(-direction.x, -direction.z))
+        self._pitch = math.degrees(math.asin(max(-1.0, min(1.0, -direction.y))))
+        self._pitch = max(-89.0, min(89.0, self._pitch))
+        dist = max(self.ORBIT_MIN_DIST, min(dist, self.ORBIT_MAX_DIST))
+        self._orbit_dist = dist
+        self._orbit_dist_target = dist
+
+    def set_nav_mode(self, mode: str) -> None:
+        if mode not in (self.NAV_FLY, self.NAV_ORBIT):
+            return
+        if mode == self._nav_mode:
+            return
+        if mode == self.NAV_ORBIT:
+            fwd = self._forward()
+            cur = (self._position - self._orbit_target).length()
+            base = self._orbit_dist
+            if base < self.ORBIT_MIN_DIST or base > self.ORBIT_MAX_DIST:
+                base = 10.0
+            if cur < 1e-6:
+                self._orbit_target = self._position + fwd * base
+                self._orbit_dist = base
+                self._orbit_dist_target = base
+            else:
+                to_target = (self._orbit_target - self._position).normalized()
+                dot = max(-1.0, min(1.0, to_target.dot(fwd)))
+                if dot < 0.999:
+                    use_d = cur
+                    if use_d < self.ORBIT_MIN_DIST or use_d > self.ORBIT_MAX_DIST:
+                        use_d = base
+                    self._orbit_target = self._position + fwd * use_d
+                    self._orbit_dist = use_d
+                    self._orbit_dist_target = use_d
+                else:
+                    self._orbit_dist = max(self.ORBIT_MIN_DIST, min(cur, self.ORBIT_MAX_DIST))
+                    self._orbit_dist_target = self._orbit_dist
+            self._vel = Vec3.zero()
+            self._fly_dolly_remaining = 0.0
+            self._focus_active = False
+            self._focus_transition_blend = 1.0
+        else:
+            self._fly_dolly_remaining = 0.0
+            self._vel = Vec3.zero()
+            self._focus_active = False
+            self._focus_transition_blend = 1.0
+        self._nav_mode = mode
+        if self._on_nav_mode_changed is not None:
+            try:
+                self._on_nav_mode_changed(mode)
+            except Exception:
+                pass
+
+    def toggle_nav_mode(self) -> str:
+        self.set_nav_mode(self.NAV_FLY if self._nav_mode == self.NAV_ORBIT else self.NAV_ORBIT)
+        return self._nav_mode
+
+    def _apply_orbit_transform(self) -> None:
+        fwd = self._forward()
+        self._position = self._orbit_target - fwd * self._orbit_dist
+
+    def _persp_pan_amount(self, dist: float) -> float:
+        try:
+            d = max(float(dist), 0.5)
+        except Exception:
+            d = 10.0
+        fov = self._fov
+        try:
+            fov = max(1.0, min(float(fov), 120.0))
+        except Exception:
+            fov = self.DEFAULT_FOV
+        half = d * math.tan(math.radians(fov) * 0.5)
+        base = (2.0 * half) / max(1, self._viewport_h)
+        try:
+            norm = self.MOVE_SPEED * self.PAN_SPEED
+            gain = (self._move_speed * self._pan_speed) / norm if norm > 0 else 1.0
+        except Exception:
+            gain = 1.0
+        return base * gain
 
     def _forward(self) -> Vec3:
         if self._is_2d_mode:
@@ -152,7 +270,7 @@ class SceneCamera(CameraBase):
         return self._right().cross(self._forward()).normalized()
 
     def get_view_matrix(self) -> Mat4:
-        if self._focus_active:
+        if self._focus_active or self._nav_mode == self.NAV_ORBIT:
             return Mat4.look_at(self._position, self._orbit_target, Vec3.up())
         return Mat4.look_at(self._position, self._position + self._forward(), Vec3.up())
 
@@ -220,6 +338,18 @@ class SceneCamera(CameraBase):
             diff -= 360.0
         return a + diff * t
 
+    def _is_shift_down(self) -> bool:
+        try:
+            return bool(InputManager.instance().is_key_pressed(KEY_SHIFT))
+        except Exception:
+            return False
+
+    def _is_ctrl_down(self) -> bool:
+        try:
+            return bool(InputManager.instance().is_key_pressed(KEY_CTRL))
+        except Exception:
+            return False
+
     def on_mouse_move(self, x, y):
         dx = float(x - self._last_mx)
         dy = float(y - self._last_my)
@@ -232,15 +362,51 @@ class SceneCamera(CameraBase):
             r = self._right()
             u = self._up()
             half_size = self._ortho_zoom_distance * math.tan(math.radians(self.DEFAULT_FOV) * 0.5)
-            amt = (2.0 * half_size) / self._viewport_h
+            amt = (2.0 * half_size) / max(1, self._viewport_h)
             self._position = self._position - r * (dx * amt) + u * (dy * amt)
-        elif self._right_mouse or self._alt_left:
+            return
+        if self._nav_mode == self.NAV_ORBIT and not self._is_2d_mode:
+            if self._middle_mouse:
+                ctrl = self._is_ctrl_down()
+                if ctrl:
+                    factor = 1.0 + dy * 0.01
+                    if factor < 0.5:
+                        factor = 0.5
+                    if factor > 2.0:
+                        factor = 2.0
+                    new_dist = self._orbit_dist_target * factor
+                    new_dist = max(self.ORBIT_MIN_DIST, min(new_dist, self.ORBIT_MAX_DIST))
+                    self._orbit_dist_target = new_dist
+                    return
+                r = self._right()
+                u = self._up()
+                amt = self._persp_pan_amount(self._orbit_dist)
+                off = r * (-dx * amt) + u * (dy * amt)
+                self._position = self._position + off
+                self._orbit_target = self._orbit_target + off
+                return
+            if self._right_mouse or self._alt_left:
+                shift = self._is_shift_down()
+                if shift and self._right_mouse:
+                    r = self._right()
+                    u = self._up()
+                    amt = self._persp_pan_amount(self._orbit_dist)
+                    off = r * (-dx * amt) + u * (dy * amt)
+                    self._position = self._position + off
+                    self._orbit_target = self._orbit_target + off
+                    return
+                self._yaw -= dx * self._rotate_speed
+                self._pitch = max(-89.0, min(89.0, self._pitch + dy * self._rotate_speed))
+                self._apply_orbit_transform()
+                return
+            return
+        if self._right_mouse or self._alt_left:
             self._yaw -= dx * self._rotate_speed
             self._pitch = max(-89.0, min(89.0, self._pitch + dy * self._rotate_speed))
         elif self._middle_mouse:
             r = self._right()
             u = self._up()
-            amt = self._move_speed * self._pan_speed
+            amt = self._persp_pan_amount((self._position - self._orbit_target).length())
             self._position = self._position - r * (dx * amt) + u * (dy * amt)
 
     def on_scroll(self, delta, cursor_x=None, cursor_y=None):
@@ -263,11 +429,24 @@ class SceneCamera(CameraBase):
                     self._zoom_cursor_ndc = (ndc_x, ndc_y)
             else:
                 self._ortho_zoom_distance = new_dist
-        elif self._is_2d_mode:
+            return
+        if self._is_2d_mode:
             forward = self._forward()
             self._position = self._position + forward * scaled_delta * self._zoom_speed
-        else:
-            self._position = self._position + self._forward() * scaled_delta * self._zoom_speed
+            return
+        if self._nav_mode == self.NAV_ORBIT:
+            scale = 1.0 - scaled_delta * self._zoom_strength
+            if scale < 0.1:
+                scale = 0.1
+            if scale > 4.0:
+                scale = 4.0
+            new_dist = self._orbit_dist_target * scale
+            new_dist = max(self.ORBIT_MIN_DIST, min(new_dist, self.ORBIT_MAX_DIST))
+            self._orbit_dist_target = new_dist
+            return
+        want = self._fly_dolly_remaining + scaled_delta * self._zoom_speed
+        want = max(-100.0, min(want, 100.0))
+        self._fly_dolly_remaining = want
 
     def toggle_2d_mode(self):
         if self._mode_2d_transition:
@@ -338,6 +517,38 @@ class SceneCamera(CameraBase):
         if hasattr(self, '_on_projection_changed'):
             self._on_projection_changed()
 
+    def _sync_orbit_dist_from_transform(self) -> None:
+        d = (self._position - self._orbit_target).length()
+        d = max(self.ORBIT_MIN_DIST, min(d, self.ORBIT_MAX_DIST))
+        self._orbit_dist = d
+        self._orbit_dist_target = d
+
+    def _apply_fly_dolly(self, dt: float) -> None:
+        if abs(self._fly_dolly_remaining) < 1e-6:
+            self._fly_dolly_remaining = 0.0
+            return
+        if self._is_orthographic or self._is_2d_mode:
+            self._fly_dolly_remaining = 0.0
+            return
+        st = min(1.0, dt * self._zoom_smooth_speed)
+        step = self._fly_dolly_remaining * st
+        if abs(self._fly_dolly_remaining) < 0.002:
+            step = self._fly_dolly_remaining
+        self._position = self._position + self._forward() * step
+        self._fly_dolly_remaining = self._fly_dolly_remaining - step
+        if abs(self._fly_dolly_remaining) < 1e-6:
+            self._fly_dolly_remaining = 0.0
+
+    def _apply_orbit_dolly(self, dt: float) -> None:
+        if abs(self._orbit_dist - self._orbit_dist_target) < 1e-5:
+            self._orbit_dist = self._orbit_dist_target
+        else:
+            st = min(1.0, dt * self._zoom_smooth_speed)
+            self._orbit_dist = self._orbit_dist + (self._orbit_dist_target - self._orbit_dist) * st
+            if abs(self._orbit_dist - self._orbit_dist_target) < 0.001:
+                self._orbit_dist = self._orbit_dist_target
+        self._apply_orbit_transform()
+
     def update(self, dt):
         if self._transition_active:
             t = min(dt * self._transition_speed, 1.0)
@@ -394,6 +605,8 @@ class SceneCamera(CameraBase):
                 self._orbit_target = self._focus_target_orbit
                 self._yaw = self._focus_target_yaw
                 self._pitch = self._focus_target_pitch
+                if self._nav_mode == self.NAV_ORBIT:
+                    self._sync_orbit_dist_from_transform()
             else:
                 e = self._ease_in_out_cubic(self._focus_transition_blend)
                 self._position = Vec3(
@@ -408,6 +621,8 @@ class SceneCamera(CameraBase):
                 )
                 self._yaw = self._lerp_angle(self._focus_start_yaw, self._focus_target_yaw, e)
                 self._pitch = self._focus_start_pitch + (self._focus_target_pitch - self._focus_start_pitch) * e
+                if self._nav_mode == self.NAV_ORBIT:
+                    self._sync_orbit_dist_from_transform()
         if self._is_2d_mode and self._use_ortho_in_2d and abs(self._ortho_zoom_distance - self._zoom_target_distance) > 0.001:
             old_half = self._ortho_zoom_distance * math.tan(math.radians(self.DEFAULT_FOV) * 0.5)
             st = min(dt * self._zoom_smooth_speed, 1.0)
@@ -422,6 +637,15 @@ class SceneCamera(CameraBase):
                 dy = ndc_y * old_half * (1.0 - per_frame_scale)
                 self._position = self._position + self._right() * dx + self._up() * dy
                 self._zoom_cursor_ndc = None
+        try:
+            decay = 1.0 - min(1.0, dt * 4.0)
+            if decay < 0.0:
+                decay = 0.0
+            self._scroll_accumulator = self._scroll_accumulator * decay
+            if abs(self._scroll_accumulator) < 0.001:
+                self._scroll_accumulator = 0.0
+        except Exception:
+            pass
         if dt > 0.05:
             dt = 0.05
         im = InputManager.instance()
@@ -460,7 +684,52 @@ class SceneCamera(CameraBase):
             facc = dt * self._acceleration
             self._vel = self._vel + (accel - self._vel) * min(facc, 1.0)
             self._position = self._position + self._vel * dt
-        elif self._right_mouse:
+            return
+        if self._nav_mode == self.NAV_ORBIT:
+            if self._focus_transition_blend < 1.0:
+                return
+            self._apply_orbit_dolly(dt)
+            right = self._right()
+            fwd = self._forward()
+            up = self._up()
+            world_up = Vec3.up()
+            accel = Vec3.zero()
+            dist_scale = max(0.2, self._orbit_dist / 10.0)
+            speed = self._move_speed * dist_scale * boost_factor
+            if im.is_key_pressed(KEY_SHIFT):
+                speed *= self._fast_mult
+            if im.is_key_pressed(KEY_W):
+                accel = accel + fwd * speed
+            if im.is_key_pressed(KEY_S):
+                accel = accel - fwd * speed
+            if im.is_key_pressed(KEY_A):
+                accel = accel - right * speed
+            if im.is_key_pressed(KEY_D):
+                accel = accel + right * speed
+            if im.is_key_pressed(KEY_E):
+                accel = accel + world_up * speed
+            if im.is_key_pressed(KEY_Q):
+                accel = accel - world_up * speed
+            if any_move:
+                facc = dt * self._acceleration
+                self._vel = self._vel + (accel - self._vel) * min(facc, 1.0)
+                step = self._vel * dt
+                self._position = self._position + step
+                self._orbit_target = self._orbit_target + step
+                self._apply_orbit_transform()
+            else:
+                self._vel = self._vel * 0.85
+                if self._vel.length() > 1e-6:
+                    step = self._vel * dt
+                    self._position = self._position + step
+                    self._orbit_target = self._orbit_target + step
+                    self._apply_orbit_transform()
+                else:
+                    self._vel = Vec3.zero()
+            _ = up
+            return
+        self._apply_fly_dolly(dt)
+        if self._right_mouse:
             fwd = self._forward()
             right = self._right()
             up = Vec3.up()
@@ -500,6 +769,7 @@ class SceneCamera(CameraBase):
         self._focus_target_pitch = math.degrees(math.asin(max(-1.0, min(1.0, -dir_to_target.y))))
         self._focus_active = True
         self._focus_transition_blend = 0.0
+        self._fly_dolly_remaining = 0.0
 
     def frame_bounds(self, center: Vec3, radius: float = 1.0):
         self.focus_on(center, max(radius * 2.5, 1.0))
@@ -510,6 +780,10 @@ class SceneCamera(CameraBase):
             "position": self._position.to_list(),
             "yaw": self._yaw,
             "pitch": self._pitch,
+            "nav_mode": self._nav_mode,
+            "orbit_target": self._orbit_target.to_list(),
+            "orbit_dist": self._orbit_dist,
+            "orbit_dist_target": self._orbit_dist_target,
         })
         return d
 
@@ -519,3 +793,24 @@ class SceneCamera(CameraBase):
         self._position = Vec3(*p)
         self._yaw = data.get("yaw", 0.0)
         self._pitch = data.get("pitch", -15.0)
+        nav = data.get("nav_mode", self.NAV_FLY)
+        self._nav_mode = nav if nav in (self.NAV_FLY, self.NAV_ORBIT) else self.NAV_FLY
+        try:
+            self._orbit_target = Vec3(*data.get("orbit_target", [0, 0, 0]))
+        except Exception:
+            self._orbit_target = Vec3.zero()
+        try:
+            self._orbit_dist = float(data.get("orbit_dist", 10.0))
+        except Exception:
+            self._orbit_dist = 10.0
+        try:
+            self._orbit_dist_target = float(data.get("orbit_dist_target", self._orbit_dist))
+        except Exception:
+            self._orbit_dist_target = self._orbit_dist
+        self._fly_dolly_remaining = 0.0
+        self._vel = Vec3.zero()
+        self._focus_active = False
+        self._focus_transition_blend = 1.0
+        if self._nav_mode == self.NAV_ORBIT:
+            self._sync_orbit_dist_from_transform()
+            self._apply_orbit_transform()

@@ -283,6 +283,8 @@ class SceneViewport(QOpenGLWidget):
         self._area_selecting = False
         self._area_start = (0, 0)
         self._area_end = (0, 0)
+        self._rmb_press_pos = (0, 0)
+        self._rmb_press_shift = False
         self._physical_w: int = 800
         self._physical_h: int = 600
         self._clear_color: list[float] = [0.18, 0.18, 0.18]
@@ -1098,6 +1100,11 @@ class SceneViewport(QOpenGLWidget):
                     self._debug_lines.clear()
                 elif _play and self._debug_lines:
                     self._debug_lines.clear()
+                if not _play:
+                    try:
+                        self._render_cursor(vp_mat, fw, fh, cam_pos)
+                    except Exception:
+                        pass
                 if self._show_bvh_debug and not _play:
                     self._render_bvh_debug()
                 if self._pb_scale_gizmo and self._pb_scale_gizmo.active and not _play:
@@ -1245,6 +1252,12 @@ class SceneViewport(QOpenGLWidget):
             self._ng_clicked = True
             self._ng_mouse_pos = (float(lx), float(ly))
             self._ng_last_mouse = (lx, ly)
+        if btn == MOUSE_R:
+            self._rmb_press_pos = (lx, ly)
+            try:
+                self._rmb_press_shift = bool(self._im.is_key_pressed(KEY_SHIFT)) if self._im else bool(shift)
+            except Exception:
+                self._rmb_press_shift = bool(shift)
         self._cam.on_mouse_press(btn, lx, ly, alt)
         from editor.viewport.collaboration import send_collab_cursor
         send_collab_cursor(self, lx, ly)
@@ -1516,6 +1529,34 @@ class SceneViewport(QOpenGLWidget):
             self._ng_mouse_pos = (float(event.position().x()), float(event.position().y()))
         self._cam.on_mouse_release(btn)
         self._navigation_gizmo_orbit = False
+        if btn == MOUSE_R:
+            try:
+                rx, ry = int(event.position().x()), int(event.position().y())
+            except Exception:
+                rx, ry = (0, 0)
+            try:
+                px, py = getattr(self, "_rmb_press_pos", (rx, ry))
+            except Exception:
+                px, py = (rx, ry)
+            try:
+                shift_at_press = bool(getattr(self, "_rmb_press_shift", False))
+            except Exception:
+                shift_at_press = False
+            try:
+                shift_now = bool(self._im.is_key_pressed(KEY_SHIFT)) if self._im else False
+            except Exception:
+                shift_now = False
+            try:
+                mods = event.modifiers()
+                if mods & Qt.KeyboardModifier.ShiftModifier:
+                    shift_now = True
+            except Exception:
+                pass
+            if (shift_at_press or shift_now) and abs(rx - px) < 5 and abs(ry - py) < 5:
+                try:
+                    self._place_cursor_at(rx, ry)
+                except Exception:
+                    pass
         if btn == MOUSE_L and self._area_selecting:
             self._area_selecting = False
             x1, y1 = self._area_start
@@ -1881,6 +1922,85 @@ class SceneViewport(QOpenGLWidget):
             if t > 0:
                 return ray_origin + ray_dir * t, None
         return ray_origin + ray_dir * 10.0, None
+
+    def _place_cursor_at(self, sx: int, sy: int):
+        world_pos, _hit = self._drop_world_pos(sx, sy)
+        try:
+            set_fn = getattr(self._cam, "set_cursor", None)
+            if callable(set_fn):
+                set_fn(world_pos)
+            else:
+                self._cam._orbit_target = world_pos
+        except Exception:
+            pass
+        self.update()
+
+    def _render_cursor(self, vp_mat, fw: int, fh: int, cam_pos):
+        try:
+            cam = getattr(self, "_cam", None)
+            if cam is None:
+                return
+            if self._renderer is None:
+                return
+            if getattr(self._engine, "play_mode", False):
+                return
+            target = getattr(cam, "_orbit_target", None)
+            if target is None:
+                return
+            from editor.viewport.projection import project_world_pos
+            sp = project_world_pos(self, target, vp_mat, fw, fh)
+            if not sp:
+                return
+            sx, sy = sp[0], sp[1]
+            cache_key = "__cursor_blender_ring"
+            try:
+                tex = self._renderer._icon_textures.get(cache_key)
+            except Exception:
+                tex = None
+            if tex is None:
+                from PyQt6.QtCore import Qt
+                from PyQt6.QtGui import QImage, QPainter, QPen, QColor
+                S = 96
+                C = S // 2
+                R = 21
+                T = 31
+                qimg = QImage(S, S, QImage.Format.Format_RGBA8888)
+                qimg.fill(Qt.GlobalColor.transparent)
+                p = QPainter(qimg)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                outline = QColor(10, 10, 12, 210)
+                main = QColor(245, 245, 245, 255)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(outline, 6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                p.drawEllipse(C - R, C - R, R * 2, R * 2)
+                p.drawLine(C - T, C, C + T, C)
+                p.drawLine(C, C - T, C, C + T)
+                p.setPen(QPen(main, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                p.drawEllipse(C - R, C - R, R * 2, R * 2)
+                p.drawLine(C - T, C, C + T, C)
+                p.drawLine(C, C - T, C, C + T)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(outline)
+                p.drawEllipse(C - 5, C - 5, 10, 10)
+                p.setBrush(main)
+                p.drawEllipse(C - 3, C - 3, 6, 6)
+                p.end()
+                rgba = qimg.bits().asstring(S * S * 4)
+                tex = self._renderer.create_icon_texture_from_data(rgba, S, S, cache_key)
+                try:
+                    self._renderer._icon_textures[cache_key] = tex
+                except Exception:
+                    pass
+            if tex:
+                try:
+                    dpr = float(self.devicePixelRatio())
+                except Exception:
+                    dpr = 1.0
+                if dpr < 1.0:
+                    dpr = 1.0
+                self._renderer.render_icon(tex, sx, sy, 30.0 * dpr, 1.0, fw, fh)
+        except Exception:
+            pass
 
     def dropEvent(self, event):
         pos = event.position()

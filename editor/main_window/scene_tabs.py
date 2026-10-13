@@ -255,8 +255,10 @@ class SceneTabManager(QObject):
                     "position": cam._position.to_list(),
                     "yaw": cam._yaw,
                     "pitch": cam._pitch,
+                    "nav_mode": getattr(cam, "_nav_mode", "fly"),
                     "orbit_target": cam._orbit_target.to_list(),
                     "orbit_dist": cam._orbit_dist,
+                    "orbit_dist_target": getattr(cam, "_orbit_dist_target", cam._orbit_dist),
                     "is_2d_mode": cam._is_2d_mode,
                     "ortho_zoom_distance": cam._ortho_zoom_distance,
                     "stored_ortho_size": cam._stored_ortho_size,
@@ -947,8 +949,39 @@ class SceneTabManager(QObject):
             cam._position = Vec3(*cs["position"])
             cam._yaw = cs["yaw"]
             cam._pitch = cs["pitch"]
+            nav = cs.get("nav_mode", getattr(cam, "_nav_mode", "fly"))
+            if nav in ("fly", "orbit"):
+                cam._nav_mode = nav
             cam._orbit_target = Vec3(*cs["orbit_target"])
             cam._orbit_dist = cs["orbit_dist"]
+            try:
+                cam._orbit_dist_target = float(cs.get("orbit_dist_target", cam._orbit_dist))
+            except Exception:
+                cam._orbit_dist_target = cam._orbit_dist
+            try:
+                cam._fly_dolly_remaining = 0.0
+            except Exception:
+                pass
+            try:
+                cam._vel = Vec3.zero()
+            except Exception:
+                pass
+            cam._focus_active = False
+            try:
+                cam._focus_transition_blend = 1.0
+            except Exception:
+                pass
+            if cam._nav_mode == "orbit":
+                try:
+                    cam._apply_orbit_transform()
+                except Exception:
+                    pass
+            try:
+                sync_fn = getattr(self._mw, "_sync_nav_mode_ui", None)
+                if callable(sync_fn):
+                    sync_fn(cam._nav_mode)
+            except Exception:
+                pass
             cam._is_2d_mode = cs["is_2d_mode"]
             cam._ortho_zoom_distance = cs["ortho_zoom_distance"]
             cam._stored_ortho_size = cs["stored_ortho_size"]

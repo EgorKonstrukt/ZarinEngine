@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core.config.editor_scale import scale, scale_xy
-from PyQt6.QtWidgets import (QToolBar, QPushButton, QLabel, QDoubleSpinBox,
+from PyQt6.QtWidgets import (QToolBar, QPushButton, QLabel, QDoubleSpinBox, QComboBox,
                              QWidget, QSizePolicy, QHBoxLayout, QVBoxLayout,
                              QFrame, QToolButton, QTabBar)
 from PyQt6.QtCore import Qt, QSize
@@ -67,6 +67,64 @@ def setup_toolbar(mw):
     reset_cam_btn.setAutoRaise(True)
     reset_cam_btn.clicked.connect(lambda: reset_camera(mw))
     lay.addWidget(reset_cam_btn)
+
+    nav_label = QLabel("Nav:")
+    lay.addWidget(nav_label)
+    mw._nav_mode_cb = QComboBox(mw)
+    mw._nav_mode_cb.addItems(["Fly", "Orbit"])
+    mw._nav_mode_cb.setToolTip("Fly: WASD + RMB look, MMB pan, wheel dolly. Orbit: RMB orbit around 3D cursor, MMB pan like fly, Shift+RMB click places cursor, Ctrl+MMB / wheel dolly")
+    mw._nav_mode_cb.setFixedWidth(scale(90))
+    lay.addWidget(mw._nav_mode_cb)
+
+    def _on_nav_mode_selected(text: str):
+        mode = "orbit" if text == "Orbit" else "fly"
+        try:
+            vp = getattr(mw, "_viewport", None)
+            cam = getattr(vp, "camera", None) if vp is not None else None
+            if cam is None and vp is not None:
+                cam = getattr(vp, "_cam", None)
+            if cam is not None:
+                cam.set_nav_mode(mode)
+        except Exception:
+            pass
+        try:
+            from core.config.config import get_global_config
+            cfg = get_global_config()
+            cfg.set("camera.nav_mode", mode)
+            cfg.save()
+        except Exception:
+            pass
+        try:
+            if vp is not None:
+                vp.update()
+        except Exception:
+            pass
+
+    mw._nav_mode_cb.currentTextChanged.connect(_on_nav_mode_selected)
+
+    def _sync_nav_mode_ui(mode: str):
+        try:
+            want = "Orbit" if mode == "orbit" else "Fly"
+            cb = getattr(mw, "_nav_mode_cb", None)
+            if cb is not None and cb.currentText() != want:
+                cb.blockSignals(True)
+                cb.setCurrentText(want)
+                cb.blockSignals(False)
+        except Exception:
+            pass
+
+    mw._sync_nav_mode_ui = _sync_nav_mode_ui
+    try:
+        vp0 = getattr(mw, "_viewport", None)
+        cam0 = getattr(vp0, "_cam", None) if vp0 is not None else None
+        if cam0 is not None:
+            cur0 = getattr(cam0, "_nav_mode", "fly")
+            mw._nav_mode_cb.blockSignals(True)
+            mw._nav_mode_cb.setCurrentText("Orbit" if cur0 == "orbit" else "Fly")
+            mw._nav_mode_cb.blockSignals(False)
+            cam0._on_nav_mode_changed = _sync_nav_mode_ui
+    except Exception:
+        pass
 
     mw._scene_toolbar = SceneToolbar(mw)
     mw._scene_toolbar.setObjectName("SceneToolbar")

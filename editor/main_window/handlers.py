@@ -123,10 +123,20 @@ def on_entity_double_clicked(mw, eid: str):
 
 
 def reset_camera(mw):
-    mw._viewport.camera._position = Vec3(0.0, 3.0, 10.0)
-    mw._viewport.camera._yaw = 0.0
-    mw._viewport.camera._pitch = -15.0
-    mw._viewport.camera._focus_active = False
+    cam = mw._viewport.camera
+    cam._position = Vec3(0.0, 3.0, 10.0)
+    cam._yaw = 0.0
+    cam._pitch = -15.0
+    cam._focus_active = False
+    cam._focus_transition_blend = 1.0
+    cam._orbit_target = Vec3.zero()
+    try:
+        cam._orbit_dist = (cam._position - cam._orbit_target).length()
+    except Exception:
+        cam._orbit_dist = 10.0
+    cam._orbit_dist_target = cam._orbit_dist
+    cam._fly_dolly_remaining = 0.0
+    cam._vel = Vec3.zero()
 
 
 def on_project_file_double_clicked(mw, path: str):

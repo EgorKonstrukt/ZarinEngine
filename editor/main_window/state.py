@@ -551,6 +551,12 @@ def restore_camera(mw):
             mw._viewport.camera.deserialize(json.loads(cam_data))
         except Exception:
             pass
+        try:
+            sync_fn = getattr(mw, "_sync_nav_mode_ui", None)
+            if callable(sync_fn):
+                sync_fn(mw._viewport.camera.nav_mode)
+        except Exception:
+            pass
 
 
 def _window_state_path():
