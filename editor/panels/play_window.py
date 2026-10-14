@@ -316,20 +316,39 @@ class PlayViewport(QOpenGLWidget):
         if self._engine.play_mode and self.isVisible():
             if not self._pacer.should_run():
                 return
-            from core.input.input_manager import InputManager
-            im = InputManager.instance()
-            im.set_surface_size(self.width(), self.height())
-            im.new_frame()
-            self._tick_editor_cameras()
-            self._sync_cursor()
-            self.update()
-            canvas = self._overlay_canvas
-            if canvas is not None:
+            prof = getattr(self._engine, "_profiler", None)
+            if prof is not None:
+                prof.start("play_viewport")
+            try:
+                from core.input.input_manager import InputManager
+                im = InputManager.instance()
+                im.set_surface_size(self.width(), self.height())
+                im.new_frame()
+                if prof is not None:
+                    prof.start("play_cameras")
                 try:
-                    from core.gui.system import GuiCanvasSystem
-                    GuiCanvasSystem.instance().sync_all(self._engine.scene, canvas)
-                except Exception:
-                    pass
+                    self._tick_editor_cameras()
+                finally:
+                    if prof is not None:
+                        prof.stop("play_cameras")
+                self._sync_cursor()
+                self.update()
+                canvas = self._overlay_canvas
+                if canvas is not None:
+                    try:
+                        from core.gui.system import GuiCanvasSystem
+                        if prof is not None:
+                            prof.start("play_gui_sync")
+                        try:
+                            GuiCanvasSystem.instance().sync_all(self._engine.scene, canvas)
+                        finally:
+                            if prof is not None:
+                                prof.stop("play_gui_sync")
+                    except Exception:
+                        pass
+            finally:
+                if prof is not None:
+                    prof.stop("play_viewport")
 
     def _tick_editor_cameras(self):
         try:

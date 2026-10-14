@@ -8,6 +8,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
 
 _perf_counter = time.perf_counter
 
@@ -76,10 +77,10 @@ class Profiler:
             self._stack.append((key, _perf_counter()))
 
     def stop(self, key: str):
-        if not self._enabled: return
+        if not self._enabled: return None
         with self._lock:
             stack = self._stack
-            if not stack: return
+            if not stack: return None
             if stack[-1][0] == key:
                 name, t0 = stack.pop()
             else:
@@ -88,7 +89,7 @@ class Profiler:
                         name, t0 = stack.pop(i)
                         break
                 else:
-                    return
+                    return None
             now = _perf_counter()
             duration_ms = (now - t0) * 1000.0
             self._flat_data[name] = self._flat_data.get(name, 0.0) + duration_ms
@@ -96,10 +97,21 @@ class Profiler:
                 cf = self._current_frame
                 if cf is not None and self._frame_start > 0:
                     start_ms = (t0 - self._frame_start) * 1000.0
+                    if start_ms < 0.0:
+                        start_ms = 0.0
                     depth = len(stack)
                     c = _PROFILER_COLORS.get(name, "#aaaaaa")
                     cf.samples.append(ProfileSample(name, depth, start_ms, duration_ms, c))
                     cf.flat_data[name] = cf.flat_data.get(name, 0.0) + duration_ms
+            return duration_ms
+
+    @contextmanager
+    def scope(self, key: str):
+        self.start(key)
+        try:
+            yield
+        finally:
+            self.stop(key)
 
     def set_value(self, key: str, value_ms: float):
         if not self._enabled: return
@@ -122,6 +134,8 @@ class Profiler:
                     self._flat_data[name] = self._flat_data.get(name, 0.0) + duration_ms
                     if self._capture_frames and cf is not None and frame_start > 0:
                         start_ms = (t0 - frame_start) * 1000.0
+                        if start_ms < 0.0:
+                            start_ms = 0.0
                         c = _PROFILER_COLORS.get(name, "#aaaaaa")
                         depth = len(self._stack)
                         cf.samples.append(ProfileSample(name, depth, start_ms, duration_ms, c))
@@ -136,7 +150,6 @@ class Profiler:
             self._frame_start = now
 
     def reset(self):
-        if not self._enabled: return
         with self._lock:
             self._frames.clear()
             self._current_frame = None
@@ -159,7 +172,20 @@ class Profiler:
 
     @enabled.setter
     def enabled(self, v: bool):
-        self._enabled = v
+        v = bool(v)
+        with self._lock:
+            if self._enabled == v:
+                return
+            self._enabled = v
+            self._stack.clear()
+            if not v:
+                self._current_frame = None
+                self._frame_start = 0.0
+            else:
+                self._flat_data.clear()
+                if self._capture_frames:
+                    self._current_frame = FrameProfile()
+                    self._frame_start = _perf_counter()
 
     @property
     def capture_frames(self) -> bool:
@@ -167,4 +193,15 @@ class Profiler:
 
     @capture_frames.setter
     def capture_frames(self, v: bool):
-        self._capture_frames = v
+        v = bool(v)
+        with self._lock:
+            if self._capture_frames == v:
+                return
+            self._capture_frames = v
+            if v:
+                if self._enabled:
+                    self._current_frame = FrameProfile()
+                    self._frame_start = _perf_counter()
+            else:
+                self._stack.clear()
+                self._current_frame = None

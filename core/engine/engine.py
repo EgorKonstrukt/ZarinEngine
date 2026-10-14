@@ -674,6 +674,10 @@ class Engine:
         cfg = get_global_config()
         self._time_scale = cfg.get("engine.time_scale", 1.0)
         self._fixed_dt = max(0.001, cfg.get("engine.fixed_update_dt", 0.02))
+        try:
+            self._profiler.enabled = bool(cfg.get("profiler.enabled", False))
+        except Exception:
+            pass
 
         try:
             from core.audio.audio_system import AudioSystem

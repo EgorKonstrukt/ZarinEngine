@@ -334,11 +334,13 @@ class VRPlugin(PluginBase):
                 self_._fps_frames = 0
             if not self_._ctx or not self_._renderer:
                 self_._in_render_tick = False
+                prof.stop("frame")
                 return
             if not self_._in_update:
                 dt = now - self_._last_frame_time
                 self_._last_frame_time = now
                 self_._last_dt = dt
+                prof.start("input_handling")
                 if self_._im:
                     self_._im.new_frame()
                 if self_._focused and self_.isActiveWindow():
@@ -376,14 +378,18 @@ class VRPlugin(PluginBase):
                             self_._selected_entities.clear()
                             self_._set_gizmo_entity(None)
                             self_.entity_selected.emit(None)
-                if not eng.play_mode:
-                    self_._update_editor_particles(dt, self_._selected_entities)
-                self_._cam.update(dt)
-                try:
-                    from plugins.vr_plugin import vr_core as _vc
-                    _vc.update_vr_entities(self_, dt)
-                except Exception:
-                    pass
+                prof.stop("input_handling")
+                with prof.scope("editor_update"):
+                    if not eng.play_mode:
+                        with prof.scope("editor_particles"):
+                            self_._update_editor_particles(dt, self_._selected_entities)
+                    with prof.scope("cam_update"):
+                        self_._cam.update(dt)
+                    try:
+                        from plugins.vr_plugin import vr_core as _vc
+                        _vc.update_vr_entities(self_, dt)
+                    except Exception:
+                        pass
             self_._update_status_labels()
             try:
                 self_._bind_screen_fbo()

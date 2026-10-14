@@ -934,6 +934,7 @@ class SceneViewport(QOpenGLWidget):
             self._fps_accum = 0.0
             self._fps_frames = 0
         if not self._ctx or not self._renderer:
+            prof.stop("frame")
             return
         if getattr(self._engine, 'play_mode', False):
             if getattr(self, '_throttle_mode', 'editor') == "editor":
@@ -950,6 +951,7 @@ class SceneViewport(QOpenGLWidget):
                         if not self._throttle_armed and self.isVisible():
                             self._throttle_armed = True
                             QTimer.singleShot(max(1, int(wait * 1000.0)), self._throttle_resume)
+                        prof.stop("frame")
                         return
                     self._throttle_armed = False
         eng = self._engine
@@ -961,6 +963,7 @@ class SceneViewport(QOpenGLWidget):
             elif dt < 0.0:
                 dt = 0.0
             self._last_dt = dt
+            prof.start("input_handling")
             if self._im:
                 self._im.new_frame()
             if self._focused and self.isActiveWindow():
@@ -1004,21 +1007,29 @@ class SceneViewport(QOpenGLWidget):
                             self._set_gizmo_entity(None)
                             self.entity_selected.emit(None)
                             from editor.viewport.collaboration import send_collab_selection; send_collab_selection(self)
+            prof.stop("input_handling")
+            prof.start("editor_update")
             if not eng.play_mode:
-                self._update_editor_particles(dt, self._selected_entities)
+                with prof.scope("editor_particles"):
+                    self._update_editor_particles(dt, self._selected_entities)
                 if eng._scene_lock.acquire(blocking=False):
                     try:
-                        self._gizmos_api.update(dt)
+                        with prof.scope("gizmo_update"):
+                            self._gizmos_api.update(dt)
                     finally:
                         eng._scene_lock.release()
-                self._cam.update(dt)
+                with prof.scope("cam_update"):
+                    self._cam.update(dt)
             else:
                 try:
                     if self._gizmos_api is not None:
-                        self._gizmos_api.update(dt)
+                        with prof.scope("gizmo_update"):
+                            self._gizmos_api.update(dt)
                 except Exception:
                     pass
-                self._cam.update(dt)
+                with prof.scope("cam_update"):
+                    self._cam.update(dt)
+            prof.stop("editor_update")
         prof = eng._profiler if hasattr(eng, '_profiler') else None
         in_frame = prof is not None and len(prof._stack) > 0 and prof._stack[0][0] == "frame"
         try:
@@ -1027,6 +1038,7 @@ class SceneViewport(QOpenGLWidget):
             self._bind_screen_fbo()
             if self._screen_fbo is None:
                 self.update()
+                prof.stop("frame")
                 return
             scene = eng.scene
             cam_cc = self._clear_color + [1.0] if scene else self._no_scene_color + [1.0]

@@ -1884,53 +1884,28 @@ class Scene:
             prof.stop("scene_update")
             return
         if constraints:
-            if _batch_constraints is not None:
-                try:
-                    _batch_constraints(constraints, dt)
-                except Exception as ex:
-                    if log_error is None:
-                        from core.foundation.logger import Logger
-                        log_error = Logger.error
-                    log_error(f"Constraint batch update error: {ex}")
-            else:
-                for c in constraints:
+            with prof.scope("constraints"):
+                if _batch_constraints is not None:
                     try:
-                        c.on_update(dt)
+                        _batch_constraints(constraints, dt)
                     except Exception as ex:
                         if log_error is None:
                             from core.foundation.logger import Logger
                             log_error = Logger.error
-                        ent = c._entity
-                        log_error(f"Update error in {ent._name if ent else '?'}/{type(c).__name__}: {ex}")
-        for c in others:
-            try:
-                c.on_update(dt)
-            except Exception as ex:
-                if log_error is None:
-                    from core.foundation.logger import Logger
-                    log_error = Logger.error
-                ent = c._entity
-                log_error(f"Update error in {ent._name if ent else '?'}/{type(c).__name__}: {ex}")
-        if iks:
-            if _batch_ik is not None:
-                try:
-                    _batch_ik(iks, dt)
-                except Exception as ex:
-                    if log_error is None:
-                        from core.foundation.logger import Logger
-                        log_error = Logger.error
-                    log_error(f"IK batch update error: {ex}")
-                    for c in iks:
+                        log_error(f"Constraint batch update error: {ex}")
+                else:
+                    for c in constraints:
                         try:
                             c.on_update(dt)
-                        except Exception as ex2:
+                        except Exception as ex:
                             if log_error is None:
                                 from core.foundation.logger import Logger
                                 log_error = Logger.error
                             ent = c._entity
-                            log_error(f"Update error in {ent._name if ent else '?'}/{type(c).__name__}: {ex2}")
-            else:
-                for c in iks:
+                            log_error(f"Update error in {ent._name if ent else '?'}/{type(c).__name__}: {ex}")
+        if others:
+            with prof.scope("components"):
+                for c in others:
                     try:
                         c.on_update(dt)
                     except Exception as ex:
@@ -1939,6 +1914,35 @@ class Scene:
                             log_error = Logger.error
                         ent = c._entity
                         log_error(f"Update error in {ent._name if ent else '?'}/{type(c).__name__}: {ex}")
+        if iks:
+            with prof.scope("ik"):
+                if _batch_ik is not None:
+                    try:
+                        _batch_ik(iks, dt)
+                    except Exception as ex:
+                        if log_error is None:
+                            from core.foundation.logger import Logger
+                            log_error = Logger.error
+                        log_error(f"IK batch update error: {ex}")
+                        for c in iks:
+                            try:
+                                c.on_update(dt)
+                            except Exception as ex2:
+                                if log_error is None:
+                                    from core.foundation.logger import Logger
+                                    log_error = Logger.error
+                                ent = c._entity
+                                log_error(f"Update error in {ent._name if ent else '?'}/{type(c).__name__}: {ex2}")
+                else:
+                    for c in iks:
+                        try:
+                            c.on_update(dt)
+                        except Exception as ex:
+                            if log_error is None:
+                                from core.foundation.logger import Logger
+                                log_error = Logger.error
+                            ent = c._entity
+                            log_error(f"Update error in {ent._name if ent else '?'}/{type(c).__name__}: {ex}")
         prof.stop("scene_update")
 
     def fixed_update(self, dt: float):

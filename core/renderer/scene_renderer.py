@@ -1652,8 +1652,8 @@ class SceneRendererMixin:
                                       **extra)
                         if prof:
                             time_elapsed = prof.stop(f"effect_{effect.__class__.__name__}")
-                            if time_elapsed is not None and time_elapsed > 0.01:
-                                Logger.warning(f"{effect.__class__.__name__} took {time_elapsed*1000:.1f}ms")
+                            if time_elapsed is not None and time_elapsed > 10.0:
+                                Logger.warning(f"{effect.__class__.__name__} took {time_elapsed:.1f}ms")
                     except Exception as e:
                         Logger.error(f"GraphicsEffect.render error: {e}")
                     src_fbo, dst_fbo = dst_fbo, src_fbo

@@ -156,6 +156,17 @@ class GameViewport(QOpenGLWidget):
                 self._fps_accum = 0.0
                 self._fps_frames = 0
         self._last_paint_time = now
+        prof = getattr(self._engine, "_profiler", None)
+        if prof is None:
+            self._paint_uncaptured(now)
+            self._last_paint_full_ms = (time.perf_counter() - now) * 1000.0
+            return
+        with prof.scope("frame"):
+            with prof.scope("game_render"):
+                self._paint_uncaptured(now)
+        self._last_paint_full_ms = (time.perf_counter() - now) * 1000.0
+
+    def _paint_uncaptured(self, now: float):
         try:
             self._bind_screen_fbo()
             scene = self._engine.scene
@@ -206,7 +217,6 @@ class GameViewport(QOpenGLWidget):
             import traceback as _tb
             _tb.print_exc()
             Logger.error(f"GameViewport render error: {e}", e)
-        self._last_paint_full_ms = (time.perf_counter() - now) * 1000.0
 
     def _tick(self):
         if self._engine.play_mode and self.isVisible():
@@ -215,10 +225,12 @@ class GameViewport(QOpenGLWidget):
             prof = self._engine._profiler
             if prof:
                 prof.capture_frame()
-            self._input_manager.new_frame()
-            if self._engine._game_worker is None:
-                with self._engine._scene_lock:
-                    self._engine.tick()
+            with prof.scope("game_tick"):
+                with prof.scope("game_input"):
+                    self._input_manager.new_frame()
+                if self._engine._game_worker is None:
+                    with self._engine._scene_lock:
+                        self._engine.tick()
             self._tick_editor_cameras()
             self._sync_cursor()
             self.update()
