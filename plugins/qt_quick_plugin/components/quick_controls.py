@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from plugins.qt_quick_plugin.components.quick_view import QuickView
 

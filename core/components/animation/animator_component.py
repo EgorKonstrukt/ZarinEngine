@@ -7,7 +7,7 @@
 from __future__ import annotations
 import math
 from typing import Optional
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.animation.animation_clip import AnimationClip
 from core.components.animation.animation_component import _resolve_bone_path
 from core.components.animation.animator_controller import (

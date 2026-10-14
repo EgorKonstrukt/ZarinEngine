@@ -119,7 +119,7 @@ def register(registry, engine):
         s = _scene()
         if s is None:
             return {"error": "No scene loaded"}
-        from core.ecs.ecs import Entity
+        from core.ecs import Entity
         from core.components.transform.transform import Transform
         e = s.create_entity(name)
         e.add_component(Transform())
@@ -315,7 +315,7 @@ def register(registry, engine):
         s = _scene()
         if s is None:
             return {"error": "No scene loaded"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}
@@ -484,7 +484,7 @@ def register(registry, engine):
             if tag and tag not in e.tags:
                 ok = False
             if component:
-                from core.ecs.ecs import ComponentRegistry
+                from core.ecs import ComponentRegistry
                 cls = ComponentRegistry.get(component)
                 if cls is None or not e.has_component(cls):
                     ok = False

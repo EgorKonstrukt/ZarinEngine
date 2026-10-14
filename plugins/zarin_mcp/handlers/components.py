@@ -33,7 +33,7 @@ def register(registry, engine):
         },
     )
     def component_list_types(search="", category="", limit=30, offset=0):
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         all_comps = ComponentRegistry.all()
         cats = ComponentRegistry.all_categories()
         # Build list
@@ -79,7 +79,7 @@ def register(registry, engine):
         e = get_entity_by_id_or_name(s, entity_id)
         if e is None:
             return {"error": "Entity not found"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}
@@ -128,7 +128,7 @@ def register(registry, engine):
         e = get_entity_by_id_or_name(s, entity_id)
         if e is None:
             return {"error": "Entity not found"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}
@@ -158,7 +158,7 @@ def register(registry, engine):
         e = get_entity_by_id_or_name(s, entity_id)
         if e is None:
             return {"error": "Entity not found"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}
@@ -188,7 +188,7 @@ def register(registry, engine):
         e = get_entity_by_id_or_name(s, entity_id)
         if e is None:
             return {"error": "Entity not found"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}
@@ -231,7 +231,7 @@ def register(registry, engine):
         e = get_entity_by_id_or_name(s, entity_id)
         if e is None:
             return {"error": "Entity not found"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}
@@ -274,7 +274,7 @@ def register(registry, engine):
         e = get_entity_by_id_or_name(s, entity_id)
         if e is None:
             return {"error": "Entity not found"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}
@@ -323,7 +323,7 @@ def register(registry, engine):
         },
     )
     def component_get_properties(component_type=""):
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}

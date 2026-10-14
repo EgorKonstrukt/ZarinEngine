@@ -15,7 +15,7 @@ from core.network.protocol import MessageType
 from core.foundation.logger import Logger
 
 if TYPE_CHECKING:
-    from core.network.collaboration import CollaborationManager
+    from core.network.collab import CollaborationManager
 
 
 class TerrainGraphCollabBridge(QObject):

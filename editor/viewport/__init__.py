@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from editor.viewport.widget import SceneViewport
+from editor.viewport.viewport import SceneViewport
 
 __all__ = ["SceneViewport"]

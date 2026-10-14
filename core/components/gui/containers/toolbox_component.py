@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.components.gui.layout.base_widget_component import GuiWidgetComponentBase
 from core.gui.widgets import ToolBox
 from core.components.inspector_meta import InspectorField, FieldType

@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 import time
 import numpy as np
-from core.ecs.ecs import Component, ComponentRegistry, InstancePrimitive, _get_engine
+from core.ecs import Component, ComponentRegistry, InstancePrimitive, _get_engine
 from core.maths.math3d import Vec3, Vec4
 from core.components.inspector_meta import FieldType, InspectorField, ListElementField
 from core.gizmo.api import GizmoType, GizmoData, LineStyle, _GIZMO_LINE_BUILDERS, _apply_line_style

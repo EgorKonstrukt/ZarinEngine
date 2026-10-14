@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Optional, TYPE_CHECKING
 from core.maths.math3d import Vec3, Mat4, Quat
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity
+    from core.ecs import Entity
     from editor.scene_camera import SceneCamera
 
 FLOAT_T = np.float32

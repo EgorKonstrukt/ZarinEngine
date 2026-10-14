@@ -7,7 +7,7 @@
 from __future__ import annotations
 import time
 from typing import Optional
-from core.ecs.ecs import Component, ComponentRegistry, Entity, Scene
+from core.ecs import Component, ComponentRegistry, Entity, Scene
 from core.components.inspector_meta import FieldType, InspectorField
 
 
@@ -257,7 +257,7 @@ class NetworkManager(Component):
             if prefab_path.endswith(".zpep"):
                 try:
                     from core.ecs.prefab import Prefab
-                    from core.ecs.ecs import ComponentRegistry as CR
+                    from core.ecs import ComponentRegistry as CR
                     prefab = Prefab.load(prefab_path)
                     if prefab is not None:
                         spawned = prefab.instantiate(scene, CR)
@@ -274,7 +274,7 @@ class NetworkManager(Component):
                     pass
             if payload_entity is None:
                 try:
-                    from core.ecs.ecs import Entity as _E
+                    from core.ecs import Entity as _E
                     from core.components.transform import Transform as _T
                     from core.maths.math3d import Vec3 as _V, Quat as _Q
                     tmp = _E("SpawnReq")
@@ -298,7 +298,7 @@ class NetworkManager(Component):
         if prefab_path.endswith(".zpep"):
             try:
                 from core.ecs.prefab import Prefab
-                from core.ecs.ecs import ComponentRegistry
+                from core.ecs import ComponentRegistry
                 prefab = Prefab.load(prefab_path)
                 if prefab is not None:
                     spawned = prefab.instantiate(scene, ComponentRegistry)
@@ -466,7 +466,7 @@ class NetworkManager(Component):
         ent: Optional[Entity] = None
         if entity_data:
             try:
-                from core.ecs.ecs import ComponentRegistry
+                from core.ecs import ComponentRegistry
                 ent = Entity.deserialize(dict(entity_data), ComponentRegistry)
                 if ent.id in scene._entities:
                     return
@@ -525,7 +525,7 @@ class NetworkManager(Component):
         ent: Optional[Entity] = None
         if entity_data:
             try:
-                from core.ecs.ecs import ComponentRegistry
+                from core.ecs import ComponentRegistry
                 ent = Entity.deserialize(dict(entity_data), ComponentRegistry)
                 if ent.id in scene._entities:
                     ent._id = str(scene._generate_id()) if hasattr(scene, "_generate_id") else ent.id

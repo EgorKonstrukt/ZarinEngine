@@ -170,7 +170,7 @@ def on_project_file_double_clicked(mw, path: str):
 
 def on_open_prefab_editor(mw, path: str):
     from core.ecs.prefab import Prefab
-    from core.ecs.ecs import Scene
+    from core.ecs import Scene
     pref = Prefab.load(path)
     if not pref:
         Logger.warning(f"Cannot load prefab: {path}")
@@ -792,7 +792,7 @@ def toggle_play_stop(mw):
         if info and info.scene_snapshot and mw._engine.scene:
             from core.components.rendering.postfx.graphics_effect import GraphicsEffect
             GraphicsEffect.cleanup_registry()
-            from core.ecs.ecs import Scene as S
+            from core.ecs import Scene as S
             from core.engine.engine import Engine as Eng
             restored = S.deserialize(info.scene_snapshot, Eng.instance()._component_registry)
             restored.path = mw._engine.scene.path
@@ -882,7 +882,7 @@ def toggle_pause(mw):
     if info and info.scene_snapshot and mw._engine.scene:
         from core.components.rendering.postfx.graphics_effect import GraphicsEffect
         GraphicsEffect.cleanup_registry()
-        from core.ecs.ecs import Scene as S
+        from core.ecs import Scene as S
         from core.engine.engine import Engine as Eng
         restored = S.deserialize(info.scene_snapshot, Eng.instance()._component_registry)
         restored.path = mw._engine.scene.path
@@ -1132,7 +1132,7 @@ def _do_open_scene(mw, path):
             call_on_main(_err)
             return
         try:
-            from core.ecs.ecs import Scene, ComponentRegistry
+            from core.ecs import Scene, ComponentRegistry
             scene = Scene.deserialize(data, ComponentRegistry)
             scene.embedded_resources = data.get("embedded_resources", {})
             scene.path = path

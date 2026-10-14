@@ -13,7 +13,7 @@ import moderngl
 import numpy as np
 
 from core.components.inspector_meta import FieldType, InspectorField
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.foundation.logger import Logger
 from core.assets.compute_shader import compile_compute_shader
 from core.renderer.shaders import program_with_fallback

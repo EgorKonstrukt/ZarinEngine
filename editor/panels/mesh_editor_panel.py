@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                              QFrame, QCheckBox, QSlider, QApplication)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.foundation.commands import AddComponentCommand, RemoveComponentCommand, get_history
 from core.components.inspector_meta import FieldType, InspectorField
 from core.components.mesh_editor import (ProBuilderMesh, SelectionMode,
@@ -26,7 +26,7 @@ from core.components.rendering.renderers.mesh_filter import MeshFilter
 from core.components.rendering.renderers.mesh_renderer import MeshRenderer
 from core.foundation.logger import Logger
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity
+    from core.ecs import Entity
     from core.engine.engine import Engine
 from core.config.editor_scale import scale, scale_xy
 
@@ -325,7 +325,7 @@ class MeshEditorPanel(QDockWidget):
         detail_norm = max(4, self._detail_slider.value() * 32 // 50)
         entity = self._get_selected_entity()
         if entity is None:
-            from core.ecs.ecs import Entity as EcsEntity
+            from core.ecs import Entity as EcsEntity
             scene = self._engine.scene
             if not scene:
                 return

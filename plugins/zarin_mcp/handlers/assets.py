@@ -265,7 +265,7 @@ def register(registry, engine):
         scene = engine.scene
         if scene is None:
             return {"error": "No scene loaded"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         mat_cls = ComponentRegistry.get("Material")
         if mat_cls is None:
             return {"materials": [], "message": "No Material component registered"}
@@ -295,7 +295,7 @@ def register(registry, engine):
         scene = engine.scene
         if scene is None:
             return {"error": "No scene loaded"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         e = scene.get_entity(entity_id)
         if e is None:
             return {"error": "Entity not found"}

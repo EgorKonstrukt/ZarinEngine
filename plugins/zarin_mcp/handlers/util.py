@@ -58,7 +58,7 @@ def resolve_path(engine, path):
 
 
 def component_inspector_fields(component_type):
-    from core.ecs.ecs import ComponentRegistry
+    from core.ecs import ComponentRegistry
     cls = ComponentRegistry.get(component_type)
     if cls is None:
         return {}

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import html
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import InspectorField, FieldType
 
 

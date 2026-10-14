@@ -425,7 +425,7 @@ class TerminalPanel(QDockWidget):
         except ImportError:
             pass
         try:
-            from core.ecs.ecs import Entity, Component
+            from core.ecs import Entity, Component
             ns["Entity"] = Entity
             ns["Component"] = Component
         except ImportError:

@@ -49,7 +49,7 @@ from editor.panels.console_panel import ConsolePanel
 from editor.panels.profiler_panel import ProfilerPanel
 from editor.panels.plugin_manager_panel import PluginManagerPanel
 from editor.panels.package_manager_panel import PackageManagerPanel
-from editor.panels.project_panel import ProjectPanel
+from editor.panels.project import ProjectPanel
 
 from editor.panels.play_window import PlayDockPanel
 from editor.panels.terminal_panel import TerminalPanel

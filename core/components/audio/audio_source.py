@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from enum import Enum
 from typing import Callable
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.maths.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 from core.audio.audio_system import AudioSystem, AudioSourceManager
@@ -374,7 +374,7 @@ class AudioSource(Component):
         lines = self.gizmo_lines()
         if not lines:
             return []
-        from core.ecs.ecs import GizmoPrimitive, GizmoStyle
+        from core.ecs import GizmoPrimitive, GizmoStyle
         inner = GizmoPrimitive.from_lines(lines, GizmoStyle(pulsating=True, glow=True, pulse_speed=1.5, pulse_min_alpha=0.4))
         return [inner]
 

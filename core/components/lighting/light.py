@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 import math
 from typing import Optional
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Vec3
 
@@ -371,7 +371,7 @@ class Light(Component):
         tr = self.transform
         if not tr:
             return []
-        from core.ecs.ecs import GizmoPrimitive
+        from core.ecs import GizmoPrimitive
         pos = tr.position
         fwd = tr.forward
         up = tr.up
@@ -536,7 +536,7 @@ class PointLight(Light):
         tr = self.transform
         if not tr:
             return []
-        from core.ecs.ecs import GizmoPrimitive
+        from core.ecs import GizmoPrimitive
         pos = tr.position
         fwd = tr.forward
         up = tr.up
@@ -624,7 +624,7 @@ class SpotLight(Light):
         tr = self.transform
         if not tr:
             return []
-        from core.ecs.ecs import GizmoPrimitive
+        from core.ecs import GizmoPrimitive
         pos = tr.position
         fwd = tr.forward
         up = tr.up
@@ -719,7 +719,7 @@ class AreaLight(Light):
         tr = self.transform
         if not tr:
             return []
-        from core.ecs.ecs import GizmoPrimitive
+        from core.ecs import GizmoPrimitive
         pos = tr.position
         fwd = tr.forward
         up = tr.up

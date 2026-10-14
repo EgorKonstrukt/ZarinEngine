@@ -10,7 +10,7 @@ import os
 import time
 import numpy as np
 import moderngl
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Mat4, Vec3
 from core.components.rendering.environment.sky_ibl import get_sky_ibl

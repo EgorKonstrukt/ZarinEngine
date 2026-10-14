@@ -19,7 +19,7 @@ for _finder, _name, _ispkg in pkgutil.walk_packages(
         continue
     importlib.import_module(_name)
 
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.components.rendering.cameras.camera import CameraProjection
 from core.components.lighting.light import LightType, LightAreaType
 

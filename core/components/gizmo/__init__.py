@@ -13,6 +13,6 @@ for _finder, _name, _ispkg in pkgutil.walk_packages(path=[_package_dir], prefix=
     if _leaf.startswith("_"):
         continue
     importlib.import_module(_name)
-from core.ecs.ecs import _GIZMO_PASS_ORDER
+from core.ecs import _GIZMO_PASS_ORDER
 if "gizmo" not in _GIZMO_PASS_ORDER:
     _GIZMO_PASS_ORDER.append("gizmo")

@@ -13,7 +13,7 @@ from typing import Optional, Any, TYPE_CHECKING
 from core.foundation.logger import Logger
 
 if TYPE_CHECKING:
-    from core.ecs.ecs import Scene, ComponentRegistry
+    from core.ecs import Scene, ComponentRegistry
 
 
 class FrameSnapshot:
@@ -222,7 +222,7 @@ class SnapshotRecorder:
         if snap is None:
             return None
         try:
-            from core.ecs.ecs import Scene
+            from core.ecs import Scene
             scene = Scene.deserialize(snap.data, registry)
             scene.mark_dirty()
             return scene

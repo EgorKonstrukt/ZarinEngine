@@ -251,7 +251,7 @@ def main():
     splash.advance("Loading user plugins...")
     engine.plugin_manager.load_directory("plugins/user")
     splash.advance("Setting up collaboration...")
-    from core.network.collaboration import CollaborationManager
+    from core.network.collab import CollaborationManager
     engine.collab_manager = CollaborationManager(engine)
     splash.advance("Building editor window...")
     from editor.main_window import EditorMainWindow

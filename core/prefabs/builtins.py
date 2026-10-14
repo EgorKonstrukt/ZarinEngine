@@ -10,7 +10,7 @@ import os
 
 def _make_spec(entity_name: str, comp_specs: list, builder_name: str = ""):
     def build(scene):
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         entity = scene.create_entity(entity_name)
         for spec in comp_specs:
             cls = ComponentRegistry.get(spec.get("type", ""))

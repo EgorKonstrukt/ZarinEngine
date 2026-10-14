@@ -65,7 +65,7 @@ def resolve_physics_material(comp) -> dict:
     }
 
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity
+    from core.ecs import Entity
 
 _PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 

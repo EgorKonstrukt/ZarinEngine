@@ -27,7 +27,7 @@ from physics_solvers.registry import (
 )
 
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity
+    from core.ecs import Entity
 
 _RAD = math.radians
 _DEG = math.degrees

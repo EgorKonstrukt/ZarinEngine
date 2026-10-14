@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import random
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.maths.math3d import Vec3, Quat
 from core.components.inspector_meta import FieldType, InspectorField, ListElementField
 

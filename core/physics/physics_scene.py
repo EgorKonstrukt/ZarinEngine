@@ -12,7 +12,7 @@ from core.foundation.logger import Logger
 from core.physics.shape_utils import find_shape_info, find_shapes_info, make_shape_key, make_shapes_key, partition_compound_shapes
 
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity, Scene
+    from core.ecs import Entity, Scene
     from core.physics.physics_solver import IPhysicsSolver
 
 

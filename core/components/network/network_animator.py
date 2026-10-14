@@ -7,7 +7,7 @@
 from __future__ import annotations
 import time
 from enum import Enum
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 
 

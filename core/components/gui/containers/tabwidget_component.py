@@ -7,7 +7,7 @@
 from __future__ import annotations
 from typing import Optional
 from PyQt6.QtWidgets import QWidget, QTabWidget
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.components.gui.layout.base_widget_component import GuiWidgetComponentBase
 from core.gui.widgets import TabWidget
 from core.components.inspector_meta import InspectorField, FieldType

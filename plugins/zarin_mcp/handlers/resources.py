@@ -202,7 +202,7 @@ def register(registry, engine):
         scene = engine.scene
         if scene is None:
             return {"error": "No scene loaded"}
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(component_type)
         if cls is None:
             return {"error": f"Unknown component: {component_type}"}

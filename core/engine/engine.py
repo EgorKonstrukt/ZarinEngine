@@ -13,7 +13,7 @@ import shutil
 import threading
 from collections import deque as _deque
 from typing import Optional, Any, TYPE_CHECKING
-from core.ecs.ecs import Scene, ComponentRegistry
+from core.ecs import Scene, ComponentRegistry
 from core.foundation.plugin_manager import PluginManager
 from core.foundation.logger import Logger
 from core.config.config import get_global_config

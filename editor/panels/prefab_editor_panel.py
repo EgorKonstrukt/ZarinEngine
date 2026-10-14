@@ -17,7 +17,7 @@ from core.maths.math3d import Vec3
 from core.foundation.logger import Logger
 if TYPE_CHECKING:
     from core.engine.engine import Engine
-    from core.ecs.ecs import Scene
+    from core.ecs import Scene
 from core.config.editor_scale import scale, scale_xy
 
 class PrefabViewport(QOpenGLWidget):
@@ -206,7 +206,7 @@ class PrefabEditorPanel(QDockWidget):
 
     def open_prefab(self, path: str):
         from core.ecs.prefab import Prefab
-        from core.ecs.ecs import Scene, ComponentRegistry
+        from core.ecs import Scene, ComponentRegistry
         pref = Prefab.load(path)
         if not pref:
             Logger.warning(f"Cannot load prefab: {path}")

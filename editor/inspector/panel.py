@@ -27,11 +27,11 @@ from core.components.animation.animator_controller import (
 from editor.inspector.constants import (_FUSION_ACCENT_GREEN, _FUSION_ACCENT_RED, _FUSION_ACCENT_ORANGE,
     _FUSION_CARD_RADIUS, _FUSION_INPUT_RADIUS, _accent)
 from editor.inspector.helpers import make_resource_picker, make_asset_picker
-from editor.inspector.component_widget import ComponentWidget
+from editor.inspector.cwidget import ComponentWidget
 from editor.inspector.component_picker import ComponentPickerDialog
 
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity, Scene
+    from core.ecs import Entity, Scene
     from core.engine.engine import Engine
 
 
@@ -1685,7 +1685,7 @@ class InspectorPanel(QDockWidget):
 
     def _remove_component(self, comp_name: str, comp_key: str = ""):
         if not self._entity: return
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         from core.foundation.commands import RemoveComponentCommand, CompoundCommand
         cls = ComponentRegistry.get(comp_name)
         if not cls:
@@ -1780,7 +1780,7 @@ class InspectorPanel(QDockWidget):
         collab = self._engine.collab_manager if hasattr(self._engine, 'collab_manager') else None
         if not collab or not collab.connected:
             return
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(comp_name)
         if not cls:
             return
@@ -1808,7 +1808,7 @@ class InspectorPanel(QDockWidget):
 
     def _add_component(self, comp_name: str):
         if not self._entity: return
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         from core.foundation.commands import AddComponentCommand, CompoundCommand
         cls = ComponentRegistry.get(comp_name)
         if not cls:
@@ -1845,7 +1845,7 @@ class InspectorPanel(QDockWidget):
         collab = self._engine.collab_manager if hasattr(self._engine, 'collab_manager') else None
         if not collab or not collab.connected:
             return
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(comp_name)
         if not cls:
             return

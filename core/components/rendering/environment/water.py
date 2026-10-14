@@ -9,7 +9,7 @@ import time
 import math
 import numpy as np
 import moderngl
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField, ListElementField
 from core.maths.math3d import Mat4, Vec3
 from core.components.lighting.light import Light

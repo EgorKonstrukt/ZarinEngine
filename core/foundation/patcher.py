@@ -139,7 +139,7 @@ def patch_component(component_name: str, method_patches: Optional[dict[str, Call
                     extra_inspector_fields: Optional[list] = None,
                     filter_extensions: Optional[dict[str, str]] = None,
                     wraps: Optional[dict[str, dict]] = None) -> ComponentPatcher:
-    from core.ecs.ecs import ComponentRegistry
+    from core.ecs import ComponentRegistry
     comp_cls = ComponentRegistry.get(component_name)
     if comp_cls is None:
         Logger.warning(f"[Patcher] Unknown component '{component_name}'")
@@ -201,7 +201,7 @@ class PatchTracker:
         return patcher
 
     def add_inspector_field(self, component_name: str, field):
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         comp_cls = ComponentRegistry.get(component_name)
         if comp_cls is None:
             Logger.warning(f"[PatchTracker] Unknown component '{component_name}'")
@@ -212,7 +212,7 @@ class PatchTracker:
         return patcher
 
     def extend_file_filter(self, component_name: str, field_name: str, extra_filter: str):
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         comp_cls = ComponentRegistry.get(component_name)
         if comp_cls is None:
             Logger.warning(f"[PatchTracker] Unknown component '{component_name}'")
@@ -232,7 +232,7 @@ class PatchTracker:
 
     def register_component(self, comp_cls: type):
         def unregister():
-            from core.ecs.ecs import ComponentRegistry
+            from core.ecs import ComponentRegistry
             name = getattr(comp_cls, "__name__", None)
             if name:
                 ComponentRegistry._registry.pop(name, None)

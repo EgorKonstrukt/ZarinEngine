@@ -8,7 +8,7 @@ from __future__ import annotations
 import inspect
 from enum import Enum
 from typing import Optional, Any, get_type_hints, get_origin, get_args
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.foundation.logger import Logger
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Vec2, Vec3, Vec4

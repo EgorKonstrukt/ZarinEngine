@@ -13,7 +13,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, Qt
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QBrush, QIcon, QAction
 from PyQt6.QtWidgets import QTabBar, QMessageBox, QMenu
 
-from core.ecs.ecs import Scene
+from core.ecs import Scene
 from core.foundation.logger import Logger
 from core.foundation.commands import CommandHistory, set_history_provider
 from core.maths.math3d import Vec3
@@ -705,7 +705,7 @@ class SceneTabManager(QObject):
 
             if self._engine.play_mode:
                 self._engine.stop_play()
-                from core.ecs.ecs import Scene as S
+                from core.ecs import Scene as S
                 from core.engine.engine import Engine as Eng
                 active_info = self._tabs.get(self._active_tab)
                 if active_info and active_info.scene_snapshot:
@@ -1120,7 +1120,7 @@ class SceneTabManager(QObject):
                     pass
                 if info and info.scene_snapshot:
                     try:
-                        from core.ecs.ecs import Scene as S
+                        from core.ecs import Scene as S
                         from core.engine.engine import Engine as Eng
                         restored = S.deserialize(info.scene_snapshot, Eng.instance()._component_registry)
                         restored.path = self._engine.scene.path if self._engine.scene else info.path

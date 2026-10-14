@@ -10,7 +10,7 @@ import math
 import numpy as np
 from core.maths.math3d import Mat4, Vec3
 from core.config.config import get_global_config
-from core.ecs.ecs import _GIZMO_PASSES, _GIZMO_PASS_ORDER, Component
+from core.ecs import _GIZMO_PASSES, _GIZMO_PASS_ORDER, Component
 from core.gizmo.pipeline import GizmoPipeline
 from core.assets.font_atlas import request_font_atlas, get_default_font_path as get_def_font
 
@@ -20,7 +20,7 @@ import time
 import numpy as np
 from core.maths.math3d import Mat4, Vec3
 from core.config.config import get_global_config
-from core.ecs.ecs import _GIZMO_PASSES, _GIZMO_PASS_ORDER, Component
+from core.ecs import _GIZMO_PASSES, _GIZMO_PASS_ORDER, Component
 from core.gizmo.pipeline import GizmoPipeline
 from core.assets.font_atlas import request_font_atlas, get_default_font_path as get_def_font
 

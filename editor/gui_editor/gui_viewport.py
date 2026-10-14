@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QDockWidget,
                              QSplitter, QFileDialog, QMessageBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from core.gui import GuiCanvas, GuiApi
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.gui.widgets import (
     GuiWidget, Panel, Button, Label, Slider, TextInput, Image,
     Toggle, ProgressBar, Dropdown, ScrollPanel, HtmlView,

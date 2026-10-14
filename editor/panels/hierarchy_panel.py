@@ -17,7 +17,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
 from PyQt6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
 from editor.inspector.helpers import _flash_overlay
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity, Scene
+    from core.ecs import Entity, Scene
     from core.engine.engine import Engine
 _ENTITY_MIME = "application/x-zpe-entity"
 _COMPONENT_MIME = "application/x-zpe-component"
@@ -831,7 +831,7 @@ class HierarchyPanel(QDockWidget):
         comp_data = data.get("component_data", {})
         if not comp_type_name or not comp_data:
             return
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         cls = ComponentRegistry.get(comp_type_name)
         if not cls:
             return
@@ -1092,7 +1092,7 @@ class HierarchyPanel(QDockWidget):
             if build_name == "build_" + str(comp_cls_name):
                 return self._create_system_prefab(entry.menu_path, None)
         from core.foundation.commands import CreateEntityCommand, get_history
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         from core.components import Transform
         cls = ComponentRegistry.get(comp_cls_name)
         if not cls:

@@ -9,7 +9,7 @@ import os
 import numpy as np
 import moderngl
 from typing import Optional
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.foundation.logger import Logger
 

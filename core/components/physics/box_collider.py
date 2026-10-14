@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import math
-from core.ecs.ecs import Component, ComponentRegistry, InstancePrimitive
+from core.ecs import Component, ComponentRegistry, InstancePrimitive
 from core.maths.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 @ComponentRegistry.register

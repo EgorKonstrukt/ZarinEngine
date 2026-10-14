@@ -7,7 +7,7 @@
 from __future__ import annotations
 import math
 from typing import Optional
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.maths.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 from core.navigation.nav_world import NavWorld

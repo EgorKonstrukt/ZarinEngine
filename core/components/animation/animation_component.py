@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Optional
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.animation.animation_clip import AnimationClip
 
 

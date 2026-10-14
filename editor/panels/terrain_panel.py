@@ -21,7 +21,7 @@ from core.components.physics.terrain_collider import TerrainCollider
 from core.components.transform import Transform
 from core.foundation.logger import Logger
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity
+    from core.ecs import Entity
     from core.engine.engine import Engine
 
 

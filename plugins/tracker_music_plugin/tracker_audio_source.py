@@ -10,7 +10,7 @@ import os
 
 from core.components.audio.audio_source import AudioSource
 from core.components.inspector_meta import FieldType, InspectorField
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.foundation.logger import Logger
 from core.foundation.plugin_manager import _zarin_user_dir
 from .renderer import TrackerRenderService
@@ -38,7 +38,7 @@ def render_to_wav(module_path: str, quality: str = "software") -> str | None:
 
 
 def patch_audio_source_play():
-    from core.ecs.ecs import ComponentRegistry
+    from core.ecs import ComponentRegistry
     comp_cls = ComponentRegistry.get("AudioSource")
     if comp_cls is None:
         return None

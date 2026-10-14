@@ -16,7 +16,7 @@ from core.components.physics.joint import Joint, JointType
 from core.components.physics.buoyancy import Buoyancy
 from core.components.physics.soft_body import SoftBody, SoftBendMode, SoftPinMode
 from core.components.physics.phys_bone_collider import PhysBoneCollider, PhysBoneColliderType, PhysBoneColliderDirection
-from core.components.physics.phys_bone import PhysBone, PhysBoneIntegration, PhysBoneMultiChild, PhysBoneImmobileType, PhysBoneLimitType
+from core.components.physics.physbone import PhysBone, PhysBoneIntegration, PhysBoneMultiChild, PhysBoneImmobileType, PhysBoneLimitType
 
 __all__ = [
     "Rigidbody", "BoxCollider", "SphereCollider", "CapsuleCollider",

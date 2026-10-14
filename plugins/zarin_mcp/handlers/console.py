@@ -89,7 +89,7 @@ def register(registry, engine):
             else:
                 loc["engine"] = engine
                 loc["scene"] = engine.scene if engine else None
-                import core.ecs.ecs as ecs
+                import core.ecs as ecs
                 loc["Entity"] = ecs.Entity
                 loc["Component"] = ecs.Component
                 loc["ComponentRegistry"] = ecs.ComponentRegistry

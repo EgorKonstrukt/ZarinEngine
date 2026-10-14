@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Vec3, Quat
 
@@ -184,7 +184,7 @@ class XRController(Component):
         if self.entity is None:
             return
         try:
-            from core.ecs.ecs import Entity
+            from core.ecs import Entity
             if self._model_entity is not None and self._model_entity in self.entity.children:
                 self._model_entity.set_parent(None, preserve_world=False)
                 self._model_entity = None

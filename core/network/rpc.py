@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Callable
-from core.ecs.ecs import Entity
+from core.ecs import Entity
 
 
 _RPC_REGISTRY: dict[str, Callable] = {}

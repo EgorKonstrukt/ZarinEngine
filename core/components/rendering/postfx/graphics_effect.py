@@ -7,7 +7,7 @@
 from __future__ import annotations
 import moderngl
 from typing import Optional
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.maths.math3d import Mat4, Vec3
 
 

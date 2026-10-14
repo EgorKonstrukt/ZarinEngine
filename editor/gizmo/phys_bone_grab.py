@@ -37,7 +37,7 @@ class PhysBoneGrabGizmo:
         if scene is None:
             return
         try:
-            from core.components.physics.phys_bone import PhysBone
+            from core.components.physics.physbone import PhysBone
         except ImportError:
             return
         try:

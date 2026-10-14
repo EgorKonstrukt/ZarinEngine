@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Optional, Any, TYPE_CHECKING
 from PyQt6.QtWidgets import QWidget, QLabel, QMdiArea, QMdiSubWindow
 from PyQt6.QtCore import Qt
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.gui.widgets import (
     get_widget_base_style, get_widget_type_for_object, get_widget_extra_rules,
 )
@@ -16,7 +16,7 @@ from core.components.inspector_meta import InspectorField, FieldType
 from abc import abstractmethod
 
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity
+    from core.ecs import Entity
 
 
 class GuiWidgetComponentBase(Component):

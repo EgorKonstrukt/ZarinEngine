@@ -333,7 +333,7 @@ def _read_state_data():
 
 
 def _load_scene_file(eng, path: str):
-    from core.ecs.ecs import Scene, ComponentRegistry
+    from core.ecs import Scene, ComponentRegistry
     from core.ecs.embedded_resources import extract_embedded_resources
     was_enabled = gc.isenabled()
     if was_enabled:
@@ -374,7 +374,7 @@ def _migrate_snapshot_to_pkl(snapshot_path: str, data: dict) -> str:
 
 
 def _load_scene_snapshot(eng, snapshot_path: str, scene_path: str, entry_name: str):
-    from core.ecs.ecs import Scene, ComponentRegistry
+    from core.ecs import Scene, ComponentRegistry
     from core.ecs.embedded_resources import extract_embedded_resources
     data = _read_snapshot_file(snapshot_path)
     if data is None:

@@ -614,7 +614,7 @@ class PluginBase:
         if not isinstance(comp_cls, type):
             Logger.warning(f"[{self.NAME}] register_component expects a class, got {type(comp_cls).__name__}")
             return
-        from core.ecs.ecs import Component, ComponentRegistry
+        from core.ecs import Component, ComponentRegistry
         if not issubclass(comp_cls, Component):
             Logger.warning(f"[{self.NAME}] register_component: {comp_cls.__name__} must inherit from Component")
             return
@@ -1282,7 +1282,7 @@ class PluginManager:
             for attr in dir(mod):
                 obj = getattr(mod, attr)
                 if isinstance(obj, type) and obj.__module__ == mod.__name__:
-                    from core.ecs.ecs import Component, ComponentRegistry
+                    from core.ecs import Component, ComponentRegistry
                     if issubclass(obj, Component):
                         ComponentRegistry.register(obj)
                         registered.append(obj.__name__)

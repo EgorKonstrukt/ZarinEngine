@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import moderngl
 from typing import Optional
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.components.rendering.postfx.graphics_effect import GraphicsEffect
 from core.components.lighting.light import Light, LightType
 from core.components.lighting.projector import Projector

@@ -7,7 +7,7 @@
 from __future__ import annotations
 from typing import Optional, Callable, TYPE_CHECKING
 if TYPE_CHECKING:
-    from core.ecs.ecs import Entity, Scene
+    from core.ecs import Entity, Scene
 class Command:
     def execute(self): raise NotImplementedError
     def undo(self): raise NotImplementedError
@@ -44,7 +44,7 @@ class CreateEntityCommand(Command):
         self._entity_id: Optional[str] = None
         self._entity_data: Optional[dict] = None
     def execute(self):
-        from core.ecs.ecs import Entity
+        from core.ecs import Entity
         e = self._scene.create_entity(self._name)
         self._entity_id = e.id
     def undo(self):
@@ -56,7 +56,7 @@ class CreateEntityCommand(Command):
     def redo(self):
         if self._entity_data is not None:
             from core.engine.engine import Engine
-            from core.ecs.ecs import Entity
+            from core.ecs import Entity
             reg = Engine.instance()._component_registry
             e = Entity.deserialize(self._entity_data, reg)
             self._scene.add_entity(e)
@@ -78,7 +78,7 @@ class DeleteEntityCommand(Command):
     def undo(self):
         if self._entity_data:
             from core.engine.engine import Engine
-            from core.ecs.ecs import Entity
+            from core.ecs import Entity
             reg = Engine.instance()._component_registry
             e = Entity.deserialize(self._entity_data, reg)
             self._scene.add_entity(e)
@@ -223,7 +223,7 @@ class CreateSystemPrefabCommand(Command):
     def redo(self):
         if self._spawned_data:
             from core.engine.engine import Engine
-            from core.ecs.ecs import Entity
+            from core.ecs import Entity
             try:
                 reg = Engine.instance()._component_registry
             except Exception:

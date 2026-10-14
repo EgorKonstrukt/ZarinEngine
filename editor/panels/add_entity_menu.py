@@ -113,7 +113,7 @@ _icon_cache: dict[str, object] = {}
 def entry_icon(entry) -> object | None:
     try:
         from PyQt6.QtGui import QIcon
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         from editor.inspector.helpers import get_component_icon_pixmap
         comp_name = str(getattr(entry, "icon", "") or "").strip()
         if not comp_name:

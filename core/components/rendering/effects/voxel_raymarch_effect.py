@@ -9,7 +9,7 @@ import os
 import numpy as np
 import moderngl
 from typing import Optional, Tuple
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.components.rendering.postfx.graphics_effect import GraphicsEffect
 from core.components.rendering.effects.voxel_cpu import compute_voxel_instances

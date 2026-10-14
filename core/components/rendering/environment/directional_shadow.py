@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from core.ecs.ecs import Component, ComponentRegistry
+from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 
 _DEFAULT_SPLITS_FOR = {2: [0.5], 3: [0.2, 0.6], 4: [0.05, 0.13, 0.3]}

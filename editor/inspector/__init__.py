@@ -16,7 +16,7 @@ from editor.inspector.helpers import (
     make_vec2_slider_row, make_vec3_slider_row,
     get_component_source_path, get_property_line_number, collapse_value,
 )
-from editor.inspector.component_widget import ComponentWidget
+from editor.inspector.cwidget import ComponentWidget
 from editor.inspector.entity_property_picker import EntityPropertyPicker, EntityPropertyDialog, EntityPropertyTree
 from editor.inspector.component_picker import ComponentPickerDialog
 from editor.inspector.panel import InspectorPanel

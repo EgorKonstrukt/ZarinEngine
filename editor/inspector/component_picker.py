@@ -145,7 +145,7 @@ class ComponentPickerDialog(QDialog):
         layout.addLayout(btn_row)
 
     def _load_data(self):
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         from core.engine.engine import Engine
         all_reg = ComponentRegistry.all()
         self._all_components = []

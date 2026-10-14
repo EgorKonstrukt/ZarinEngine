@@ -364,7 +364,7 @@ def _open_asset(mw, path: str) -> None:
             except Exception:
                 pass
         try:
-            from editor.panels.project_panel import open_file_with_plugin
+            from core.foundation.plugin_manager import open_file_with_plugin
             if open_file_with_plugin(getattr(mw, '_engine', None), path):
                 return
         except Exception:

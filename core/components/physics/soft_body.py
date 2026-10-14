@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 import math
 import numpy as np
-from core.ecs.ecs import Component, ComponentRegistry, GizmoPrimitive
+from core.ecs import Component, ComponentRegistry, GizmoPrimitive
 from core.components.inspector_meta import FieldType, InspectorField
 
 

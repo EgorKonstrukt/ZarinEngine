@@ -7,7 +7,7 @@
 from __future__ import annotations
 import math
 import numpy as np
-from core.ecs.ecs import Component, ComponentRegistry, InstancePrimitive
+from core.ecs import Component, ComponentRegistry, InstancePrimitive
 from core.maths.math3d import Vec2, Vec3
 from core.components.inspector_meta import FieldType, InspectorField
 @ComponentRegistry.register

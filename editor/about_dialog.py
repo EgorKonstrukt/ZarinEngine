@@ -392,7 +392,7 @@ def _collect_system_info(parent=None) -> str:
     lines.append("")
 
     try:
-        from core.ecs.ecs import ComponentRegistry
+        from core.ecs import ComponentRegistry
         registered = list(ComponentRegistry._registry.keys())
         lines.append("[ECS Components]")
         lines.append(f"  Registered:    {len(registered)}")

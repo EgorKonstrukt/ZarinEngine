@@ -298,7 +298,7 @@ class EditorMainWindow(QMainWindow):
             print(f"[COLLAB] _on_remote_scene_open called: name={name}, path={path}, has_data={scene_data is not None}", flush=True)
             if scene_data is None:
                 return
-            from core.ecs.ecs import Scene, ComponentRegistry
+            from core.ecs import Scene, ComponentRegistry
             scene = Scene.deserialize(scene_data, ComponentRegistry)
             scene.mark_dirty()
             if path:

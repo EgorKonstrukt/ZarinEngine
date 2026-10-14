@@ -12,7 +12,7 @@ import uuid
 import copy
 from enum import Enum
 from typing import Optional, Any
-from core.ecs.ecs import Scene, Entity, ComponentRegistry
+from core.ecs import Scene, Entity, ComponentRegistry
 from core.foundation.logger import Logger
 from core.foundation.progress import task_complete, task_start
 

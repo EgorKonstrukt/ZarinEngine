@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Optional
 from PyQt6.QtWidgets import QWidget, QMdiArea, QMdiSubWindow, QTabWidget
 from PyQt6.QtCore import Qt
-from core.ecs.ecs import ComponentRegistry
+from core.ecs import ComponentRegistry
 from core.components.gui.layout.base_widget_component import GuiWidgetComponentBase
 from core.gui.widgets import MdiArea, ANCHOR_STRETCH_ALL
 from core.components.inspector_meta import InspectorField, FieldType

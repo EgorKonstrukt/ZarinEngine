@@ -13,7 +13,7 @@ import numpy as np
 import os
 from typing import Optional
 from core.maths.math3d import Vec3
-from core.ecs.ecs import Component, ComponentRegistry, GizmoPrimitive
+from core.ecs import Component, ComponentRegistry, GizmoPrimitive
 from core.components.inspector_meta import FieldType, InspectorField
 
 
