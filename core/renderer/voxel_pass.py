@@ -11,8 +11,8 @@ import os
 import numpy as np
 import moderngl
 from core.foundation.logger import Logger
-from core.renderer.precision import apply_precision
-from core.renderer.shaders import program_with_fallback
+from core.renderer.prec import apply_precision
+from core.renderer.shaderp import program_with_fallback
 
 
 class VoxelPassMixin:

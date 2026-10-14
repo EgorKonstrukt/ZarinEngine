@@ -11,7 +11,7 @@ import moderngl
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Mat4, Vec3
-from core.components.lighting.light import Light
+from core.components.lighting.lightp import Light
 
 
 @ComponentRegistry.register

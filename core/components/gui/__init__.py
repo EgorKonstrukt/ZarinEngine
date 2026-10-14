@@ -9,7 +9,7 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.components.gui.layout.base_widget_component import GuiWidgetComponentBase
+    from core.components.gui.layout.basewidget import GuiWidgetComponentBase
     from core.components.gui.containers.panel_component import PanelComponent
     from core.components.gui.controls.label_component import LabelComponent
     from core.components.gui.controls.button_component import ButtonComponent

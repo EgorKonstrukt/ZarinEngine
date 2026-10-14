@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import numpy as np; import moderngl
-from core.maths.math3d import Mat4; from core.components.lighting.light import LightType
+from core.maths.math3d import Mat4; from core.components.lighting.lightp import LightType
 from core.renderer.origin import origin_from_view, relativize_chunk_f32, relativize_model_f32, shift_vp_bytes
 from .bind import _HAS_CYTHON, _mat4_inv_fast; from .mathx import _tr_pos_xyz, _tr_fwd_xyz, MAX_POINT_SHADOWS, MAX_SPOT_SHADOWS
 class PassesMixin:

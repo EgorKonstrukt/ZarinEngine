@@ -24,8 +24,8 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
-    from tools.mingw import env_with_mingw as _env_with_mingw
-    from tools.mingw import nuitka_flags as _nuitka_flags
+    from tools.mingwpm import env_with_mingw as _env_with_mingw
+    from tools.mingwpm import nuitka_flags as _nuitka_flags
 except ImportError:
     _env_with_mingw = None
     _nuitka_flags = None

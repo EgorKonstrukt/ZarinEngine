@@ -131,7 +131,7 @@ def create_system_prefab(menu_path: str, scene, parent=None) -> list:
         return spawned
     if entry.prefab is not None:
         try:
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             registry = Engine.instance()._component_registry
         except Exception:
             registry = None
@@ -142,7 +142,7 @@ def create_system_prefab(menu_path: str, scene, parent=None) -> list:
         except Exception:
             try:
                 spawned = entry.prefab.instantiate(scene, registry, parent)
-                from core.ecs.prefab import Prefab as _Prefab
+                from core.ecs.prefabp import Prefab as _Prefab
                 for root in spawned:
                     _Prefab.unpack(root)
             except Exception:

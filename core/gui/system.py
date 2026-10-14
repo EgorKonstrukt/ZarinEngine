@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
-from core.gui.canvas import GuiCanvas
+from core.gui.canvasp import GuiCanvas
 from core.gui.api import GuiApi
 
 if TYPE_CHECKING:

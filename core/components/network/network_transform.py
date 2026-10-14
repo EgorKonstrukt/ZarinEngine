@@ -75,7 +75,7 @@ class NetworkTransform(Component):
             return False
         if self.authority == TransformAuthority.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 return get_transport().is_server
             except Exception:
                 return False
@@ -134,7 +134,7 @@ class NetworkTransform(Component):
         if self.sync_scale:
             payload["s"] = scale.to_list()
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             get_transport().broadcast(MessageType.NET_TRANSFORM, payload)
         except Exception:
@@ -155,7 +155,7 @@ class NetworkTransform(Component):
             return
         if ident is not None and self.authority == TransformAuthority.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 if get_transport().is_server:
                     return
             except Exception:

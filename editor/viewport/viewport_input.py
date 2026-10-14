@@ -31,7 +31,7 @@ class ViewportInputMixin:
         qt_btn = event.button()
         if qt_btn == Qt.MouseButton.LeftButton and self._stats_enabled:
             try:
-                from core.renderer.render_stats import stats_header_at, toggle_stats_section
+                from core.renderer.stats import stats_header_at, toggle_stats_section
                 hdr = stats_header_at(x, y)
             except Exception:
                 hdr = None
@@ -87,7 +87,7 @@ class ViewportInputMixin:
                     self._extrude_on_ctrl_press()
                 self._store_multi_initial()
                 return
-            from editor.viewport.picking import pick_entity
+            from editor.viewport.pick import pick_entity
             picked = pick_entity(self, lx, ly)
             if shift or ctrl:
                 if picked:
@@ -235,7 +235,7 @@ class ViewportInputMixin:
             x1, y1 = self._area_start
             x2, y2 = self._area_end
             if abs(x2 - x1) > 3 or abs(y2 - y1) > 3:
-                from editor.viewport.picking import pick_entities_in_rect
+                from editor.viewport.pick import pick_entities_in_rect
                 selected = pick_entities_in_rect(self, min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
                 if selected:
                     self._selected_entities = selected
@@ -291,7 +291,7 @@ class ViewportInputMixin:
                     vk = nvk
             if vk is not None:
                 self._im.feed_key(vk, True)
-            from core.input.input_system import KeyCode
+            from core.input.inpsys import KeyCode
             if mods & Qt.KeyboardModifier.ShiftModifier:
                 self._im.feed_key(KeyCode.LEFT_SHIFT, True)
             if mods & Qt.KeyboardModifier.ControlModifier:
@@ -310,7 +310,7 @@ class ViewportInputMixin:
                     vk = nvk
             if vk is not None:
                 self._im.feed_key(vk, False)
-            from core.input.input_system import KeyCode
+            from core.input.inpsys import KeyCode
             if not (mods & Qt.KeyboardModifier.ShiftModifier):
                 self._im.feed_key(KeyCode.LEFT_SHIFT, False)
             if not (mods & Qt.KeyboardModifier.ControlModifier):
@@ -325,7 +325,7 @@ class ViewportInputMixin:
         return mapping.get(qt_key)
 
     def contextMenuEvent(self, event):
-        from core.gizmo.gizmo import GizmoAxis
+        from core.gizmo.core import GizmoAxis
         if self._gizmo._hover_axis != GizmoAxis.NONE and self._gizmo._is_multigizmo_active():
             from PyQt6.QtGui import QAction
             from PyQt6.QtWidgets import QMenu
@@ -385,10 +385,10 @@ class ViewportInputMixin:
     def _drop_world_pos(self, sx: int, sy: int):
         from editor.viewport.projection import screen_to_ray
         ray_origin, ray_dir = screen_to_ray(self, sx, sy)
-        from editor.viewport.picking import pick_entity
+        from editor.viewport.pick import pick_entity
         hit_entity = pick_entity(self, sx, sy)
         if hit_entity is not None:
-            from editor.viewport.picking import _world_aabb_of, _ray_aabb_min
+            from editor.viewport.pick import _world_aabb_of, _ray_aabb_min
             box = _world_aabb_of(hit_entity)
             if box is not None:
                 d = _ray_aabb_min(ray_origin.x, ray_origin.y, ray_origin.z, ray_dir.x, ray_dir.y, ray_dir.z, box[0][0], box[0][1], box[0][2], box[1][0], box[1][1], box[1][2])

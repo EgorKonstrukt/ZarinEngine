@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import sys
 
-from core.foundation.plugin_manager import PluginBase
+from core.foundation.plugins import PluginBase
 from core.components.inspector_meta import FieldType, InspectorField
 
 _pkg_dir = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +43,7 @@ class TrackerMusicPlugin(PluginBase):
         if patcher is not None:
             self.patches.adopt(patcher)
         try:
-            from . import renderer as _r
+            from . import rend as _r
         except Exception:
             pass
 
@@ -60,7 +60,7 @@ class TrackerMusicPlugin(PluginBase):
         if self._editor_widget is not None:
             return self._editor_widget
         try:
-            from .editor.tracker_editor_widget import TrackerEditorWidget
+            from .editor.editw import TrackerEditorWidget
             self._editor_widget = TrackerEditorWidget(self._engine, self)
         except Exception as e:
             from core.foundation.logger import Logger

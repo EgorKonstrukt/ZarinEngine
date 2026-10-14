@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from physics_solvers.culverin_solver.solver import CulverinSolver
+from physics_solvers.culverin_solver.solverp import CulverinSolver
 
 __all__ = ["CulverinSolver"]

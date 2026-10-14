@@ -23,7 +23,7 @@ def _register_scene_tab(mw):
 
 
 def _restore_or_register(mw) -> bool:
-    from editor.main_window.state import restore_tabs
+    from editor.main_window.statep import restore_tabs
     if restore_tabs(mw):
         return True
     _register_scene_tab(mw)
@@ -63,7 +63,7 @@ def post_init(mw):
         SplashScreen.show_message("Creating sample scene...")
         scene = mw._engine.new_scene("SampleScene")
         from core.components import Transform, MeshFilter, MeshRenderer, DirectionalLight, Camera
-        from core.components.rendering.environment.sky import ProceduralSky
+        from core.components.rendering.environment.skyp import ProceduralSky
         from core.components.rendering.environment.clouds import Cloud
         from core.maths.math3d import Vec3
         dir_light = scene.create_entity("Directional Light")

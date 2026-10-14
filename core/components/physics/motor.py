@@ -22,7 +22,7 @@ class MotorType(enum.Enum):
 
 
 def _get_physics_plugin():
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
     engine = Engine.instance()
     if engine is None:
         return None

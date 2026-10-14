@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from core.components.scripting.script_component import ScriptComponent
+from core.components.scripting.scriptc import ScriptComponent
 
 __all__ = ["ScriptComponent"]

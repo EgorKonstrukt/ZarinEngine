@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from editor.inspector.source_viewer import SourceViewerDialog
 from editor.inspector.widgets import _FocusSpinBox, _DragLabel, _DropLabelMixin, _ResourceDropLabel, _EntityDropLabel, EntityPickerDialog
-from editor.inspector.helpers import (
+from editor.inspector.helpersp import (
     make_spinbox, make_clickable_label, get_component_icon_pixmap,
     update_resource_icon, make_resource_picker, make_gameobject_picker,
     make_resource_type_picker, make_asset_picker, _create_asset_dialog,
@@ -19,7 +19,7 @@ from editor.inspector.helpers import (
 from editor.inspector.cwidget import ComponentWidget
 from editor.inspector.entity_property_picker import EntityPropertyPicker, EntityPropertyDialog, EntityPropertyTree
 from editor.inspector.component_picker import ComponentPickerDialog
-from editor.inspector.panel import InspectorPanel
+from editor.inspector.panelp import InspectorPanel
 from editor.inspector.constants import _COMPONENT_MIME
 
 __all__ = [

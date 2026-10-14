@@ -6,7 +6,7 @@
 from __future__ import annotations
 import numpy as np
 import moderngl
-from core.renderer.shaders import program_with_fallback
+from core.renderer.shaderp import program_with_fallback
 from .bind import _mat4_inv_fast
 from .mathx import _tr_fwd_xyz
 class StainedMixin:

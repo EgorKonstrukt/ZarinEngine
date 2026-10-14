@@ -379,7 +379,7 @@ def load_ply_gaussian_splat(path: str) -> Optional[GaussianSplatData]:
                 vertex_count = positions.shape[0]
 
             try:
-                from core.assets.sog_loader import _apply_z180
+                from core.assets.sog import _apply_z180
                 _apply_z180(positions, quaternions, sh_coeffs)
             except Exception:
                 pass

@@ -21,12 +21,12 @@
 # SOFTWARE.
 
 from __future__ import annotations
-from .chart_widget import ChartWidget
-from .items import (
+from .chart import ChartWidget
+from .itemsp import (
     _LineItem, _ScatterItem, _FitItem, _InfLine, _FunctionItem, _RulerItem,
     _DerivativeItem, _IntegralItem, _HistogramItem, _SpectrumItem, _ErrorBandItem,
 )
-from .math_utils import (
+from .mathx import (
     FitMode, register_fit_mode, get_fit_modes, get_fit_mode,
     derivative, second_derivative, cumulative_integral,
     fft_spectrum, fft_spectrum_numpy, histogram, autocorrelation,

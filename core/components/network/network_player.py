@@ -85,7 +85,7 @@ class NetworkPlayer(Component):
                     "score": self.score,
                 })
                 return
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             t = get_transport()
             if t.is_connected:
@@ -118,7 +118,7 @@ class NetworkPlayer(Component):
         if ident is not None:
             self.player_id = int(ident.owner_id)
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 self._is_local = (ident.owner_id == get_transport().local_id)
             except Exception:
                 pass

@@ -12,8 +12,8 @@ import numpy as np
 import moderngl
 from core.foundation.logger import Logger
 from core.maths.math3d import Mat4, Vec3
-from core.renderer.mesh_data import MeshData, read_shader_pair
-from core.renderer.shaders import program_with_fallback
+from core.renderer.meshd import MeshData, read_shader_pair
+from core.renderer.shaderp import program_with_fallback
 from core.renderer.meshes import make_cube_mesh, make_sphere_mesh, make_plane_mesh, make_quad_mesh, make_water_plane, make_water_box
 
 
@@ -49,8 +49,8 @@ class WaterPassMixin:
 
 
     def _load_water_sim_frag(self) -> str:
-        from core.assets.material import _extract_glsl_from_shader
-        from core.renderer.mesh_data import _resolve_shader_file
+        from core.assets.matp import _extract_glsl_from_shader
+        from core.renderer.meshd import _resolve_shader_file
         path = _resolve_shader_file("materials/WaterSim.shader")
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()

@@ -13,7 +13,7 @@ from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen
 
 from core.maths.math3d import Vec3
-from core.renderer.render_stats import (
+from core.renderer.stats import (
     _SPIKE_LOG,
     build_stats_rows,
     collect_render_stats,

@@ -4,7 +4,7 @@ import numpy as np
 import moderngl
 from typing import Optional
 from core.assets.compute_shader import compile_compute_shader
-from core.renderer.shaders import program_with_fallback
+from core.renderer.shaderp import program_with_fallback
 
 
 class BVHDebugRenderer:

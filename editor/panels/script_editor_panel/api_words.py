@@ -25,7 +25,7 @@ def engine_api_words() -> set[str]:
         "active", "enabled", "add_component", "get_entity",
     }
     try:
-        from core.input.input_system import KeyCode as _KC
+        from core.input.inpsys import KeyCode as _KC
         try:
             words.update(m.name for m in _KC)
         except Exception:

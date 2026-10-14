@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from core.foundation.plugin_manager import PluginBase
+from core.foundation.plugins import PluginBase
 from core.foundation.logger import Logger
 
 class ExamplePlugin(PluginBase):

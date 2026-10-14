@@ -99,7 +99,7 @@ def _do_switch_project(mw, project_path: str):
     mw._engine._project_path = project_path
     mw._project.set_project_root(assets_dir)
     mw._engine._plugin_manager.notify_project_opened()
-    from core.audio.audio_system import AudioSystem
+    from core.audio.sys import AudioSystem
     audio = AudioSystem.instance()
     if audio:
         audio.apply_project_audio_config()
@@ -118,7 +118,7 @@ def _do_switch_project(mw, project_path: str):
         SplashScreen.show_message(f"Creating new scene: {name}...")
         mw._engine.new_scene(name)
         mw._hierarchy.refresh()
-        from editor.main_window.handlers import on_entity_selected
+        from editor.main_window.handlersp import on_entity_selected
         on_entity_selected(mw, None)
     mw._engine._project_settings_path = settings_path
     mw._render_toolbar.load_state()

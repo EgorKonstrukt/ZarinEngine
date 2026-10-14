@@ -31,7 +31,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtCore import Qt, QBuffer, QIODevice, QSize, QRect, QRectF
 
-from core.assets.asset_importer import load_mesh
+from core.assets.importer import load_mesh
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".tga", ".tif", ".tiff", ".webp", ".hdr")
 MESH_EXTS = (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb")
@@ -341,7 +341,7 @@ def _find_project_root(path: str):
 def _render_material(path: str, size: int):
     _ensure_app()
     try:
-        from core.assets.material import Material
+        from core.assets.matp import Material
         project_root = _find_project_root(path)
         mat = Material.load(path, project_root)
         props = mat.properties if mat is not None else {}
@@ -351,7 +351,7 @@ def _render_material(path: str, size: int):
         emission = props.get("_EmissionColor", (0.0, 0.0, 0.0))
         emit_intensity = float(props.get("_EmissionIntensity", 0.0))
         tex_path = props.get("_BaseMap") or props.get("albedo_texture", None)
-        from editor.gl_offscreen import render_sphere
+        from editor.gloff import render_sphere
         pm = render_sphere(
             size, size,
             albedo,

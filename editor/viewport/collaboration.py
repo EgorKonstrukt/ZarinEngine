@@ -237,10 +237,10 @@ def send_collab_transforms(vp):
 
 
 def _collab_on_undo(cmd):
-    from core.foundation.commands import CreateEntityCommand, DeleteEntityCommand, SetComponentCommand, \
+    from core.foundation.cmd import CreateEntityCommand, DeleteEntityCommand, SetComponentCommand, \
         AddComponentCommand, RemoveComponentCommand, CompoundCommand, PasteEntitiesCommand, \
         InstantiatePrefabCommand
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
     eng = Engine.instance()
     collab = eng.collab_manager if hasattr(eng, 'collab_manager') else None
     if not collab or not collab.connected:
@@ -273,10 +273,10 @@ def _collab_on_undo(cmd):
 
 
 def _collab_on_redo(cmd):
-    from core.foundation.commands import CreateEntityCommand, DeleteEntityCommand, SetComponentCommand, \
+    from core.foundation.cmd import CreateEntityCommand, DeleteEntityCommand, SetComponentCommand, \
         AddComponentCommand, RemoveComponentCommand, CompoundCommand, PasteEntitiesCommand, \
         InstantiatePrefabCommand
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
     eng = Engine.instance()
     collab = eng.collab_manager if hasattr(eng, 'collab_manager') else None
     if not collab or not collab.connected:
@@ -326,7 +326,7 @@ def _collab_on_redo(cmd):
 
 
 def setup_collab_undo_redo_hooks(engine):
-    from core.foundation.commands import get_history
+    from core.foundation.cmd import get_history
     history = get_history()
     history.set_on_undo(_collab_on_undo)
     history.set_on_redo(_collab_on_redo)

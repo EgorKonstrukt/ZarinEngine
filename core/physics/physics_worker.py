@@ -38,7 +38,7 @@ class PhysicsWorker(threading.Thread):
     def _create_worker_body(self, body: dict) -> int:
         shapes = body.get("shapes")
         if shapes is not None and len(shapes) > 1 and not body.get("is_2d", False):
-            from core.physics.shape_utils import partition_compound_shapes
+            from core.physics.shapep import partition_compound_shapes
             dynamic = (body.get("mass", 0.0) > 0.0) and (not body.get("is_kinematic", False)) and (not shapes[0].get("is_trigger", False))
             if not dynamic:
                 dynamic = bool(body.get("is_kinematic", False))
@@ -138,7 +138,7 @@ class PhysicsWorker(threading.Thread):
             settings = cmd.get("settings", {})
             solver = solver_class()
             if solver.initialize(settings):
-                from core.physics.physics_scene import PhysicsScene
+                from core.physics.scene import PhysicsScene
                 self._solver = solver
                 self._physics_scene = PhysicsScene(solver)
                 self._initialized = True

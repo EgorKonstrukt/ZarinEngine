@@ -40,7 +40,7 @@ _TRANSFORM_NAME = "Transform"
 
 def _get_engine():
     try:
-        from core.engine.engine import Engine
+        from core.engine.eng import Engine
         return Engine.instance()
     except Exception:
         return None

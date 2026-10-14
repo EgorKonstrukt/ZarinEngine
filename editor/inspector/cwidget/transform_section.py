@@ -9,11 +9,11 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from core.config.editor_scale import scale
 from core.maths.math3d import Vec3, Vec4
-from core.foundation.commands import SetComponentCommand, CompoundCommand, get_history
+from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
 from core.foundation.curve import Curve
-from editor.curve_editor import CurvePreview, CurveEditorDialog
-from core.gui.widgets import AnchorPresetSelector
-from editor.inspector.helpers import make_spinbox, make_vec3_row
+from editor.curve import CurvePreview, CurveEditorDialog
+from core.gui.wid import AnchorPresetSelector
+from editor.inspector.helpersp import make_spinbox, make_vec3_row
 class TransformMixin:
     def _build_transform(self):
         tr = self._component
@@ -176,7 +176,7 @@ class TransformMixin:
         rl.addWidget(sb)
         self._add_field(field.label, row, prop_name, field.toggle_field)
     def _build_color_field(self, field, prop_name, c, value):
-        from editor.color_picker import ColorLineEdit
+        from editor.color import ColorLineEdit
         initial = None
         if isinstance(value, (list, tuple)):
             initial = QColor.fromRgbF(*value[:4])

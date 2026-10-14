@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
-from core.assets.font_atlas import get_default_font_path
+from core.assets.fontatlas import get_default_font_path
 from core.foundation.rich_text_parser import parse_rich_text, RichTextSegment
 
 

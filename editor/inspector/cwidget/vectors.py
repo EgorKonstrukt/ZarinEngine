@@ -9,10 +9,10 @@ from PyQt6.QtWidgets import QWidget, QSpinBox, QDoubleSpinBox, QSlider, QDialog,
 from PyQt6.QtCore import Qt, QMimeData
 from PyQt6.QtGui import QDrag, QCursor
 from core.maths.math3d import Vec2, Vec3, Vec4
-from core.foundation.commands import SetComponentCommand, CompoundCommand, get_history
+from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
 from core.physics.collision_layers import MAX_LAYERS
 from editor.inspector.constants import _COMPONENT_MIME, _FUSION_INPUT_RADIUS
-from editor.inspector.helpers import collapse_value, make_vec2_row, make_vec3_row, make_vec4_row, make_vec2_slider_row, make_vec3_slider_row
+from editor.inspector.helpersp import collapse_value, make_vec2_row, make_vec3_row, make_vec4_row, make_vec2_slider_row, make_vec3_slider_row
 class VectorsMixin:
     def _undo_setter(self, prop_name):
         return self._undo_setter_all(type(self._component), prop_name)
@@ -29,7 +29,7 @@ class VectorsMixin:
                     pass
                 get_history().execute(SetComponentCommand(ent, comp_type, prop_name, old, v))
                 try:
-                    from core.engine.engine import Engine
+                    from core.engine.eng import Engine
                     collab = Engine.instance().collab_manager
                     if collab and collab.connected and ent:
                         val = collapse_value(v)
@@ -49,7 +49,7 @@ class VectorsMixin:
                         continue
                     cmds.append(SetComponentCommand(ent, comp_type, prop_name, old_v, v))
                     try:
-                        from core.engine.engine import Engine
+                        from core.engine.eng import Engine
                         collab = Engine.instance().collab_manager
                         if collab and collab.connected:
                             collab.send_component_update(ent.id, self._component_key if ent is self._entity else comp_type.__name__, prop_name, collapse_value(v))
@@ -382,7 +382,7 @@ class VectorsMixin:
                 )
         _paint_gradient(grad_preview)
         def _open_gradient_editor():
-            from editor.gradient_editor import GradientEditorDialog
+            from editor.gradient import GradientEditorDialog
             editor_stops = value
             if isinstance(value, dict):
                 alpha_keys = value.get("alpha_keys", [])

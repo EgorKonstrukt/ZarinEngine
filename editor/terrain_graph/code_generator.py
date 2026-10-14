@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import List, Tuple, Optional
-from editor.terrain_graph.nodes import HeightOutputNode
+from editor.terrain_graph.nodesp import HeightOutputNode
 from editor.terrain_graph.glsl_chunks import ALL_GLSL_FUNCTIONS
 
 

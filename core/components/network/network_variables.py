@@ -57,7 +57,7 @@ class NetworkVariables(Component):
             return False
         if self.authority == VariableAuthority.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 return get_transport().is_server
             except Exception:
                 return False
@@ -121,7 +121,7 @@ class NetworkVariables(Component):
         collapsed = {k: self._collapse(v) for k, v in self._vars.items()}
         payload = {"net_id": ident.net_id, "vars": collapsed, "t": time.time(), "seq": self._seq}
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             get_transport().broadcast(MessageType.NET_VARIABLES, payload)
         except Exception:
@@ -135,7 +135,7 @@ class NetworkVariables(Component):
             return
         if self.authority == VariableAuthority.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 if get_transport().is_server:
                     return
             except Exception:

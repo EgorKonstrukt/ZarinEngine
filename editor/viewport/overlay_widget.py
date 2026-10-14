@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPainter, QPen, QColor
 
 from editor.viewport.overlay import draw_stats_overlay, draw_delta_label, draw_audio_viz_header, draw_audio_freq_labels, draw_audio_db_labels
-from editor.viewport.navigation_gizmo import draw_navigation_gizmo_overlay
+from editor.viewport.navgizmo import draw_navigation_gizmo_overlay
 from editor.viewport.collaboration import draw_remote_cursors
 
 

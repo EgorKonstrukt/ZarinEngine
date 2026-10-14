@@ -10,8 +10,8 @@ from PyQt6.QtCore import Qt, QSize, QFileInfo, pyqtSignal
 from PyQt6.QtGui import QIcon, QWheelEvent, QKeyEvent, QColor, QPainter, QPen, QBrush, QFontMetrics
 from core.config.editor_scale import scale, scale_xy
 from editor.constants import MIN_THUMB, MAX_THUMB, VIEW_ICON, VIEW_LIST, VIEW_DETAILS
-from editor.resource_picker import _get_thumbnail, _format_size, _thumb_resolution
-from editor.hover_preview import attach_project_list_hover, attach_project_tree_hover
+from editor.picker import _get_thumbnail, _format_size, _thumb_resolution
+from editor.hover import attach_project_list_hover, attach_project_tree_hover
 from .icons import _ENTITY_MIME, qta
 from typing import Optional, TYPE_CHECKING
 class _NavButton(QToolButton):

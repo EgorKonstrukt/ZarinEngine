@@ -4,4 +4,4 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from core.components.navigation.nav_agent import NavAgent
+from core.components.navigation.navagent import NavAgent

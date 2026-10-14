@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QCursor, QIcon
 
-from editor.inspector.helpers import make_gameobject_picker, get_component_icon_pixmap
+from editor.inspector.helpersp import make_gameobject_picker, get_component_icon_pixmap
 from core.components.properties import iter_entity_prop_groups, iter_entity_props
 
 _TREE_STYLE = """

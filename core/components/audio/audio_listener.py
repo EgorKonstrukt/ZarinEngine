@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from core.ecs import Component, ComponentRegistry
-from core.audio.audio_system import AudioSystem
+from core.audio.sys import AudioSystem
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Vec3
 

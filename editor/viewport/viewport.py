@@ -13,9 +13,9 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QSurfaceFormat
 from core.foundation.logger import Logger
 from core.engine.frame_pacer import FramePacer, needs_software_pacing, normalize_target_fps, timer_interval_ms
-from editor.scene_camera import SceneCamera
-from core.gizmo.gizmo import Gizmo
-from core.gizmo.api import GizmosManager, set_gizmos
+from editor.cam import SceneCamera
+from core.gizmo.core import Gizmo
+from core.gizmo.apiv import GizmosManager, set_gizmos
 from core.input.input_manager import InputManager
 from editor.viewport.overlay_widget import OverlayWidget
 from editor.viewport.progress_toast import ProgressToast

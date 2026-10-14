@@ -7,7 +7,7 @@
 from __future__ import annotations
 from typing import Optional
 from core.ecs import ComponentRegistry
-from core.components.gui.layout.base_widget_component import GuiWidgetComponentBase
+from core.components.gui.layout.basewidget import GuiWidgetComponentBase
 from core.components.inspector_meta import InspectorField, FieldType
 
 

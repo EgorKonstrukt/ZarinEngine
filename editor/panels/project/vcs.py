@@ -4,8 +4,9 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-import os, subprocess, threading
-from PyQt6.QtGui import QColor
+import os, subprocess, threading, shutil, time
+from PyQt6.QtWidgets import QApplication, QLineEdit
+from PyQt6.QtGui import QColor, QBrush
 from PyQt6.QtCore import Qt
 from .icons import _VCS_COLORS, _parse_vcs_status
 class VcsMixin:

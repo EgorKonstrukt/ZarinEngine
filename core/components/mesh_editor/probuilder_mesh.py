@@ -222,7 +222,7 @@ class ProBuilderMesh(Component):
                     self.indices[i, 1], self.indices[i, 2] = self.indices[i, 2], self.indices[i, 1]
 
     def to_gpu_mesh(self):
-        from core.renderer.mesh_data import MeshData
+        from core.renderer.meshd import MeshData
         mesh = MeshData()
         mesh.vertices = self.positions.flatten().copy()
         mesh.indices = self.indices.flatten().copy()

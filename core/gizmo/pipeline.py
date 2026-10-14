@@ -10,7 +10,7 @@ import numpy as np
 from typing import List, Tuple
 from core.maths.math3d import Vec3
 from core.ecs import GizmoPrimitive, GizmoStyle
-from core.gizmo.api import Gizmos
+from core.gizmo.apiv import Gizmos
 
 _GIZMO_CACHE: dict = {}
 

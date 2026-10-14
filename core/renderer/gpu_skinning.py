@@ -26,7 +26,7 @@ class GpuSkinning:
         self._try_compile()
     def _try_compile(self):
         try:
-            from core.renderer.mesh_data import read_compute_source
+            from core.renderer.meshd import read_compute_source
             src = read_compute_source("skinning")
             self._prog = self._ctx.compute_shader(src)
             self._ready = self._prog is not None

@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from core.components.transform.transform import Transform
+from core.components.transform.tr import Transform
 
 __all__ = ["Transform"]

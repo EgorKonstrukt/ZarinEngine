@@ -68,7 +68,7 @@ class ViewportOverlayMixin:
     def _toggle_rt_heatmap(self, checked: bool):
         self._show_rt_heatmap = checked
         try:
-            from core.components.rendering.renderers.raytracing_renderer import RaytracingRenderer
+            from core.components.rendering.renderers.raytrace import RaytracingRenderer
             sc = self._engine.scene if hasattr(self, "_engine") and self._engine else None
             if sc:
                 for ent in sc.get_entities_with_component(RaytracingRenderer):
@@ -95,11 +95,11 @@ class ViewportOverlayMixin:
         mf = sel.get_component(MeshFilter)
         if not mf:
             return
-        from editor.viewport.picking import _get_mesh_for
+        from editor.viewport.pick import _get_mesh_for
         mesh = _get_mesh_for(sel, mf.mesh_name or "cube", mf.mesh_path)
         if not mesh or mesh.vertices is None or len(mesh.vertices) < 3:
             return
-        from core.spatial.bvh import get_mesh_bvh
+        from core.spatial.bvhv import get_mesh_bvh
         bvh = get_mesh_bvh(mesh.vertices, mesh.indices)
         if not bvh or not bvh.nodes:
             return

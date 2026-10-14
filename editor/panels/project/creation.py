@@ -5,12 +5,12 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, sys
-from PyQt6.QtWidgets import QFileDialog, QMenu
+from PyQt6.QtWidgets import QFileDialog, QMenu, QTreeWidget, QListWidget, QTreeWidgetItem
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from .icons import _qta_icon
 try:
-    from editor.shell_context_menu import show_shell_context_menu
+    from editor.shellmenu import show_shell_context_menu
     _HAS_SHELL_MENU = (sys.platform == "win32")
 except Exception:
     show_shell_context_menu = None
@@ -47,7 +47,7 @@ class CreationMixin:
         ext = os.path.splitext(path)[1].lower()
         if ext != ".mat":
             path += ".mat"
-        from core.assets.material import Material
+        from core.assets.matp import Material
         mat = Material(os.path.splitext(os.path.basename(path))[0])
         mat.save(path, self._engine.project_root)
         self._push_file_undo({"kind": "create", "paths": [path], "label": "Create material"})
@@ -109,7 +109,7 @@ class CreationMixin:
         if not path.endswith(".pyx"):
             path += ".pyx"
         try:
-            from core.components.scripting.cython_support import CYTHON_TEMPLATE
+            from core.components.scripting.cythonp import CYTHON_TEMPLATE
         except Exception:
             CYTHON_TEMPLATE = None
         base = os.path.splitext(os.path.basename(path))[0]

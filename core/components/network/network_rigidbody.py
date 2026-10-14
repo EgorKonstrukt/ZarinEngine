@@ -72,7 +72,7 @@ class NetworkRigidbody(Component):
             return False
         if self.authority == RigidbodyAuthority.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 return get_transport().is_server
             except Exception:
                 return False
@@ -113,7 +113,7 @@ class NetworkRigidbody(Component):
         if self.sync_angular:
             payload["w"] = avel.to_list()
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             get_transport().broadcast(MessageType.NET_RIGIDBODY, payload)
         except Exception:
@@ -128,7 +128,7 @@ class NetworkRigidbody(Component):
             return
         if self.authority == RigidbodyAuthority.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 if get_transport().is_server:
                     return
             except Exception:

@@ -21,7 +21,7 @@ _CYTHON = os.path.join(_HERE, "pyx")
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 try:
-    from tools.mingw import (
+    from tools.mingwpm import (
         ensure_mingw,
         activate,
         pop_compiler_argv,

@@ -16,7 +16,7 @@ from PyQt6.QtGui import QSurfaceFormat, QKeyEvent, QMouseEvent, QWheelEvent
 from core.maths.math3d import Vec3
 from core.foundation.logger import Logger
 if TYPE_CHECKING:
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
     from core.ecs import Scene
 from core.config.editor_scale import scale, scale_xy
 
@@ -205,7 +205,7 @@ class PrefabEditorPanel(QDockWidget):
         pass
 
     def open_prefab(self, path: str):
-        from core.ecs.prefab import Prefab
+        from core.ecs.prefabp import Prefab
         from core.ecs import Scene, ComponentRegistry
         pref = Prefab.load(path)
         if not pref:
@@ -231,7 +231,7 @@ class PrefabEditorPanel(QDockWidget):
     def _on_save(self):
         if not self._prefab_path or not self._edit_scene:
             return
-        from core.ecs.prefab import Prefab, PrefabLibrary
+        from core.ecs.prefabp import Prefab, PrefabLibrary
         pref = Prefab.load(self._prefab_path)
         if not pref:
             return

@@ -52,7 +52,7 @@ def get_or_create_icon_texture(vp, comp_type_name: str, icon_color: tuple, icon_
 
 
 def _icon_entities(scene):
-    from core.components.transform import Transform
+    from core.components.transform.tr import Transform
     rv = getattr(scene, '_render_version', 0)
     cached = getattr(scene, '_icon_entities_cache', None)
     if cached is not None and cached[0] == rv:

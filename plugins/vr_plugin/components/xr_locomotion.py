@@ -9,6 +9,7 @@ import math
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Vec3, Quat
+from plugins.vr_plugin.components.xr_rig import XRRig
 
 @ComponentRegistry.register
 class XRSmoothMoveProvider(Component):
@@ -170,7 +171,7 @@ def _apply_snap_turn(vr_core, rig_comp, rig_ent, tr, snap, dt):
         delta = math.radians(snap.snap_degrees) * sign
         rig_comp.rig_yaw -= delta
         try:
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             eng = Engine.instance()
             if eng and eng.viewport and eng.viewport._cam:
                 cam = eng.viewport._cam

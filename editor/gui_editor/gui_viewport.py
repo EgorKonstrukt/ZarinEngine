@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QDockWidget,
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from core.gui import GuiCanvas, GuiApi
 from core.ecs import ComponentRegistry
-from core.gui.widgets import (
+from core.gui.wid import (
     GuiWidget, Panel, Button, Label, Slider, TextInput, Image,
     Toggle, ProgressBar, Dropdown, ScrollPanel, HtmlView,
     Splitter, StackedWidget, ToolBox, Calendar, LCDNumber,
@@ -186,7 +186,7 @@ class GuiEditorViewport(QWidget):
                 pe = pe.parent
             if pe:
                 entity.set_parent(pe)
-        from core.components.transform import Transform
+        from core.components.transform.tr import Transform
         t = Transform()
         t.local_position = (50, 50, 0)
         t.local_scale = (1, 1, 1)
@@ -239,7 +239,7 @@ class GuiEditorViewport(QWidget):
         import copy
         data = copy.deepcopy(data)
         entity = scene.create_entity(name + "_copy")
-        from core.components.transform import Transform
+        from core.components.transform.tr import Transform
         data["id"] = entity.id
         data["parent"] = None
         for cd in data.get("components", []):

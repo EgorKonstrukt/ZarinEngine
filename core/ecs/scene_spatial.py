@@ -203,7 +203,7 @@ def rebuild_spatial(scene):
         _MR = None
     meshes = None
     try:
-        from core.engine.engine import Engine as _Eng
+        from core.engine.eng import Engine as _Eng
         _eng = _Eng.instance()
         _r = getattr(_eng, "_renderer", None) if _eng else None
         if _r is None and _eng is not None:

@@ -111,7 +111,7 @@ def setup_toolbar(vp):
     prefab_row.setContentsMargins(0, 0, 0, 0)
     prefab_row.setSpacing(4)
     mw = vp.parent()
-    from editor.main_window.handlers import on_return_to_scene
+    from editor.main_window.handlersp import on_return_to_scene
     vp._return_btn = QPushButton("To Scene")
     vp._return_btn.setFixedHeight(scale(22))
     vp._return_btn.clicked.connect(lambda: on_return_to_scene(mw))

@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from physics_solvers.pybullet_solver.solver import PyBulletSolver
+from physics_solvers.pybullet_solver.solverp import PyBulletSolver
 
 __all__ = ["PyBulletSolver"]

@@ -168,7 +168,7 @@ class GpuCulling:
         self._bounding_ssbo = self._ctx.buffer(reserve=sphere_size)
         self._instance_output_ssbo = self._ctx.buffer(reserve=output_size)
         self._counter_ssbo = self._ctx.buffer(reserve=4)
-        from core.renderer.mesh_data import read_compute_source
+        from core.renderer.meshd import read_compute_source
         try:
             src = read_compute_source("cull")
             try:
@@ -219,7 +219,7 @@ class GpuCulling:
         n = self._count
         if n <= 0:
             return False
-        from core.renderer.batcher import _extract_frustum_planes_f32
+        from core.renderer.batch import _extract_frustum_planes_f32
         planes = _extract_frustum_planes_f32(view_f32, proj_f32)
         return self._cull_impl(planes, n, world_mat_ssbo)
 

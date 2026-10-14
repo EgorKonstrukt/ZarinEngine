@@ -10,9 +10,14 @@ from PyQt6.QtCore import Qt, QSize, QFileInfo
 from PyQt6.QtGui import QIcon, QColor, QBrush
 from core.config.editor_scale import scale
 from editor.constants import VIEW_ICON, VIEW_LIST, VIEW_DETAILS
-from editor.resource_picker import _get_thumbnail, _format_size, _thumb_resolution
+from editor.picker import _get_thumbnail, _format_size, _thumb_resolution
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .panel import ProjectPanel
 from .icons import _accent_hex, _accent_rgba
-from .widgets import FileListWidget, FileDetailWidget, _AddressBreadcrumb, _FileListDelegate
+from .widgets import FileListWidget, FileDetailWidget, _AddressBreadcrumb, _FileListDelegate, _NavButton
+
+
 class _FilePane(QWidget):
     def __init__(self, panel: ProjectPanel, parent=None):
         super().__init__(parent)

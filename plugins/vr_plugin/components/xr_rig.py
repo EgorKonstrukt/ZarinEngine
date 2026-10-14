@@ -8,6 +8,7 @@ from __future__ import annotations
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Vec3, Quat
+from core.components.rendering.renderers.mesh_filter import MeshFilter
 
 _HEAD_DEFAULT = Vec3(0.0, 1.6, 0.0)
 _LEFT_DEFAULT = Vec3(-0.25, 1.2, -0.2)

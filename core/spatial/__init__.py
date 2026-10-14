@@ -4,4 +4,4 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from .octree import AABB, OctreeNode, Octree
+from .octp import AABB, OctreeNode, Octree

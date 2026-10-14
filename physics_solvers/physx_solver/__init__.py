@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from physics_solvers.physx_solver.solver import PhysXSolver
+from physics_solvers.physx_solver.solverp import PhysXSolver
 
 __all__ = ["PhysXSolver"]

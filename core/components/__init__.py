@@ -21,7 +21,7 @@ for _finder, _name, _ispkg in pkgutil.walk_packages(
 
 from core.ecs import ComponentRegistry
 from core.components.rendering.cameras.camera import CameraProjection
-from core.components.lighting.light import LightType, LightAreaType
+from core.components.lighting.lightp import LightType, LightAreaType
 
 __all__ = ["ComponentRegistry", "CameraProjection", "LightType", "LightAreaType"]
 for _name, _cls in ComponentRegistry.all().items():

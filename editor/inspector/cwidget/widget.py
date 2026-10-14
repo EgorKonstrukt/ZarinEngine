@@ -9,9 +9,9 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButt
 from PyQt6.QtCore import Qt, pyqtSignal
 import qtawesome as qta
 from core.config.editor_scale import scale_xy
-from core.foundation.commands import SetComponentCommand, CompoundCommand, get_history
+from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
 from editor.inspector.constants import _COMPONENT_MIME
-from editor.inspector.helpers import get_component_icon_pixmap
+from editor.inspector.helpersp import get_component_icon_pixmap
 from .clipboard import ClipboardMixin
 from .fields import FieldsMixin
 from .lists import ListsMixin
@@ -193,7 +193,7 @@ class ComponentWidget(ClipboardMixin, FieldsMixin, ListsMixin, VectorsMixin, Scr
         return self._group_form if self._group_form is not None else self._layout
     def _redraw_viewport(self):
         try:
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             vp = Engine.instance().viewport
             if vp is not None:
                 vp.update_scene()

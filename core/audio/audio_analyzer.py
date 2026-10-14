@@ -153,7 +153,7 @@ class AudioAnalyzer:
 
     @staticmethod
     def _source_playing(src) -> bool:
-        from core.audio.audio_system import al
+        from core.audio.sys import al
         if al is None:
             return False
         try:
@@ -165,7 +165,7 @@ class AudioAnalyzer:
 
     @staticmethod
     def _sample_offset(src) -> int:
-        from core.audio.audio_system import al
+        from core.audio.sys import al
         if al is None:
             return 0
         try:
@@ -233,7 +233,7 @@ class AudioAnalyzer:
                 head = 0
 
     def update(self):
-        from core.audio.audio_system import AudioSourceManager
+        from core.audio.sys import AudioSourceManager
         mgr = AudioSourceManager.instance()
         playing = []
         if mgr is not None:

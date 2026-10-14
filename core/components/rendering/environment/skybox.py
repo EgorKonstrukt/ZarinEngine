@@ -13,7 +13,7 @@ import moderngl
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Mat4, Vec3
-from core.components.rendering.environment.sky_ibl import get_sky_ibl
+from core.components.rendering.environment.iblp import get_sky_ibl
 
 _SKYBOX_TEX_CACHE: dict[str, tuple[float, object]] = {}
 _SKYBOX_IBL_COOLDOWN = 0.15
@@ -28,7 +28,7 @@ def _resolve_skybox_path(path: str) -> str:
         return os.path.abspath(path)
     if not os.path.isabs(path):
         try:
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             eng = Engine.instance()
             root = eng.project_root if eng and eng.project_root else os.getcwd()
         except Exception:
@@ -40,7 +40,7 @@ def _resolve_skybox_path(path: str) -> str:
 
 
 def _load_skybox_float(path: str):
-    from core.components.rendering.environment.sky import _load_env_float
+    from core.components.rendering.environment.skyp import _load_env_float
     arr = _load_env_float(path)
     if arr is None:
         return None

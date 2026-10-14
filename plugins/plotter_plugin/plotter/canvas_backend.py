@@ -24,7 +24,7 @@ from __future__ import annotations
 
 
 def make_canvas(chart) -> object:
-    from .canvas import _PlotCanvas
+    from .canvasp import _PlotCanvas
     return _PlotCanvas(chart)
 
 

@@ -35,7 +35,7 @@ class Entity:
             if t.__name__ == _TRANSFORM_NAME:
                 self._transform_type = t
                 return t
-        from core.components.transform import Transform
+        from core.components.transform.tr import Transform
         self._transform_type = Transform
         return Transform
     @property

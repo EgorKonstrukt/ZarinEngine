@@ -6,7 +6,7 @@
 
 from core.components.animation.unity.anim_importer import import_anim, is_unity_yaml
 from core.components.animation.unity.controller_importer import import_controller
-from core.components.animation.unity.exporters import clip_to_unity_yaml, controller_to_unity_yaml
+from core.components.animation.unity.exportp import clip_to_unity_yaml, controller_to_unity_yaml
 from core.components.animation.unity.yaml_util import parse_unity_documents
 
 __all__ = [

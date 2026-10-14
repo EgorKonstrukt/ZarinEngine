@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Callable
-from core.foundation.plugin_manager import PluginBase
+from core.foundation.plugins import PluginBase
 from core.foundation.logger import Logger
 
 
@@ -32,7 +32,7 @@ class NetworkPlugin(PluginBase):
     @property
     def is_connected(self) -> bool:
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             return get_transport().is_connected
         except Exception:
             return False
@@ -40,7 +40,7 @@ class NetworkPlugin(PluginBase):
     @property
     def is_server(self) -> bool:
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             return get_transport().is_server
         except Exception:
             return False
@@ -48,7 +48,7 @@ class NetworkPlugin(PluginBase):
     @property
     def local_id(self) -> int:
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             return get_transport().local_id
         except Exception:
             return -1
@@ -56,14 +56,14 @@ class NetworkPlugin(PluginBase):
     @property
     def peer_count(self) -> int:
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             return get_transport().peer_count
         except Exception:
             return 0
 
     def host(self, port: int = 7777, max_players: int = 16):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             ok = get_transport().host("0.0.0.0", int(port), max_players=int(max_players))
             if ok:
                 Logger.info(f"[NetworkPlugin] Hosting on port {port} max_players={max_players}")
@@ -74,7 +74,7 @@ class NetworkPlugin(PluginBase):
 
     def connect(self, host: str, port: int = 7777):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             ok = get_transport().connect(str(host), int(port), "Player")
             if ok:
                 Logger.info(f"[NetworkPlugin] Connected to {host}:{port}")
@@ -85,7 +85,7 @@ class NetworkPlugin(PluginBase):
 
     def disconnect(self):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             get_transport().disconnect()
             Logger.info("[NetworkPlugin] Disconnected")
         except Exception:
@@ -93,7 +93,7 @@ class NetworkPlugin(PluginBase):
 
     def send(self, msg_type: str, payload: dict, target_id: int = -1):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             t = get_transport()
             data = {"rpc": str(msg_type), "payload": dict(payload) if isinstance(payload, dict) else {"value": payload}}
@@ -106,7 +106,7 @@ class NetworkPlugin(PluginBase):
 
     def broadcast(self, msg_type: str, payload: dict):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             get_transport().broadcast(MessageType.NET_RPC, {"rpc": str(msg_type), "payload": dict(payload) if isinstance(payload, dict) else {"value": payload}})
         except Exception as e:
@@ -164,12 +164,12 @@ class NetworkPlugin(PluginBase):
 
     def poll(self):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             msgs = get_transport().poll()
             remaining = self.handle_transport_messages(msgs)
             if remaining:
                 try:
-                    from core.network.transport import get_transport as _gt
+                    from core.network.transp import get_transport as _gt
                     t = _gt()
                     with t._lock:
                         for m in remaining:

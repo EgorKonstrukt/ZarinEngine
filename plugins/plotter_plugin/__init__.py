@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from core.foundation.logger import Logger
-from core.foundation.plugin_manager import PluginBase
+from core.foundation.plugins import PluginBase
 
 
 class PlotterPlugin(PluginBase):

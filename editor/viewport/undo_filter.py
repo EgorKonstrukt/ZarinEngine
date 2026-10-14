@@ -23,9 +23,9 @@ class _UndoFilter(QObject):
         self._sync_timer.setSingleShot(True)
         self._sync_timer.setInterval(60)
         self._sync_timer.timeout.connect(self._do_sync)
-        from core.foundation.commands import get_history
+        from core.foundation.cmd import get_history
         self._get_history = get_history
-        from editor.main_window.handlers import sync_after_undo
+        from editor.main_window.handlersp import sync_after_undo
         self._sync_fn = sync_after_undo
 
     def _do_sync(self):

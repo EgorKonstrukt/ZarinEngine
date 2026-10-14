@@ -21,7 +21,7 @@ class PolygonDisintegrationEffect(ObjectEffect):
     @classmethod
     def fx_geometry_shader(cls) -> "str | None":
         try:
-            from core.renderer.mesh_data import read_shader
+            from core.renderer.meshd import read_shader
             return read_shader("object_fx.geom")
         except Exception:
             return None

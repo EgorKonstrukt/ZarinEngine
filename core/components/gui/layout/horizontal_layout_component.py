@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QGridLayout, QWidget, QSiz
 from PyQt6.QtCore import Qt
 from core.ecs import Component, ComponentRegistry
 if TYPE_CHECKING:
-    from core.gui.canvas import GuiCanvas
+    from core.gui.canvasp import GuiCanvas
 
 
 def _find_entity_widget(entity):

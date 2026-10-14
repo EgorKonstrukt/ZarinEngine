@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import moderngl
 from core.maths.math3d import Mat4, Vec3
-from core.renderer.mesh_data import MeshData
+from core.renderer.meshd import MeshData
 
 
 class SkyboxRenderer:

@@ -13,7 +13,7 @@ from core.maths.math3d import Vec2, Vec3, Vec4
 from core.foundation.logger import Logger
 from core.foundation.curve import Curve
 from editor.inspector.constants import _FUSION_INPUT_RADIUS, _accent
-from editor.inspector.helpers import make_spinbox, make_vec2_row, make_vec3_row, make_vec4_row
+from editor.inspector.helpersp import make_spinbox, make_vec2_row, make_vec3_row, make_vec4_row
 class ScriptsMixin:
     def _build_script_fields(self, comp):
         self._build_script_ref_row(comp)
@@ -313,7 +313,7 @@ class ScriptsMixin:
                 }}
             """)
             def _on_click_r(m=prop_name, cc=comp, fs=filter_str):
-                from editor.resource_picker import pick_resource
+                from editor.picker import pick_resource
                 p = pick_resource(self, "Select Resource", fs, cc.get_field_value(m) or "")
                 if p:
                     cc.set_field_value(m, p)
@@ -321,7 +321,7 @@ class ScriptsMixin:
             btn.clicked.connect(_on_click_r)
             self._add_field(field.label or prop_name, btn)
         elif field.field_type.value == "resource_type":
-            from core.components.scripting.script_component import RESOURCE_TYPE_FILTERS
+            from core.components.scripting.scriptc import RESOURCE_TYPE_FILTERS
             filter_str = RESOURCE_TYPE_FILTERS.get(field.resource_type, "")
             btn = QPushButton(str(value or "") or f"Pick {field.label}")
             btn.setStyleSheet(f"""
@@ -331,7 +331,7 @@ class ScriptsMixin:
                 }}
             """)
             def _on_click_rt(m=prop_name, cc=comp, fs=filter_str):
-                from editor.resource_picker import pick_resource
+                from editor.picker import pick_resource
                 p = pick_resource(self, "Select Resource", fs, cc.get_field_value(m) or "")
                 if p:
                     cc.set_field_value(m, p)
@@ -339,7 +339,7 @@ class ScriptsMixin:
             btn.clicked.connect(_on_click_rt)
             self._add_field(field.label or prop_name, btn)
         elif field.field_type.value == "curve":
-            from editor.curve_editor import CurvePreview, CurveEditorDialog
+            from editor.curve import CurvePreview, CurveEditorDialog
             preview = CurvePreview()
             preview.setMinimumHeight(scale(56))
             preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)

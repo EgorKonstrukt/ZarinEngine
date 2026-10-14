@@ -12,7 +12,7 @@ from core.foundation.logger import Logger
 from core.components.rendering.renderers.mesh_filter import MeshFilter
 from core.components.rendering.renderers.mesh_renderer import MeshRenderer
 from core.maths.math3d import Mat4, Vec3
-from core.renderer.mesh_data import MeshData, read_shader
+from core.renderer.meshd import MeshData, read_shader
 
 
 class OutlinePassMixin:

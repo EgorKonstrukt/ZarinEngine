@@ -6,14 +6,14 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import QApplication, QMenu, QLineEdit, QPlainTextEdit
 from PyQt6.QtGui import QAction
-from core.foundation.commands import SetComponentCommand, CompoundCommand, get_history
+from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
 from core.foundation.logger import Logger
 from core.config.editor_scale import scale
 from editor.inspector.constants import _FUSION_INPUT_RADIUS, _accent
 class ClipboardMixin:
     def _show_context_menu(self, pos):
         menu = QMenu(self)
-        from editor.inspector.panel import InspectorPanel
+        from editor.inspector.panelp import InspectorPanel
         copy_comp = QAction("Copy Component", self)
         copy_comp.triggered.connect(self._copy_component)
         menu.addAction(copy_comp)
@@ -30,14 +30,14 @@ class ClipboardMixin:
         menu.addAction(rem)
         menu.exec(self.mapToGlobal(pos))
     def _copy_component(self):
-        from editor.inspector.panel import InspectorPanel
+        from editor.inspector.panelp import InspectorPanel
         InspectorPanel._clipboard = {
             "mode": "component",
             "type": type(self._component).__name__,
             "data": self._component.serialize(),
         }
     def _copy_values(self):
-        from editor.inspector.panel import InspectorPanel
+        from editor.inspector.panelp import InspectorPanel
         data = self._component.serialize()
         InspectorPanel._clipboard = {
             "mode": "values",
@@ -45,7 +45,7 @@ class ClipboardMixin:
             "data": data,
         }
     def _paste_values(self):
-        from editor.inspector.panel import InspectorPanel
+        from editor.inspector.panelp import InspectorPanel
         if InspectorPanel._clipboard is None:
             return
         from core.ecs import ComponentRegistry
@@ -79,7 +79,7 @@ class ClipboardMixin:
     def _copy_value(self, prop_name: str):
         try:
             val = getattr(self._component, prop_name)
-            from core.foundation.commands import collapse_value as _cv
+            from core.foundation.cmd import collapse_value as _cv
             QApplication.clipboard().setText(str(_cv(val)))
         except Exception:
             pass

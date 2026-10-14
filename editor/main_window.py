@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from editor.main_window.widget import EditorMainWindow
+from editor.main_window.widgetp import EditorMainWindow
 
 __all__ = ["EditorMainWindow"]

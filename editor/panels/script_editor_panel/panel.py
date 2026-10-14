@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING
 from PyQt6.QtWidgets import QDockWidget
 from PyQt6.QtCore import Qt
 
-from .widget import ScriptEditorWidget
+from .wid import ScriptEditorWidget
 
 if TYPE_CHECKING:
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
 
 
 class ScriptEditorPanel(QDockWidget):

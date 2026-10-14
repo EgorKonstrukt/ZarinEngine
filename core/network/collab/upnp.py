@@ -9,7 +9,7 @@ import time
 from typing import Callable, Optional
 from .models import RemotePeer
 try:
-    from core.network.upnp import UpnpMapper
+    from core.network.upnpp import UpnpMapper
 except Exception:
     UpnpMapper = None
 class UpnpMixin:

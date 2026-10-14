@@ -35,7 +35,7 @@ def collect_asset_entries() -> list[AssetPrefabEntry]:
     except Exception:
         pass
     try:
-        from core.engine.engine import Engine
+        from core.engine.eng import Engine
         eng = Engine.instance()
         project_root = getattr(eng, "project_root", None) if eng is not None else None
         if project_root and os.path.isdir(str(project_root)):
@@ -81,7 +81,7 @@ def collect_asset_entries() -> list[AssetPrefabEntry]:
                     is_system=is_system,
                 ))
     try:
-        from core.ecs.prefab import PrefabLibrary
+        from core.ecs.prefabp import PrefabLibrary
         for path, prefab in list(PrefabLibrary.get_all().items()):
             menu_path = str(getattr(prefab, "menu_path", "") or "").strip()
             if not menu_path:
@@ -114,7 +114,7 @@ def entry_icon(entry) -> object | None:
     try:
         from PyQt6.QtGui import QIcon
         from core.ecs import ComponentRegistry
-        from editor.inspector.helpers import get_component_icon_pixmap
+        from editor.inspector.helpersp import get_component_icon_pixmap
         comp_name = str(getattr(entry, "icon", "") or "").strip()
         if not comp_name:
             return None

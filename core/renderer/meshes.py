@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 import numpy as np
-from core.renderer.mesh_data import MeshData
+from core.renderer.meshd import MeshData
 
 
 def make_cube_mesh() -> MeshData:

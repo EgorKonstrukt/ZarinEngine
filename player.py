@@ -274,8 +274,8 @@ def main():
     fmt.setSwapInterval(0 if not _cfg.get("rendering.vsync", True) else 1)
     QSurfaceFormat.setDefaultFormat(fmt)
 
-    from core.engine.engine import Engine
-    from core.engine.game_viewport import GameViewport
+    from core.engine.eng import Engine
+    from core.engine.gameview import GameViewport
     from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
     from PyQt6.QtCore import QTimer
     from editor.splash import SplashScreen
@@ -305,7 +305,7 @@ def main():
     engine = Engine()
     engine._project_path = code_root
     engine.initialize()
-    from core.audio.audio_system import AudioSystem
+    from core.audio.sys import AudioSystem
     audio = AudioSystem.instance()
     if audio:
         audio.apply_project_audio_config()

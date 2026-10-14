@@ -7,8 +7,8 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QCheckBox, QSpinBox, QGroupBox, QFormLayout
 from PyQt6.QtCore import Qt
 from core.config.editor_scale import scale_xy
-from core.foundation.commands import SetComponentCommand, get_history
-from editor.inspector.helpers import make_spinbox, make_clickable_label, get_component_source_path, get_property_line_number, make_resource_picker, make_gameobject_picker, make_resource_type_picker, make_asset_picker
+from core.foundation.cmd import SetComponentCommand, get_history
+from editor.inspector.helpersp import make_spinbox, make_clickable_label, get_component_source_path, get_property_line_number, make_resource_picker, make_gameobject_picker, make_resource_type_picker, make_asset_picker
 class FieldsMixin:
     def _build_fields(self):
         comp = self._component
@@ -267,7 +267,7 @@ class FieldsMixin:
             pw = make_resource_picker(value, field.file_filter or "All Files (*)", self._undo_setter_all(type(c), prop_name))
             self._add_field(field.label, pw, prop_name, field.toggle_field)
         elif field.field_type.value == "gameobject":
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             scene = Engine.instance().scene
             gw = make_gameobject_picker(value, scene, self._undo_setter_all(type(c), prop_name))
             self._add_field(field.label, gw, prop_name, field.toggle_field)

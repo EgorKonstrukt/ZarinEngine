@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-import os, shutil
+import os, shutil, time
 from PyQt6.QtWidgets import QListWidgetItem, QTreeWidgetItem, QMessageBox
 from PyQt6.QtCore import Qt, QMimeData, QUrl, QByteArray
 from PyQt6.QtGui import QDrag, QGuiApplication
@@ -70,7 +70,7 @@ class DndMixin:
         eids = [x.strip() for x in raw.split(",") if x.strip()]
         if not eids or not self._engine.scene:
             return
-        from core.ecs.prefab import Prefab
+        from core.ecs.prefabp import Prefab
         entity = self._engine.scene.get_entity(eids[0])
         if not entity:
             return

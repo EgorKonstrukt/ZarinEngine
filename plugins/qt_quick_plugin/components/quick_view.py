@@ -89,7 +89,7 @@ class QuickView(Component):
                 path = self.qml_file
                 if not os.path.isabs(path):
                     try:
-                        from core.engine.engine import Engine
+                        from core.engine.eng import Engine
 
                         eng = Engine.instance()
                         base = getattr(eng, "_project_path", "") or ""

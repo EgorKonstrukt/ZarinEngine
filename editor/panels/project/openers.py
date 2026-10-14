@@ -5,16 +5,19 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QFileDialog
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
-from core.config.editor_scale import scale
+from PyQt6.QtWidgets import QFileDialog, QListWidget, QApplication, QLineEdit
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon, QWheelEvent
+from core.config.editor_scale import scale, scale_xy
 from editor.constants import MIN_THUMB, MAX_THUMB, VIEW_ICON, VIEW_LIST, VIEW_DETAILS
 from .icons import _qta_icon, qta
+from .pane import _FilePane
+
+
 class OpenersMixin:
     def _try_plugin_opener(self, path: str) -> bool:
         try:
-            from core.foundation.plugin_manager import open_file_with_plugin
+            from core.foundation.plugins import open_file_with_plugin
             return bool(open_file_with_plugin(self._engine, path))
         except Exception:
             return False
@@ -101,13 +104,13 @@ class OpenersMixin:
         if self._pane_b:
             self._pane_b.refresh()
     def _force_refresh_thumbnails(self):
-        from editor.resource_picker import _get_thumb_service
+        from editor.picker import _get_thumb_service
         _get_thumb_service().invalidate_thumbnails()
         from editor.thumb_cache import cache_root_for_project
         _get_thumb_service().set_cache_dir(cache_root_for_project(self._project_root))
         self._refresh()
     def _connect_mesh_loader(self):
-        from editor.resource_picker import _get_thumb_service
+        from editor.picker import _get_thumb_service
         loader = _get_thumb_service()
         loader.thumbnail_ready.connect(self._on_mesh_data_ready, Qt.ConnectionType.QueuedConnection)
     def _on_mesh_data_ready(self, path: str, size: int, pixmap):
@@ -134,8 +137,8 @@ class OpenersMixin:
     def _instantiate_prefab(self, path: str):
         if not self._engine.scene:
             return
-        from core.ecs.prefab import Prefab
-        from core.engine.engine import Engine
+        from core.ecs.prefabp import Prefab
+        from core.engine.eng import Engine
         pref = Prefab.load(path)
         if pref:
             e = pref.instantiate(self._engine.scene, Engine.instance()._component_registry)

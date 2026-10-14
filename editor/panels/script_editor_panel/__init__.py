@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 from .panel import ScriptEditorPanel
-from .widget import ScriptEditorWidget, _ScriptEditorWidget
-from .tabs import ScriptTab, CloseableTabWidget, _ScriptTab, _CloseableTabWidget
-from .editor import CodeEditor, _CodeEditor
+from .wid import ScriptEditorWidget, _ScriptEditorWidget
+from .tabsp import ScriptTab, CloseableTabWidget, _ScriptTab, _CloseableTabWidget
+from .edit import CodeEditor
 from .highlighter import PythonHighlighter
 from .diagnostics import analyze_text, Diagnostic
 from .doc_provider import get_documentation

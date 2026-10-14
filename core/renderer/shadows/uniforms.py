@@ -17,7 +17,7 @@ class UniformsMixin:
         return names
     def _ensure_context(self):
         try:
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             eng = Engine.instance(); vp = getattr(eng, "viewport", None) if eng else None
             if vp is not None and hasattr(vp, "makeCurrent"):
                 try:

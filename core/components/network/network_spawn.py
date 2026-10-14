@@ -43,7 +43,7 @@ class NetworkSpawn(Component):
             if m is not None:
                 return m
         try:
-            from core.components.network.network_manager import NetworkManager
+            from core.components.network.netmgr import NetworkManager
             return NetworkManager.get()
         except Exception:
             return None

@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import os
 
-from core.components.audio.audio_source import AudioSource
+from core.components.audio.source import AudioSource
 from core.components.inspector_meta import FieldType, InspectorField
 from core.ecs import ComponentRegistry
 from core.foundation.logger import Logger
-from core.foundation.plugin_manager import _zarin_user_dir
-from .renderer import TrackerRenderService
+from core.foundation.plugins import _zarin_user_dir
+from .rend import TrackerRenderService
 
 TRACKER_EXTS = (".mod", ".xm", ".s3m", ".it", ".669", ".mtm", ".stm", ".ult")
 
@@ -120,7 +120,7 @@ class TrackerAudioSource(AudioSource):
 
     def _refresh_info(self, module_path: str):
         try:
-            from .renderer import load_module
+            from .rend import load_module
             song = load_module(module_path)
             if song is None:
                 return

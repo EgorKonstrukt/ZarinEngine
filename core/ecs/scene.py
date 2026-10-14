@@ -193,7 +193,7 @@ class Scene:
     @property
     def _engine(self):
         if self._engine_ref is None:
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             self._engine_ref = Engine.instance()
         return self._engine_ref
     def _ensure_entities_cache(self):

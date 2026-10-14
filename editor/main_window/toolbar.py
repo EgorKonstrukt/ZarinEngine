@@ -9,8 +9,8 @@ import qtawesome as qta
 from PyQt6.QtGui import QAction, QIcon
 
 from editor.scene_toolbar import SceneToolbar, RenderToolbar
-from editor.main_window.handlers import toggle_play_stop, reset_camera, on_gizmo_vis_toggled, launch_external_player
-from editor.main_window.palette import show_command_palette
+from editor.main_window.handlersp import toggle_play_stop, reset_camera, on_gizmo_vis_toggled, launch_external_player
+from editor.main_window.palettep import show_command_palette
 
 
 def _set_play_btn_style(btn, text):

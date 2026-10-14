@@ -52,7 +52,7 @@ class NetworkIdentity(Component):
     @property
     def is_owner(self) -> bool:
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             return get_transport().local_id == self.owner_id
         except Exception:
             return False
@@ -65,7 +65,7 @@ class NetworkIdentity(Component):
             return self.is_owner
         if self.authority == AuthorityMode.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 return get_transport().is_server
             except Exception:
                 return False
@@ -73,7 +73,7 @@ class NetworkIdentity(Component):
 
     def transfer_ownership(self, new_owner_id: int):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             t = get_transport()
             if not t.is_server:
@@ -87,7 +87,7 @@ class NetworkIdentity(Component):
 
     def request_ownership(self):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             t = get_transport()
             if t.is_connected and not t.is_server:
@@ -101,7 +101,7 @@ class NetworkIdentity(Component):
 
     def _refresh_is_local(self):
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             self.is_local_player = (self.owner_id == get_transport().local_id)
         except Exception:
             pass

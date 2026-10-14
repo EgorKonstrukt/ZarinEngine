@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QWidget, QSizePolicy
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import InspectorField, FieldType
 if TYPE_CHECKING:
-    from core.gui.canvas import GuiCanvas
+    from core.gui.canvasp import GuiCanvas
 
 
 @ComponentRegistry.register

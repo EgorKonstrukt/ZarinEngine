@@ -11,7 +11,7 @@ import numpy as np
 import moderngl
 from typing import Optional, Any
 from core.maths.math3d import Vec3
-from core.renderer.precision import apply_precision
+from core.renderer.prec import apply_precision
 from core.components.rendering.particles.particle_force_field import FORCE_FIELD_DTYPE, FORCE_FIELD_SSBO_SIZE, MAX_FORCE_FIELDS
 
 

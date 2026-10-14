@@ -17,7 +17,7 @@ def origin_for(cam_pos, enabled=None):
     global _origin_last_key
     global _origin_last_value
     try:
-        from core.renderer.precision import is_rtc_enabled
+        from core.renderer.prec import is_rtc_enabled
         flag = is_rtc_enabled() if enabled is None else bool(enabled)
     except Exception:
         flag = bool(enabled) if enabled is not None else False
@@ -46,7 +46,7 @@ def origin_for(cam_pos, enabled=None):
 
 def origin_from_view(view_mat, enabled=None):
     try:
-        from core.renderer.precision import is_rtc_enabled
+        from core.renderer.prec import is_rtc_enabled
         flag = is_rtc_enabled() if enabled is None else bool(enabled)
     except Exception:
         flag = bool(enabled) if enabled is not None else False

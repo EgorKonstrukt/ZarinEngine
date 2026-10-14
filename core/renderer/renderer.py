@@ -14,40 +14,40 @@ from core.foundation.logger import Logger
 from core.components.rendering.postfx.graphics_effect import GraphicsEffect
 from core.maths.math3d import Mat4, Vec3
 from core.renderer.types import RenderMode
-from core.renderer.mesh_data import MeshData, read_shader
+from core.renderer.meshd import MeshData, read_shader
 from core.renderer.grid import GridRenderer
-from core.renderer.gizmo import GizmoRenderer, FATLINE_VERT, FATLINE_FRAG
+from core.renderer.gizmor import GizmoRenderer, FATLINE_VERT, FATLINE_FRAG
 from core.renderer.shadows import ShadowRenderer
 from core.renderer.particles import ParticleRenderer
-from core.renderer.sprites import SpriteRendererGL
-from core.renderer.svgs import SvgRendererGL
-from core.renderer.video import VideoRendererGL
+from core.renderer.spr import SpriteRendererGL
+from core.renderer.svgr import SvgRendererGL
+from core.renderer.videor import VideoRendererGL
 from core.renderer.icons import IconRenderer
-from core.renderer.gaussian_splat_renderer import GaussianSplatRenderer
-from core.renderer.text import TextRendererGL
-from core.renderer.materials import MaterialManager
-from core.renderer.shaders import ShaderManager, program_with_fallback
-from core.renderer.mesh_loader import MeshLoader
-from core.renderer.batcher import RenderBatcher, resolve_normal_matrix
+from core.renderer.splat import GaussianSplatRenderer
+from core.renderer.textr import TextRendererGL
+from core.renderer.mats import MaterialManager
+from core.renderer.shaderp import ShaderManager, program_with_fallback
+from core.renderer.meshload import MeshLoader
+from core.renderer.batch import RenderBatcher, resolve_normal_matrix
 from core.renderer.gpu_culling import GpuStorage, GpuCulling
 from core.renderer.render_items import _ProjectorItem, _SpriteItem, _SvgItem, _TAAU_JITTER, _VideoItem, _halton
 from core.renderer.render_snapshot import _RenderSnapshot
-from core.renderer.renderer_config import RendererConfigMixin
-from core.renderer.renderer_programs import RendererProgramsMixin
+from core.renderer.rconfig import RendererConfigMixin
+from core.renderer.programs import RendererProgramsMixin
 from core.renderer.voxel_pass import VoxelPassMixin
 from core.renderer.object_fx_pass import ObjectFxPassMixin
 from core.renderer.framebuffers import FramebuffersMixin
 from core.renderer.water_pass import WaterPassMixin
-from core.renderer.scene_uniforms import SceneUniformsMixin
+from core.renderer.uniforms import SceneUniformsMixin
 from core.renderer.skinned_pass import SkinnedPassMixin
-from core.renderer.scene_collector import SceneCollectorMixin
-from core.renderer.geometry_cache import GeometryCacheMixin
+from core.renderer.collector import SceneCollectorMixin
+from core.renderer.geocache import GeometryCacheMixin
 from core.renderer.outline_pass import OutlinePassMixin
 from core.renderer.gizmo_pass import GizmoPassMixin
 from core.renderer.icon_pass import IconPassMixin
 from core.renderer.cubemap_pass import CubemapPassMixin
 from core.renderer.post_pass import PostPassMixin
-from core.renderer.scene_renderer import SceneRendererMixin
+from core.renderer.scenev import SceneRendererMixin
 
 
 __all__ = ["Renderer", "_RenderSnapshot", "_SpriteItem", "_SvgItem", "_VideoItem", "_ProjectorItem", "_TAAU_JITTER", "_halton"]

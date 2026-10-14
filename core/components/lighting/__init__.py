@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from core.components.lighting.light import (
+from core.components.lighting.lightp import (
     Light,
     LightType,
     LightAreaType,

@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 from core.ecs import ComponentRegistry
-from core.components.gui.layout.base_widget_component import GuiWidgetComponentBase
-from core.gui.widgets import TableWidget
+from core.components.gui.layout.basewidget import GuiWidgetComponentBase
+from core.gui.wid import TableWidget
 from core.components.inspector_meta import InspectorField, FieldType
 
 

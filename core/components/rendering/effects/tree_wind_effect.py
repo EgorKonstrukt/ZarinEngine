@@ -15,7 +15,7 @@ class TreeWindEffect(ObjectEffect):
     @classmethod
     def fx_geometry_shader(cls) -> "str | None":
         try:
-            from core.renderer.mesh_data import read_shader
+            from core.renderer.meshd import read_shader
             return read_shader("Tree.gshader")
         except Exception:
             return None

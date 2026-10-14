@@ -113,7 +113,7 @@ class MaterialPreviewWidget(QOpenGLWidget):
             if os.path.exists(cand):
                 return cand
             try:
-                from core.engine.engine import Engine
+                from core.engine.eng import Engine
                 eng = Engine.instance()
                 root = getattr(eng, "project_root", "") if eng is not None else ""
                 if root:

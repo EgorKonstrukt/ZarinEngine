@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from core.gui.widgets import (
+from core.gui.wid import (
     GuiWidget, Panel, Label, Button, Slider, TextInput, Image,
     Toggle, ProgressBar, Dropdown, ScrollPanel,
     RadioButton, ListWidget, TableWidget, TreeWidget,
@@ -15,5 +15,5 @@ from core.gui.widgets import (
     ANCHOR_STRETCH_ALL, ANCHOR_STRETCH_WIDTH, ANCHOR_STRETCH_HEIGHT,
     WIDGET_REGISTRY, apply_fusion_style, ChartPlotter,
 )
-from core.gui.canvas import GuiCanvas
+from core.gui.canvasp import GuiCanvas
 from core.gui.api import GuiApi

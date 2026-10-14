@@ -208,7 +208,7 @@ class AnimationClip:
         self._path = path
 
     def save_unity(self, path: str):
-        from core.components.animation.unity.exporters import clip_to_unity_yaml
+        from core.components.animation.unity.exportp import clip_to_unity_yaml
 
         with open(path, "w") as f:
             f.write(clip_to_unity_yaml(self))

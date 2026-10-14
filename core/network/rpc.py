@@ -71,7 +71,7 @@ def invoke_rpc(entity: Entity, method: str, args: dict, sender: int = -1):
 
 def send_server_rpc(net_id: int, method: str, args: dict | None = None):
     try:
-        from core.network.transport import get_transport
+        from core.network.transp import get_transport
         from core.network.protocol import MessageType
         t = get_transport()
         if t.is_client:
@@ -84,7 +84,7 @@ def send_server_rpc(net_id: int, method: str, args: dict | None = None):
 
 def send_client_rpc(net_id: int, method: str, args: dict | None = None):
     try:
-        from core.network.transport import get_transport
+        from core.network.transp import get_transport
         from core.network.protocol import MessageType
         t = get_transport()
         if t.is_server:
@@ -95,7 +95,7 @@ def send_client_rpc(net_id: int, method: str, args: dict | None = None):
 
 def send_target_rpc(peer_id: int, net_id: int, method: str, args: dict | None = None):
     try:
-        from core.network.transport import get_transport
+        from core.network.transp import get_transport
         from core.network.protocol import MessageType
         t = get_transport()
         if t.is_server:

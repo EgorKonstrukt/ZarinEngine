@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from editor.main_window.handlers import (
+from editor.main_window.handlersp import (
     on_entity_selected,
     on_entities_selected,
     on_entity_selected_from_viewport,
@@ -82,7 +82,7 @@ def connect_signals(mw):
     mw._viewport.gizmo.snap_rotate = mw._render_toolbar._snap_r_sb.value()
     mw._viewport.gizmo.snap_scale = mw._render_toolbar._snap_s_sb.value()
     from core.config.config import get_global_config
-    from core.gizmo.gizmo import GizmoMode
+    from core.gizmo.core import GizmoMode
     cfg = get_global_config()
     mw._viewport.gizmo.load_config(cfg)
     # Sync SceneToolbar multigizmo UI from config

@@ -9,8 +9,8 @@
 from __future__ import annotations
 import numpy as np
 import moderngl
-from core.engine.engine import Engine
-from core.renderer.batcher import RenderBatcher, resolve_normal_matrix
+from core.engine.eng import Engine
+from core.renderer.batch import RenderBatcher, resolve_normal_matrix
 from core.renderer.origin import origin_for, relativize_model_f32
 
 

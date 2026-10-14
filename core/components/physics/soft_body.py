@@ -161,7 +161,7 @@ class SoftBody(Component):
         if not path:
             return None
         try:
-            from core.components.physics.mesh_collider import load_collision_geometry
+            from core.components.physics.meshcol import load_collision_geometry
             verts, indices, _ = load_collision_geometry(path)
         except Exception:
             return None

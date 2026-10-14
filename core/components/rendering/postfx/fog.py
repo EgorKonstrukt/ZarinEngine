@@ -11,7 +11,7 @@ from typing import Optional
 from core.ecs import ComponentRegistry
 from core.components.rendering.postfx.graphics_effect import GraphicsEffect
 from core.components.inspector_meta import FieldType, InspectorField
-from core.components.lighting.light import Light, LightType
+from core.components.lighting.lightp import Light, LightType
 
 
 FOG_VERT = """

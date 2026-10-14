@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from plugins.qt_quick_plugin.components.quick_view import QuickView
-from plugins.qt_quick_plugin.components.quick_controls import (
+from plugins.qt_quick_plugin.components.controls import (
     QuickButton,
     QuickLabel,
     QuickSlider,

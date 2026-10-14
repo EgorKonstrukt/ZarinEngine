@@ -10,7 +10,7 @@ import threading
 import numpy as np
 from typing import Optional
 from core.maths.math3d import Vec3
-from core.spatial.octree import AABB
+from core.spatial.octp import AABB
 try:
     from core import _nav_batch as _nb
     _HAS_NAV_CYTHON = True

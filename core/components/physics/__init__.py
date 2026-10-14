@@ -8,14 +8,14 @@ from core.components.physics.rigidbody import Rigidbody
 from core.components.physics.box_collider import BoxCollider
 from core.components.physics.sphere_collider import SphereCollider
 from core.components.physics.capsule_collider import CapsuleCollider
-from core.components.physics.mesh_collider import MeshCollider, CollisionMode
-from core.components.physics.gs_volume_collider import GSVolumeCollider
+from core.components.physics.meshcol import MeshCollider, CollisionMode
+from core.components.physics.gsvol import GSVolumeCollider
 from core.components.physics.terrain_collider import TerrainCollider
-from core.components.physics.character_controller import CharacterController
+from core.components.physics.character import CharacterController
 from core.components.physics.joint import Joint, JointType
 from core.components.physics.buoyancy import Buoyancy
 from core.components.physics.soft_body import SoftBody, SoftBendMode, SoftPinMode
-from core.components.physics.phys_bone_collider import PhysBoneCollider, PhysBoneColliderType, PhysBoneColliderDirection
+from core.components.physics.pbcollider import PhysBoneCollider, PhysBoneColliderType, PhysBoneColliderDirection
 from core.components.physics.physbone import PhysBone, PhysBoneIntegration, PhysBoneMultiChild, PhysBoneImmobileType, PhysBoneLimitType
 
 __all__ = [

@@ -10,7 +10,7 @@ from __future__ import annotations
 import traceback
 import numpy as np
 import moderngl
-from core.engine.engine import Engine
+from core.engine.eng import Engine
 from core.foundation.logger import Logger
 from core.maths.math3d import Mat4, Vec3
 from core.renderer.origin import origin_for, relativize_model_f32

@@ -225,7 +225,7 @@ def main():
     app.processEvents()
     if _check_extensions_missing():
         _build_extensions_with_splash(splash)
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
     splash.advance("Initializing engine core...")
     engine = Engine()
     splash.advance("Running engine subsystems...")
@@ -268,7 +268,7 @@ def main():
     app.processEvents()
     from editor.ipc_server import IpcServer
     def _open_file_from_ipc(path: str):
-        from editor.main_window.handlers import open_scene_by_path
+        from editor.main_window.handlersp import open_scene_by_path
         def _do():
             open_scene_by_path(window, path)
         QTimer.singleShot(0, _do)
@@ -278,7 +278,7 @@ def main():
 
     if args.file and os.path.exists(args.file):
         if args.file.endswith(".zpes"):
-            from editor.main_window.handlers import open_scene_by_path
+            from editor.main_window.handlersp import open_scene_by_path
             open_scene_by_path(window, args.file)
         elif args.file.endswith(".zterr"):
             if hasattr(window, '_terrain_editor') and window._terrain_editor is not None:

@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from core.ecs import ComponentRegistry
-from core.components.gui.layout.base_widget_component import GuiWidgetComponentBase
-from core.gui.widgets import Panel
+from core.components.gui.layout.basewidget import GuiWidgetComponentBase
+from core.gui.wid import Panel
 
 
 @ComponentRegistry.register

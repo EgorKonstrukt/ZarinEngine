@@ -15,7 +15,7 @@ from PyQt6.QtGui import QPixmap, QIcon
 import qtawesome as qta
 from core.config.editor_scale import scale
 from editor.inspector.constants import _accent
-from editor.inspector.helpers import get_component_icon_pixmap
+from editor.inspector.helpersp import get_component_icon_pixmap
 
 
 _PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -146,7 +146,7 @@ class ComponentPickerDialog(QDialog):
 
     def _load_data(self):
         from core.ecs import ComponentRegistry
-        from core.engine.engine import Engine
+        from core.engine.eng import Engine
         all_reg = ComponentRegistry.all()
         self._all_components = []
         self._categories.clear()

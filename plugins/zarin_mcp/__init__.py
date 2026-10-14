@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from core.foundation.plugin_manager import PluginBase
+from core.foundation.plugins import PluginBase
 from core.foundation.logger import Logger
 
 from plugins.zarin_mcp.registry import Registry
@@ -61,15 +61,15 @@ class ZarinMCPPlugin(PluginBase):
             dock.setFocus()
 
     def _discover_handlers(self, engine):
-        import plugins.zarin_mcp.handlers.scene as _scene
-        import plugins.zarin_mcp.handlers.components as _components
+        import plugins.zarin_mcp.handlers.scenep as _scene
+        import plugins.zarin_mcp.handlers.compp as _components
         import plugins.zarin_mcp.handlers.project as _project
         import plugins.zarin_mcp.handlers.engine as _engine
         import plugins.zarin_mcp.handlers.assets as _assets
         import plugins.zarin_mcp.handlers.editor as _editor
         import plugins.zarin_mcp.handlers.console as _console
         import plugins.zarin_mcp.handlers.resources as _resources
-        import plugins.zarin_mcp.handlers.viewport as _viewport
+        import plugins.zarin_mcp.handlers.viewportp as _viewport
 
         _scene.register(self._registry, engine)
         _components.register(self._registry, engine)

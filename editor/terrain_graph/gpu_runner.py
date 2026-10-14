@@ -27,7 +27,7 @@ def _ensure_ctx() -> bool:
     if _ctx is not None:
         return True
     try:
-        from core.engine.engine import Engine
+        from core.engine.eng import Engine
         eng = Engine.instance()
         if eng is not None:
             vp = getattr(eng, "viewport", None)

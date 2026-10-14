@@ -128,7 +128,7 @@ def register(registry, engine):
         full = resolve_path(engine, path)
         if not os.path.isfile(full):
             return {"error": f"File not found: {path}"}
-        from core.assets.asset_importer import load_mesh, load_obj
+        from core.assets.importer import load_mesh, load_obj
         ext = os.path.splitext(full)[1].lower()
         try:
             if ext == ".obj":
@@ -152,7 +152,7 @@ def register(registry, engine):
     )
     def audio_list_clips():
         try:
-            from core.audio.audio_system import AudioSystem, AudioSourceManager
+            from core.audio.sys import AudioSystem, AudioSourceManager
             system = AudioSystem.instance()
             if system is None:
                 return {"audio_clips": [], "message": "Audio system not active"}
@@ -182,7 +182,7 @@ def register(registry, engine):
         if not os.path.isfile(full):
             return {"error": f"File not found: {path}"}
         try:
-            from core.audio.audio_system import AudioSystem, AudioSourceManager
+            from core.audio.sys import AudioSystem, AudioSourceManager
             system = AudioSystem.instance()
             if system is None:
                 return {"error": "Audio system not active"}
@@ -202,7 +202,7 @@ def register(registry, engine):
     )
     def audio_stop_all():
         try:
-            from core.audio.audio_system import AudioSourceManager
+            from core.audio.sys import AudioSourceManager
             mgr = AudioSourceManager.instance()
             if mgr:
                 mgr.stop_all()
@@ -233,7 +233,7 @@ def register(registry, engine):
     )
     def audio_set_volume(channel="master", volume=1.0):
         try:
-            from core.audio.audio_system import AudioSystem
+            from core.audio.sys import AudioSystem
             system = AudioSystem.instance()
             if system is None:
                 return {"error": "Audio system not active"}

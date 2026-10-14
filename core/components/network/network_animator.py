@@ -74,7 +74,7 @@ class NetworkAnimator(Component):
             return False
         if self.authority == AnimatorAuthority.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 return get_transport().is_server
             except Exception:
                 return False
@@ -153,7 +153,7 @@ class NetworkAnimator(Component):
         payload = {"net_id": ident.net_id, "t": time.time(), "seq": self._seq}
         payload.update(state)
         try:
-            from core.network.transport import get_transport
+            from core.network.transp import get_transport
             from core.network.protocol import MessageType
             get_transport().broadcast(MessageType.NET_ANIMATOR, payload)
         except Exception:
@@ -170,7 +170,7 @@ class NetworkAnimator(Component):
             return
         if self.authority == AnimatorAuthority.SERVER:
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 if get_transport().is_server:
                     return
             except Exception:
@@ -257,7 +257,7 @@ class NetworkAnimator(Component):
             if ident is None:
                 return
             try:
-                from core.network.transport import get_transport
+                from core.network.transp import get_transport
                 from core.network.protocol import MessageType
                 self._seq += 1
                 get_transport().broadcast(MessageType.NET_ANIMATOR, {"net_id": ident.net_id, "trigger": str(name), "t": time.time(), "seq": self._seq})

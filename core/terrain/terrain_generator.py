@@ -140,7 +140,7 @@ class TerrainGenerator:
 
     def _try_engine_context(self) -> Optional[moderngl.Context]:
         try:
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             eng = Engine.instance()
             if eng is None:
                 return None

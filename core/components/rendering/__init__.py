@@ -11,9 +11,9 @@ from core.components.rendering.renderers.mesh_renderer import MeshRenderer
 from core.components.rendering.renderers.sprite_renderer import SpriteRenderer
 from core.components.rendering.renderers.video_renderer import VideoRenderer
 from core.components.rendering.renderers.svg_renderer import SvgRenderer
-from core.components.rendering.particles.particle_system import ParticleSystem
+from core.components.rendering.particles.partic import ParticleSystem
 from core.components.rendering.particles.particle_force_field import ParticleForceField
-from core.components.rendering.environment.sky import ProceduralSky
+from core.components.rendering.environment.skyp import ProceduralSky
 from core.components.rendering.environment.skybox import Skybox
 from core.components.rendering.environment.clouds import Cloud
 from core.components.rendering.renderers.text_renderer import TextRenderer

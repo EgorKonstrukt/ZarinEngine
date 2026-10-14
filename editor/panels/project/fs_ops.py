@@ -5,8 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, shutil, tempfile, time, threading, queue
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox, QApplication, QTreeWidgetItem
 from PyQt6.QtCore import Qt
+from editor.picker import _format_size
 from .icons import _ENTITY_MIME
 class FsOpsMixin:
     def _norm(self, p: str) -> str:

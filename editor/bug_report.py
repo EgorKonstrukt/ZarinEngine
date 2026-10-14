@@ -62,7 +62,7 @@ def _collect_context() -> str:
     gil_enabled = getattr(sys, '_is_gil_enabled', lambda: True)()
     parts.append(f"**GIL:** {'Enabled' if gil_enabled else 'Disabled (nogil)'}")
     try:
-        from core.renderer.render_stats import stats_text
+        from core.renderer.stats import stats_text
         perf = stats_text()
         if perf:
             parts.append(f"**Performance:**\n```\n{perf}\n```")

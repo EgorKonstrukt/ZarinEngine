@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Optional
 from core.maths.math3d import Vec3, Quat
 from core.foundation.logger import Logger
-from core.gizmo.gizmo import GizmoMode
+from core.gizmo.core import GizmoMode
 
 
 class ViewportSelectionMixin:
@@ -84,7 +84,7 @@ class ViewportSelectionMixin:
         from editor.viewport.collaboration import is_collab_locked
         if is_collab_locked(self):
             return
-        from core.foundation.commands import DeleteEntityCommand, get_history
+        from core.foundation.cmd import DeleteEntityCommand, get_history
         for ent in list(self._selected_entities):
             from editor.viewport.collaboration import send_collab_entity_delete
             send_collab_entity_delete(self, ent.id)
@@ -129,8 +129,8 @@ class ViewportSelectionMixin:
             self._entity_clipboard.append(data)
 
     def _paste_entities(self):
-        from core.engine.engine import Engine
-        from core.foundation.commands import PasteEntitiesCommand, get_history
+        from core.engine.eng import Engine
+        from core.foundation.cmd import PasteEntitiesCommand, get_history
         registry = Engine.instance()._component_registry
         if not self._entity_clipboard or not self._engine.scene:
             return
@@ -166,7 +166,7 @@ class ViewportSelectionMixin:
         populate_add_menu(create_menu, on_system=lambda mp: self._emit_create_request("system", mp), on_asset=lambda ap: self._emit_create_request("asset", ap), on_search=None)
 
     def _emit_create_request(self, obj_type="empty", subtype=None):
-        from core.foundation.commands import CreateSystemPrefabCommand, InstantiatePrefabCommand, get_history
+        from core.foundation.cmd import CreateSystemPrefabCommand, InstantiatePrefabCommand, get_history
         scene = self._engine.scene
         from editor.viewport.collaboration import is_collab_locked
         if not scene or is_collab_locked(self):
@@ -185,7 +185,7 @@ class ViewportSelectionMixin:
                 send_collab_entity_create(self, e.serialize())
             return
         if obj_type == "asset" and subtype:
-            from core.ecs.prefab import PrefabLibrary
+            from core.ecs.prefabp import PrefabLibrary
             prefab = PrefabLibrary.load(subtype)
             if not prefab:
                 return
@@ -222,8 +222,8 @@ class ViewportSelectionMixin:
 
     def _extrude_on_ctrl_press(self):
         try:
-            from core.foundation.commands import PasteEntitiesCommand, get_history
-            from core.engine.engine import Engine
+            from core.foundation.cmd import PasteEntitiesCommand, get_history
+            from core.engine.eng import Engine
             scene = self._engine.scene
             if scene and self._selected_entities:
                 clipboard = []
@@ -330,7 +330,7 @@ class ViewportSelectionMixin:
 
     def _commit_multi_transform(self):
         if self._multi_entity_initial_transforms:
-            from core.foundation.commands import SetComponentCommand, CompoundCommand, get_history
+            from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
             from core.components import Transform as TransformComponent
             cmds = []
             for ent in self._selected_entities:
@@ -362,7 +362,7 @@ class ViewportSelectionMixin:
             self._update_gizmo_pivot()
 
     def _paint_gizmo_block(self, vp_mat, fw, fh, cam_pos, render_ms_holder=None):
-        from editor.viewport.rendering import render_component_gizmos, render_selection_bounds
+        from editor.viewport.rend import render_component_gizmos, render_selection_bounds
         from editor.viewport.component_icons import render_component_icons_gl
         from editor.viewport.collaboration import render_remote_collaborator_gizmos
         import time as _t
@@ -417,7 +417,7 @@ class ViewportSelectionMixin:
         if self._pb_scale_gizmo and self._pb_scale_gizmo.active and not _play:
             self._pb_scale_gizmo.render()
         if not _play and self._gizmo.entity is not None and self._gizmo.mode != GizmoMode.NONE:
-            from core.gizmo.gizmo import GizmoMode as _GM
+            from core.gizmo.core import GizmoMode as _GM
             gizmo_result = self._gizmo.get_gizmo_arrays(self._cam, fw, fh)
             if gizmo_result is not None:
                 gs, ge, gcol = gizmo_result

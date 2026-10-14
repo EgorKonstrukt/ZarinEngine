@@ -8,7 +8,7 @@ import asyncio, threading, time
 from typing import Callable, Optional
 from core.foundation.logger import Logger
 from core.network.protocol import MessageType, normalize_room, normalize_relay_url, generate_room_code, build_direct_invite, build_relay_invite, parse_invite
-from core.network.server import CollabServer
+from core.network.serverp import CollabServer
 from core.network.client import CollabClient
 from .models import CollabSettings; from .poll import _PollThread; from .util import get_lan_ips
 from .presence import PresenceMixin; from .scene_sync import SceneSyncMixin; from .script_sync import ScriptSyncMixin; from .asset_sync import AssetSyncMixin; from .upnp import UpnpMixin; from .settings import SettingsMixin
@@ -192,7 +192,7 @@ class CollaborationManager(PresenceMixin, SceneSyncMixin, ScriptSyncMixin, Asset
         self._client = client
         client.connect(self._direct_host, self._direct_port, self._own_name, password=self._password, room=self._room)
     def host_relay(self, relay_url: str, room: str = "", password: str = "", name: str = "User") -> str:
-        from core.network.relay import RelayClient
+        from core.network.relayp import RelayClient
         self._manual_stop = False
         self._stop_link_only()
         self._stop_server_only()
@@ -221,7 +221,7 @@ class CollaborationManager(PresenceMixin, SceneSyncMixin, ScriptSyncMixin, Asset
         self._start_asset_watcher()
         return str(self._room)
     def join_relay(self, relay_url: str, room: str, password: str = "", name: str = "User"):
-        from core.network.relay import RelayClient
+        from core.network.relayp import RelayClient
         self._manual_stop = False
         self._stop_link_only()
         self._stop_server_only()

@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QToolBar, QLabel, QPushButton, QCheckBox,
                              QHBoxLayout, QSizePolicy)
 import qtawesome as qta
 from PyQt6.QtCore import pyqtSignal, Qt, QSize
-from core.gizmo.gizmo import GizmoMode, GizmoSpace
+from core.gizmo.core import GizmoMode, GizmoSpace
 from core.renderer.types import RenderMode
 
 

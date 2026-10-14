@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from PyQt6.QtCore import QThread
 
 if TYPE_CHECKING:
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
 
 _MAX_FIXED_STEPS = 5
 

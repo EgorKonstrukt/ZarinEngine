@@ -2,13 +2,13 @@
 # If a copy of the MPL was not distributed with this file, You can obtain one at
 # https://mozilla.org/MPL/2.0/.
 
-from core.components.rendering.skeleton.armature import Armature
+from core.components.rendering.skeleton.armp import Armature
 from core.components.rendering.renderers.skinned_mesh_renderer import SkinnedMeshRenderer
 
 
 def create_skinned_mesh_entity(scene, path: str, name: str, mesh_path: str, world_pos=None):
     from core.components import Transform
-    from core.assets.asset_importer import load_mesh
+    from core.assets.importer import load_mesh
 
     try:
         import_data = load_mesh(path)
@@ -23,7 +23,7 @@ def create_skinned_mesh_entity(scene, path: str, name: str, mesh_path: str, worl
 
 def create_skinned_mesh_entity_async(scene, path: str, name: str, mesh_path: str,
                                      world_pos=None, callback=None):
-    from core.assets.asset_importer import load_mesh_future
+    from core.assets.importer import load_mesh_future
     from PyQt6.QtCore import QTimer
 
     fut = load_mesh_future(path)
@@ -56,7 +56,7 @@ def _build_skinned_entity(scene, path, name, mesh_path, world_pos, import_data):
     if world_pos is not None:
         tr.local_position = world_pos
     try:
-        from core.assets.asset_importer import _read_mesh_import
+        from core.assets.importer import _read_mesh_import
         _scale = float(_read_mesh_import(path).get("scale", 1.0))
         if _scale and _scale != 1.0:
             from core.maths.math3d import Vec3

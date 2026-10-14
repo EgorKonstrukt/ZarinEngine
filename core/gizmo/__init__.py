@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from core.gizmo.gizmo import Gizmo, GizmoMode, GizmoSpace
-from core.gizmo.api import Gizmos, GizmosManager
+from core.gizmo.core import Gizmo, GizmoMode, GizmoSpace
+from core.gizmo.apiv import Gizmos, GizmosManager
 __all__ = ["Gizmo", "GizmoMode", "GizmoSpace", "Gizmos", "GizmosManager"]

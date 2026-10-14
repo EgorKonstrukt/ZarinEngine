@@ -61,7 +61,7 @@ class ViewportCameraMixin:
         elif dt < 0.0:
             dt = 0.0
         self._last_dt = dt
-        from core.gizmo.gizmo import GizmoMode
+        from core.gizmo.core import GizmoMode
         from core.input.constants import KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE
         prof.start("input_handling")
         if self._im:
@@ -89,7 +89,7 @@ class ViewportCameraMixin:
                     t = ent.transform
                     if t:
                         try:
-                            from editor.entity_frame import compute_entity_frame
+                            from editor.entframe import compute_entity_frame
                             center, radius = compute_entity_frame(ent, self._renderer)
                             self._cam.frame_bounds(center, radius)
                         except Exception:
@@ -101,7 +101,7 @@ class ViewportCameraMixin:
                 if self._selected_entities and eng.scene:
                     from editor.viewport.collaboration import is_collab_locked
                     if not is_collab_locked(self):
-                        from core.foundation.commands import DeleteEntityCommand, get_history
+                        from core.foundation.cmd import DeleteEntityCommand, get_history
                         for ent in list(self._selected_entities):
                             if ent.locked or ent.system:
                                 continue

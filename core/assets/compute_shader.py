@@ -16,7 +16,7 @@ import numpy as np
 
 from core.foundation.logger import Logger
 from core.foundation.progress import notify_error, task_complete, task_start
-from core.renderer.precision import apply_precision
+from core.renderer.prec import apply_precision
 
 
 def compile_compute_shader(ctx: moderngl.Context, source: str,

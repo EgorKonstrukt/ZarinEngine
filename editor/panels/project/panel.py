@@ -6,8 +6,8 @@
 from __future__ import annotations
 import os, queue, sys, threading
 from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFileIconProvider, QToolButton, QSlider, QFrame, QMenu
-from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal, QEvent
+from PyQt6.QtGui import QAction, QIcon, QShortcut, QKeySequence
 from typing import Optional, TYPE_CHECKING
 from core.config.editor_scale import scale, scale_xy
 from editor.constants import MIN_THUMB, MAX_THUMB, VIEW_ICON, VIEW_LIST, VIEW_DETAILS
@@ -15,7 +15,7 @@ from .icons import _qta_icon, qta
 from .widgets import FolderTreeWidget; from .pane import _FilePane, _NavBar, _StatusBar
 from .navigation import NavigationMixin; from .fs_ops import FsOpsMixin; from .dnd import DndMixin; from .vcs import VcsMixin; from .openers import OpenersMixin; from .creation import CreationMixin
 if TYPE_CHECKING:
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
 class ProjectPanel(NavigationMixin, FsOpsMixin, DndMixin, VcsMixin, OpenersMixin, CreationMixin, QDockWidget):
     file_double_clicked = pyqtSignal(str)
     prefab_drag_started = pyqtSignal(str)
@@ -225,19 +225,19 @@ class ProjectPanel(NavigationMixin, FsOpsMixin, DndMixin, VcsMixin, OpenersMixin
         if ext in ext_map:
             return _qta_icon(ext_map[ext], "#d4d4d4")
         if ext == ".zpes":
-            from editor.resource_picker import _draw_scene_icon
+            from editor.picker import _draw_scene_icon
             return QIcon(_draw_scene_icon(self._thumb_size))
         if ext == ".zpep":
-            from editor.resource_picker import _draw_prefab_icon
+            from editor.picker import _draw_prefab_icon
             return QIcon(_draw_prefab_icon(self._thumb_size))
         if ext == ".mat":
-            from editor.resource_picker import _get_material_thumbnail, _draw_material_icon
+            from editor.picker import _get_material_thumbnail, _draw_material_icon
             pm = _get_material_thumbnail(path, self._thumb_size)
             if pm:
                 return QIcon(pm)
             return QIcon(_draw_material_icon(self._thumb_size))
         if ext in (".animclip", ".animcontroller"):
-            from editor.resource_picker import _draw_file_icon
+            from editor.picker import _draw_file_icon
             return QIcon(_draw_file_icon(self._thumb_size))
         return None
     def _active_pane(self) -> _FilePane:
@@ -438,7 +438,7 @@ class ProjectPanel(NavigationMixin, FsOpsMixin, DndMixin, VcsMixin, OpenersMixin
         self._status_bar = _StatusBar(self)
         main_layout.addWidget(self._status_bar)
         self.setWidget(w)
-        from editor.resource_picker import _get_thumb_service
+        from editor.picker import _get_thumb_service
         from editor.thumb_cache import cache_root_for_project
         _get_thumb_service().set_cache_dir(cache_root_for_project(self._project_root))
         self._connect_mesh_loader()

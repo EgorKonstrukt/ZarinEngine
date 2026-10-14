@@ -9,7 +9,7 @@ from core.components.network.remote_collaborator import RemoteCollaborator
 from core.components.network.network_transform import NetworkTransform, TransformAuthority
 from core.components.network.network_rigidbody import NetworkRigidbody, RigidbodyAuthority
 from core.components.network.network_animator import NetworkAnimator, AnimatorAuthority
-from core.components.network.network_manager import NetworkManager
+from core.components.network.netmgr import NetworkManager
 from core.components.network.network_variables import NetworkVariables, VariableAuthority
 from core.components.network.network_spawn import NetworkSpawn
 from core.components.network.network_player import NetworkPlayer

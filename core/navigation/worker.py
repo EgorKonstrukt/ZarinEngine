@@ -20,7 +20,7 @@ from .stats import _stat, _timed
 from .epoch import _bump_epoch, _GRID_LOCK
 from .raster import _rasterize_descs_fresh
 from .grid import NavGrid
-from .nav_world import NavWorld
+from .world import NavWorld
 
 
 class _NavSolveWorker(threading.Thread):

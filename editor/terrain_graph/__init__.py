@@ -4,6 +4,6 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from editor.terrain_graph.nodes import ALL_NODES
+from editor.terrain_graph.nodesp import ALL_NODES
 from editor.terrain_graph.code_generator import generate_shader
 from editor.terrain_graph.gpu_runner import run_shader

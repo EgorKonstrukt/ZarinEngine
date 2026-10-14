@@ -13,7 +13,7 @@ from core.maths.math3d import Vec3
 from core.physics.collision_layers import MAX_LAYERS, DEFAULT_LAYER_NAMES
 from core.config.config import get_project_config
 from editor.inspector.constants import _FUSION_INPUT_RADIUS, _accent, _window_text
-from editor.inspector.helpers import make_spinbox, make_gameobject_picker, make_resource_picker, make_resource_type_picker, make_vec3_row
+from editor.inspector.helpersp import make_spinbox, make_gameobject_picker, make_resource_picker, make_resource_type_picker, make_vec3_row
 class ListsMixin:
     def _build_list_field_standalone(self, field, prop_name):
         c = self._component
@@ -86,7 +86,7 @@ class ListsMixin:
             return []
         try:
             from core.components.rendering.renderers.mesh_filter import MeshFilter
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             eng = Engine.instance()
             r = getattr(eng, '_renderer', None)
             if r is None:
@@ -189,7 +189,7 @@ class ListsMixin:
             cb.toggled.connect(on_toggle)
             return cb
         elif ef.field_type.value == "gameobject":
-            from core.engine.engine import Engine
+            from core.engine.eng import Engine
             scene = Engine.instance().scene
             eid = val.get(ef.name, "") if isinstance(val, dict) else ""
             def on_entity(eid, idx=index, pn=prop_name, fn=ef.name):
@@ -260,7 +260,7 @@ class ListsMixin:
                 sb.valueChanged.connect(on_change)
             return w
         elif ef.field_type.value == "color":
-            from editor.color_picker import ColorLineEdit
+            from editor.color import ColorLineEdit
             rgb = val.get(ef.name, [1, 1, 1]) if isinstance(val, dict) else [1, 1, 1]
             initial = QColor.fromRgbF(*rgb[:3])
             color_edit = ColorLineEdit(initial)
@@ -313,7 +313,7 @@ class ListsMixin:
                 }}
             """)
         btn.setMinimumHeight(22)
-        from core.engine.engine import Engine
+        from core.engine.eng import Engine
         cfg = get_project_config(Engine.instance().project_root)
         layer_names = cfg.get("physics.layer_names", DEFAULT_LAYER_NAMES) if cfg else DEFAULT_LAYER_NAMES
         menu = QMenu(self)

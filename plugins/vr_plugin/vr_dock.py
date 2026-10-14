@@ -106,22 +106,22 @@ class VRControlWidget(QWidget):
         self._plugin.toggle_vr()
 
     def _on_ipd_changed(self, value):
-        from plugins.vr_plugin.vr_core import set_ipd
+        from plugins.vr_plugin.core import set_ipd
         ipd = value / 1000.0
         set_ipd(ipd)
         self._ipd_lbl.setText(f"{ipd:.3f} m")
 
     def _on_reset_ipd(self):
-        from plugins.vr_plugin.vr_core import reset_ipd
+        from plugins.vr_plugin.core import reset_ipd
         reset_ipd()
         self._refresh()
 
     def _on_reset_origin(self):
-        from plugins.vr_plugin.vr_core import reset_hmd_origin
+        from plugins.vr_plugin.core import reset_hmd_origin
         reset_hmd_origin()
 
     def _on_toggle_view(self):
-        from plugins.vr_plugin.vr_core import toggle_eye_view
+        from plugins.vr_plugin.core import toggle_eye_view
         v = toggle_eye_view()
         self._eye_view_btn.setText("View: Eye" if v else "View: Desktop")
         if hasattr(self._plugin, '_eye_view'):
@@ -157,7 +157,7 @@ class VRControlWidget(QWidget):
             pass
 
     def _refresh(self):
-        from plugins.vr_plugin.vr_core import (
+        from plugins.vr_plugin.core import (
             is_available, vr_enabled, session_running, is_active,
             get_ipd, get_hmd_pos_offset, get_controllers, is_eye_view,
         )
@@ -196,7 +196,7 @@ class VRControlWidget(QWidget):
         self._session_lbl.setText(f"Session: {'Running' if running else 'Idle'}")
 
         try:
-            from plugins.vr_plugin.vr_core import is_ar_mode, supports_passthrough_ar
+            from plugins.vr_plugin.core import is_ar_mode, supports_passthrough_ar
             if is_ar_mode():
                 self._ar_lbl.setText("AR: Active (passthrough)" if supports_passthrough_ar() else "AR: Active (alpha-blend)")
                 self._ar_lbl.setStyleSheet("color: #44ccaa;")

@@ -14,7 +14,7 @@ from PyQt6.QtCore import Qt, QSize
 from core.config.editor_scale import scale
 from editor.panels.node_palette import NodePalette
 if TYPE_CHECKING:
-    from core.engine.engine import Engine
+    from core.engine.eng import Engine
 
 _DARK_STYLE = ""
 
@@ -86,7 +86,7 @@ class _ShaderGraphWidget(QWidget):
         layout.addWidget(splitter, 1)
 
     def _create_node_palette(self):
-        from editor.shader_graph.nodes import ALL_NODES
+        from editor.shader_graph.nodesp import ALL_NODES
         node_map: dict[str, object] = {}
         for cls in ALL_NODES:
             name = cls.NODE_NAME if hasattr(cls, 'NODE_NAME') else cls.__name__
@@ -128,7 +128,7 @@ class _ShaderGraphWidget(QWidget):
 
     def _create_graph_view(self):
         from editor.NodeGraphQt import NodeGraph
-        from editor.shader_graph.nodes import ALL_NODES
+        from editor.shader_graph.nodesp import ALL_NODES
         if not getattr(self, '_node_classes', None):
             node_map: dict[str, object] = {}
             for cls in ALL_NODES:

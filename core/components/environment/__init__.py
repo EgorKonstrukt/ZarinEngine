@@ -6,4 +6,4 @@
 
 from core.components.environment.wind_zone import WindZone
 from core.components.environment.water_volume import WaterVolume
-from core.components.environment.tree import Tree
+from core.components.environment.treep import Tree
