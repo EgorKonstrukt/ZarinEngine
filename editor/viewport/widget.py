@@ -1239,6 +1239,19 @@ class SceneViewport(QOpenGLWidget):
         lx, ly = int(event.position().x()), int(event.position().y())
         x, y = int(lx * dpr), int(ly * dpr)
         qt_btn = event.button()
+        if qt_btn == Qt.MouseButton.LeftButton and self._stats_enabled:
+            try:
+                from core.renderer.render_stats import stats_header_at, toggle_stats_section
+                hdr = stats_header_at(x, y)
+            except Exception:
+                hdr = None
+            if hdr:
+                try:
+                    toggle_stats_section(hdr)
+                except Exception:
+                    pass
+                event.accept()
+                return
         alt = self._im.is_key_pressed(KEY_ALT) if self._im else False
         shift = self._im.is_key_pressed(KEY_SHIFT) if self._im else False
         ctrl = self._im.is_key_pressed(KEY_CTRL) if self._im else False

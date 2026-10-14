@@ -73,7 +73,11 @@ def draw_stats_overlay(vp, painter):
         'dpr': float(getattr(vp, 'devicePixelRatio', lambda: 1.0)() or 1.0),
     }
     rows = build_stats_rows(m, st, timings)
-    draw_stats_panel(painter, rows, vp._frame_times_ms, _SPIKE_LOG)
+    try:
+        tick_ms = [float(d) * 1000.0 for d in (st.get('tick_dts') or [])]
+    except Exception:
+        tick_ms = None
+    draw_stats_panel(painter, rows, vp._frame_times_ms, _SPIKE_LOG, tick_ms)
     painter.restore()
 
 

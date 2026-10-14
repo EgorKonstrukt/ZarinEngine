@@ -54,6 +54,7 @@ _BUILTINS = [
     ("Gizmo: Translate", "gizmo-t", "Switch gizmo to translate", "fa5s.arrows-alt"),
     ("Gizmo: Rotate", "gizmo-r", "Switch gizmo to rotate", "fa5s.sync-alt"),
     ("Gizmo: Scale", "gizmo-s", "Switch gizmo to scale", "fa5s.expand-arrows-alt"),
+    ("Copy Performance Stats", "copy-stats", "Copy stats overlay text to clipboard", "fa5s.clipboard"),
 ]
 
 _ASSET_ICONS = {
@@ -333,6 +334,18 @@ def _run_builtin(mw, key: str) -> None:
             if vp is not None and getattr(vp, '_gizmo', None) is not None:
                 from core.gizmo.gizmo import GizmoMode
                 vp._gizmo.mode = {"gizmo-t": GizmoMode.TRANSLATE, "gizmo-r": GizmoMode.ROTATE, "gizmo-s": GizmoMode.SCALE}[key]
+        elif key == "copy-stats":
+            from PyQt6.QtWidgets import QApplication
+            from core.renderer.render_stats import stats_text
+            text = stats_text()
+            if text:
+                try:
+                    QApplication.clipboard().setText(text)
+                except Exception:
+                    pass
+                Logger.info("Performance stats copied to clipboard.")
+            else:
+                Logger.info("No performance stats available yet.")
     except Exception as e:
         Logger.error(f"Palette builtin '{key}' failed: {e}")
 

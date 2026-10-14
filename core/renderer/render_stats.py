@@ -13,7 +13,7 @@ import time
 
 import numpy as _np
 
-from PyQt6.QtCore import QRect, Qt
+from PyQt6.QtCore import QRect, Qt, QSettings
 from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen
 
 _STATS_FONT = QFont("Consolas", 9)
@@ -70,6 +70,8 @@ VALUE_COLORS = {
     "Spot": QColor(255, 220, 150),
     "Casc": QColor(255, 200, 150),
     "ShRes": QColor(255, 200, 150),
+    "Hot": QColor(255, 220, 150),
+    "Net": QColor(150, 220, 255),
     "PostFX": QColor(220, 180, 255),
     "Cache": QColor(200, 200, 200),
     "DPR": QColor(180, 200, 255),
@@ -219,6 +221,53 @@ _frame_metrics_cache: dict = {"key": None, "val": None}
 _stats_adv_cache: dict = {}
 _scene_counts_cache: dict = {}
 _gl_info_cache = ["", "", 0.0]
+_LAST_STATS_TEXT = ""
+_COLLAPSED: set | None = None
+_LAST_STATS_GEOM: dict = {"headers": [], "panel": (0, 0, 0, 0)}
+
+
+def _collapsed_sections() -> set:
+    global _COLLAPSED
+    if _COLLAPSED is None:
+        _COLLAPSED = set()
+        try:
+            raw = QSettings("Zarin", "Editor").value("stats/collapsed", [])
+            if isinstance(raw, (list, tuple)):
+                _COLLAPSED = set(str(s) for s in raw)
+            elif isinstance(raw, str) and raw:
+                _COLLAPSED = {raw}
+        except Exception:
+            pass
+    return _COLLAPSED
+
+
+def toggle_stats_section(header: str) -> None:
+    try:
+        s = _collapsed_sections()
+        if header in s:
+            s.discard(header)
+        else:
+            s.add(header)
+        try:
+            QSettings("Zarin", "Editor").setValue("stats/collapsed", sorted(s))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def stats_header_at(px: int, py: int):
+    try:
+        for hdr, x0, y0, x1, y1 in _LAST_STATS_GEOM.get("headers", []):
+            if x0 <= px <= x1 and y0 <= py <= y1:
+                return hdr
+    except Exception:
+        pass
+    return None
+
+
+def stats_text() -> str:
+    return _LAST_STATS_TEXT
 
 
 def _refresh_vram_async():
@@ -458,6 +507,37 @@ def collect_render_stats(engine, renderer) -> dict:
     except Exception:
         pass
     st.update(collect_expensive_stats())
+    try:
+        flat = None
+        prof = getattr(engine, '_profiler', None)
+        if prof is not None and getattr(prof, 'enabled', False):
+            cf = getattr(prof, '_current_frame', None)
+            if cf is not None:
+                flat = getattr(cf, 'flat_data', None)
+            if not flat:
+                frames = getattr(prof, 'frames', None)
+                if frames:
+                    flat = getattr(frames[-1], 'flat_data', None)
+        hot: list = []
+        if flat:
+            items = sorted(((k, v) for k, v in flat.items() if isinstance(v, (int, float))),
+                           key=lambda kv: -kv[1])[:3]
+            hot = [(str(k), float(v)) for k, v in items if float(v) > 0.01]
+        st['hot'] = hot
+    except Exception:
+        st['hot'] = []
+    try:
+        st['net'] = None
+        cm = getattr(engine, 'collab_manager', None)
+        if cm is not None and bool(cm.connected):
+            peers = getattr(cm, 'peers', {}) or {}
+            st['net'] = {
+                'host': bool(cm.is_host),
+                'peers': len(peers),
+                'ping': float(cm.latency_ms()),
+            }
+    except Exception:
+        st['net'] = None
     return st
 
 
@@ -536,6 +616,18 @@ def compute_tick_metrics(tick_dts) -> dict:
     }
 
 
+def _health_key(value: float, good_key: str, warn_key: str) -> str:
+    try:
+        v = float(value)
+    except Exception:
+        return good_key
+    if v >= 50.0:
+        return good_key
+    if v >= 25.0:
+        return warn_key
+    return "Min"
+
+
 def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
     for _k, _v in (('opaque_draws', 0), ('trans_draws', 0), ('mesh_pending', 0),
                    ('mesh_built', 0), ('shadow_pt', 0), ('shadow_spot', 0),
@@ -559,7 +651,7 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
     tri_mts = st['triangles'] * m['fps'] / 1e6
     tm = compute_tick_metrics(st.get('tick_dts'))
     frame_kvs = [
-        ("FPS", f"{m['fps']:.1f}", "FPS"),
+        ("FPS", f"{m['fps']:.1f}", _health_key(m['fps'], "FPS", "1%")),
         ("1%", f"{m['p1_fps']:.1f}", "1%"),
         ("0.1%", f"{m['p01_fps']:.1f}", "0.1%"),
         ("Min", f"{m['min_fps']:.1f}", "Min"),
@@ -569,7 +661,7 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
     if st['rt_rays_per_frame'] > 0:
         rt_mrays = st['rt_rays_per_frame'] * m['fps'] / 1e6
         frame_kvs.append(("MRays", f"{rt_mrays:.1f}MR/s", "MRays"))
-    return [
+    rows: list = [
         ("h", "Frame"),
         ("kv", frame_kvs),
         ("h", "Timing"),
@@ -631,7 +723,7 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
         ]),
         ("h", "Engine"),
         ("kv", [
-            ("TPS", f"{st['tps']:.0f}", "TPS"),
+            ("TPS", f"{st['tps']:.0f}", _health_key(st['tps'], "TPS", "TPS1")),
             ("1%", f"{tm['tps_p1']:.0f}", "TPS1"),
             ("0.1%", f"{tm['tps_p01']:.0f}", "TPS01"),
             ("TS", f"{st['time_scale']:.2f}", "TS"),
@@ -649,9 +741,34 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
             ("RS", f"{st['render_scale']:.2f}", "RS"),
         ]),
     ]
+    hot = st.get('hot') or []
+    if hot:
+        rows.append(("h", "Hot"))
+        rows.append(("kv", [(name, f"{ms:.2f}ms", "Hot") for name, ms in hot[:3]]))
+    net = st.get('net')
+    if net:
+        rows.append(("h", "Net"))
+        rows.append(("kv", [
+            ("Role", "Host" if net.get('host') else "Client", "Net"),
+            ("Peers", f"{net.get('peers', 0)}", "Net"),
+            ("Ping", f"{net.get('ping', 0.0):.0f}ms", "Net"),
+        ]))
+    try:
+        lines = []
+        cur_hdr = ""
+        for row in rows:
+            if row[0] == "h":
+                cur_hdr = row[1]
+            else:
+                lines.append(cur_hdr + ": " + " | ".join(f"{lab}: {val}" for lab, val, _ in row[1]))
+        global _LAST_STATS_TEXT
+        _LAST_STATS_TEXT = "\n".join(lines)
+    except Exception:
+        pass
+    return rows
 
 
-def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
+def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list, tick_times_ms=None):
     fnt = painter.font()
     if fnt.family() != _STATS_FONT.family() or fnt.pointSize() != _STATS_FONT.pointSize():
         painter.setFont(_STATS_FONT)
@@ -679,8 +796,12 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
     view_w = painter.device().width()
     wrap_at = max(360, min(view_w - 16 - padding * 2, 880))
     cont_indent = 16
+    collapsed = _collapsed_sections()
     vlines: list = []
     for hdr, kvs in sections:
+        if hdr in collapsed:
+            vlines.append((hdr, []))
+            continue
         hw = adv(hdr + ": ")
         cur_line: list = []
         cur_w = hw
@@ -699,13 +820,16 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
             vlines.append((hdr if first else None, cur_line))
     max_w = padding * 2
     for hdr, kvs in vlines:
-        w = 0 if hdr is None else adv(hdr + ": ")
-        if hdr is None:
-            w = cont_indent
-        for li, (_lab, _val, _key) in enumerate(kvs):
-            w += adv(_lab + ": ") + adv(_val)
-            if li < len(kvs) - 1:
-                w += adv(" | ")
+        if not kvs:
+            w = adv(hdr + ": [+]")
+        else:
+            w = 0 if hdr is None else adv(hdr + ": ")
+            if hdr is None:
+                w = cont_indent
+            for li, (_lab, _val, _key) in enumerate(kvs):
+                w += adv(_lab + ": ") + adv(_val)
+                if li < len(kvs) - 1:
+                    w += adv(" | ")
         max_w = max(max_w, w + padding * 2)
     max_w = max(max_w, 480)
     if max_w > view_w - 16:
@@ -715,10 +839,13 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
     total_h = len(vlines) * line_h + padding * 2
     view_h = painter.device().height()
     show_chart = True
+    show_tick = bool(tick_times_ms)
     show_spike = bool(spike_log)
-    while (y + total_h + (36 if show_chart else 0) + (72 if show_spike else 0)) > view_h:
+    while (y + total_h + (36 if show_chart else 0) + (28 if show_tick else 0) + (72 if show_spike else 0)) > view_h:
         if show_spike:
             show_spike = False
+        elif show_tick:
+            show_tick = False
         elif show_chart:
             show_chart = False
         else:
@@ -741,6 +868,10 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
             painter.drawText(QRect(cx, cy, adv(hs), line_h),
                              Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, hs)
             cx += adv(hs)
+            if not kvs:
+                painter.setPen(QColor(120, 120, 120))
+                painter.drawText(QRect(cx, cy, adv("[+]"), line_h),
+                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "[+]")
         else:
             cx += cont_indent
         for ki, (lab, val, key) in enumerate(kvs):
@@ -763,35 +894,47 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
         if nxt is not None:
             painter.setPen(QPen(QColor(255, 255, 255, 24), 1))
             painter.drawLine(x + padding, cy + line_h - 3, int(x + max_w - padding), cy + line_h - 3)
+    try:
+        _LAST_STATS_GEOM["headers"] = [
+            (hdr, x + padding, cy0, int(x + max_w - padding), cy0 + line_h)
+            for j, (hdr, _k) in enumerate(vlines) if hdr is not None
+            for cy0 in (y + padding + j * line_h,)
+        ]
+        _LAST_STATS_GEOM["panel"] = (x, y, int(max_w), total_h)
+    except Exception:
+        pass
     if show_chart:
         chart_bottom = draw_frame_chart(painter, frame_times_ms, x, y + total_h + 6, int(max_w))
+        if show_tick:
+            chart_bottom = draw_tick_chart(painter, tick_times_ms, x, chart_bottom + 6, int(max_w))
         if show_spike:
             draw_spike_box(painter, spike_log[-1], x, chart_bottom + 6, int(max_w))
 
 
-def draw_frame_chart(painter, ft_list, x: int, y: int, w: int) -> int:
-    chart_h = 30
+def _draw_bar_chart(painter, values, x: int, y: int, w: int, h: int,
+                    caption: str, warn_ms: float, bad_ms: float, ref_ms: float) -> int:
     bg = QColor(0, 0, 0, 160)
     border = QColor(80, 80, 80, 200)
-    chart_rect = QRect(x, y, w, chart_h)
+    chart_rect = QRect(x, y, w, h)
     painter.fillRect(chart_rect, bg)
     painter.setPen(QPen(border, 1))
     painter.drawRect(chart_rect)
-    n_bars = min(len(ft_list), chart_rect.width() - 4)
+    vals = [float(v) for v in (values or []) if v]
+    n_bars = min(len(vals), chart_rect.width() - 4)
     if n_bars > 1:
         stride = max(1, (n_bars + 119) // 120)
         n_draw = (n_bars + stride - 1) // stride
         bar_w = (chart_rect.width() - 4) / n_draw
-        max_ft = max(max(ft_list[-n_bars:]) * 1.1, 16.0)
+        max_ft = max(max(vals[-n_bars:]) * 1.1, ref_ms)
         di = 0
         for bi in range(0, n_bars, stride):
-            ft_val = ft_list[-n_bars + bi]
-            bh = max(1, int((ft_val / max_ft) * (chart_h - 4)))
+            ft_val = vals[-n_bars + bi]
+            bh = max(1, int((ft_val / max_ft) * (h - 4)))
             bar_x = chart_rect.x() + 2 + int(bar_w * di)
             bar_y = chart_rect.bottom() - 2 - bh
-            if ft_val > 33.0:
+            if ft_val > bad_ms:
                 color = QColor(255, 80, 80, 180)
-            elif ft_val > 16.0:
+            elif ft_val > warn_ms:
                 color = QColor(255, 200, 80, 160)
             else:
                 color = QColor(80, 200, 80, 140)
@@ -800,10 +943,23 @@ def draw_frame_chart(painter, ft_list, x: int, y: int, w: int) -> int:
             painter.drawRect(QRect(int(bar_x), bar_y, max(1, int(bar_w)), bh))
             di += 1
         painter.setPen(QPen(QColor(255, 255, 255, 40), 1))
-        ref_y = chart_rect.bottom() - 2 - int((16.0 / max_ft) * (chart_h - 4))
+        ref_y = chart_rect.bottom() - 2 - int((ref_ms / max_ft) * (h - 4))
         if ref_y > chart_rect.y() + 2:
             painter.drawLine(chart_rect.x() + 2, ref_y, chart_rect.right() - 2, ref_y)
+    if caption:
+        painter.setPen(QColor(140, 140, 140))
+        painter.drawText(QRect(chart_rect.x() + 4, chart_rect.y() + 1,
+                               chart_rect.width() - 8, 12),
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, caption)
     return chart_rect.bottom()
+
+
+def draw_frame_chart(painter, ft_list, x: int, y: int, w: int) -> int:
+    return _draw_bar_chart(painter, ft_list, x, y, w, 30, "frame ms", 16.0, 33.0, 16.0)
+
+
+def draw_tick_chart(painter, tick_list, x: int, y: int, w: int) -> int:
+    return _draw_bar_chart(painter, tick_list, x, y, w, 22, "tick ms", 8.3, 16.6, 8.3)
 
 
 def draw_spike_box(painter, spike, x: int, y: int, w: int):

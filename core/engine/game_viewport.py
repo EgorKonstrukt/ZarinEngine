@@ -318,7 +318,11 @@ class GameViewport(QOpenGLWidget):
             'dpr': float(self.devicePixelRatio() or 1.0),
         }
             rows = build_stats_rows(m, st, timings)
-            draw_stats_panel(painter, rows, self._frame_times_ms, _SPIKE_LOG)
+            try:
+                tick_ms = [float(d) * 1000.0 for d in (st.get('tick_dts') or [])]
+            except Exception:
+                tick_ms = None
+            draw_stats_panel(painter, rows, self._frame_times_ms, _SPIKE_LOG, tick_ms)
             painter.restore()
         except Exception as e:
             Logger.error(f"GameViewport stats overlay error: {e}", e)
