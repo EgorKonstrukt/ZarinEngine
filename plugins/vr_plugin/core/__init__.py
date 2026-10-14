@@ -1,0 +1,13 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
+from __future__ import annotations
+from plugins.vr_plugin.core.state import _SHADER_DIR, _XR_AVAILABLE, EYE_LEFT, EYE_RIGHT, IPD_DEFAULT, FOV_VERT_DEFAULT, FOV_HORIZ_DEFAULT, EYE_TEX_W, EYE_TEX_H, GL_RGBA8, GL_SRGB8_ALPHA8, GRIP_THRESHOLD, IPD_SCALE, VR_MOVE_SPEED, VR_TURN_SPEED, VR_VERT_SPEED, VR_DEADZONE, TRIGGER_THRESHOLD, RAY_MAX_DIST, _gl, GL_DRAW_FRAMEBUFFER, GL_READ_FRAMEBUFFER, GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, GL_COLOR_BUFFER_BIT, GL_NEAREST, GL_FRAMEBUFFER_COMPLETE, _BLIT_FBO_IDS, _vr_state, _quat_to_mat3, _quat_to_fwd, _fov_to_tangents, _mat3_mul, _rot_y_mat3, _rot_x_mat3, _normalize3, _quat_mul, _quat_from_yaw, _rotate_y, _deadzone, VRState, _VRParams, _make_perspective_flat, _load_gl_funcs, _get_blit_fbo_id, _free_blit_fbos, is_available, is_active, is_eye_view, set_eye_view, toggle_eye_view, has_vr_rig, _xr_to_world, _xr_controller_to_world, _xr_hmd_to_world, _controller_world_quat, _world_quat_to_local, _make_proj_matrix, _make_view_matrix, _mat4_mul, _make_model_matrix
+from plugins.vr_plugin.core.swapchain import VREyeSwapchain, VREyeFramebuffer, VRRenderer, _COMPOSE_VERT, _COMPOSE_FRAG, render_desktop_vr, render_vr_frame, get_hmd_pos_offset, reset_hmd_origin, get_ipd, set_ipd, reset_ipd, had_frames, session_running, get_controllers, is_ar_mode, supports_passthrough_ar, enable_ar, disable_ar, get_ar_blend_mode, get_ar_planes, _ensure_ar_floor_plane, add_ar_anchor, remove_ar_anchor, get_ar_anchors, set_ar_point_cloud, get_ar_point_cloud, ar_raycast, raycast_scene, get_controller_hits, handle_trigger_selection
+from plugins.vr_plugin.core.controllers import ControllerState, ControllerRenderer, _build_controller_mesh, _resolve_vr_model_path, _load_mesh_to_vao, trigger_haptic, stop_haptic, set_uniforms_for_eye, _CTRL_VERT, _CTRL_FRAG
+from plugins.vr_plugin.core.session import _get_wgl_handles, _call_get_graphics_requirements, _make_binding, _setup_input, initialize, _create_swapchains, shutdown
+from plugins.vr_plugin.core.state2 import _sync_controller_input, _update_ipd_pinch, get_eye_transforms, get_controller_world_pos, get_controller_world_quat, get_controller_ray, get_hmd_world_pos, get_hmd_world_quat, update_vr_locomotion, _sync_ar_session
+from plugins.vr_plugin.core.session2 import update_vr_entities, _drive_xr_tracked_pose, _drive_xr_controller, _drive_xr_hand, VRToggleState, _vr_toggle, toggle_vr, vr_enabled, get_renderer, poll_xr_events, sync_hmd_pose, end_xr_frame

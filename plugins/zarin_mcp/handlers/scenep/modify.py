@@ -1,0 +1,307 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Zarrakun
+
+from __future__ import annotations
+import os
+from plugins.zarin_mcp.main_thread import run_on_main_thread
+
+
+def register_modify(registry, engine):
+    _scene = lambda: engine.scene
+
+    @registry.tool(
+        "scene_create_entity",
+        "Create a new empty entity with Transform",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Entity name", "default": "GameObject"},
+                "parent_id": {"type": "string", "description": "Optional parent UUID"},
+            },
+        },
+    )
+    def scene_create_entity(name="GameObject", parent_id=""):
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        from core.ecs import Entity
+        from core.components.transform.tr import Transform
+        e = s.create_entity(name)
+        e.add_component(Transform())
+        if parent_id:
+            parent = s.get_entity(parent_id)
+            if parent:
+                e.set_parent(parent)
+        return {"id": e.id, "name": e.name, "message": f"Created entity '{e.name}'"}
+
+    @registry.tool(
+        "scene_duplicate_entity",
+        "Duplicate an entity and its children",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Entity UUID to duplicate"},
+                "new_name": {"type": "string", "description": "Optional new name", "default": ""},
+            },
+            "required": ["entity_id"],
+        },
+    )
+    def scene_duplicate_entity(entity_id="", new_name=""):
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        src = s.get_entity(entity_id)
+        if src is None:
+            return {"error": "Entity not found"}
+        dup = s.duplicate_entity(src, new_name=new_name)
+        return {"id": dup.id, "name": dup.name, "message": f"Duplicated '{src.name}' as '{dup.name}'"}
+
+    @registry.tool(
+        "scene_delete_entity",
+        "Delete an entity by id",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Entity UUID to delete"},
+            },
+            "required": ["entity_id"],
+        },
+    )
+    def scene_delete_entity(entity_id=""):
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        e = s.get_entity(entity_id)
+        if e is None:
+            return {"error": "Entity not found"}
+        name, eid = e.name, e.id
+        s.remove_entity(entity_id)
+        return {"message": f"Deleted entity '{name}' ({eid})"}
+
+    @registry.tool(
+        "scene_batch_delete",
+        "Delete multiple entities at once",
+        {
+            "type": "object",
+            "properties": {
+                "entity_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of entity UUIDs to delete",
+                }
+            },
+            "required": ["entity_ids"],
+        },
+    )
+    def scene_batch_delete(entity_ids=None):
+        if entity_ids is None:
+            entity_ids = []
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        deleted = []
+        for eid in entity_ids:
+            e = s.get_entity(eid)
+            if e:
+                deleted.append(e.name)
+                s.remove_entity(eid)
+        return {"message": f"Deleted {len(deleted)} entities", "names": deleted}
+
+    @registry.tool(
+        "scene_rename_entity",
+        "Rename an entity",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Entity UUID"},
+                "new_name": {"type": "string", "description": "New name"},
+            },
+            "required": ["entity_id", "new_name"],
+        },
+    )
+    def scene_rename_entity(entity_id="", new_name=""):
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        e = s.get_entity(entity_id)
+        if e is None:
+            return {"error": "Entity not found"}
+        old = e.name
+        e.name = new_name
+        return {"message": f"Renamed '{old}' to '{new_name}'"}
+
+    @registry.tool(
+        "scene_set_entity_active",
+        "Set an entity's active state",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Entity UUID"},
+                "active": {"type": "boolean", "description": "Active state"},
+            },
+            "required": ["entity_id", "active"],
+        },
+    )
+    def scene_set_entity_active(entity_id="", active=True):
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        e = s.get_entity(entity_id)
+        if e is None:
+            return {"error": "Entity not found"}
+        e.active = active
+        return {"message": f"Set '{e.name}' active={active}"}
+
+    @registry.tool(
+        "scene_reparent_entity",
+        "Change an entity's parent",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Entity UUID to reparent"},
+                "new_parent_id": {
+                    "type": "string",
+                    "description": "New parent UUID (empty string to detach)",
+                },
+            },
+            "required": ["entity_id", "new_parent_id"],
+        },
+    )
+    def scene_reparent_entity(entity_id="", new_parent_id=""):
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        e = s.get_entity(entity_id)
+        if e is None:
+            return {"error": "Entity not found"}
+        if new_parent_id:
+            parent = s.get_entity(new_parent_id)
+            if parent is None:
+                return {"error": "Parent entity not found"}
+            e.set_parent(parent)
+        else:
+            e.set_parent(None)
+        return {"message": f"Reparented '{e.name}'"}
+
+    @registry.tool(
+        "scene_set_entity_tag",
+        "Set tags on an entity",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Entity UUID"},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of tags",
+                },
+            },
+            "required": ["entity_id", "tags"],
+        },
+    )
+    def scene_set_entity_tag(entity_id="", tags=None):
+        if tags is None:
+            tags = []
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        e = s.get_entity(entity_id)
+        if e is None:
+            return {"error": "Entity not found"}
+        e.tags.clear()
+        e.tags.update(tags)
+        return {"message": f"Set tags on '{e.name}': {tags}"}
+
+    @registry.tool(
+        "scene_set_entity_layer",
+        "Set layer on an entity",
+        {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "Entity UUID"},
+                "layer": {"type": "integer", "description": "Layer index (0-31)"},
+            },
+            "required": ["entity_id", "layer"],
+        },
+    )
+    def scene_set_entity_layer(entity_id="", layer=0):
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        e = s.get_entity(entity_id)
+        if e is None:
+            return {"error": "Entity not found"}
+        e.layer = layer
+        return {"message": f"Set layer={layer} on '{e.name}'"}
+
+    @registry.tool(
+        "scene_save",
+        "Save current scene to its file path",
+        {"type": "object", "properties": {}},
+    )
+    def scene_save():
+        s = _scene()
+        if s is None:
+            return {"error": "No scene loaded"}
+        if not s.path:
+            return {"error": "Scene has no path. Save via editor first."}
+        engine.save_scene()
+        return {"message": f"Scene saved to {s.path}"}
+
+    @registry.tool(
+        "scene_load",
+        "Load a scene file. Lists available scenes if path is empty.",
+        {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to scene file (relative to project)"},
+            },
+        },
+    )
+    def scene_load(path=""):
+        if not path:
+            from plugins.zarin_mcp.handlers.project import register as _proj_reg
+            scenes = _get_project_scenes(engine)
+            return {"message": "Provide a path. Available scenes:", "scenes": scenes}
+        full = os.path.join(engine.project_root, path) if not os.path.isabs(path) else path
+        mw = engine.get_main_window()
+        mgr = getattr(mw, "_scene_tab_manager", None) if mw is not None else None
+        if mgr is not None:
+            from editor.main_window.handlersp import load_scene_in_tab
+            scene = run_on_main_thread(lambda: load_scene_in_tab(mw, full))
+        else:
+            scene = run_on_main_thread(lambda: engine.load_scene(full))
+        if scene is None:
+            return {"error": f"Failed to load scene: {path}"}
+        return {"message": f"Loaded scene '{scene.name}'"}
+
+    @registry.tool(
+        "scene_new",
+        "Create a new empty scene",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Scene name", "default": "NewScene"},
+            },
+        },
+    )
+    def scene_new(name="NewScene"):
+        mw = engine.get_main_window()
+        mgr = getattr(mw, "_scene_tab_manager", None) if mw is not None else None
+        if mgr is not None:
+            run_on_main_thread(lambda: mgr.add_tab(name))
+        else:
+            run_on_main_thread(lambda: engine.new_scene(name))
+        return {"message": f"Created new scene '{name}'"}
+
+
+def _get_project_scenes(engine):
+    root = engine.project_root
+    if not root:
+        return []
+    import glob
+    scenes = glob.glob(os.path.join(root, "**", "*.scene"), recursive=True)
+    return sorted(os.path.relpath(s, root).replace("\\", "/") for s in scenes)
