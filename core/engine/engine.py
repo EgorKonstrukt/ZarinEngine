@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import threading
+from collections import deque as _deque
 from typing import Optional, Any, TYPE_CHECKING
 from core.ecs.ecs import Scene, ComponentRegistry
 from core.foundation.plugin_manager import PluginManager
@@ -86,6 +87,7 @@ class Engine:
         self._tps: float = 0.0
         self._tps_accum: float = 0.0
         self._tps_frames: int = 0
+        self._tick_dts = _deque(maxlen=600)
         self._scene_lock = threading.RLock()
         self._profiler = _Profiler()
         self._time_travel_recorder: Optional[Any] = None
@@ -957,6 +959,10 @@ class Engine:
         self._frame_count += 1
         ts = self._time_scale if self._time_scale > 0.001 else 0.001
         inv = dt / ts
+        try:
+            self._tick_dts.append(inv)
+        except Exception:
+            pass
         self._fps_accum += inv
         self._fps_frames += 1
         self._tps_accum += inv

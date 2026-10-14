@@ -37,6 +37,8 @@ VALUE_COLORS = {
     "VRAM": QColor(255, 180, 255),
     "GC": QColor(180, 180, 255),
     "TPS": QColor(180, 255, 180),
+    "TPS1": QColor(255, 200, 100),
+    "TPS01": QColor(255, 150, 100),
     "TS": QColor(180, 255, 180),
     "DSP": QColor(255, 255, 180),
     "Sounds": QColor(180, 255, 255),
@@ -56,7 +58,6 @@ VALUE_COLORS = {
     "Full": QColor(255, 180, 180),
     "Part": QColor(180, 255, 180),
     "Res": QColor(180, 200, 255),
-    "GPU": QColor(200, 200, 200),
     "GL": QColor(200, 200, 200),
     "MRays": QColor(255, 200, 100),
     "Opq": QColor(180, 255, 200),
@@ -303,6 +304,11 @@ def collect_render_stats(engine, renderer) -> dict:
         for gk in gizmo_keys:
             st[gk] = 0
     st['tps'] = getattr(engine, 'tps', 0.0) or 0.0
+    try:
+        _dts = getattr(engine, '_tick_dts', None)
+        st['tick_dts'] = list(_dts) if _dts else []
+    except Exception:
+        st['tick_dts'] = []
     st['time_scale'] = getattr(engine, 'time_scale', 1.0) or 1.0
     st['entities'] = 0
     scene = getattr(engine, 'scene', None)
@@ -503,6 +509,33 @@ def compute_frame_metrics(frame_times_ms) -> dict:
     return val
 
 
+def compute_tick_metrics(tick_dts) -> dict:
+    try:
+        dts = [float(d) for d in (tick_dts or []) if d and float(d) > 0.0]
+    except Exception:
+        return {'tps_p1': 0.0, 'tps_p01': 0.0}
+    n = len(dts)
+    if n < 10:
+        return {'tps_p1': 0.0, 'tps_p01': 0.0}
+    try:
+        arr = _np.asarray(dts, dtype=_np.float32)
+        s = _np.sort(arr)
+        p1_c = max(1, int(n * 0.01))
+        p01_c = max(1, int(n * 0.001))
+        p1_dt = float(_np.mean(s[-p1_c:]))
+        p01_dt = float(_np.mean(s[-p01_c:]))
+    except Exception:
+        s = sorted(dts)
+        p1_c = max(1, int(n * 0.01))
+        p01_c = max(1, int(n * 0.001))
+        p1_dt = sum(s[-p1_c:]) / p1_c
+        p01_dt = sum(s[-p01_c:]) / p01_c
+    return {
+        'tps_p1': 1.0 / max(p1_dt, 1e-6),
+        'tps_p01': 1.0 / max(p01_dt, 1e-6),
+    }
+
+
 def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
     for _k, _v in (('opaque_draws', 0), ('trans_draws', 0), ('mesh_pending', 0),
                    ('mesh_built', 0), ('shadow_pt', 0), ('shadow_spot', 0),
@@ -524,6 +557,7 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
     except Exception:
         fill_mpx = 0.0
     tri_mts = st['triangles'] * m['fps'] / 1e6
+    tm = compute_tick_metrics(st.get('tick_dts'))
     frame_kvs = [
         ("FPS", f"{m['fps']:.1f}", "FPS"),
         ("1%", f"{m['p1_fps']:.1f}", "1%"),
@@ -577,8 +611,11 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
             ("Fixed", f"{st['fixed_steps']}st/{st['fixed_accum_ms']:.0f}ms", "Fixed"),
             ("PostFX", f"{st['postfx']}", "PostFX"),
         ]),
-        ("h", "Cache"),
+        ("h", "Memory"),
         ("kv", [
+            ("RAM", f"{st['ram_mb']:.0f}MB", "RAM"),
+            ("VRAM", f"{_fmt_vram_mb(st['vram_used'])}/{_fmt_vram_mb(st['vram_total'])}", "VRAM"),
+            ("GC", f"{st['gc0']}/{st['gc1']}/{st['gc2']}", "GC"),
             ("Shaders", f"{st['shader_progs']}", "Cache"),
             ("Tex", f"{st['cached_tex']}", "Cache"),
         ]),
@@ -592,15 +629,11 @@ def build_stats_rows(m: dict, st: dict, timings: dict) -> list:
             ("Full", f"{st['gizmo_upload_full']}", "Full"),
             ("Part", f"{st['gizmo_upload_partial']}", "Part"),
         ]),
-        ("h", "Memory"),
-        ("kv", [
-            ("RAM", f"{st['ram_mb']:.0f}MB", "RAM"),
-            ("VRAM", f"{_fmt_vram_mb(st['vram_used'])}/{_fmt_vram_mb(st['vram_total'])}", "VRAM"),
-            ("GC", f"{st['gc0']}/{st['gc1']}/{st['gc2']}", "GC"),
-        ]),
         ("h", "Engine"),
         ("kv", [
             ("TPS", f"{st['tps']:.0f}", "TPS"),
+            ("1%", f"{tm['tps_p1']:.0f}", "TPS1"),
+            ("0.1%", f"{tm['tps_p01']:.0f}", "TPS01"),
             ("TS", f"{st['time_scale']:.2f}", "TS"),
             ("Entities", f"{st['entities']}", "Entities"),
             ("Comp", f"{st['components']}", "Comp"),
@@ -643,18 +676,43 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
         else:
             if cur is not None:
                 cur[1].extend(row[1])
-    seg_widths = []
-    for hdr, kvs in sections:
-        seg = f"{hdr}: " + "  |  ".join(f"{lab}: {val}" for lab, val, _ in kvs)
-        seg_widths.append(adv(seg))
-    max_w = max(seg_widths, default=0) + padding * 2
-    max_w = max(max_w, 480)
     view_w = painter.device().width()
+    wrap_at = max(360, min(view_w - 16 - padding * 2, 880))
+    cont_indent = 16
+    vlines: list = []
+    for hdr, kvs in sections:
+        hw = adv(hdr + ": ")
+        cur_line: list = []
+        cur_w = hw
+        first = True
+        for lab, val, key in kvs:
+            w = adv(lab + ": ") + adv(val) + (adv(" | ") if cur_line else 0)
+            if cur_line and cur_w + w > wrap_at:
+                vlines.append((hdr if first else None, cur_line))
+                first = False
+                cur_line = []
+                cur_w = 0
+                w = adv(lab + ": ") + adv(val)
+            cur_line.append((lab, val, key))
+            cur_w += w
+        if cur_line:
+            vlines.append((hdr if first else None, cur_line))
+    max_w = padding * 2
+    for hdr, kvs in vlines:
+        w = 0 if hdr is None else adv(hdr + ": ")
+        if hdr is None:
+            w = cont_indent
+        for li, (_lab, _val, _key) in enumerate(kvs):
+            w += adv(_lab + ": ") + adv(_val)
+            if li < len(kvs) - 1:
+                w += adv(" | ")
+        max_w = max(max_w, w + padding * 2)
+    max_w = max(max_w, 480)
     if max_w > view_w - 16:
         max_w = max(view_w - 16, 120)
     x = 8
     y = 35
-    total_h = len(sections) * line_h + padding * 2
+    total_h = len(vlines) * line_h + padding * 2
     view_h = painter.device().height()
     show_chart = True
     show_spike = bool(spike_log)
@@ -674,14 +732,17 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
     label_color = QColor(160, 160, 160)
     header_color = QColor(120, 180, 255)
     text_color = QColor(255, 255, 255)
-    for i, (hdr, kvs) in enumerate(sections):
+    for i, (hdr, kvs) in enumerate(vlines):
         cy = y + padding + i * line_h
         cx = x + padding
-        hs = hdr + ": "
-        painter.setPen(header_color)
-        painter.drawText(QRect(cx, cy, adv(hs), line_h),
-                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, hs)
-        cx += adv(hs)
+        if hdr is not None:
+            hs = hdr + ": "
+            painter.setPen(header_color)
+            painter.drawText(QRect(cx, cy, adv(hs), line_h),
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, hs)
+            cx += adv(hs)
+        else:
+            cx += cont_indent
         for ki, (lab, val, key) in enumerate(kvs):
             lab_s = lab + ": "
             painter.setPen(label_color)
@@ -698,7 +759,8 @@ def draw_stats_panel(painter, rows: list, frame_times_ms, spike_log: list):
                 painter.drawText(QRect(cx, cy, adv(sep), line_h),
                                  Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, sep)
                 cx += adv(sep)
-        if i < len(sections) - 1:
+        nxt = vlines[i + 1][0] if i + 1 < len(vlines) else None
+        if nxt is not None:
             painter.setPen(QPen(QColor(255, 255, 255, 24), 1))
             painter.drawLine(x + padding, cy + line_h - 3, int(x + max_w - padding), cy + line_h - 3)
     if show_chart:
