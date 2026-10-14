@@ -10,6 +10,7 @@ import os
 from collections import defaultdict
 
 import qtawesome as qta
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QKeySequence, QFont
 from PyQt6.QtWidgets import QMenu, QMessageBox, QInputDialog, QDialog, QVBoxLayout, QPlainTextEdit
 
@@ -123,18 +124,22 @@ def setup_menu(mw):
     view_menu.addSeparator()
     goto_act = QAction(_qta("fa5s.search"), "Go to Tab...", mw)
     goto_act.setShortcut(QKeySequence("Ctrl+P"))
+    goto_act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
     goto_act.triggered.connect(lambda: mw._scene_tab_manager.show_quick_open() if hasattr(mw, '_scene_tab_manager') and mw._scene_tab_manager else None)
     view_menu.addAction(goto_act)
-    palette_act = QAction(_qta("fa5s.terminal"), "Command Palette...", mw)
-    palette_act.setShortcut(QKeySequence("Ctrl+K"))
+    palette_act = QAction(_qta("fa5s.terminal"), "Search Everywhere...", mw)
+    palette_act.setShortcut(QKeySequence("Ctrl+F"))
+    palette_act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
     palette_act.triggered.connect(lambda: show_command_palette(mw))
     view_menu.addAction(palette_act)
     next_act = QAction(_qta("fa5s.arrow-right"), "Next Tab", mw)
     next_act.setShortcut(QKeySequence("Ctrl+Tab"))
+    next_act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
     next_act.triggered.connect(lambda: mw._scene_tab_manager.cycle_tab(1) if hasattr(mw, '_scene_tab_manager') and mw._scene_tab_manager else None)
     view_menu.addAction(next_act)
     prev_act = QAction(_qta("fa5s.arrow-left"), "Previous Tab", mw)
     prev_act.setShortcut(QKeySequence("Ctrl+Shift+Tab"))
+    prev_act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
     prev_act.triggered.connect(lambda: mw._scene_tab_manager.cycle_tab(-1) if hasattr(mw, '_scene_tab_manager') and mw._scene_tab_manager else None)
     view_menu.addAction(prev_act)
     view_menu.addSeparator()

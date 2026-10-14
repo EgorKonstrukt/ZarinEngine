@@ -10,6 +10,7 @@ from PyQt6.QtGui import QAction, QIcon
 
 from editor.scene_toolbar import SceneToolbar, RenderToolbar
 from editor.main_window.handlers import toggle_play_stop, reset_camera, on_gizmo_vis_toggled, launch_external_player
+from editor.main_window.palette import show_command_palette
 
 
 def _set_play_btn_style(btn, text):
@@ -134,6 +135,12 @@ def setup_toolbar(mw):
     sep_left.setFrameShape(QFrame.Shape.VLine)
     sep_left.setFrameShadow(QFrame.Shadow.Sunken)
     lay.addWidget(sep_left)
+
+    mw._search_btn = QPushButton(qta.icon("fa5s.search", color="#fff"), " Search")
+    mw._search_btn.setToolTip("Search Everywhere (Ctrl+F)")
+    mw._search_btn.setFixedWidth(scale(90))
+    mw._search_btn.clicked.connect(lambda: show_command_palette(mw))
+    lay.addWidget(mw._search_btn)
 
     # ── Stretch: push center toward middle ──
     lay.addStretch(1)
