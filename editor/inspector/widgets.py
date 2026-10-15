@@ -246,3 +246,13 @@ class EntityPickerDialog(QDialog):
             self.accept()
     def selected_id(self) -> Optional[str]:
         return self._selected_id
+
+
+def pick_entity(parent, current: str = "") -> Optional[str]:
+    from core.engine.eng import Engine
+    eng = Engine.instance()
+    scene = eng.scene if eng is not None else None
+    dlg = EntityPickerDialog(scene, parent)
+    if dlg.exec():
+        return dlg.selected_id() or current
+    return None

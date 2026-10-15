@@ -35,8 +35,9 @@ def spawn_xr_rig(engine):
         for e in sc.get_all_entities():
             if e.get_component(XRRig) is not None:
                 return e
-        from core.components.mesh_filter import MeshFilter, MeshRenderer
-        from core.components.material import Material
+        from core.components.rendering.renderers.mesh_filter import MeshFilter
+        from core.components.rendering.renderers.mesh_renderer import MeshRenderer
+        from core.assets.matp import Material
         import os
         mat_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "materials", "vr_unlit.mat")
 

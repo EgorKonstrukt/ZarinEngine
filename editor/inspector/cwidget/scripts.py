@@ -296,7 +296,7 @@ class ScriptsMixin:
                 }}
             """)
             def _on_click_go(m=prop_name, cc=comp):
-                from editor.entity_picker import pick_entity
+                from editor.inspector.widgets import pick_entity
                 eid = pick_entity(self, cc.get_field_value(m) or "")
                 if eid:
                     cc.set_field_value(m, eid)

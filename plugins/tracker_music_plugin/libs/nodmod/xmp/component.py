@@ -15,7 +15,7 @@ from nodmod import EnvelopePoint
 from nodmod import Pattern
 from nodmod import XMNote
 from nodmod.views import PlaybackRowView, SampleView
-from .header import XMSongHeaderMixin
+from .header import XMSongHeaderMixin, _require_pydub
 from .patterns import XMSongPatternsMixin
 from .samples import XMSongSamplesMixin
 
