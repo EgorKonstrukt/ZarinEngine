@@ -217,6 +217,8 @@ def check_undefined(files):
             tree = ast.parse(io.open(p, encoding="utf-8", errors="ignore").read())
         except Exception:
             continue
+        if any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "__getattr__" for n in ast.walk(tree)):
+            continue
         defined = _defined_names(tree)
         v = _Loads()
         v.visit(tree)

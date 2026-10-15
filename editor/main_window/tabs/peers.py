@@ -15,7 +15,7 @@ from PyQt6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu
 
 try:
-    import qtawesome as qta
+    import editor.icons as qta
 except ImportError:
     qta = None
 

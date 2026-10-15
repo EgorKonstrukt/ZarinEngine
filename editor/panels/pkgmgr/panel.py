@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QCheckBox, QComboBox, QDockWidget, QFormLayout, QGro
 from editor.panels import pkgcore as core
 from editor.panels.pkgmgr.ops import FILTER_ALL, FILTER_UPDATES, FILTER_UPTODATE, TREE_DEPS, TREE_REVERSE, PackageManagerOpsMixin
 try:
-    import qtawesome as qta
+    import editor.icons as qta
 except ImportError:
     qta = None
 class PackageManagerPanel(PackageManagerOpsMixin, QDockWidget):

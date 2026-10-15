@@ -7,8 +7,6 @@
 from __future__ import annotations
 import math
 from core.maths.math3d import Vec3
-from core.audio.sys import AudioSystem, AudioSourceManager
-from core.audio.efx import efx_available, reverb_enabled, is_aux_slot
 
 
 class ReverbZoneSpatialMixin:
@@ -59,6 +57,7 @@ class ReverbZoneSpatialMixin:
         return 1.0 - t
 
     def _is_routable(self) -> bool:
+        from core.audio.efx import efx_available, is_aux_slot
         try:
             if not self._is_active():
                 return False
@@ -88,6 +87,8 @@ class ReverbZoneSpatialMixin:
 
     @classmethod
     def update_routing(cls, force: bool = False):
+        from core.audio.efx import efx_available, reverb_enabled
+        from core.audio.sys import AudioSourceManager
         try:
             frame = cls._current_frame()
             if not force and frame >= 0 and int(cls._last_routing_frame) == int(frame):
@@ -238,6 +239,7 @@ class ReverbZoneSpatialMixin:
 
     @staticmethod
     def _get_listener_pos():
+        from core.audio.sys import AudioSystem
         try:
             audio_sys = AudioSystem.instance()
             if audio_sys:

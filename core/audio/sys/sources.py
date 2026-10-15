@@ -8,7 +8,8 @@ import math
 from contextlib import suppress
 from typing import Optional, Tuple, Any
 from core.audio.sys.curve import AudioRolloffCurve, _normalize_audio_zone_shape, _normalize_audio_box_halves, _box_zone_t
-from core.audio.sys.system import al, _openal_available, _read_audio_value, _get_aux_send_filter
+from core.audio.sys.system import _read_audio_value, _get_aux_send_filter
+import core.audio.sys.system as _sysmod
 from core.audio.sys.clip import AudioClip
 class AudioSourceManager:
     _instance: Optional[AudioSourceManager] = None
@@ -24,17 +25,17 @@ class AudioSourceManager:
         return math.sqrt(dx * dx + dy * dy + dz * dz)
     @staticmethod
     def _clear_al_errors():
-        if not al:
+        if not _sysmod.al:
             return
         with suppress(Exception):
-            while al.alGetError() != al.AL_NO_ERROR:
+            while _sysmod.al.alGetError() != _sysmod.al.AL_NO_ERROR:
                 pass
     @staticmethod
     def _delete_al_source(src_val: int):
-        if not al or not src_val:
+        if not _sysmod.al or not src_val:
             return
         with suppress(Exception):
-            al.alDeleteSources(1, al.ctypes.pointer(al.ctypes.c_uint(src_val)))
+            _sysmod.al.alDeleteSources(1, _sysmod.al.ctypes.pointer(_sysmod.al.ctypes.c_uint(src_val)))
     def _max_sources_limit(self) -> int:
         try:
             value = _read_audio_value("audio.max_sources", 32)
@@ -74,7 +75,7 @@ class AudioSourceManager:
         except Exception:
             return True
     def play(self, clip_path: str, loop: bool = False, volume: float = 1.0, pitch: float = 1.0, spatial_blend: float = 1.0, min_distance: float = 1.0, max_distance: float = 50.0, volume_rolloff: list[list[float]] = None, offset: float = 0.0, velocity: tuple[float, float, float] = (0.0, 0.0, 0.0), zone_shape: str = "sphere", box_inner_size=None, box_outer_size=None) -> int | None:
-        if not al.oalGetInit(): return None
+        if not _sysmod.al.oalGetInit(): return None
         from core.audio.sys.system import AudioSystem
         audio_sys = AudioSystem.instance()
         if not audio_sys: return None
@@ -87,14 +88,14 @@ class AudioSourceManager:
         src_val = 0
         try:
             self._clear_al_errors()
-            source_id = al.ctypes.c_uint()
-            al.alGenSources(1, al.ctypes.pointer(source_id))
+            source_id = _sysmod.al.ctypes.c_uint()
+            _sysmod.al.alGenSources(1, _sysmod.al.ctypes.pointer(source_id))
             src_val = source_id.value
-            al.alSourcei(src_val, al.AL_BUFFER, clip.buffer._geti())
-            al.alSourcef(src_val, al.AL_PITCH, pitch); al.alSourcef(src_val, al.AL_GAIN, volume); al.alSourcei(src_val, al.AL_LOOPING, 1 if loop else 0)
+            _sysmod.al.alSourcei(src_val, _sysmod.al.AL_BUFFER, clip.buffer._geti())
+            _sysmod.al.alSourcef(src_val, _sysmod.al.AL_PITCH, pitch); _sysmod.al.alSourcef(src_val, _sysmod.al.AL_GAIN, volume); _sysmod.al.alSourcei(src_val, _sysmod.al.AL_LOOPING, 1 if loop else 0)
             with suppress(Exception):
-                al.alSourcei(src_val, 0x1214, 0x0001)
-            al.alSource3f(src_val, al.AL_POSITION, 0.0, 0.0, 0.0); al.alSource3f(src_val, al.AL_VELOCITY, *velocity)
+                _sysmod.al.alSourcei(src_val, 0x1214, 0x0001)
+            _sysmod.al.alSource3f(src_val, _sysmod.al.AL_POSITION, 0.0, 0.0, 0.0); _sysmod.al.alSource3f(src_val, _sysmod.al.AL_VELOCITY, *velocity)
             zs = _normalize_audio_zone_shape(zone_shape)
             inner_half = _normalize_audio_box_halves(box_inner_size, 2.0); outer_half = _normalize_audio_box_halves(box_outer_size, 10.0)
             outer_half = (max(outer_half[0], inner_half[0]), max(outer_half[1], inner_half[1]), max(outer_half[2], inner_half[2]))
@@ -102,11 +103,11 @@ class AudioSourceManager:
                 ref_d = min(inner_half[0], inner_half[1], inner_half[2]); max_d = math.sqrt(outer_half[0] * outer_half[0] + outer_half[1] * outer_half[1] + outer_half[2] * outer_half[2])
             else:
                 ref_d = min_distance; max_d = max_distance
-            al.alSourcef(src_val, al.AL_REFERENCE_DISTANCE, ref_d); al.alSourcef(src_val, al.AL_MAX_DISTANCE, max_d); al.alSourcef(src_val, al.AL_ROLLOFF_FACTOR, 0.0)
-            al.alSourcei(src_val, al.AL_SOURCE_RELATIVE, 0 if spatial_blend > 0 else 1)
+            _sysmod.al.alSourcef(src_val, _sysmod.al.AL_REFERENCE_DISTANCE, ref_d); _sysmod.al.alSourcef(src_val, _sysmod.al.AL_MAX_DISTANCE, max_d); _sysmod.al.alSourcef(src_val, _sysmod.al.AL_ROLLOFF_FACTOR, 0.0)
+            _sysmod.al.alSourcei(src_val, _sysmod.al.AL_SOURCE_RELATIVE, 0 if spatial_blend > 0 else 1)
             if offset > 0.0:
-                al.alSourcef(src_val, 0x1024, offset)
-            al.alSourcePlay(src_val)
+                _sysmod.al.alSourcef(src_val, 0x1024, offset)
+            _sysmod.al.alSourcePlay(src_val)
         except Exception:
             self._delete_al_source(src_val); self._clear_al_errors()
             return None
@@ -122,14 +123,14 @@ class AudioSourceManager:
         self._source_aux_filter.pop(src_val, None); self._source_aux_gain[src_val] = 0.0; self._source_direct_filter.pop(src_val, None)
         return src_val
     def update_source(self, source: int, volume: float, pitch: float, position: tuple[float, float, float], spatial_blend: float | None = None, velocity: tuple[float, float, float] | None = None, min_distance: float | None = None, max_distance: float | None = None, zone_shape=None, box_inner_size=None, box_outer_size=None):
-        if not source or not al.oalGetInit(): return
+        if not source or not _sysmod.al.oalGetInit(): return
         try:
-            state = al.ctypes.c_int()
-            al.alGetSourcei(source, al.AL_SOURCE_STATE, state)
-            if state.value in (al.AL_PLAYING, al.AL_PAUSED):
-                al.alSourcef(source, al.AL_PITCH, pitch)
+            state = _sysmod.al.ctypes.c_int()
+            _sysmod.al.alGetSourcei(source, _sysmod.al.AL_SOURCE_STATE, state)
+            if state.value in (_sysmod.al.AL_PLAYING, _sysmod.al.AL_PAUSED):
+                _sysmod.al.alSourcef(source, _sysmod.al.AL_PITCH, pitch)
                 if velocity is not None:
-                    al.alSource3f(source, al.AL_VELOCITY, *velocity)
+                    _sysmod.al.alSource3f(source, _sysmod.al.AL_VELOCITY, *velocity)
                     info = self._source_info.get(source)
                     if info:
                         info["velocity"] = velocity
@@ -158,7 +159,7 @@ class AudioSourceManager:
                         info["box_outer"] = (max(float(outer_half[0]), float(inner_half[0])), max(float(outer_half[1]), float(inner_half[1])), max(float(outer_half[2]), float(inner_half[2])))
                     info["spatial_blend"] = spatial_blend
                     if spatial_blend > 0:
-                        al.alSource3f(source, al.AL_POSITION, *position); al.alSourcei(source, al.AL_SOURCE_RELATIVE, 0)
+                        _sysmod.al.alSource3f(source, _sysmod.al.AL_POSITION, *position); _sysmod.al.alSourcei(source, _sysmod.al.AL_SOURCE_RELATIVE, 0)
                         self._source_positions[source] = position
                         if info.get("zone_shape", "sphere") == "box":
                             t = _box_zone_t(self._listener_pos, position, info.get("box_inner", (1.0, 1.0, 1.0)), info.get("box_outer", (5.0, 5.0, 5.0)))
@@ -167,30 +168,30 @@ class AudioSourceManager:
                             dist = self._distance_to_listener(position)
                             atten = AudioRolloffCurve.evaluate(dist, info["min_distance"], info["max_distance"], info.get("volume_rolloff", [[0, 1], [1, 0]]))
                         final_volume = volume * atten
-                        al.alSourcef(source, al.AL_GAIN, final_volume)
+                        _sysmod.al.alSourcef(source, _sysmod.al.AL_GAIN, final_volume)
                     else:
-                        al.alSource3f(source, al.AL_POSITION, 0.0, 0.0, 0.0); al.alSourcei(source, al.AL_SOURCE_RELATIVE, 1); al.alSourcef(source, al.AL_GAIN, volume)
+                        _sysmod.al.alSource3f(source, _sysmod.al.AL_POSITION, 0.0, 0.0, 0.0); _sysmod.al.alSourcei(source, _sysmod.al.AL_SOURCE_RELATIVE, 1); _sysmod.al.alSourcef(source, _sysmod.al.AL_GAIN, volume)
                 else:
                     if self._spatialization_on():
-                        al.alSource3f(source, al.AL_POSITION, *position)
+                        _sysmod.al.alSource3f(source, _sysmod.al.AL_POSITION, *position)
                     else:
-                        al.alSource3f(source, al.AL_POSITION, 0.0, 0.0, 0.0)
+                        _sysmod.al.alSource3f(source, _sysmod.al.AL_POSITION, 0.0, 0.0, 0.0)
                         with suppress(Exception):
-                            al.alSourcei(source, al.AL_SOURCE_RELATIVE, 1)
-                    al.alSourcef(source, al.AL_GAIN, volume)
+                            _sysmod.al.alSourcei(source, _sysmod.al.AL_SOURCE_RELATIVE, 1)
+                    _sysmod.al.alSourcef(source, _sysmod.al.AL_GAIN, volume)
         except Exception as e:
             from core.foundation.logger import Logger
             Logger.error(f"update_source error: {e}")
     def update_listener_position(self, pos: Tuple[float, float, float]): self._listener_pos = pos
     def get_active_source_ids(self) -> list[int]: return list(self._active_sources.keys())
     def get_active_sound_count(self) -> int:
-        if not _openal_available or not al.oalGetInit():
+        if not _sysmod._openal_available or not _sysmod.al.oalGetInit():
             return 0
         count = 0
         for src in list(self._active_sources.keys()):
             with suppress(Exception):
-                state = al.ctypes.c_int(); al.alGetSourcei(src, al.AL_SOURCE_STATE, state)
-                if state.value == al.AL_PLAYING:
+                state = _sysmod.al.ctypes.c_int(); _sysmod.al.alGetSourcei(src, _sysmod.al.AL_SOURCE_STATE, state)
+                if state.value == _sysmod.al.AL_PLAYING:
                     count += 1
         return count
     def get_total_sound_count(self) -> int: return len(self._active_sources)
@@ -243,7 +244,7 @@ class AudioSourceManager:
                     set_source_direct_filter(int(source_id), 0)
                 delete_filter(int(fid))
     def set_source_aux_send(self, source_id: int, slot_id: int, filter_id: int = 0, send_index: int = 0):
-        if not source_id or not al.oalGetInit():
+        if not source_id or not _sysmod.al.oalGetInit():
             return
         if int(slot_id) != 0:
             with suppress(Exception):
@@ -285,7 +286,7 @@ class AudioSourceManager:
         except Exception:
             pass
     def set_source_aux_send_weighted(self, source_id: int, slot_id: int, weight: float, send_index: int = 0):
-        if not source_id or not al.oalGetInit():
+        if not source_id or not _sysmod.al.oalGetInit():
             return
         try:
             w = max(0.0, min(1.0, float(weight)))
@@ -325,7 +326,7 @@ class AudioSourceManager:
         if hasattr(self, "_source_aux_gain"):
             self._source_aux_gain[int(source_id)] = float(w)
     def set_source_occlusion(self, source_id: int, occlusion: float):
-        if not source_id or not al.oalGetInit():
+        if not source_id or not _sysmod.al.oalGetInit():
             return
         try:
             occ = max(0.0, min(1.0, float(occlusion)))
@@ -361,22 +362,22 @@ class AudioSourceManager:
         except Exception:
             pass
     def pause(self, source: int):
-        if not source or not al.oalGetInit(): return
+        if not source or not _sysmod.al.oalGetInit(): return
         with suppress(Exception):
-            state = al.ctypes.c_int(); al.alGetSourcei(source, al.AL_SOURCE_STATE, state)
-            if state.value == al.AL_PLAYING:
-                al.alSourcePause(source)
+            state = _sysmod.al.ctypes.c_int(); _sysmod.al.alGetSourcei(source, _sysmod.al.AL_SOURCE_STATE, state)
+            if state.value == _sysmod.al.AL_PLAYING:
+                _sysmod.al.alSourcePause(source)
     def resume(self, source: int):
-        if not source or not al.oalGetInit(): return
+        if not source or not _sysmod.al.oalGetInit(): return
         with suppress(Exception):
-            state = al.ctypes.c_int(); al.alGetSourcei(source, al.AL_SOURCE_STATE, state)
-            if state.value == al.AL_PAUSED:
-                al.alSourcePlay(source)
+            state = _sysmod.al.ctypes.c_int(); _sysmod.al.alGetSourcei(source, _sysmod.al.AL_SOURCE_STATE, state)
+            if state.value == _sysmod.al.AL_PAUSED:
+                _sysmod.al.alSourcePlay(source)
     def stop(self, source: int):
         if not source:
             return
         with suppress(Exception):
-            if al.oalGetInit():
+            if _sysmod.al.oalGetInit():
                 with suppress(Exception):
                     from core.audio.efx import set_source_aux_send as _efx_clear, set_source_direct_filter as _efx_clear_direct
                     with suppress(Exception):
@@ -384,10 +385,10 @@ class AudioSourceManager:
                     with suppress(Exception):
                         _efx_clear_direct(int(source), 0)
                 with suppress(Exception):
-                    state = al.ctypes.c_int(); al.alGetSourcei(source, al.AL_SOURCE_STATE, state)
-                    if state.value in (al.AL_PLAYING, al.AL_PAUSED):
-                        al.alSourceStop(source)
-                    al.alDeleteSources(1, al.ctypes.pointer(al.ctypes.c_uint(source)))
+                    state = _sysmod.al.ctypes.c_int(); _sysmod.al.alGetSourcei(source, _sysmod.al.AL_SOURCE_STATE, state)
+                    if state.value in (_sysmod.al.AL_PLAYING, _sysmod.al.AL_PAUSED):
+                        _sysmod.al.alSourceStop(source)
+                    _sysmod.al.alDeleteSources(1, _sysmod.al.ctypes.pointer(_sysmod.al.ctypes.c_uint(source)))
         with suppress(Exception):
             self._delete_aux_filter(int(source))
         with suppress(Exception):
@@ -396,7 +397,7 @@ class AudioSourceManager:
         if hasattr(self, "_source_aux_gain"):
             self._source_aux_gain.pop(source, None)
     def stop_all(self):
-        if not al.oalGetInit():
+        if not _sysmod.al.oalGetInit():
             with suppress(Exception):
                 self._active_sources.clear(); self._source_info.clear(); self._source_positions.clear(); self._source_aux_slot.clear(); self._source_clips.clear(); self._source_gains.clear()
                 if hasattr(self, "_source_aux_filter"):
@@ -414,10 +415,10 @@ class AudioSourceManager:
                         _efx_c(int(src), 0, 0, 0)
                     with suppress(Exception):
                         _efx_cd(int(src), 0)
-                state = al.ctypes.c_int(); al.alGetSourcei(src, al.AL_SOURCE_STATE, state)
-                if state.value in (al.AL_PLAYING, al.AL_PAUSED):
-                    al.alSourceStop(src)
-                al.alDeleteSources(1, al.ctypes.pointer(al.ctypes.c_uint(src)))
+                state = _sysmod.al.ctypes.c_int(); _sysmod.al.alGetSourcei(src, _sysmod.al.AL_SOURCE_STATE, state)
+                if state.value in (_sysmod.al.AL_PLAYING, _sysmod.al.AL_PAUSED):
+                    _sysmod.al.alSourceStop(src)
+                _sysmod.al.alDeleteSources(1, _sysmod.al.ctypes.pointer(_sysmod.al.ctypes.c_uint(src)))
             with suppress(Exception):
                 self._delete_aux_filter(int(src))
             with suppress(Exception):

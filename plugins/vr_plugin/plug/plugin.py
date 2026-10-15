@@ -219,7 +219,7 @@ class VRPluginBase(PluginBase):
         return spawn_xr_rig(eng)
     def _install_toolbar_button(self, vp):
         try:
-            import qtawesome as qta
+            import editor.icons as qta
             from PyQt6.QtWidgets import QPushButton
             if self._vr_view_btn is not None:
                 try:

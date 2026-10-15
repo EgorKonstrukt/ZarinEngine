@@ -5,13 +5,12 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from core.audio.sys import AudioSourceManager
-from core.audio.efx import efx_available, ensure_efx, reverb_enabled, create_effect, delete_effect, is_effect, apply_reverb_mb, get_reverb_preset, normalize_preset_name, create_aux_slot, delete_aux_slot, is_aux_slot, set_aux_slot_effect, set_aux_slot_gain
 from core.foundation.logger import Logger
 
 
 class ReverbZoneEfxMixin:
     def __setattr__(self, name: str, value):
+        from core.audio.efx import get_reverb_preset, normalize_preset_name
         suspend = False
         try:
             suspend = bool(object.__getattribute__(self, "_suspend_preset_sync"))
@@ -128,6 +127,7 @@ class ReverbZoneEfxMixin:
             pass
 
     def _reverb_allowed(self) -> bool:
+        from core.audio.efx import reverb_enabled
         try:
             return bool(reverb_enabled())
         except Exception:
@@ -155,6 +155,7 @@ class ReverbZoneEfxMixin:
             return None
 
     def _sync_preset_tracking(self):
+        from core.audio.efx import get_reverb_preset
         try:
             current = str(getattr(self, "preset", "User"))
         except Exception:
@@ -202,6 +203,7 @@ class ReverbZoneEfxMixin:
         return True
 
     def _apply_effect_params(self, force: bool = False) -> bool:
+        from core.audio.efx import apply_reverb_mb, set_aux_slot_gain
         if not self._effect_id:
             return False
         if self._is_off():
@@ -267,6 +269,7 @@ class ReverbZoneEfxMixin:
             pass
 
     def _cleanup(self):
+        from core.audio.efx import delete_aux_slot, delete_effect, set_aux_slot_effect
         try:
             self._disconnect_owned_sources()
         except Exception:
@@ -304,6 +307,8 @@ class ReverbZoneEfxMixin:
         self._params_sig = None
 
     def _ensure_effect(self) -> bool:
+        from core.audio.sys import AudioSourceManager
+        from core.audio.efx import ensure_efx, create_effect, delete_effect, is_effect, apply_reverb_mb, create_aux_slot, is_aux_slot, set_aux_slot_effect, set_aux_slot_gain
         try:
             if not self._is_active():
                 return False

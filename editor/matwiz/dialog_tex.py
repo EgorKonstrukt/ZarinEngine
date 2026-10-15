@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import os
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import QComboBox, QPushButton, QFileDialog, QTableWidgetItem, QAbstractItemView
 from PyQt6.QtCore import Qt
 from core.config.editor_scale import scale_xy

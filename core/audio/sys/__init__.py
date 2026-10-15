@@ -5,6 +5,6 @@
 # Copyright (c) 2026 Zarrakun
 from core.audio.sys.curve import AudioRolloffCurve
 from core.audio.sys.clip import AudioClip
-from core.audio.sys.system import AudioSystem, al
+from core.audio.sys.system import AudioSystem
 from core.audio.sys.sources import AudioSourceManager
 __all__ = ["AudioRolloffCurve", "AudioClip", "AudioSystem", "AudioSourceManager"]

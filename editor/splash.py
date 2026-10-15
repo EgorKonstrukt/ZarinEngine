@@ -137,7 +137,6 @@ class SplashScreen(QSplashScreen):
         self._base = _build_base_pixmap(tip, footer)
         super().__init__(self._base)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        # self.setWindowOpacity removed вЂ” only the background has alpha
         self.setWindowFlags(SPLASH_WINDOW_FLAGS)
         self._progress = 0
         self._message = ""

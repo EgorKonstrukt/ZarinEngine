@@ -10,7 +10,7 @@ Allows configuring which scenes and plugins are included in the build.
 """
 from __future__ import annotations
 import os
-import qtawesome as qta
+import editor.icons as qta
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,

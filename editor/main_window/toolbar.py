@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QToolBar, QPushButton, QLabel, QDoubleSpinBox, QCom
                              QWidget, QSizePolicy, QHBoxLayout, QVBoxLayout,
                              QFrame, QToolButton, QTabBar)
 from PyQt6.QtCore import Qt, QSize
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtGui import QAction, QIcon
 
 from editor.scene_toolbar import SceneToolbar, RenderToolbar

@@ -18,7 +18,7 @@ from ..instrument_list import InstrumentListWidget
 from ..mixer_widget import MixerWidget
 from ..module_info import ModuleInfoWidget
 from ..pattern import PatternEditorWidget
-from ..sample_manager import SampleManagerWidget
+from ..samples import SampleManagerWidget
 from .pattern import TrackerPatternMixin
 from .preview import TrackerPreviewMixin, _PreviewJob
 

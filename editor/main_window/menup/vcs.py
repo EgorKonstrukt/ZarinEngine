@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtGui import QAction, QKeySequence, QFont
 from PyQt6.QtWidgets import QMenu, QMessageBox, QInputDialog, QDialog, QVBoxLayout, QPlainTextEdit
 

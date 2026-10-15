@@ -9,7 +9,6 @@ from typing import Callable
 from core.ecs import Component, ComponentRegistry
 from core.maths.math3d import Vec3
 from core.components.inspector_meta import FieldType, InspectorField
-from core.audio.sys import AudioSystem, AudioSourceManager
 from core.foundation.logger import Logger
 from core.components.audio.source.zone import AudioZoneShape, parse_audio_zone_shape, AudioSourceZoneMixin
 
@@ -137,6 +136,7 @@ class AudioSource(AudioSourceZoneMixin, Component):
                         Logger.error(f"AudioSource.on_stopped error: {e}")
 
     def _stop_immediate(self):
+        from core.audio.sys import AudioSourceManager
         if self._source_id:
             mgr = AudioSourceManager.instance()
             if mgr:
@@ -147,6 +147,7 @@ class AudioSource(AudioSourceZoneMixin, Component):
         self._fade_stop_requested = False
 
     def play(self):
+        from core.audio.sys import AudioSystem, AudioSourceManager
         if not self.clip_path or self._playing: return
         audio_sys = AudioSystem.instance()
         if not audio_sys: return
@@ -197,6 +198,7 @@ class AudioSource(AudioSourceZoneMixin, Component):
     def is_playing(self) -> bool: return self._playing
 
     def on_update(self, dt: float):
+        from core.audio.sys import AudioSourceManager
         if not self._source_id or not self._playing: return
         self._process_fade(dt)
         try:

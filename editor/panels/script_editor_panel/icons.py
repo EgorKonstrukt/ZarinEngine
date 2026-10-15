@@ -8,7 +8,7 @@ from __future__ import annotations
 from PyQt6.QtGui import QIcon
 
 try:
-    import qtawesome as qta
+    import editor.icons as qta
 except ImportError:
     qta = None
 

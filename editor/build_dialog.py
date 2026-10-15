@@ -8,7 +8,7 @@ import sys
 import os
 import subprocess
 import threading
-import qtawesome as qta
+import editor.icons as qta
 from pathlib import Path
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QPushButton, QLabel, QLineEdit, QCheckBox,

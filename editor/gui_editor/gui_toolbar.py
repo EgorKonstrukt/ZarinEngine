@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-import qtawesome as qta
+import editor.icons as qta
 from core.config.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QPushButton, QLabel,
                              QSpinBox, QCheckBox, QFileDialog, QMessageBox, QComboBox)

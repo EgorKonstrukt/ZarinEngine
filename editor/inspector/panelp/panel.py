@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QLabel, QLineEdit, QPushButton, QCheckBox, QSpinBox, QFrame, QDialog
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFontMetrics

@@ -415,6 +415,7 @@ class LoaderMixin:
                 pkg_name = "_plugin_" + basename
                 spec = importlib.util.spec_from_file_location(pkg_name, init_path)
                 mod = importlib.util.module_from_spec(spec)
+                sys.modules[pkg_name] = mod
                 spec.loader.exec_module(mod)
             if manifest.get("type") == "library":
                 self._register_library_package(dirpath, manifest)

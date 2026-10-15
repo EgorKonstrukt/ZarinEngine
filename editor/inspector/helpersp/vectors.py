@@ -7,7 +7,7 @@
 from __future__ import annotations
 import os
 from typing import Optional, Callable
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import QLabel, QWidget, QHBoxLayout, QPushButton, QDoubleSpinBox
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap

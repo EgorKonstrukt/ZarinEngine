@@ -7,7 +7,6 @@
 from __future__ import annotations
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import FieldType, InspectorField
-from core.audio.efx import get_reverb_preset, reverb_preset_names, normalize_preset_name, gain_to_mb, ensure_efx
 from core.components.audio.reverb.efx import ReverbZoneEfxMixin
 from core.components.audio.reverb.spatial import ReverbZoneSpatialMixin
 
@@ -29,6 +28,7 @@ class ReverbZone(ReverbZoneEfxMixin, ReverbZoneSpatialMixin, Component):
 
     @classmethod
     def _inspector_fields(cls) -> list[InspectorField]:
+        from core.audio.efx import reverb_preset_names
         try:
             options = list(reverb_preset_names())
         except Exception:
@@ -181,6 +181,7 @@ class ReverbZone(ReverbZoneEfxMixin, ReverbZoneSpatialMixin, Component):
             pass
 
     def on_update(self, dt: float):
+        from core.audio.efx import ensure_efx
         self._ensure_registered()
         try:
             self._sync_preset_tracking()
@@ -256,6 +257,7 @@ class ReverbZone(ReverbZoneEfxMixin, ReverbZoneSpatialMixin, Component):
 
     @classmethod
     def deserialize(cls, data: dict):
+        from core.audio.efx import get_reverb_preset, normalize_preset_name, gain_to_mb
         z = cls()
         try:
             z.enabled = data.get("enabled", True)

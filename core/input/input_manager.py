@@ -9,16 +9,31 @@ import threading
 import platform
 from typing import Optional
 from core.input.inpsys import Input, KeyCode
+mouse = None
+keyboard = None
+_pynput_available = False
+_pynput_ready = False
 
-try:
-    from pynput import mouse, keyboard
-    _pynput_available = True
-    if platform.system() == "Linux" and "DISPLAY" not in __import__("os").environ:
+
+def _ensure_pynput() -> bool:
+    global _pynput_available, mouse, keyboard, _pynput_ready
+    if _pynput_ready:
+        return _pynput_available
+    _pynput_ready = True
+    try:
+        from pynput import mouse as _m, keyboard as _k
+        mouse = _m
+        keyboard = _k
+        _pynput_available = True
+        if platform.system() == "Linux" and "DISPLAY" not in __import__("os").environ:
+            _pynput_available = False
+    except Exception:
         _pynput_available = False
-except Exception:
-    _pynput_available = False
-    mouse = None
-    keyboard = None
+        mouse = None
+        keyboard = None
+    if _pynput_available:
+        _build_pynput_maps()
+    return _pynput_available
 
 _PYNPUT_TO_KEY = {}
 _QT_TO_KEY = {}
@@ -126,8 +141,6 @@ def _build_qt_map():
         QtC.Key.Key_Meta: KeyCode.LEFT_SUPER,
     })
 
-if _pynput_available:
-    _build_pynput_maps()
 
 class InputManager:
     _instance: Optional[InputManager] = None
@@ -156,7 +169,7 @@ class InputManager:
         if self._running:
             return
         self._running = True
-        if not _pynput_available:
+        if not _ensure_pynput():
             return
         try:
             self._mouse_listener = mouse.Listener(

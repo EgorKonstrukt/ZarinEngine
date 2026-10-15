@@ -7,7 +7,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QFileDialog
 from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QPainterPath
-import qtawesome as qta
+import editor.icons as qta
 from core.foundation.time_travel import FrameSnapshot, diff_scenes
 from core.config.editor_scale import scale
 _H = chr(35)

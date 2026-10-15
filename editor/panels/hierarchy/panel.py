@@ -8,7 +8,7 @@ import json
 import time
 import os
 from typing import Optional, TYPE_CHECKING
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem, QPushButton, QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView, QStyledItemDelegate, QApplication, QHeaderView)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
 from PyQt6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon

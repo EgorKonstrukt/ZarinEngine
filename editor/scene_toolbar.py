@@ -9,7 +9,7 @@ from core.config.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import (QToolBar, QLabel, QPushButton, QCheckBox,
                              QDoubleSpinBox, QComboBox, QFrame, QWidget,
                              QHBoxLayout, QSizePolicy)
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtCore import pyqtSignal, Qt, QSize
 from core.gizmo.core import GizmoMode, GizmoSpace
 from core.renderer.types import RenderMode

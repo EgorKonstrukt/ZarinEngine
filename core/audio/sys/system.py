@@ -17,7 +17,7 @@ except Exception:
     _openal_available = False
     al = None
     alc = None
-_DISTANCE_MODEL_MAP = {"none": al.AL_NONE if al else 0, "inverse_distance": al.AL_INVERSE_DISTANCE if al else 0xD001, "inverse_distance_clamped": al.AL_INVERSE_DISTANCE_CLAMPED if al else 0xD002, "linear_distance": al.AL_LINEAR_DISTANCE if al else 0xD003, "linear_distance_clamped": al.AL_LINEAR_DISTANCE_CLAMPED if al else 0xD004, "exponent_distance": al.AL_EXPONENT_DISTANCE if al else 0xD005, "exponent_distance_clamped": al.AL_EXPONENT_DISTANCE_CLAMPED if al else 0xD006}
+_DISTANCE_MODEL_MAP = {"none": 0, "inverse_distance": 0xD001, "inverse_distance_clamped": 0xD002, "linear_distance": 0xD003, "linear_distance_clamped": 0xD004, "exponent_distance": 0xD005, "exponent_distance_clamped": 0xD006}
 _AUDIO_CATEGORIES = ("master", "sfx", "music", "voice", "ambient")
 _AL_AUX_SEND_FILTER = None
 def _get_aux_send_filter() -> int:

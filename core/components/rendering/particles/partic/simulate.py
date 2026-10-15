@@ -106,7 +106,7 @@ def _presample_gradient(grad_cache: Optional[tuple], num_samples: int = 16) -> t
 
 class ParticleSimulateMixin:
     def _ensure_arrays(self):
-        if self._particles is not None and len(self._particles) >= 1:
+        if self._particles is not None and self._free_stack is not None and len(self._particles) >= 1:
             return
         n = min(self.max_particles, self._INITIAL_CAPACITY)
         self._particles = np.zeros(n, dtype=PARTICLE_DTYPE)
@@ -118,7 +118,10 @@ class ParticleSimulateMixin:
         self._alive_count = 0
 
     def _grow_capacity(self):
-        old_cap = len(self._particles) if self._particles is not None else 0
+        if self._particles is None or self._free_stack is None:
+            self._ensure_arrays()
+            return
+        old_cap = len(self._particles)
         new_cap = min(self.max_particles, max(old_cap * 2, self._INITIAL_CAPACITY))
         if new_cap <= old_cap:
             return
@@ -261,6 +264,7 @@ class ParticleSimulateMixin:
     def play(self):
         if self._started and not self._stopped:
             return
+        self._ensure_arrays()
         self._started = True
         self._stopped = False
         self._time = -self.start_delay

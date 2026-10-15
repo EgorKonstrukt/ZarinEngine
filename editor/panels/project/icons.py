@@ -8,7 +8,7 @@ import subprocess, sys
 from PyQt6.QtGui import QColor, QIcon, QPalette
 from PyQt6.QtWidgets import QApplication
 try:
-    import qtawesome as qta
+    import editor.icons as qta
 except ImportError:
     qta = None
 _QTA_COLORS = {

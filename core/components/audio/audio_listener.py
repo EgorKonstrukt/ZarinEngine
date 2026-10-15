@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 from core.ecs import Component, ComponentRegistry
-from core.audio.sys import AudioSystem
 from core.components.inspector_meta import FieldType, InspectorField
 from core.maths.math3d import Vec3
 
@@ -33,12 +32,14 @@ class AudioListener(Component):
         self._prev_pos: Vec3 | None = None
 
     def on_start(self):
+        from core.audio.sys import AudioSystem
         audio_sys = AudioSystem.instance()
         if audio_sys:
             audio_sys.set_doppler_factor(self.doppler_factor)
             audio_sys.set_speed_of_sound(self.speed_of_sound)
 
     def on_update(self, dt: float):
+        from core.audio.sys import AudioSystem
         audio_sys = AudioSystem.instance()
         if not audio_sys:
             return

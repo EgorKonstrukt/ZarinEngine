@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-import qtawesome as qta
+import editor.icons as qta
 from core.config.editor_scale import scale, scale_xy
 from PyQt6.QtWidgets import QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QSpinBox, QVBoxLayout, QWidget, QWidgetAction
 from PyQt6.QtGui import QPalette

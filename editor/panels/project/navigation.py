@@ -318,7 +318,7 @@ class NavigationMixin:
                 if it and it.data(Qt.ItemDataRole.UserRole) == norm:
                     return it
         return None
-    def _flash_item(item):
+    def _flash_item(self, item):
         try:
             if isinstance(item, QTreeWidgetItem):
                 tree = item.treeWidget()

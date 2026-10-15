@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import time
 from typing import Optional, TYPE_CHECKING
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QTreeWidget, QTreeWidgetItem, QPushButton,
                               QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView,

@@ -56,6 +56,7 @@ class Animation(Component):
         self._time: float = 0.0
         self._is_playing: bool = False
         self._clip_cache: Optional[AnimationClip] = None
+        self._prop_cache = None
 
     @classmethod
     def _inspector_fields(cls):
@@ -113,12 +114,140 @@ class Animation(Component):
         ent = self._entity
         if ent is None:
             return
-        for bone_path, prop, value in clip.evaluate_all(self._time):
+        cache = self._prop_cache
+        if cache is not None and cache[0] is clip and self._validate_prop_cache(ent, cache[2]):
+            if self._apply_cached(clip, cache[1]):
+                return
+        rows = list(clip.evaluate_all(self._time))
+        rots = list(clip.evaluate_rotations_all(self._time))
+        for bone_path, prop, value in rows:
             target = _resolve_bone_path(ent, bone_path)
             self._apply_value(target, prop, value)
-        for bone_path, prop, quat in clip.evaluate_rotations_all(self._time):
+        for bone_path, prop, quat in rots:
             target = _resolve_bone_path(ent, bone_path)
             self._apply_rotation(target, prop, quat)
+        self._build_prop_cache(ent, clip, rows, rots)
+
+    def _validate_prop_cache(self, ent, targets) -> bool:
+        try:
+            eparent = ent._parent
+            for t in targets:
+                e = t["eref"]()
+                if e is None:
+                    return False
+                if e.get_component(t["ctype"]) is not t["cref"]():
+                    return False
+                w = e
+                for cid in reversed(t["chain"]):
+                    if w is None or w.id != cid:
+                        return False
+                    w = w._parent
+                if w is not eparent:
+                    return False
+        except Exception:
+            return False
+        return True
+
+    def _build_prop_cache(self, ent, clip, rows, rots):
+        import weakref
+        grouped = {}
+        index = {}
+        targets = []
+        for bone_path, prop, _ in list(rows) + list(rots):
+            if "/" not in prop:
+                continue
+            cname, rest = prop.split("/", 1)
+            if "." in rest:
+                name, leaf = rest.split(".", 1)
+            else:
+                name, leaf = rest, None
+            target = _resolve_bone_path(ent, bone_path)
+            if target is None:
+                continue
+            comp = target.get_component_by_name(cname)
+            if comp is None:
+                continue
+            try:
+                chain = []
+                e = target
+                while e is not None and e is not ent:
+                    chain.append(e.id)
+                    e = e._parent
+                if e is not ent:
+                    continue
+                chain.append(ent.id)
+                chain.reverse()
+            except Exception:
+                continue
+            key = (id(target), cname, name)
+            g = grouped.get(key)
+            if g is None:
+                setter = getattr(comp, "set_field_value", None)
+                g = {"eref": weakref.ref(target), "cref": weakref.ref(comp), "ctype": type(comp), "chain": tuple(chain), "name": name, "setter": setter if callable(setter) else None, "leaves": [], "plain": False}
+                grouped[key] = g
+                targets.append(g)
+            if leaf is not None and leaf not in g["leaves"]:
+                g["leaves"].append(leaf)
+            index[(bone_path, prop)] = (g, leaf)
+        self._prop_cache = (clip, index, targets)
+
+    def _apply_cached(self, clip, index) -> bool:
+        from core.components.properties import _read_field, _replace_leaf
+        grouped = {}
+        order = []
+        for bone_path, prop, value in list(clip.evaluate_all(self._time)):
+            hit = index.get((bone_path, prop))
+            if hit is None:
+                return False
+            g, leaf = hit
+            gid = id(g)
+            acc = grouped.get(gid)
+            if acc is None:
+                acc = [g, {}, []]
+                grouped[gid] = acc
+                order.append(acc)
+            if leaf is not None:
+                acc[1][leaf] = value
+            else:
+                acc[2].append(value)
+        for bone_path, prop, quat in list(clip.evaluate_rotations_all(self._time)):
+            hit = index.get((bone_path, prop))
+            if hit is None:
+                return False
+            g, _ = hit
+            gid = id(g)
+            acc = grouped.get(gid)
+            if acc is None:
+                acc = [g, {}, []]
+                grouped[gid] = acc
+                order.append(acc)
+            acc[2].append(_as_quat(quat))
+        try:
+            for g, leaf_vals, plain_vals in order:
+                if leaf_vals and plain_vals:
+                    return False
+                comp = g["cref"]()
+                if comp is None:
+                    return False
+                if leaf_vals:
+                    v = _read_field(comp, g["name"])
+                    for leaf, scalar in leaf_vals.items():
+                        v = _replace_leaf(v, leaf, scalar)
+                        if v is None:
+                            return False
+                    if g["setter"] is not None:
+                        g["setter"](g["name"], v)
+                    else:
+                        setattr(comp, g["name"], v)
+                else:
+                    for scalar in plain_vals:
+                        if g["setter"] is not None:
+                            g["setter"](g["name"], scalar)
+                        else:
+                            setattr(comp, g["name"], scalar)
+        except Exception:
+            return False
+        return True
 
     def _apply_value(self, entity, path: str, value: float):
         try:

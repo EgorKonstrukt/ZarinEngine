@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
     QWidget, QAbstractItemView)
 from PyQt6.QtCore import Qt, QSize, QEvent
 from PyQt6.QtGui import QPixmap, QIcon
-import qtawesome as qta
+import editor.icons as qta
 from core.config.editor_scale import scale
 from editor.inspector.constants import _accent
 from editor.inspector.helpersp import get_component_icon_pixmap

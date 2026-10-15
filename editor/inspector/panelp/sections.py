@@ -10,7 +10,7 @@ import json
 import os
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox, QFrame, QSizePolicy
 from PyQt6.QtCore import QTimer
-import qtawesome as qta
+import editor.icons as qta
 from core.config.editor_scale import scale
 from editor.inspector.constants import _accent
 from editor.inspector.helpersp import make_resource_picker

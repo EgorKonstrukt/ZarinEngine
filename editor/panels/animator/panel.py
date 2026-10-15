@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 from typing import Optional
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QSplitter, QGraphicsView, QCheckBox, QMenu, QInputDialog, QMessageBox, QSizePolicy
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QAction, QColor

@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QLineEdit, QComboBox, QMenu, QMessageBox
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor

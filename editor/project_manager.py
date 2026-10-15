@@ -7,7 +7,7 @@
 from __future__ import annotations
 import json
 import os
-import qtawesome as qta
+import editor.icons as qta
 from pathlib import Path
 from datetime import datetime
 from typing import Optional

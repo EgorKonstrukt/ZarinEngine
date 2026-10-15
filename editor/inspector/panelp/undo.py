@@ -7,7 +7,7 @@
 from __future__ import annotations
 import os
 from PyQt6.QtWidgets import QDialog, QLabel, QDoubleSpinBox, QCheckBox, QComboBox, QPushButton, QLineEdit, QHBoxLayout
-import qtawesome as qta
+import editor.icons as qta
 from core.components.animation.animator_controller import AnimatorConditionMode, AnimatorCondition
 from editor.inspector.component_picker import ComponentPickerDialog
 from core.config.editor_scale import scale, scale_xy

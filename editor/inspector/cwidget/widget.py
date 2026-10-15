@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QApplication, QFormLayout
 from PyQt6.QtCore import Qt, pyqtSignal
-import qtawesome as qta
+import editor.icons as qta
 from core.config.editor_scale import scale_xy
 from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
 from editor.inspector.constants import _COMPONENT_MIME

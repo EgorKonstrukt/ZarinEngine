@@ -11,7 +11,7 @@ import os
 from PyQt6.QtWidgets import QDockWidget
 
 try:
-    import qtawesome as qta
+    import editor.icons as qta
 except ImportError:
     qta = None
 

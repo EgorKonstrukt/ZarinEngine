@@ -128,7 +128,7 @@ class VRControlWidget(QWidget):
             self._plugin._eye_view = v
             if self._plugin._vr_view_btn is not None:
                 try:
-                    import qtawesome as qta
+                    import editor.icons as qta
                     if v:
                         self._plugin._vr_view_btn.setText(" Eye")
                         self._plugin._vr_view_btn.setIcon(qta.icon("fa5s.eye", color="#4fc3f7"))

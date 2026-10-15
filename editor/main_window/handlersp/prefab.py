@@ -12,7 +12,7 @@ import subprocess
 import sys
 import threading
 
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import QMessageBox, QFileDialog
 from PyQt6.QtCore import Qt, QTimer
 

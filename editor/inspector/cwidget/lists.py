@@ -7,7 +7,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QSpinBox, QComboBox, QLineEdit, QSizePolicy, QMenu
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-import qtawesome as qta
+import editor.icons as qta
 from core.config.editor_scale import scale_xy
 from core.maths.math3d import Vec3
 from core.physics.collision_layers import MAX_LAYERS, DEFAULT_LAYER_NAMES

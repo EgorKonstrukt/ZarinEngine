@@ -133,7 +133,7 @@ def entry_icon(entry) -> object | None:
 
 def prefab_asset_icon() -> object | None:
     try:
-        import qtawesome as qta
+        import editor.icons as qta
         from PyQt6.QtGui import QIcon
         cached = _icon_cache.get("__prefab__")
         if cached is not None:
@@ -147,7 +147,7 @@ def prefab_asset_icon() -> object | None:
 
 def search_icon() -> object | None:
     try:
-        import qtawesome as qta
+        import editor.icons as qta
         return qta.icon("fa5s.search", color="#d4d4d4")
     except Exception:
         return None

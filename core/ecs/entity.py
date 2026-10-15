@@ -12,7 +12,7 @@ from .registry import ComponentRegistry
 T = TypeVar("T", bound="Component")
 
 class Entity:
-    __slots__ = ('_id', '_name', '_type_map', '_type_name_map', '_components', '_update_list', '_fixed_update_list', '_active', '_parent', '_children', '_tags', '_layer', '_scene', '_prefab_guid', '_prefab_source_id', '_transform_type', '_transform', '_embed_resources', '_locked', '_system')
+    __slots__ = ('_id', '_name', '_type_map', '_type_name_map', '_components', '_update_list', '_fixed_update_list', '_active', '_parent', '_children', '_tags', '_layer', '_scene', '_prefab_guid', '_prefab_source_id', '_transform_type', '_transform', '_embed_resources', '_locked', '_system', '__weakref__')
     def __init__(self, name: str = "Entity", eid: Optional[str] = None, prefab_guid: Optional[str] = None):
         self._id: str = eid or str(uuid.uuid4()); self._name: str = name
         self._type_map: dict[type, list[Component]] = {}

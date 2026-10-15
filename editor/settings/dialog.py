@@ -14,7 +14,7 @@ from core.config.editor_scale import scale
 from editor.settings.collision import add_collision_layers_editor, build_file_assoc_page, on_layer_name_changed, on_register_assoc, on_unregister_assoc, open_collision_matrix_dialog, refresh_assoc_status
 from editor.settings.widgets import FIELD_TOOLTIPS, SECTION_DESCRIPTIONS, SECTION_ICONS, SliderSpinBox, _FIELD_RANGES
 try:
-    import qtawesome as qta
+    import editor.icons as qta
 except ImportError:
     qta = None
 

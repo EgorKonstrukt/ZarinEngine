@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-import qtawesome as qta
+import editor.icons as qta
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QDoubleSpinBox
 from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF
 from PyQt6.QtGui import QPainter, QPen, QColor, QLinearGradient, QPolygonF, QPalette
