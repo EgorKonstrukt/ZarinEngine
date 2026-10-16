@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt
 from editor.constants import VIEW_DETAILS
 from editor.inspector.helpersp import _flash_overlay
 from .icons import _accent_hex, _VCS_COLORS
+_SKIP_TREE_DIRS = {"__pycache__", ".venv", "venv", "node_modules", "build", "dist", ".git", ".idea", ".vs", ".vscode"}
 from core.config.editor_scale import scale
 class NavigationMixin:
     def _navigate_to(self, pane, path: str, record: bool = True) -> None:
@@ -151,13 +152,14 @@ class NavigationMixin:
         self._add_subfolders(root_item, self._project_root)
         root_item.setExpanded(True)
     def _add_subfolders(self, parent_item: QTreeWidgetItem, dirpath: str):
+        from editor.panels.project import fscache as _fsc
         try:
-            entries = sorted(os.listdir(dirpath))
-        except PermissionError:
+            rows = _fsc.list_dir(dirpath)
+        except Exception:
             return
-        for entry in entries:
-            full = os.path.join(dirpath, entry)
-            if os.path.isdir(full) and not entry.startswith(".") and entry != "__pycache__":
+        for entry, is_dir, _sz, _mt in rows:
+            if is_dir and not entry.startswith(".") and entry != "__pycache__" and entry not in _SKIP_TREE_DIRS:
+                full = os.path.join(dirpath, entry)
                 item = QTreeWidgetItem(parent_item)
                 item.setText(0, entry)
                 item.setData(0, Qt.ItemDataRole.UserRole, full)
@@ -388,8 +390,24 @@ class NavigationMixin:
         except Exception:
             reverse = False
         col = getattr(self, "_sort_col", 0)
+        try:
+            from editor.panels.project import fscache as _fsc
+            cached = {r[0]: r for r in _fsc.list_dir(dirpath)}
+        except Exception:
+            cached = {}
         rows = []
         for e in entries:
+            r = cached.get(e)
+            if r is not None:
+                _nm, is_dir, sz, mt = r
+                if is_dir:
+                    try:
+                        sz = int(self._dir_size_cache.get(os.path.normpath(os.path.join(dirpath, e)), -1))
+                    except Exception:
+                        sz = -1
+                ext = os.path.splitext(e)[1].lower() if not is_dir else ""
+                rows.append((e, os.path.join(dirpath, e), is_dir, sz, mt / 1e9, ext))
+                continue
             full = os.path.join(dirpath, e)
             try:
                 is_dir = os.path.isdir(full)

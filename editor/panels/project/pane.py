@@ -222,13 +222,18 @@ class _FilePane(QWidget):
     def populate_files(self, dirpath: str, filter_text: str = ""):
         self._current_dir = os.path.normpath(dirpath)
         self.rebuild_breadcrumb()
-        try:
-            entries = sorted(os.listdir(dirpath), key=lambda s: s.lower())
-        except (PermissionError, FileNotFoundError) as e:
-            if isinstance(e, FileNotFoundError):
+        if not os.path.isdir(dirpath):
+            try:
                 os.makedirs(dirpath, exist_ok=True)
-                entries = []
-            else:
+            except Exception:
+                return
+        try:
+            from editor.panels.project import fscache as _fsc
+            entries = [r[0] for r in _fsc.list_dir(dirpath)]
+        except Exception:
+            try:
+                entries = sorted(os.listdir(dirpath), key=lambda s: s.lower())
+            except (PermissionError, FileNotFoundError):
                 return
         visible = [e for e in entries if not e.startswith(".") and not e.endswith(".import")]
         if filter_text:

@@ -50,7 +50,7 @@ class SearchMixin:
                     usages = vis.compute_usages(text, lines)
                     comp = vis.compute_complexity(lines)
                     try:
-                        self.analysis_ready.emit(ver, errs, warns, usages, comp)
+                        self.analysis_ready.emit(ver, (len(text), hash(text)), errs, warns, usages, comp)
                     except Exception:
                         pass
                 except Exception:
@@ -58,10 +58,20 @@ class SearchMixin:
             threading.Thread(target=_work, daemon=True).start()
         except Exception:
             pass
-    def _apply_analysis(self, ver: int, errs, warns, usages, comp):
+    def _apply_analysis(self, ver: int, sig, errs, warns, usages, comp):
         try:
             if ver != self._analysis_version:
                 return
+            if sig is not None and sig == getattr(self, "_analysis_applied_sig", None):
+                try:
+                    self._inspection.set_counts(len(errs), len(warns))
+                except Exception:
+                    pass
+                return
+            try:
+                self._analysis_applied_sig = sig
+            except Exception:
+                pass
             self._diagnostic_errors = errs
             self._diagnostic_warnings = warns
             self._vision_usages = usages

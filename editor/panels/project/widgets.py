@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, QSize, QFileInfo, pyqtSignal
 from PyQt6.QtGui import QIcon, QWheelEvent, QKeyEvent, QColor, QPainter, QPen, QBrush, QFontMetrics
 from core.config.editor_scale import scale, scale_xy
 from editor.constants import MIN_THUMB, MAX_THUMB, VIEW_ICON, VIEW_LIST, VIEW_DETAILS
-from editor.picker import _get_thumbnail, _format_size, _thumb_resolution
+from editor.picker import _peek_thumb, _format_size, _thumb_resolution, _get_thumb_service
 from editor.hover import attach_project_list_hover, attach_project_tree_hover
 from .icons import _ENTITY_MIME, qta
 from typing import Optional, TYPE_CHECKING
@@ -364,6 +364,7 @@ def _populate_detail_tree_impl(self, dirpath: str, entries: list[str], filter_te
                     is_dir = False
                 ordered.append((entry, full, is_dir, 0, 0, ""))
         need_sizes = []
+        need_thumbs = []
         for entry, full, is_dir, _sz, _mt, _ex in ordered:
             if entry.startswith("."):
                 continue
@@ -379,7 +380,7 @@ def _populate_detail_tree_impl(self, dirpath: str, entries: list[str], filter_te
                 item.setText(0, entry)
                 item.setText(1, "[DIR]")
                 try:
-                    mt = os.path.getmtime(full)
+                    mt = _mt if _mt > 0 else os.path.getmtime(full)
                     dt = datetime.datetime.fromtimestamp(mt)
                     item.setText(2, dt.strftime("%Y-%m-%d %H:%M"))
                 except Exception:
@@ -407,10 +408,11 @@ def _populate_detail_tree_impl(self, dirpath: str, entries: list[str], filter_te
             else:
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 if use_thumbs:
-                    pm = _get_thumbnail(full, _thumb_resolution())
-                    if pm and not pm.isNull():
+                    pm = _peek_thumb(full, _thumb_resolution())
+                    if pm is not None and not pm.isNull():
                         item.setIcon(0, QIcon(pm))
                     else:
+                        need_thumbs.append(full)
                         try:
                             fi = QFileInfo(full)
                             icon = self._panel._icon_provider.icon(fi)
@@ -429,13 +431,16 @@ def _populate_detail_tree_impl(self, dirpath: str, entries: list[str], filter_te
                 item.setText(0, entry)
                 item.setText(1, self._type_label(entry, False))
                 try:
-                    mtime = os.path.getmtime(full)
-                    dt = datetime.datetime.fromtimestamp(mtime)
+                    mt = _mt if _mt > 0 else os.path.getmtime(full)
+                    dt = datetime.datetime.fromtimestamp(mt)
                     item.setText(2, dt.strftime("%Y-%m-%d %H:%M"))
-                except OSError:
+                except (OSError, OverflowError, ValueError):
                     item.setText(2, "")
                 try:
-                    sz = os.path.getsize(full)
+                    if _mt > 0 and int(_sz) >= 0:
+                        sz = int(_sz)
+                    else:
+                        sz = os.path.getsize(full)
                     item.setText(3, _format_size(sz))
                     item.setData(0, Qt.ItemDataRole.UserRole + 2, int(sz))
                     try:
@@ -462,5 +467,16 @@ def _populate_detail_tree_impl(self, dirpath: str, entries: list[str], filter_te
         if need_sizes:
             try:
                 self._panel._request_dir_sizes(need_sizes)
+            except Exception:
+                pass
+        if need_thumbs:
+            try:
+                svc = _get_thumb_service()
+                tsize = _thumb_resolution()
+                for _tp in need_thumbs:
+                    try:
+                        svc.enqueue(_tp, tsize)
+                    except Exception:
+                        continue
             except Exception:
                 pass

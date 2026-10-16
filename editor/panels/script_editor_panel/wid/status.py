@@ -188,14 +188,15 @@ class StatusMixin:
         if tab is None or not tab._file_path or not tab._dirty:
             return
         try:
+            text = tab._editor.toPlainText()
             with open(tab._file_path, "w", encoding="utf-8") as f:
-                f.write(tab._editor.toPlainText())
+                f.write(text)
             tab._dirty = False
             tab._editor.document().setModified(False)
             tab._editor.vcs_set_file(tab._file_path)
             tab._update_title()
             if tab._file_path:
-                self.collab_file_saved.emit(tab._file_path, tab._editor.toPlainText())
+                self.collab_file_saved.emit(tab._file_path, text)
         except Exception:
             pass
 
@@ -259,8 +260,21 @@ class StatusMixin:
     def _do_full_sync(self):
         tab = self._current_tab()
         if tab and tab._file_path:
+            try:
+                text = tab._editor.toPlainText()
+            except Exception:
+                return
+            last = getattr(self, "_last_full_sync", None)
+            sig = (tab._file_path, len(text), hash(text))
+            if last is not None and last == sig:
+                self.clear_pending_ops(tab._file_path)
+                return
+            try:
+                self._last_full_sync = sig
+            except Exception:
+                pass
             self.clear_pending_ops(tab._file_path)
-            self.collab_file_saved.emit(tab._file_path, tab._editor.toPlainText())
+            self.collab_file_saved.emit(tab._file_path, text)
 
     def _on_local_cursor_moved(self):
         self._cursor_sync_timer.start(50)

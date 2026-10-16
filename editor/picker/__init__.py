@@ -9,7 +9,7 @@ from typing import Optional
 from PyQt6.QtWidgets import QDialog
 from editor.picker.dialog import ResourcePickerDialog
 from editor.picker.format import _draw_file_icon, _draw_material_icon, _draw_prefab_icon, _draw_scene_icon, _format_size, _get_material_thumbnail
-from editor.picker.thumbs import _get_thumb_service, _get_thumbnail, _thumb_resolution, _thumbnail_cache, _thumbnail_mutex
+from editor.picker.thumbs import _get_thumb_service, _get_thumbnail, _peek_thumb, _thumb_resolution, _thumbnail_cache, _thumbnail_mutex
 
 def pick_resource(parent, title: str, filter_str: str, current_path: str = "", project_root: str = "") -> Optional[str]:
     if not project_root:

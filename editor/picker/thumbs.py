@@ -215,6 +215,15 @@ def _mesh_preview_settings() -> dict:
         return get_global_config().get("mesh_preview", {})
     except Exception:
         return {}
+def _peek_thumb(path: str, size: int):
+    cache_key = f"thumb:{path}:{size}"
+    _thumbnail_mutex.lock()
+    try:
+        return _thumbnail_cache.get(cache_key)
+    finally:
+        _thumbnail_mutex.unlock()
+
+
 def _get_thumbnail(path: str, size: int) -> QPixmap:
     cache_key = f"thumb:{path}:{size}"
     _thumbnail_mutex.lock()

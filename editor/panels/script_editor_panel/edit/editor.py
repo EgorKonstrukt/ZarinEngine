@@ -24,7 +24,7 @@ class CodeEditor(HighlightMixin, CompleteMixin, SearchMixin, QPlainTextEdit):
     vcs_result_ready = pyqtSignal(object)
     _vcs_result_ready = pyqtSignal(object)
     diagnostics_changed = pyqtSignal(int, int)
-    analysis_ready = pyqtSignal(int, object, object, object, object)
+    analysis_ready = pyqtSignal(int, object, object, object, object, object)
     def __init__(self, parent=None):
         super().__init__(parent)
         self._font_size = self.DEFAULT_FONT

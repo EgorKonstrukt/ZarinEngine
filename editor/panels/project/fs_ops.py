@@ -409,11 +409,33 @@ class FsOpsMixin:
             total = 0
             has_total = False
             try:
+                from editor.panels.project import fscache as _fsc
+                try:
+                    curdir = os.path.normpath(pane._current_dir)
+                except Exception:
+                    curdir = ""
+                statmap = {}
+                try:
+                    for _nm, _isd, _sz, _mt in _fsc.list_dir(curdir):
+                        statmap[_nm] = (_isd, _sz, _mt)
+                except Exception:
+                    pass
                 for i in range(pane._detail_tree.topLevelItemCount()):
                     it = pane._detail_tree.topLevelItem(i)
                     try:
                         p = it.data(0, Qt.ItemDataRole.UserRole)
                         if not p or os.path.basename(p) == "..":
+                            continue
+                        hit = statmap.get(os.path.basename(p))
+                        if hit is not None and hit[0]:
+                            v = self._dir_size_cache.get(os.path.normpath(p))
+                            if v is not None:
+                                total += int(v)
+                                has_total = True
+                            continue
+                        if hit is not None and not hit[0] and hit[1] >= 0:
+                            total += int(hit[1])
+                            has_total = True
                             continue
                         if os.path.isdir(p):
                             v = self._dir_size_cache.get(os.path.normpath(p))
