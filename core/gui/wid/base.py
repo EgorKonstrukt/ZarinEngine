@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QColor, QPen
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPainter, QColor, QPen
 
 ANCHOR_TOP_LEFT = 0
 ANCHOR_TOP_CENTER = 1
@@ -89,7 +89,7 @@ _ANCHOR_LABELS: dict[int, str] = {
 }
 
 class AnchorPresetSelector(QWidget):
-    anchor_changed = pyqtSignal(int)
+    anchor_changed = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)

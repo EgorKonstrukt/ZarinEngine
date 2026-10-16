@@ -6,8 +6,8 @@
 from __future__ import annotations
 import random
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton
+from PySide6.QtCore import Qt
 from core.config.editor_scale import scale
 from core.foundation.cmd import AddComponentCommand, get_history
 from core.components.rendering.terrain import Terrain

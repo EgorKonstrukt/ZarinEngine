@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QGroupBox, QScrollArea, QSlider
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QGroupBox, QScrollArea, QSlider
+from PySide6.QtCore import Qt
 from core.components.mesh_editor import ProBuilderMesh, SelectionMode, get_primitive_names
 from core.config.editor_scale import scale
 from editor.panels.meshedit.widgets import _STYLE_GROUP, _STYLE_LABEL, _make_btn, _make_spin

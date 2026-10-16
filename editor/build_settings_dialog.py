@@ -12,19 +12,19 @@ from __future__ import annotations
 import os
 import editor.icons as qta
 from pathlib import Path
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QPushButton, QLabel, QFileDialog, QMessageBox, QAbstractItemView,
     QGroupBox, QCheckBox, QScrollArea, QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 from core.config.build_settings import BuildSettings
 from core.foundation.logger import Logger
 
 
 class BuildSettingsDialog(QDialog):
-    build_settings_changed = pyqtSignal()
+    build_settings_changed = Signal()
 
     def __init__(self, project_root: str, parent=None):
         super().__init__(parent)

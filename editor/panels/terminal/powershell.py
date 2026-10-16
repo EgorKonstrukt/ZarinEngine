@@ -5,13 +5,13 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import subprocess
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPlainTextEdit
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread
-from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QFont, QKeyEvent
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPlainTextEdit
+from PySide6.QtCore import Qt, Signal, QTimer, QThread
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor, QFont, QKeyEvent
 
 
 class PsReader(QThread):
-    line_received = pyqtSignal(str)
+    line_received = Signal(str)
 
     def __init__(self, proc: subprocess.Popen):
         super().__init__()
@@ -25,7 +25,7 @@ class PsReader(QThread):
 
 
 class PowershellInput(QPlainTextEdit):
-    send_cmd = pyqtSignal(str)
+    send_cmd = Signal(str)
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):

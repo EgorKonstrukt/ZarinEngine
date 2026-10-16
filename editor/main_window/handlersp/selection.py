@@ -13,8 +13,8 @@ import sys
 import threading
 
 import editor.icons as qta
-from PyQt6.QtWidgets import QMessageBox, QFileDialog
-from PyQt6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QMessageBox, QFileDialog
+from PySide6.QtCore import Qt, QTimer
 
 from core.maths.math3d import Vec3
 from core.foundation.logger import Logger

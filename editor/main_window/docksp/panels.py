@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtWidgets import QDockWidget
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QDockWidget
+from PySide6.QtCore import Qt
 
 from editor.scene_viewport import SceneViewport
 from editor.panels.hierarchy import HierarchyPanel

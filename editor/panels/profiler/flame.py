@@ -4,9 +4,9 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QFontMetrics, QPalette
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QFontMetrics, QPalette
 from .timeline import _name_to_color, _FONT, _FONT_SMALL, _FONT_TINY
 
 

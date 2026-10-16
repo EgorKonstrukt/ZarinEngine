@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import editor.icons as qta
 from core.config.editor_scale import scale, scale_xy
-from PyQt6.QtWidgets import QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QSpinBox, QVBoxLayout, QWidget, QWidgetAction
-from PyQt6.QtGui import QPalette
+from PySide6.QtWidgets import QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QSpinBox, QVBoxLayout, QWidget, QWidgetAction
+from PySide6.QtGui import QPalette
 
 from core.maths.math3d import Vec3
 
 
 def _pal(role: QPalette.ColorRole) -> str:
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     app = QApplication.instance()
     if app:
         return app.palette().color(role).name()
@@ -23,7 +23,7 @@ def _pal(role: QPalette.ColorRole) -> str:
 
 
 def _darken(color_name: str, factor: float = 0.8) -> str:
-    from PyQt6.QtGui import QColor
+    from PySide6.QtGui import QColor
     c = QColor(color_name)
     return QColor(int(c.red() * factor), int(c.green() * factor), int(c.blue() * factor)).name()
 

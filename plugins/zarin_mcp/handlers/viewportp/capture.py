@@ -152,7 +152,7 @@ def register_capture(registry, engine):
             quality = 70
 
         def _do():
-            from PyQt6.QtCore import Qt
+            from PySide6.QtCore import Qt
             vp = _resolve_viewport(engine)
             if vp is None:
                 return {"error": "No viewport (headless mode)"}

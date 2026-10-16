@@ -41,7 +41,7 @@ class ScrollBarComponent(GuiWidgetComponentBase):
         w = self._widget_ref
         if not w:
             return
-        from PyQt6.QtCore import Qt
+        from PySide6.QtCore import Qt
         orient_map = {"horizontal": Qt.Orientation.Horizontal,
                       "vertical": Qt.Orientation.Vertical}
         new_orient = orient_map.get(self._orientation, Qt.Orientation.Horizontal)
@@ -56,7 +56,7 @@ class ScrollBarComponent(GuiWidgetComponentBase):
         super().update_from_widget()
         w = self._widget_ref
         if w:
-            from PyQt6.QtCore import Qt
+            from PySide6.QtCore import Qt
             orient_rev = {Qt.Orientation.Horizontal: "horizontal",
                           Qt.Orientation.Vertical: "vertical"}
             self._orientation = orient_rev.get(w.orientation(), "horizontal")

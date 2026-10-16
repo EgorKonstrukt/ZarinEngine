@@ -158,7 +158,7 @@ class QtQuickWorldPlugin(QtQuickWorldPluginBase):
             except Exception:
                 pass
             try:
-                from PyQt6.QtCore import Qt as _Qt
+                from PySide6.QtCore import Qt as _Qt
 
                 viewport.setFocusPolicy(_Qt.FocusPolicy.StrongFocus)
             except Exception:

@@ -9,10 +9,10 @@ from __future__ import annotations
 import os
 import random
 import sys
-from PyQt6.QtWidgets import QSplashScreen, QApplication
-from PyQt6.QtGui import QPixmap, QPainter, QColor, QFont, QLinearGradient, QRadialGradient, QPen, QPainterPath
-from PyQt6.QtCore import Qt, QRect, QRectF, QPointF
-from PyQt6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QSplashScreen, QApplication
+from PySide6.QtGui import QPixmap, QPainter, QColor, QFont, QLinearGradient, QRadialGradient, QPen, QPainterPath
+from PySide6.QtCore import Qt, QRect, QRectF, QPointF
+from PySide6.QtSvg import QSvgRenderer
 
 from editor.constants import (
     APP_VERSION_DISPLAY,

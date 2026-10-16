@@ -7,10 +7,10 @@
 from __future__ import annotations
 import threading, time
 from typing import TYPE_CHECKING
-from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtWidgets import QApplication, QSizePolicy
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QSurfaceFormat
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import QApplication, QSizePolicy
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QSurfaceFormat
 from core.foundation.logger import Logger
 from core.engine.frame_pacer import FramePacer, needs_software_pacing, normalize_target_fps, timer_interval_ms
 from editor.cam import SceneCamera
@@ -34,10 +34,10 @@ if TYPE_CHECKING:
 class SceneViewport(ViewportCameraMixin, ViewportOverlayMixin, ViewportSelectionMixin, ViewportRenderMixin, ViewportInputMixin, QOpenGLWidget):
     """OpenGL scene viewport composed from mixins."""
 
-    entity_selected = pyqtSignal(object)
-    entities_selected = pyqtSignal(list)
-    entity_dropped = pyqtSignal(str, object, object)
-    scene_modified = pyqtSignal()
+    entity_selected = Signal(object)
+    entities_selected = Signal(list)
+    entity_dropped = Signal(str, object, object)
+    scene_modified = Signal()
 
     def __init__(self, engine, parent=None):
         super().__init__(parent)
@@ -248,7 +248,7 @@ class SceneViewport(ViewportCameraMixin, ViewportOverlayMixin, ViewportSelection
         self._last_fbo_id = None
         self.update()
         if floating:
-            from PyQt6.QtCore import QTimer as _QT
+            from PySide6.QtCore import QTimer as _QT
             _QT.singleShot(100, self._retry_float_fbo)
 
     def load_config(self, config) -> None:

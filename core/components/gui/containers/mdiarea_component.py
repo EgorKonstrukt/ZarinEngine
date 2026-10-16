@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 from typing import Optional
-from PyQt6.QtWidgets import QWidget, QMdiArea, QMdiSubWindow, QTabWidget
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QMdiArea, QMdiSubWindow, QTabWidget
+from PySide6.QtCore import Qt
 from core.ecs import ComponentRegistry
 from core.components.gui.layout.basewidget import GuiWidgetComponentBase
 from core.gui.wid import MdiArea, ANCHOR_STRETCH_ALL

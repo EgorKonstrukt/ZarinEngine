@@ -48,7 +48,7 @@ class TextEditComponent(GuiWidgetComponentBase):
             w.setPlaceholderText(self._placeholder_text)
         if w.tabStopDistance() != self._tab_stop_width:
             w.setTabStopDistance(self._tab_stop_width)
-        from PyQt6.QtWidgets import QTextEdit
+        from PySide6.QtWidgets import QTextEdit
         wrap_modes = {0: QTextEdit.LineWrapMode.NoWrap, 1: QTextEdit.LineWrapMode.WidgetWidth}
         target_wrap = wrap_modes.get(self._wrap_mode, QTextEdit.LineWrapMode.NoWrap)
         if w.lineWrapMode() != target_wrap:

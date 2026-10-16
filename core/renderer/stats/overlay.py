@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QRect, Qt, QSettings
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPen
+from PySide6.QtCore import QRect, Qt, QSettings
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPen
 
 from .flame import compute_tick_metrics, draw_frame_chart, draw_spike_box, draw_tick_chart
 from .stats import _fmt_bytes, _fmt_count, _fmt_vram_mb, _short_gpu

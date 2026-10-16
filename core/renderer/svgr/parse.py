@@ -14,9 +14,9 @@ _SVG_MAX_PIXELS_PER_FRAME = 4 * 1024 * 1024
 _SVG_CACHE_MAX_ENTRIES = 256
 def _rasterize_svg_job(abs_path: str, pixels_per_unit: float, max_size: int):
     try:
-        from PyQt6.QtGui import QImage, QPainter
-        from PyQt6.QtSvg import QSvgRenderer
-        from PyQt6.QtCore import QRectF
+        from PySide6.QtGui import QImage, QPainter
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtCore import QRectF
     except Exception:
         return None
     try:
@@ -47,7 +47,7 @@ def _rasterize_svg_job(abs_path: str, pixels_per_unit: float, max_size: int):
                 p.end()
             except Exception:
                 pass
-        data = bytes(img.constBits().asstring(w * h * 4))
+        data = bytes(img.constBits()[:w * h * 4])
         ms = (time.perf_counter() - t0) * 1000.0
         return (data, w, h, ms)
     except Exception:

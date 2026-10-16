@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QSlider, QSpinBox, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QSlider, QSpinBox, QWidget
 from core.config.editor_scale import scale
 
 SECTION_ICONS = {
@@ -328,7 +328,7 @@ _FIELD_RANGES = {
 
 
 class SliderSpinBox(QWidget):
-    valueChanged = pyqtSignal(object)
+    valueChanged = Signal(object)
     def __init__(self, key: str, value, is_float: bool, slider_range, parent=None):
         super().__init__(parent)
         self._key = key

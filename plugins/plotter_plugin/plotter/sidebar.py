@@ -22,8 +22,8 @@
 
 from __future__ import annotations
 from typing import Callable
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizePolicy, QToolButton, QFrame
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizePolicy, QToolButton, QFrame
 
 
 class SidebarButton(QToolButton):

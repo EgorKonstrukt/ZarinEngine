@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, datetime
-from PyQt6.QtWidgets import QToolButton, QLineEdit, QWidget, QListWidget, QListWidgetItem, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QFileIconProvider, QStyledItemDelegate
-from PyQt6.QtCore import Qt, QSize, QFileInfo, pyqtSignal
-from PyQt6.QtGui import QIcon, QWheelEvent, QKeyEvent, QColor, QPainter, QPen, QBrush, QFontMetrics
+from PySide6.QtWidgets import QToolButton, QLineEdit, QWidget, QListWidget, QListWidgetItem, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QFileIconProvider, QStyledItemDelegate
+from PySide6.QtCore import Qt, QSize, QFileInfo, Signal
+from PySide6.QtGui import QIcon, QWheelEvent, QKeyEvent, QColor, QPainter, QPen, QBrush, QFontMetrics
 from core.config.editor_scale import scale, scale_xy
 from editor.constants import MIN_THUMB, MAX_THUMB, VIEW_ICON, VIEW_LIST, VIEW_DETAILS
 from editor.picker import _peek_thumb, _format_size, _thumb_resolution, _get_thumb_service

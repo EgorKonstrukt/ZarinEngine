@@ -9,7 +9,7 @@ import math
 import numpy as np
 import moderngl
 from typing import Optional
-from PyQt6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap
 from core.maths.math3d import Mat4
 from editor.gloff.sphere import _ensure
 from editor.gloff.sphere import _set_view

@@ -7,8 +7,8 @@
 #!/usr/bin/python
 import re
 
-from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import pyqtSignal as Signal
+from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtCore import Signal
 
 _NUMB_REGEX = re.compile(r'^((?:\-)*\d+)*([\.,])*(\d+(?:[eE](?:[\-\+])*\d+)*)*')
 

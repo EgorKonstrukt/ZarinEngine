@@ -4,6 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 import os
 import ctypes
 import numpy as np
@@ -35,7 +36,6 @@ from core.assets.importer.settings import _obj_parse_chunk
 from core.assets.importer.settings import _obj_weld_slow
 from core.assets.importer.settings import _read_mesh_import
 def _obj_parse_fast(data: bytes, jobs: int):
-    import concurrent.futures as _cf
     if b"\r" in data:
         data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     bounds = _obj_chunk_bounds(data, max(1, jobs))
@@ -52,7 +52,7 @@ def _obj_parse_fast(data: bytes, jobs: int):
         results.append(r)
     else:
         try:
-            with _cf.ThreadPoolExecutor(max_workers=len(bounds)) as ex:
+            with ThreadPoolExecutor(max_workers=len(bounds)) as ex:
                 futs = [ex.submit(_obj_parse_chunk, data[s:e]) for s, e in bounds]
                 for f in futs:
                     r = f.result()

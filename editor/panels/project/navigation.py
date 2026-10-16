@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QTreeWidgetItem, QListWidgetItem, QFileIconProvider
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QTreeWidgetItem, QListWidgetItem, QFileIconProvider
+from PySide6.QtCore import Qt
 from editor.constants import VIEW_DETAILS
 from editor.inspector.helpersp import _flash_overlay
 from .icons import _accent_hex, _VCS_COLORS
@@ -202,7 +202,7 @@ class NavigationMixin:
             else:
                 item.setToolTip(new_name)
         except OSError as e:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Error", f"Could not rename:\n{e}")
             item.blockSignals(True)
             item.setText(old_name)

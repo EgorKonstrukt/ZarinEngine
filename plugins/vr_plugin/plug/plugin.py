@@ -220,7 +220,7 @@ class VRPluginBase(PluginBase):
     def _install_toolbar_button(self, vp):
         try:
             import editor.icons as qta
-            from PyQt6.QtWidgets import QPushButton
+            from PySide6.QtWidgets import QPushButton
             if self._vr_view_btn is not None:
                 try:
                     self._vr_view_btn.setVisible(True)

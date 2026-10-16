@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -133,9 +133,9 @@ def extract_embedded_resources(data: dict, root: str, cache_mode: str = "project
         if missing:
             if len(missing) > 1:
                 workers = min(8, max(2, os.cpu_count() or 4))
-                with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                with ThreadPoolExecutor(max_workers=workers) as ex:
                     futs = {ex.submit(_decode_entry_raw, k, storage): k for k in missing}
-                    for fu in concurrent.futures.as_completed(futs):
+                    for fu in as_completed(futs):
                         try:
                             sk, raw, digest, name = fu.result()
                         except Exception:

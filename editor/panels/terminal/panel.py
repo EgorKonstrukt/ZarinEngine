@@ -9,7 +9,7 @@ import sys
 import json
 import time as _time_module
 from typing import Any
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTabWidget
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTabWidget
 import editor.icons as qta
 from core.engine.eng import Engine
 from core.foundation.logger import Logger

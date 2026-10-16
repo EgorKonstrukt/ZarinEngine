@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QScrollArea, QFrame, QLineEdit, QSizePolicy
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QScrollArea, QFrame, QLineEdit, QSizePolicy
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from core.config.editor_scale import scale
 
 
@@ -78,7 +78,7 @@ class NodePaletteButton(QPushButton):
 
 
 class NodePalette(QFrame):
-    node_chosen = pyqtSignal(str)
+    node_chosen = Signal(str)
 
     def __init__(self, parent=None, title: str = "Node Palette", placeholder: str = "Search nodes...", categories: dict | None = None):
         super().__init__(parent)

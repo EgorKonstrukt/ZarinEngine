@@ -130,7 +130,7 @@ def build():
         "--standalone",
         "--output-dir=" + str(OUTPUT_DIR),
         "--output-filename=" + ("ZarinEditor" if BUILD_EDITOR else "ZarinPlayer"),
-        "--enable-plugin=pyqt6",
+        "--enable-plugin=pyside6",
         "--disable-ccache",
         *COMPILER_FLAGS,
         "--include-package=core",

@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtWidgets import QWidget, QLabel, QMdiArea, QMdiSubWindow
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QLabel, QMdiArea, QMdiSubWindow
+from PySide6.QtCore import Qt
 from core.gui.wid import get_widget_base_style, get_widget_type_for_object, get_widget_extra_rules
 from .component import _BaseWidgetCore
 

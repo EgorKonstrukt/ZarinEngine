@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QPushButton, QDoubleSpinBox, QSpinBox, QFrame
+from PySide6.QtWidgets import QPushButton, QDoubleSpinBox, QSpinBox, QFrame
 
 _STYLE_BTN = ("QPushButton { border-radius: 3px; padding: 4px 8px; font-size: 11px; }")
 _STYLE_BTN_ACCENT = ("QPushButton { border-radius: 3px; padding: 4px 8px; font-size: 11px; }")

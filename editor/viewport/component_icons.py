@@ -10,8 +10,8 @@ import os
 from typing import Any, Optional
 
 import numpy as np
-from PyQt6.QtCore import QRect, Qt
-from PyQt6.QtGui import QFont as QF, QImage, QPainter as QP, QBrush as QB, QColor as QC
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QFont as QF, QImage, QPainter as QP, QBrush as QB, QColor as QC
 
 
 def get_or_create_icon_texture(vp, comp_type_name: str, icon_color: tuple, icon_label: str, icon_path: Optional[str]) -> Optional[Any]:
@@ -45,7 +45,7 @@ def get_or_create_icon_texture(vp, comp_type_name: str, icon_color: tuple, icon_
         p.setFont(f3)
         p.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, icon_label[0].upper())
     p.end()
-    rgba = qimg.bits().asstring(size * size * 4)
+    rgba = bytes(qimg.bits()[:size * size * 4])
     tex = vp._renderer.create_icon_texture_from_data(rgba, size, size, key)
     vp._renderer._icon_textures[key] = tex
     return tex

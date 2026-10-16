@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 import math
-from PyQt6.QtWidgets import QMenu
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QMouseEvent, QKeyEvent
+from PySide6.QtWidgets import QMenu
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QMouseEvent, QKeyEvent
 from core.foundation.curve import TangentMode
 
 

@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QFileDialog, QListWidget, QApplication, QLineEdit
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon, QWheelEvent
+from PySide6.QtWidgets import QFileDialog, QListWidget, QApplication, QLineEdit
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon, QWheelEvent
 from core.config.editor_scale import scale, scale_xy
 from editor.constants import MIN_THUMB, MAX_THUMB, VIEW_ICON, VIEW_LIST, VIEW_DETAILS
 from .icons import _qta_icon, qta
@@ -278,7 +278,7 @@ class OpenersMixin:
                         return True
                 except Exception:
                     pass
-            from PyQt6.QtWidgets import QAbstractItemView
+            from PySide6.QtWidgets import QAbstractItemView
             try:
                 if isinstance(fw, QLineEdit):
                     return True

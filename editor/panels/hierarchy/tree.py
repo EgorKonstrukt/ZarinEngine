@@ -9,12 +9,12 @@ import json
 import time
 from typing import Optional, TYPE_CHECKING
 import editor.icons as qta
-from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
+from PySide6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QTreeWidget, QTreeWidgetItem, QPushButton,
                               QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView,
                               QStyledItemDelegate, QApplication, QHeaderView)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
-from PyQt6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
+from PySide6.QtCore import Qt, Signal, QTimer, QMimeData
+from PySide6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
 from editor.inspector.helpersp import _flash_overlay
 if TYPE_CHECKING:
     from core.ecs import Entity, Scene
@@ -82,8 +82,8 @@ def _get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
     label = getattr(cls, "_gizmo_icon_label", "?")
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
-    from PyQt6.QtGui import QPainter, QColor as QC, QFont as QF, QBrush as QB
-    from PyQt6.QtCore import QRect
+    from PySide6.QtGui import QPainter, QColor as QC, QFont as QF, QBrush as QB
+    from PySide6.QtCore import QRect
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setBrush(QB(QC(r, g, b)))
@@ -98,11 +98,11 @@ def _get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
     _ICON_PIXMAP_CACHE[cache_key] = pix
     return pix
 class HierarchyTree(QTreeWidget):
-    entity_reparented = pyqtSignal(object, object)
-    delete_requested = pyqtSignal(list)
-    copy_requested = pyqtSignal()
-    paste_requested = pyqtSignal()
-    component_drop_requested = pyqtSignal(object, object, object)
+    entity_reparented = Signal(object, object)
+    delete_requested = Signal(list)
+    copy_requested = Signal()
+    paste_requested = Signal()
+    component_drop_requested = Signal(object, object, object)
     def __init__(self, panel: HierarchyPanel, parent=None):
         super().__init__(parent)
         self._panel = panel

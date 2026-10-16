@@ -112,7 +112,7 @@ _icon_cache: dict[str, object] = {}
 
 def entry_icon(entry) -> object | None:
     try:
-        from PyQt6.QtGui import QIcon
+        from PySide6.QtGui import QIcon
         from core.ecs import ComponentRegistry
         from editor.inspector.helpersp import get_component_icon_pixmap
         comp_name = str(getattr(entry, "icon", "") or "").strip()
@@ -134,7 +134,7 @@ def entry_icon(entry) -> object | None:
 def prefab_asset_icon() -> object | None:
     try:
         import editor.icons as qta
-        from PyQt6.QtGui import QIcon
+        from PySide6.QtGui import QIcon
         cached = _icon_cache.get("__prefab__")
         if cached is not None:
             return cached
@@ -156,7 +156,7 @@ def search_icon() -> object | None:
 def populate_add_menu(menu, on_system: Callable[[str], None],
                       on_asset: Callable[[str], None],
                       on_search: Optional[Callable[[], None]] = None) -> None:
-    from PyQt6.QtGui import QAction
+    from PySide6.QtGui import QAction
     if on_search is not None:
         search_act = QAction("Search...", menu)
         icon = search_icon()
@@ -218,11 +218,11 @@ def populate_add_menu(menu, on_system: Callable[[str], None],
 
 
 try:
-    from PyQt6.QtWidgets import (
+    from PySide6.QtWidgets import (
         QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QTreeWidget,
         QTreeWidgetItem, QPushButton, QLabel, QAbstractItemView,
     )
-    from PyQt6.QtCore import Qt
+    from PySide6.QtCore import Qt
     _HAS_QT = True
 except Exception:
     _HAS_QT = False
@@ -380,4 +380,4 @@ if _HAS_QT:
 else:
     class AddEntityDialog:
         def __init__(self, *args, **kwargs):
-            raise RuntimeError("PyQt6 is not available")
+            raise RuntimeError("PySide6 is not available")

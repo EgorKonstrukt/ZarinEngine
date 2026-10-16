@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtWidgets import QDockWidget
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QDockWidget
+from PySide6.QtCore import Qt
 
 from .wid import ScriptEditorWidget
 

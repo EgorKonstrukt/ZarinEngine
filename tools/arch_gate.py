@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXTS = (".py",) + tuple(importlib.machinery.EXTENSION_SUFFIXES)
 ALIAS = {"nodmod": "plugins/tracker_music_plugin/libs/nodmod"}
 SKIP_TOPS = set(sys.stdlib_module_names) | {
-    "numpy", "PyQt6", "qtawesome", "moderngl", "msgpack", "PIL", "psutil",
+    "numpy", "PySide6", "qtawesome", "moderngl", "msgpack", "PIL", "psutil",
     "OpenGL", "yaml", "aiohttp", "websockets", "mcp", "mcp_types", "pydantic",
     "tiktoken", "numba", "scipy", "matplotlib", "cv2", "imageio", "assimp",
     "pybullet", "culverin", "physx", "xr", "openal", "al", "winreg",

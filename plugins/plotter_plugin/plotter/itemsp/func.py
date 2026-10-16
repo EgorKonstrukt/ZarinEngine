@@ -7,8 +7,8 @@
 from __future__ import annotations
 import math
 from typing import Callable, List, Optional, Tuple, Union, TYPE_CHECKING
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
-from PyQt6.QtGui import QColor, QPen
+from PySide6.QtCore import QThread, Signal, QObject
+from PySide6.QtGui import QColor, QPen
 if TYPE_CHECKING:
     from ..chart import ChartWidget
 

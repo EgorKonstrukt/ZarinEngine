@@ -8,9 +8,9 @@ from __future__ import annotations
 import threading
 from collections import deque
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtCore import Qt, QObject, QTimer
-from PyQt6.QtGui import QColor, QBrush, QPen, QFont
-from PyQt6.QtWidgets import QGraphicsEllipseItem, QGraphicsTextItem
+from PySide6.QtCore import Qt, QObject, QTimer
+from PySide6.QtGui import QColor, QBrush, QPen, QFont
+from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsTextItem
 from core.network.protocol import MessageType
 from core.foundation.logger import Logger
 

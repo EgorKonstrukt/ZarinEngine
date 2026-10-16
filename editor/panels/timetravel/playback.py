@@ -4,9 +4,9 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QFileDialog
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QPainterPath
+from PySide6.QtWidgets import QWidget, QFileDialog
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QFont, QPainter, QColor, QPen, QPainterPath
 import editor.icons as qta
 from core.foundation.time_travel import FrameSnapshot, diff_scenes
 from core.config.editor_scale import scale

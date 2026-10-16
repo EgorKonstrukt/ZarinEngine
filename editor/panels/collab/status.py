@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QListWidgetItem
-from PyQt6.QtGui import QColor, QFont
+from PySide6.QtWidgets import QListWidgetItem
+from PySide6.QtGui import QColor, QFont
 
 
 class CollaborationStatusMixin:

@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, sys
-from PyQt6.QtWidgets import QFileDialog, QMenu, QTreeWidget, QListWidget, QTreeWidgetItem
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
+from PySide6.QtWidgets import QFileDialog, QMenu, QTreeWidget, QListWidget, QTreeWidgetItem
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from .icons import _qta_icon
 try:
     from editor.shellmenu import show_shell_context_menu
@@ -17,7 +17,7 @@ except Exception:
     _HAS_SHELL_MENU = False
 class CreationMixin:
     def _create_new_folder(self):
-        from PyQt6.QtWidgets import QInputDialog
+        from PySide6.QtWidgets import QInputDialog
         name, ok = QInputDialog.getText(self, "Create Folder", "Folder name:")
         if ok and name:
             try:
@@ -26,7 +26,7 @@ class CreationMixin:
                 self._push_file_undo({"kind": "create", "paths": [target], "label": "Create folder"})
                 self._refresh()
             except OSError as e:
-                from PyQt6.QtWidgets import QMessageBox
+                from PySide6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Error", f"Could not create folder:\n{e}")
     def _create_new_scene(self):
         path, _ = QFileDialog.getSaveFileName(self, "Create Scene", self._current_dir(), "Scenes (*.zpes)")
@@ -202,7 +202,7 @@ class CreationMixin:
                 paths = [self._active_pane()._current_dir]
             if paths:
                 try:
-                    from PyQt6.QtGui import QCursor
+                    from PySide6.QtGui import QCursor
                     cursor_pos = QCursor.pos()
                     if cursor_pos is not None and not cursor_pos.isNull():
                         try:

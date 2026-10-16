@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                               QTreeWidget, QTreeWidgetItem, QLineEdit, QPushButton)
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QCursor, QIcon
+from PySide6.QtCore import Signal, Qt
+from PySide6.QtGui import QCursor, QIcon
 
 from editor.inspector.helpersp import make_gameobject_picker, get_component_icon_pixmap
 from core.components.properties import iter_entity_prop_groups, iter_entity_props
@@ -39,7 +39,7 @@ QLineEdit {
 
 
 class _PropertyLineEdit(QLineEdit):
-    clicked = pyqtSignal()
+    clicked = Signal()
 
     def mousePressEvent(self, event):
         self.clicked.emit()
@@ -47,8 +47,8 @@ class _PropertyLineEdit(QLineEdit):
 
 
 class EntityPropertyTree(QWidget):
-    entity_changed = pyqtSignal(str)
-    property_changed = pyqtSignal(str)
+    entity_changed = Signal(str)
+    property_changed = Signal(str)
 
     def __init__(self, scene=None, entity_id: str = "", parent=None, show_entity_row: bool = True):
         self._show_entity_row = show_entity_row
@@ -240,8 +240,8 @@ class EntityPropertyDialog(QDialog):
 
 
 class EntityPropertyPicker(QWidget):
-    entity_changed = pyqtSignal(str)
-    property_changed = pyqtSignal(str)
+    entity_changed = Signal(str)
+    property_changed = Signal(str)
 
     def __init__(self, scene=None, entity_id: str = "", path: str = "", parent=None):
         super().__init__(parent)

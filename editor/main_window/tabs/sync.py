@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from core.foundation.logger import Logger
 from core.maths.math3d import Vec3
@@ -309,7 +309,7 @@ class SceneTabSyncMixin:
         if info.scene is None:
             return
         if not info.path:
-            from PyQt6.QtWidgets import QFileDialog
+            from PySide6.QtWidgets import QFileDialog
             path, _ = QFileDialog.getSaveFileName(self._mw, "Save Scene", "scenes/", "Scenes (*.zpes)")
             if not path:
                 return
@@ -339,7 +339,7 @@ class SceneTabSyncMixin:
         saved = 0
         failed: list[str] = []
         try:
-            from PyQt6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         except Exception:
             pass
@@ -362,7 +362,7 @@ class SceneTabSyncMixin:
                     failed.append(tab_name)
         finally:
             try:
-                from PyQt6.QtWidgets import QApplication
+                from PySide6.QtWidgets import QApplication
                 QApplication.restoreOverrideCursor()
             except Exception:
                 pass

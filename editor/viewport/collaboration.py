@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import time
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QBrush, QColor, QFont, QPen
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor, QFont, QPen
 
 from core.maths.math3d import Vec3
 

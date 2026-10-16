@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, datetime
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QFrame, QLabel, QLineEdit, QHeaderView, QAbstractItemView, QFileIconProvider, QListWidgetItem, QTreeWidgetItem
-from PyQt6.QtCore import Qt, QSize, QFileInfo
-from PyQt6.QtGui import QIcon, QColor, QBrush
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QFrame, QLabel, QLineEdit, QHeaderView, QAbstractItemView, QFileIconProvider, QListWidgetItem, QTreeWidgetItem
+from PySide6.QtCore import Qt, QSize, QFileInfo
+from PySide6.QtGui import QIcon, QColor, QBrush
 from core.config.editor_scale import scale
 from editor.constants import VIEW_ICON, VIEW_LIST, VIEW_DETAILS
 from editor.picker import _get_thumbnail, _format_size, _thumb_resolution
@@ -39,7 +39,7 @@ class _FilePane(QWidget):
         self._file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._file_list.setIconSize(QSize(scale(20), scale(20)))
         self._file_list.setSpacing(1)
-        from PyQt6.QtWidgets import QStyledItemDelegate
+        from PySide6.QtWidgets import QStyledItemDelegate
         self._file_list.setItemDelegate(_FileListDelegate(panel))
         self._file_list.itemClicked.connect(panel._on_file_single_click)
         self._file_list.itemDoubleClicked.connect(panel._on_file_double_click)

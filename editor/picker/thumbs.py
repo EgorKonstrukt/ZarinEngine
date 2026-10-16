@@ -7,8 +7,8 @@
 import collections
 import os
 from typing import Optional
-from PyQt6.QtCore import Q_ARG, QMetaObject, QObject, QMutex, QThread, QTimer, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QObject, QMutex, QThread, QTimer, Qt, Signal, Slot
+from PySide6.QtGui import QIcon, QPixmap
 from editor.constants import THUMB_SIZE
 from editor.thumb_cache import load_thumb_disk, save_thumb_disk, thumb_disk_key
 from editor.picker.format import _draw_audio_icon, _draw_file_icon, _draw_folder_icon, _draw_font_placeholder, _draw_image_icon, _draw_material_icon, _draw_mesh_icon, _draw_prefab_icon, _draw_scene_icon, _draw_script_icon, _draw_shader_icon, _draw_vector_placeholder
@@ -30,7 +30,9 @@ _PROCESS_EXTS = (
 def _is_process_thumb(path: str) -> bool:
     return os.path.splitext(path)[1].lower() in _PROCESS_EXTS
 class _ThumbnailProcessService(QObject):
-    thumbnail_ready = pyqtSignal(str, int, object)
+    thumbnail_ready = Signal(str, int, object)
+    _deliver_requested = Signal(object)
+    _arm_idle_requested = Signal()
     def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent)
         self._pool = None
@@ -38,6 +40,8 @@ class _ThumbnailProcessService(QObject):
         self._lock = QMutex()
         self._cache_dir: Optional[str] = None
         self._idle_timer: Optional[QTimer] = None
+        self._deliver_requested.connect(self._deliver)
+        self._arm_idle_requested.connect(self._arm_idle_main)
     def set_cache_dir(self, cache_dir: Optional[str]):
         self._cache_dir = cache_dir
     def _ensure_pool(self):
@@ -54,19 +58,17 @@ class _ThumbnailProcessService(QObject):
             self._pool = None
     def _arm_idle(self):
         if QThread.currentThread() != self.thread():
-            QMetaObject.invokeMethod(
-                self, "_arm_idle_main", Qt.ConnectionType.QueuedConnection,
-            )
+            self._arm_idle_requested.emit()
             return
         self._arm_idle_main()
-    @pyqtSlot()
+    @Slot()
     def _arm_idle_main(self):
         if self._idle_timer is None:
             self._idle_timer = QTimer(self)
             self._idle_timer.setSingleShot(True)
             self._idle_timer.timeout.connect(self._on_idle)
         self._idle_timer.start(30000)
-    @pyqtSlot()
+    @Slot()
     def _on_idle(self):
         self._lock.lock()
         has_inflight = len(self._inflight) > 0
@@ -121,13 +123,10 @@ class _ThumbnailProcessService(QObject):
             self._inflight.discard((path, size))
             self._lock.unlock()
     def _on_pool_result(self, payload):
-        QMetaObject.invokeMethod(
-            self, "_deliver", Qt.ConnectionType.QueuedConnection,
-            Q_ARG(object, payload),
-        )
+        self._deliver_requested.emit(payload)
     def _on_pool_error(self, exc):
         pass
-    @pyqtSlot(object)
+    @Slot(object)
     def _deliver(self, payload):
         if not isinstance(payload, tuple) or len(payload) != 3:
             return
@@ -342,7 +341,7 @@ def _get_thumbnail_raw(path: str, size: int, enqueue_mesh: bool = True) -> QPixm
         return _draw_font_placeholder(size)
     return _draw_file_icon(size)
 class _ThumbnailLoader(QThread):
-    thumbnail_loaded = pyqtSignal(object, object)
+    thumbnail_loaded = Signal(object, object)
     def __init__(self, thumb_size: int):
         super().__init__()
         self._thumb_size = thumb_size

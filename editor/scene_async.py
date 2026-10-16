@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 
 class _MainThreadDispatcher(QObject):
-    invoke = pyqtSignal(object)
+    invoke = Signal(object)
 
 
 _dispatcher = _MainThreadDispatcher()

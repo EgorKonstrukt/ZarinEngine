@@ -7,7 +7,7 @@
 #!/usr/bin/python
 import xml.etree.ElementTree as ET
 
-from PyQt6 import QtCore, QtGui, QtSvg, QtWidgets
+from PySide6 import QtCore, QtGui, QtSvg, QtWidgets
 
 from editor.NodeGraphQt.constants import NodeEnum, PortEnum
 from editor.NodeGraphQt.qgraphics.node_base import NodeItem

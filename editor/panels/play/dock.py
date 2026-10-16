@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame
+from PySide6.QtCore import Qt
 from .viewport import PlayViewport
 if TYPE_CHECKING:
     from core.engine.eng import Engine

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import copy
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QTableWidget,
@@ -38,7 +38,7 @@ from .cells import (
 
 
 class _PatternGridBase(QTableWidget):
-    patternChanged = pyqtSignal()
+    patternChanged = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)

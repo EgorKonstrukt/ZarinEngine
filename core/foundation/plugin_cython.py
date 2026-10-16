@@ -1,5 +1,5 @@
 from __future__ import annotations
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import importlib.machinery
 import importlib.util
 import os
@@ -133,9 +133,9 @@ def _build_list_and_release(anchor, pyx_files, timeout):
             per = 60
         if len(pyx_files) > 1:
             workers = min(4, len(pyx_files), os.cpu_count() or 2)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
                 futs = [ex.submit(build_file, pyx, per) for pyx in pyx_files]
-                for fu in concurrent.futures.as_completed(futs):
+                for fu in as_completed(futs):
                     try:
                         fu.result()
                     except Exception:
@@ -189,9 +189,9 @@ def ensure_extensions(plugin_dir, background=False, timeout=600):
             ok = True
             if len(pending) > 1:
                 workers = min(4, len(pending), os.cpu_count() or 2)
-                with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+                with ThreadPoolExecutor(max_workers=workers) as ex:
                     futs = {ex.submit(build_file, pyx, per): pyx for pyx in pending}
-                    for fu in concurrent.futures.as_completed(futs):
+                    for fu in as_completed(futs):
                         try:
                             if not fu.result():
                                 ok = False

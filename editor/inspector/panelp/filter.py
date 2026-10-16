@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QDoubleSpinBox, QSpinBox, QCheckBox, QSizePolicy
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QDoubleSpinBox, QSpinBox, QCheckBox, QSizePolicy
 from editor.inspector.helpersp import make_resource_picker
 from editor.inspector.panelp.util import _smart_label_width
 
@@ -19,7 +19,7 @@ class InspectorFilterMixin:
 
     def _add_shader_property_widget(self, sp, props, _save, _update_preview):
         from editor.picker import pick_resource
-        from PyQt6.QtGui import QColor
+        from PySide6.QtGui import QColor
         prop_type = sp.prop_type
         key = sp.name
         label = sp.display_name
@@ -264,7 +264,7 @@ class InspectorFilterMixin:
 
     def _add_fallback_widget(self, key, cfg, props, _save, _update_preview):
         from editor.picker import pick_resource
-        from PyQt6.QtGui import QColor
+        from PySide6.QtGui import QColor
         label = cfg["label"]
         widget_type = cfg["widget"]
         if widget_type == "texture":
@@ -352,7 +352,7 @@ class InspectorFilterMixin:
             lbl.setWordWrap(True)
             lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
             rl.addWidget(lbl, 0)
-            from PyQt6.QtWidgets import QCheckBox
+            from PySide6.QtWidgets import QCheckBox
             cb = QCheckBox()
             cb.setChecked(bool(props.get(key, False)))
             def _on_toggle(v, _key=key):

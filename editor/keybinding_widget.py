@@ -4,9 +4,9 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from PyQt6.QtWidgets import QPushButton
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QKeySequence
+from PySide6.QtWidgets import QPushButton
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeyEvent, QKeySequence
 
 
 _KEY_NAMES = {
@@ -66,7 +66,7 @@ def _format_binding(key: Qt.Key, modifiers: Qt.KeyboardModifier) -> str:
 
 
 class KeybindingWidget(QPushButton):
-    bindingChanged = pyqtSignal(str)
+    bindingChanged = Signal(str)
 
     def __init__(self, binding: str = "", parent=None):
         super().__init__(parent)

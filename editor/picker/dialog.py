@@ -6,9 +6,9 @@
 
 import os, re
 from typing import Optional
-from PyQt6.QtCore import QPoint, QSize, Qt, QTimer
-from PyQt6.QtGui import QIcon, QImageReader
-from PyQt6.QtWidgets import QAbstractItemView, QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListView, QListWidget, QListWidgetItem, QPushButton, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer
+from PySide6.QtGui import QIcon, QImageReader
+from PySide6.QtWidgets import QAbstractItemView, QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListView, QListWidget, QListWidgetItem, QPushButton, QSplitter, QVBoxLayout, QWidget
 from core.config.editor_scale import scale_xy
 from editor.constants import PREVIEW_SIZE, THUMB_SIZE
 from editor.thumb_cache import cache_root_for_project

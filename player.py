@@ -13,7 +13,7 @@ import threading
 import time
 from datetime import datetime
 
-from PyQt6.QtGui import QSurfaceFormat
+from PySide6.QtGui import QSurfaceFormat
 
 try:
     if __compiled__:
@@ -257,8 +257,8 @@ def _load_deferred(engine, modules, viewport):
 def main():
     _t_start = time.perf_counter()
     multiprocessing.freeze_support()
-    from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import Qt
     QApplication.setAttribute(Qt.ApplicationAttribute(79))
     app = QApplication(sys.argv)
     app.setApplicationName("Zarin Player")
@@ -276,8 +276,8 @@ def main():
 
     from core.engine.eng import Engine
     from core.engine.gameview import GameViewport
-    from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
-    from PyQt6.QtCore import QTimer
+    from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
+    from PySide6.QtCore import QTimer
     from editor.splash import SplashScreen
 
     splash = SplashScreen(show_tip=False, footer="Powered by Zarin Engine")

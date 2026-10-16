@@ -8,13 +8,13 @@ import io
 import sys
 import traceback
 from typing import Any
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QPlainTextEdit, QApplication
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QFont, QKeyEvent, QKeySequence
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QPlainTextEdit, QApplication
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor, QFont, QKeyEvent, QKeySequence
 
 
 class _ReplInput(QPlainTextEdit):
-    execute_requested = pyqtSignal(str)
+    execute_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -8,8 +8,8 @@ import os
 import io
 import json
 import hashlib
-from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QGroupBox, QCheckBox, QComboBox, QSpinBox, QDoubleSpinBox, QDialogButtonBox
+from PySide6.QtCore import QObject, Signal
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QGroupBox, QCheckBox, QComboBox, QSpinBox, QDoubleSpinBox, QDialogButtonBox
 from PIL import Image
 from .parse import BSPFile
 def _generate_texture_png(tex_name: str, size: int = 128) -> bytes:
@@ -105,9 +105,9 @@ class ImportSettingsDialog(QDialog):
             'import_entity_data': self.import_ents_cb.isChecked(),
         }
 class BSPImportWorker(QObject):
-    progress = pyqtSignal(int, str)
-    finished = pyqtSignal(object)
-    error = pyqtSignal(str)
+    progress = Signal(int, str)
+    finished = Signal(object)
+    error = Signal(str)
     def __init__(self, path: str, settings: dict,
                  project_root: str, materials_dir: str):
         super().__init__()

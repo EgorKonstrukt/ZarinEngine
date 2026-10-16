@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPalette
 
 _FUSION_ACCENT_GREEN = "#4ec9b0"
 _FUSION_ACCENT_RED = "#f44747"

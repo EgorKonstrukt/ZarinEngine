@@ -7,7 +7,7 @@
 #!/usr/bin/python
 import math
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from editor.NodeGraphQt.constants import Z_VAL_NODE_WIDGET, PipeSlicerEnum
 

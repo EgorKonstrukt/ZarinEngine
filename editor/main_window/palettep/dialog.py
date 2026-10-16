@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem
 
 from core.foundation.logger import Logger
 
@@ -98,7 +98,7 @@ def _run_builtin(mw, key: str) -> None:
                 from core.gizmo.core import GizmoMode
                 vp._gizmo.mode = {"gizmo-t": GizmoMode.TRANSLATE, "gizmo-r": GizmoMode.ROTATE, "gizmo-s": GizmoMode.SCALE}[key]
         elif key == "copy-stats":
-            from PyQt6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
             from core.renderer.stats import stats_text
             text = stats_text()
             if text:
@@ -139,7 +139,7 @@ def _open_asset(mw, path: str) -> None:
 
 def show_command_palette(mw) -> None:
     try:
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         menu_rows = _collect_menu_commands(mw)
         tab_rows = _collect_tab_rows(mw)
         entity_rows = _collect_entity_rows(mw)

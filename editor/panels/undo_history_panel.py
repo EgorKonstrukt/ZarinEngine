@@ -5,11 +5,11 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QDockWidget, QListWidget, QListWidgetItem
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PySide6.QtWidgets import QDockWidget, QListWidget, QListWidgetItem
+from PySide6.QtCore import Qt, QTimer, Signal
 
 class UndoHistoryPanel(QDockWidget):
-    history_navigated = pyqtSignal()
+    history_navigated = Signal()
     def __init__(self, parent=None):
         super().__init__("Undo History", parent)
         self.setObjectName("UndoHistoryDock")

@@ -6,11 +6,11 @@
 
 from __future__ import annotations
 from core.config.editor_scale import scale, scale_xy
-from PyQt6.QtWidgets import (QToolBar, QLabel, QPushButton, QCheckBox,
+from PySide6.QtWidgets import (QToolBar, QLabel, QPushButton, QCheckBox,
                              QDoubleSpinBox, QComboBox, QFrame, QWidget,
                              QHBoxLayout, QSizePolicy)
 import editor.icons as qta
-from PyQt6.QtCore import pyqtSignal, Qt, QSize
+from PySide6.QtCore import Signal, Qt, QSize
 from core.gizmo.core import GizmoMode, GizmoSpace
 from core.renderer.types import RenderMode
 
@@ -24,12 +24,12 @@ def _make_sep() -> QFrame:
 
 class SceneToolbar(QToolBar):
     """Left section: Gizmo mode (Q/W/E/R) + Space (World/Local) + Multi."""
-    gizmo_mode_changed = pyqtSignal(object)
-    gizmo_space_changed = pyqtSignal(object)
-    multigizmo_toggled = pyqtSignal(bool)
-    multigizmo_align_changed = pyqtSignal(str)
-    multigizmo_lock_toggled = pyqtSignal(bool)
-    multigizmo_visible_toggled = pyqtSignal(bool)
+    gizmo_mode_changed = Signal(object)
+    gizmo_space_changed = Signal(object)
+    multigizmo_toggled = Signal(bool)
+    multigizmo_align_changed = Signal(str)
+    multigizmo_lock_toggled = Signal(bool)
+    multigizmo_visible_toggled = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__("Scene Tools", parent)
@@ -99,16 +99,16 @@ class SceneToolbar(QToolBar):
 
 class RenderToolbar(QToolBar):
     """Right section: Render mode, Camera, Skybox, FX, Grid, Snap."""
-    render_mode_changed = pyqtSignal(object)
-    grid_toggled = pyqtSignal(bool)
-    snap_toggled = pyqtSignal(bool)
-    snap_translate_changed = pyqtSignal(float)
-    snap_rotate_changed = pyqtSignal(float)
-    snap_scale_changed = pyqtSignal(float)
-    skybox_toggled = pyqtSignal(bool)
-    effects_toggled = pyqtSignal(bool)
-    camera_projection_changed = pyqtSignal()
-    mode_2d_toggled = pyqtSignal()
+    render_mode_changed = Signal(object)
+    grid_toggled = Signal(bool)
+    snap_toggled = Signal(bool)
+    snap_translate_changed = Signal(float)
+    snap_rotate_changed = Signal(float)
+    snap_scale_changed = Signal(float)
+    skybox_toggled = Signal(bool)
+    effects_toggled = Signal(bool)
+    camera_projection_changed = Signal()
+    mode_2d_toggled = Signal()
 
     def __init__(self, parent=None):
         super().__init__("Render Tools", parent)

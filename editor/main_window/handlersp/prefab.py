@@ -13,8 +13,8 @@ import sys
 import threading
 
 import editor.icons as qta
-from PyQt6.QtWidgets import QMessageBox, QFileDialog
-from PyQt6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QMessageBox, QFileDialog
+from PySide6.QtCore import Qt, QTimer
 
 from core.maths.math3d import Vec3
 from core.foundation.logger import Logger
@@ -77,7 +77,7 @@ def on_open_prefab_editor(mw, path: str):
 
 
 def _start_prefab_autosave(mw, prefab_tab_name: str = ""):
-    from PyQt6.QtCore import QTimer
+    from PySide6.QtCore import QTimer
     mw._prefab_autosave_tab = prefab_tab_name
     if hasattr(mw, '_prefab_save_timer') and mw._prefab_save_timer:
         mw._prefab_save_timer.stop()

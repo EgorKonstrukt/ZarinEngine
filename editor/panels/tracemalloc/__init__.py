@@ -15,12 +15,12 @@ from datetime import datetime
 
 from collections import Counter
 
-from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
+from PySide6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QTreeWidget, QTreeWidgetItem,
                              QHeaderView, QGroupBox, QGridLayout, QFileDialog,
                              QApplication, QPlainTextEdit)
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QColor, QBrush
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QColor, QBrush
 
 from editor.panels.tracemalloc.panel import TracemallocPanelBase
 

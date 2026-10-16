@@ -30,7 +30,7 @@ class ViewportCameraMixin:
         self.update()
 
     def _on_depth_changed(self, value: int):
-        from PyQt6.QtGui import QSurfaceFormat
+        from PySide6.QtGui import QSurfaceFormat
         fmt = QSurfaceFormat()
         fmt.setDepthBufferSize(value)
         fmt.setVersion(4, 6)

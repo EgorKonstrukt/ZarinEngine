@@ -4,9 +4,9 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 import copy
 import uuid
-import concurrent.futures
 from core.ecs import Entity, ComponentRegistry
 from core.foundation.logger import Logger
 from core.ecs.prefabp.prefab import Prefab, PrefabOverrideType, _ROOT_TRANSFORM_SKIP_COMPARE
@@ -48,7 +48,7 @@ def compute_all_overrides(entities: list[Entity]) -> list[dict]:
             pass
         return out
     all_overrides = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(entities))) as ex:
+    with ThreadPoolExecutor(max_workers=min(8, len(entities))) as ex:
         for part in ex.map(one, entities):
             all_overrides.extend(part)
     return all_overrides

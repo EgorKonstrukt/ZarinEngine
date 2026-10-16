@@ -281,7 +281,7 @@ class QuickRuntime(QmlMixin, BridgeMixin):
             gpos = QPointF(float(px), float(py))
             if kind == "press":
                 try:
-                    from PyQt6.QtCore import QEvent
+                    from PySide6.QtCore import QEvent
 
                     ev = QMouseEvent(QEvent.Type.MouseButtonPress, pos, gpos, Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
                 except Exception:
@@ -297,7 +297,7 @@ class QuickRuntime(QmlMixin, BridgeMixin):
                     return False
             if kind == "release":
                 try:
-                    from PyQt6.QtCore import QEvent
+                    from PySide6.QtCore import QEvent
 
                     ev = QMouseEvent(QEvent.Type.MouseButtonRelease, pos, gpos, Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
                 except Exception:
@@ -312,7 +312,7 @@ class QuickRuntime(QmlMixin, BridgeMixin):
                 except Exception:
                     return False
             try:
-                from PyQt6.QtCore import QEvent
+                from PySide6.QtCore import QEvent
 
                 ev = QMouseEvent(QEvent.Type.MouseMove, pos, gpos, Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton if button else Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
             except Exception:
@@ -392,7 +392,7 @@ class QuickRuntime(QmlMixin, BridgeMixin):
             rec = self._record(comp)
             if rec.get("use_qml") and rec.get("window") is not None and QWheelEvent is not None:
                 try:
-                    from PyQt6.QtCore import QEvent
+                    from PySide6.QtCore import QEvent
 
                     pos = QPointF(float(px), float(py))
                     gpos = QPointF(float(px), float(py))
@@ -418,7 +418,7 @@ class QuickRuntime(QmlMixin, BridgeMixin):
             rec = self._record(comp)
             if rec.get("use_qml") and rec.get("window") is not None and QKeyEvent is not None:
                 try:
-                    from PyQt6.QtCore import QEvent
+                    from PySide6.QtCore import QEvent
 
                     et = QEvent.Type.KeyPress if kind == "press" else QEvent.Type.KeyRelease
                     ev = QKeyEvent(et, int(key), Qt.KeyboardModifier.NoModifier, str(text or ""))

@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 from typing import Optional
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QSpinBox, QListWidget, QFrame, QCheckBox, QProgressBar, QMessageBox, QFileDialog
-from PyQt6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QSpinBox, QListWidget, QFrame, QCheckBox, QProgressBar, QMessageBox, QFileDialog
+from PySide6.QtCore import Qt, QTimer
 import editor.icons as qta
-from PyQt6.QtGui import QColor
+from PySide6.QtGui import QColor
 from editor.panels.collab.actions import CollaborationActionsMixin
 from editor.panels.collab.status import CollaborationStatusMixin
 

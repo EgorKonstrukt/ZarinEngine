@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 try:
-    from PyQt6.QtCore import QObject, QEvent
+    from PySide6.QtCore import QObject, QEvent
 
     _HAS_QT = True
 except Exception:

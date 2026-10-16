@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 try:
-    from PyQt6.QtWidgets import QCheckBox, QDoubleSpinBox, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QCheckBox, QDoubleSpinBox, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget
     _HAS_QT = True
 except Exception:
     _HAS_QT = False

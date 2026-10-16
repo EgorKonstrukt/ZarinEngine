@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QStatusBar, QLabel
-from PyQt6.QtCore import QTimer
+from PySide6.QtWidgets import QStatusBar, QLabel
+from PySide6.QtCore import QTimer
 
 
 def _get_gpu_name(mw) -> str:

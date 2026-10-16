@@ -7,9 +7,9 @@ from __future__ import annotations
 import os
 import json
 import numpy as np
-from PyQt6.QtCore import QThread, QTimer
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QDialog
+from PySide6.QtCore import QThread, QTimer
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QDialog
 from core.foundation.plugins import PluginBase
 from core.foundation.logger import Logger
 from .parse import BSPFile

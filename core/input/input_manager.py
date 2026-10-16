@@ -89,7 +89,7 @@ def _build_pynput_maps():
 def _build_qt_map():
     if _QT_TO_KEY:
         return
-    from PyQt6.QtCore import Qt as QtC
+    from PySide6.QtCore import Qt as QtC
     _QT_TO_KEY.update({
         QtC.Key.Key_Space: KeyCode.SPACE, QtC.Key.Key_Apostrophe: KeyCode.APOSTROPHE,
         QtC.Key.Key_Comma: KeyCode.COMMA, QtC.Key.Key_Minus: KeyCode.MINUS,

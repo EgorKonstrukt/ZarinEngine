@@ -9,11 +9,11 @@ import math
 import statistics
 from bisect import bisect_left
 from typing import List, Optional, Tuple, TYPE_CHECKING
-from PyQt6.QtCore import Qt, QRect, QRectF, QPointF
-from PyQt6.QtGui import (QPen, QColor, QBrush, QFont, QFontMetrics,
+from PySide6.QtCore import Qt, QRect, QRectF, QPointF
+from PySide6.QtGui import (QPen, QColor, QBrush, QFont, QFontMetrics,
                          QPixmap, QWheelEvent, QMouseEvent)
-from PyQt6.QtGui import QAction, QActionGroup
-from PyQt6.QtWidgets import QMenu
+from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtWidgets import QMenu
 from ..mathx import nice_ticks, nice_log_ticks, to_log, decimated, fmt, get_fit_modes
 from ..itemsp import _LineItem, _FitItem, _InfLine, _FunctionItem
 from ..i18n import tr
@@ -209,7 +209,7 @@ class CanvasBase(CanvasAxesMixin, CanvasSeriesMixin):
         return x0, x1, y0, y1, dx, dy
 
     def _copy_coords_to_clipboard(self):
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         pr = self._plot_rect()
         if self._mouse_pos is None:
             return

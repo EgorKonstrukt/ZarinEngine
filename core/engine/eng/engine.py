@@ -4,6 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import time
 import threading
@@ -186,7 +187,6 @@ class Engine(EngineScenesMixin, EngineLoopMixin, EngineEventsMixin):
                 return val
         uniq_list = list(uniq)
         if len(uniq_list) > 64:
-            import concurrent.futures as _cf
             import os as _os
             workers = min(8, max(2, (_os.cpu_count() or 4)))
             chunk = (len(uniq_list) + workers - 1) // workers
@@ -195,9 +195,9 @@ class Engine(EngineScenesMixin, EngineLoopMixin, EngineEventsMixin):
                 for v in part:
                     out.append((v, _resolve_one(v)))
                 return out
-            with _cf.ThreadPoolExecutor(max_workers=workers) as ex:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
                 futs = [ex.submit(_chunk_task, uniq_list[i:i + chunk]) for i in range(0, len(uniq_list), chunk)]
-                for fu in _cf.as_completed(futs):
+                for fu in as_completed(futs):
                     try:
                         for v, r in fu.result():
                             resolved[v] = r

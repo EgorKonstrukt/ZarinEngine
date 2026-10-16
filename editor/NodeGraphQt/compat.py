@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from PyQt6 import QtCore, QtGui
+from PySide6 import QtCore, QtGui
 
 
 class QUndoCommand:

@@ -4,8 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtCore import Qt, QPoint
-from PyQt6.QtGui import QKeyEvent, QMouseEvent, QCursor, QGuiApplication
+from PySide6.QtCore import Qt, QPoint
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QCursor, QGuiApplication
 from core.input.inpsys import Input
 from core.foundation.logger import Logger
 
@@ -75,7 +75,7 @@ class GameViewportInteractionMixin:
         event.ignore()
 
     def _mouse_button_index(self, qt_btn) -> int:
-        from PyQt6.QtCore import Qt
+        from PySide6.QtCore import Qt
         if qt_btn == Qt.MouseButton.LeftButton:
             return 0
         if qt_btn == Qt.MouseButton.RightButton:

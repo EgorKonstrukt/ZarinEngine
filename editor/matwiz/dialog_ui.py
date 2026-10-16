@@ -6,12 +6,12 @@
 
 from __future__ import annotations
 import editor.icons as qta
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QTableWidget, QHeaderView, QAbstractItemView,
     QGroupBox, QWidget, QSizePolicy, QCheckBox, QLineEdit,
 )
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 from core.config.editor_scale import scale_xy
 from .drop_list import _TextureDropList
 from .shaders import _extract_shader_name

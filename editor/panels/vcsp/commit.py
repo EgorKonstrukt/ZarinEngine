@@ -6,15 +6,15 @@
 
 from __future__ import annotations
 import json, os, subprocess
-from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QTextEdit, QVBoxLayout, QWidget
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QTextEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import QThread, Signal
+from PySide6.QtGui import QFont
 from core.config.editor_scale import scale
 from .diff import _GhLoginDialog, _find_gh, _gh_run, _github_api, _github_create_repo
 from .git import _git_run, _open_url
 
 class _CommitPanel(QWidget):
-    commit_requested = pyqtSignal(str, bool, bool)
+    commit_requested = Signal(str, bool, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,8 +60,8 @@ class _CommitPanel(QWidget):
 
 
 class _RepoSetupWorker(QThread):
-    status_update = pyqtSignal(str)
-    done = pyqtSignal(int, str, str)
+    status_update = Signal(str)
+    done = Signal(int, str, str)
 
     def __init__(self, git_path: str, project_path: str, config: dict):
         super().__init__()

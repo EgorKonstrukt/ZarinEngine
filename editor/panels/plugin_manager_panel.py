@@ -7,12 +7,12 @@
 from __future__ import annotations
 import os
 from typing import Optional
-from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
+from PySide6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                               QTableWidget, QTableWidgetItem, QHeaderView,
                               QPushButton, QFileDialog, QMessageBox,
                               QLabel, QCheckBox, QFrame, QDialog,
                               QDialogButtonBox, QComboBox, QLineEdit)
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 from core.foundation.plugins import PluginBase
 from tools.build_plugin import build_plugin
 
@@ -204,7 +204,7 @@ class PluginManagerPanel(QDockWidget):
         output_dir = out_edit.text().strip() or "dist"
         backend = backend_combo.currentText()
 
-        from PyQt6.QtGui import QGuiApplication
+        from PySide6.QtGui import QGuiApplication
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             success = build_plugin(path, output_dir, backend)

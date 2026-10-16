@@ -9,8 +9,8 @@ from __future__ import annotations
 import os
 
 import numpy as np
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -26,7 +26,7 @@ from .audio import _float_to_array, _fmt, _natural_rate, _read_wav, _resample, _
 
 
 class SampleManagerWidget(QWidget):
-    samplesChanged = pyqtSignal()
+    samplesChanged = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)

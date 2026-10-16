@@ -7,10 +7,10 @@
 from __future__ import annotations
 import re
 import time as _time
-from PyQt6.QtWidgets import QListWidget
-from PyQt6.QtGui import QColor, QKeyEvent, QKeySequence
-from PyQt6.QtWidgets import QListWidgetItem
-from PyQt6.QtWidgets import QStyle
+from PySide6.QtWidgets import QListWidget
+from PySide6.QtGui import QColor, QKeyEvent, QKeySequence
+from PySide6.QtWidgets import QListWidgetItem
+from PySide6.QtWidgets import QStyle
 from core.foundation.logger import LogLevel, LogEntry
 
 _NUM_RE = re.compile(r"\d+(\.\d+)?")
@@ -82,7 +82,7 @@ class _LogList(QListWidget):
         if event.matches(QKeySequence.StandardKey.Copy):
             items = self.selectedItems()
             if items:
-                from PyQt6.QtWidgets import QApplication
+                from PySide6.QtWidgets import QApplication
                 lines = [item.text() for item in items]
                 QApplication.clipboard().setText("\n".join(lines))
             return

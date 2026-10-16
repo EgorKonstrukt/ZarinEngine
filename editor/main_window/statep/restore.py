@@ -10,8 +10,8 @@ import base64
 import json
 import os
 
-from PyQt6.QtCore import QByteArray, QRect
-from PyQt6.QtGui import QGuiApplication
+from PySide6.QtCore import QByteArray, QRect
+from PySide6.QtGui import QGuiApplication
 
 from core.foundation.logger import Logger
 

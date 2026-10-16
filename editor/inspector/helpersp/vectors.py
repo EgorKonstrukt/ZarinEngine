@@ -8,9 +8,9 @@ from __future__ import annotations
 import os
 from typing import Optional, Callable
 import editor.icons as qta
-from PyQt6.QtWidgets import QLabel, QWidget, QHBoxLayout, QPushButton, QDoubleSpinBox
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PySide6.QtWidgets import QLabel, QWidget, QHBoxLayout, QPushButton, QDoubleSpinBox
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from core.config.editor_scale import scale, scale_xy
 from editor.inspector.constants import _XYZ_COLORS, _accent
 from editor.inspector.widgets import _FocusSpinBox, _DragLabel
@@ -70,8 +70,8 @@ def get_component_icon_pixmap(cls, size: int = 16) -> QPixmap:
     label = getattr(cls, '_gizmo_icon_label', '?')
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
-    from PyQt6.QtGui import QPainter, QColor as QC, QFont as QF, QBrush as QB, QPen
-    from PyQt6.QtCore import QRect
+    from PySide6.QtGui import QPainter, QColor as QC, QFont as QF, QBrush as QB, QPen
+    from PySide6.QtCore import QRect
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setBrush(QB(QC(r, g, b)))
@@ -141,7 +141,7 @@ _EMPTY_STYLE = """
 """.replace("~", chr(35))
 
 def _create_asset_dialog(parent, asset_type: str, callback: Callable[[str], None]):
-    from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+    from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
     from core.components.scripting.scriptc import RESOURCE_TYPE_FILTERS
     project_root = getattr(parent, '_project_root', os.getcwd())
     name, ok = QInputDialog.getText(parent, f"New {asset_type}", f"Asset name:")

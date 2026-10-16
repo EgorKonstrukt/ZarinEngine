@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import subprocess, sys
-from PyQt6.QtGui import QColor, QIcon, QPalette
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtGui import QColor, QIcon, QPalette
+from PySide6.QtWidgets import QApplication
 try:
     import editor.icons as qta
 except ImportError:

@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 from typing import Optional, Any
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QGroupBox, QTabWidget, QStackedWidget, QSplitter, QScrollArea, QWidget, QMdiArea, QMdiSubWindow, QToolBox
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QGroupBox, QTabWidget, QStackedWidget, QSplitter, QScrollArea, QWidget, QMdiArea, QMdiSubWindow, QToolBox
 from core.gui.wid.base import ANCHOR_TOP_LEFT, _set_widget_bounds, _update_anchor
 
 class Panel(QFrame):

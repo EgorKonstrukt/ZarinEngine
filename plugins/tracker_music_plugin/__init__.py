@@ -91,7 +91,7 @@ class TrackerMusicPlugin(PluginBase):
     def _show_editor_dock(self):
         if self._editor_widget is None:
             return
-        from PyQt6.QtWidgets import QDockWidget
+        from PySide6.QtWidgets import QDockWidget
         dock = None
         cur = self._editor_widget.parent()
         while cur is not None:

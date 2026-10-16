@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QCheckBox, QDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QCheckBox, QDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
 from core.config.editor_scale import scale
 from core.physics.collision_layers import DEFAULT_LAYER_NAMES, MAX_LAYERS
 from editor.settings.widgets import SECTION_DESCRIPTIONS
@@ -101,12 +101,12 @@ def on_register_assoc(self):
         svg_path = os.path.join(os.path.dirname(__file__), "..", "assets", "zarin_icon.svg")
         svg_path = os.path.abspath(svg_path)
     if not os.path.exists(svg_path):
-        from PyQt6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
         QMessageBox.warning(self, "Error", "zarin_icon.svg not found")
         return
     result = register(svg_path)
     self._refresh_assoc_status()
-    from PyQt6.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox
     if result:
         QMessageBox.information(self, "Success", f"Registered: {', '.join(result)}")
     else:
@@ -115,7 +115,7 @@ def on_unregister_assoc(self):
     from editor.file_associations import unregister
     result = unregister()
     self._refresh_assoc_status()
-    from PyQt6.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox
     if result:
         QMessageBox.information(self, "Success", f"Unregistered: {', '.join(result)}")
 def add_collision_layers_editor(self, parent_layout):

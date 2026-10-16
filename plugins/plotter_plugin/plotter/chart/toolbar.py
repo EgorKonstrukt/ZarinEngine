@@ -22,9 +22,9 @@
 
 from __future__ import annotations
 from typing import Optional
-from PyQt6.QtWidgets import QToolButton, QHBoxLayout, QStyle, QMenu
-from PyQt6.QtGui import QAction
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QToolButton, QHBoxLayout, QStyle, QMenu
+from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt
 from ..i18n import tr
 from ..mathx import get_fit_modes, get_fit_mode
 

@@ -9,9 +9,9 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from PyQt6.QtCore import QObject, pyqtSignal, Qt
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtWidgets import QTabBar, QMessageBox
+from PySide6.QtCore import QObject, Signal, Qt
+from PySide6.QtGui import QIcon, QAction
+from PySide6.QtWidgets import QTabBar, QMessageBox
 
 from core.ecs import Scene
 from core.foundation.logger import Logger
@@ -25,10 +25,10 @@ from editor.main_window.tabs.peers import SceneTabPeersMixin, _icon_for_script
 
 
 class SceneTabManager(QObject, SceneTabSyncMixin, SceneTabPinsMixin, SceneTabReopenMixin, SceneTabOpsMixin, SceneTabPeersMixin):
-    tab_switched = pyqtSignal(str)
-    tab_added = pyqtSignal(str)
-    script_tab_selected = pyqtSignal(str)
-    script_tab_closed = pyqtSignal(str)
+    tab_switched = Signal(str)
+    tab_added = Signal(str)
+    script_tab_selected = Signal(str)
+    script_tab_closed = Signal(str)
     SCRIPT_TAB_PREFIX = "__script__"
 
     def __init__(self, engine, tab_bar: QTabBar, mw):

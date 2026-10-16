@@ -4,7 +4,7 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, re, threading
-from PyQt6.QtGui import QFont, QFontMetrics, QMouseEvent, QPainter
+from PySide6.QtGui import QFont, QFontMetrics, QMouseEvent, QPainter
 from core.config.editor_scale import scale
 from .. import doc_provider as docs
 from .. import diagnostics as diags

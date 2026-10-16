@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import Optional
 import json
 import os
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox, QFrame, QSizePolicy
-from PyQt6.QtCore import QTimer
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox, QFrame, QSizePolicy
+from PySide6.QtCore import QTimer
 import editor.icons as qta
 from core.config.editor_scale import scale
 from editor.inspector.constants import _accent
@@ -65,7 +65,7 @@ class InspectorSectionsMixin:
         preview.setFixedHeight(200)
         self._add_asset_widget(preview)
         self._mesh_preview = preview
-        from PyQt6.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         cache_path = self._asset_path + ".import"
         settings = {}
         if os.path.exists(cache_path):
@@ -116,7 +116,7 @@ class InspectorSectionsMixin:
         self._reload_mesh_preview()
 
     def _schedule_preview_reload(self):
-        from PyQt6.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         timer = getattr(self, "_import_preview_timer", None)
         if timer is None:
             timer = QTimer(self)
@@ -131,7 +131,7 @@ class InspectorSectionsMixin:
             return
         from core.assets.importer import load_obj_async, load_mesh_async
         import numpy as np
-        from PyQt6.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         cache_path = self._asset_path + ".import"
         settings = {}
         if os.path.exists(cache_path):
@@ -388,7 +388,7 @@ class InspectorSectionsMixin:
         ext = os.path.splitext(self._asset_path)[1].lower()
         if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
             if getattr(self, "_mesh_preview", None) is not None:
-                from PyQt6.QtCore import QTimer
+                from PySide6.QtCore import QTimer
                 QTimer.singleShot(0, self._reload_mesh_preview)
 
     def _refresh_transform(self):

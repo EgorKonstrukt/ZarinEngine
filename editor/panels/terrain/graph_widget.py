@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QToolButton, QLabel, QDoubleSpinBox, QSpinBox, QPlainTextEdit, QFileDialog, QSplitter, QSizePolicy
-from PyQt6.QtCore import Qt, QTimer, QSize
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QToolButton, QLabel, QDoubleSpinBox, QSpinBox, QPlainTextEdit, QFileDialog, QSplitter, QSizePolicy
+from PySide6.QtCore import Qt, QTimer, QSize
 from core.config.editor_scale import scale
 from editor.panels.node_palette import NodePalette
 from core.foundation.logger import Logger

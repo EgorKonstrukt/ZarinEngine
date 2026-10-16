@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, queue, sys, threading
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFileIconProvider, QToolButton, QSlider, QFrame, QMenu
-from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal, QEvent
-from PyQt6.QtGui import QAction, QIcon, QShortcut, QKeySequence
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFileIconProvider, QToolButton, QSlider, QFrame, QMenu
+from PySide6.QtCore import Qt, QSize, QTimer, Signal, QEvent
+from PySide6.QtGui import QAction, QIcon, QShortcut, QKeySequence
 from typing import Optional, TYPE_CHECKING
 from core.config.editor_scale import scale, scale_xy
 from editor.constants import MIN_THUMB, MAX_THUMB, VIEW_ICON, VIEW_LIST, VIEW_DETAILS
@@ -17,12 +17,12 @@ from .navigation import NavigationMixin; from .fs_ops import FsOpsMixin; from .d
 if TYPE_CHECKING:
     from core.engine.eng import Engine
 class ProjectPanel(NavigationMixin, FsOpsMixin, DndMixin, VcsMixin, OpenersMixin, CreationMixin, QDockWidget):
-    file_double_clicked = pyqtSignal(str)
-    prefab_drag_started = pyqtSignal(str)
-    import_model_requested = pyqtSignal(str)
-    file_selected = pyqtSignal(str)
-    _vcs_result_ready = pyqtSignal(dict)
-    _dir_size_ready = pyqtSignal(str, int, int)
+    file_double_clicked = Signal(str)
+    prefab_drag_started = Signal(str)
+    import_model_requested = Signal(str)
+    file_selected = Signal(str)
+    _vcs_result_ready = Signal(dict)
+    _dir_size_ready = Signal(str, "qint64", int)
     def __init__(self, engine: Engine, project_root: str = "assets", parent=None):
         super().__init__("Project", parent)
         self._engine = engine

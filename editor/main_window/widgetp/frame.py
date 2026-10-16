@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtWidgets import QMainWindow, QDockWidget, QWidget
-from PyQt6.QtCore import Qt, QSettings, QTimer, QThread
-from PyQt6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QMainWindow, QDockWidget, QWidget
+from PySide6.QtCore import Qt, QSettings, QTimer, QThread
+from PySide6.QtGui import QCloseEvent
 
 from core.engine.eng import Engine
 
@@ -122,7 +122,7 @@ class EditorMainWindow(_ToolbarHostMixin, _StatusMixin, QMainWindow):
         except Exception:
             dirty = []
         if dirty:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             shown = list(dirty[:10])
             names = "\n".join(f"• {n}" for n in shown)
             if len(dirty) > 10:

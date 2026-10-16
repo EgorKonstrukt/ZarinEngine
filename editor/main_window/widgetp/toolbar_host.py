@@ -6,17 +6,17 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 
 class _CollabProxy(QObject):
-    scene_open = pyqtSignal(object)
-    tab_switch = pyqtSignal(str, str)
-    tab_close = pyqtSignal(str)
-    peers_changed = pyqtSignal()
-    script_open = pyqtSignal(str, str)
-    script_change = pyqtSignal(str, str)
-    script_cursor = pyqtSignal(str, object)
+    scene_open = Signal(object)
+    tab_switch = Signal(str, str)
+    tab_close = Signal(str)
+    peers_changed = Signal()
+    script_open = Signal(str, str)
+    script_change = Signal(str, str)
+    script_cursor = Signal(str, object)
 
 
 class _ToolbarHostMixin:

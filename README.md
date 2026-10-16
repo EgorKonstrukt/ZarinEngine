@@ -5,7 +5,7 @@
   <img src="Bullet_Physics_Logo.svg" alt="Bullet Physics Logo" height="80">
   <img src="NVIDIA_PhysX_Logo.png" alt="PhysX Logo" height="80">
 </p>
-**Zarin Engine** is a 3D game and simulation engine built entirely in Python — ECS-based, with a full visual editor, real-time 3D rendering, physics, audio, scripting, and a UI system. It runs on ModernGL and PyQt6.
+**Zarin Engine** is a 3D game and simulation engine built entirely in Python — ECS-based, with a full visual editor, real-time 3D rendering, physics, audio, scripting, and a UI system. It runs on ModernGL and PySide6.
 
 It is not a wrapper around Unreal or Unity. It is its own thing, written from scratch, and every piece of it is readable, modifiable, and debuggable in Python.
 
@@ -56,7 +56,7 @@ Every object in a scene is an `Entity`. Components add data and behavior. At run
 
 ### Visual Editor
 
-The editor is a full PyQt6 application with:
+The editor is a full PySide6 application with:
 
 - **3D viewport** — ModernGL-based, real-time rendering with editor camera (orbit, pan, fly)
 - **Scene hierarchy panel** — tree view of all entities, drag to reparent, right-click context menu
@@ -228,7 +228,7 @@ All engine math uses `numpy.float64`. Positions, rotations, scales, matrices —
 ## Requirements
 
 - **Python** 3.13+
-- **PyQt6** >= 6.6.0
+- **PySide6** >= 6.6.0
 - **ModernGL** >= 5.10.0
 - **NumPy** >= 1.26.0
 - **OpenAL** (for audio) — system library

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtWidgets import QWidget, QSizePolicy
+from PySide6.QtWidgets import QWidget, QSizePolicy
 from core.ecs import Component, ComponentRegistry
 from core.components.inspector_meta import InspectorField, FieldType
 if TYPE_CHECKING:

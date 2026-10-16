@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 from core.config.editor_scale import scale, scale_xy
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton,
                              QLabel, QScrollArea, QFrame, QLineEdit, QSizePolicy)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 
 
 _CATEGORIES: dict[str, list[tuple[str, str, str, str]]] = {
@@ -95,7 +95,7 @@ def _lighten(hex_color: str) -> str:
 
 
 class WidgetPalette(QFrame):
-    widget_added = pyqtSignal(str)
+    widget_added = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

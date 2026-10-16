@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import editor.icons as qta
-from PyQt6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QKeySequence
 
 
 def _plugin_menu(mw, mb, plugin_name: str):
@@ -38,7 +38,7 @@ def _plugin_action_icon(icon):
         return qta.icon(icon, color=chr(35) + "d4d4d4")
     except Exception:
         try:
-            from PyQt6.QtGui import QIcon
+            from PySide6.QtGui import QIcon
             return QIcon(str(icon))
         except Exception:
             return None

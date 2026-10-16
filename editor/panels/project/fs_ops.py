@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, shutil, tempfile, time, threading, queue
-from PyQt6.QtWidgets import QMessageBox, QApplication, QTreeWidgetItem
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QMessageBox, QApplication, QTreeWidgetItem
+from PySide6.QtCore import Qt
 from editor.picker import _format_size
 from .icons import _ENTITY_MIME
 class FsOpsMixin:
@@ -282,7 +282,7 @@ class FsOpsMixin:
             pass
         self._refresh()
         if errors:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Import Errors", "\n".join(errors))
     def _current_dir(self):
         return self._active_pane()._current_dir

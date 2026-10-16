@@ -8,7 +8,7 @@
 import re
 
 
-from PyQt6 import QtGui, QtCore
+from PySide6 import QtGui, QtCore
 
 from editor.NodeGraphQt.errors import NodeMenuError
 from editor.NodeGraphQt.widgets.actions import BaseMenu, GraphAction, NodeAction

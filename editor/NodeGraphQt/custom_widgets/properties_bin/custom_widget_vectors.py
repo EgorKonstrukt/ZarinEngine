@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 #!/usr/bin/python
-from PyQt6 import QtWidgets
+from PySide6 import QtWidgets
 
 from .custom_widget_value_edit import _NumberValueEdit
 from .prop_widgets_abstract import BaseProperty

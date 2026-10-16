@@ -6,7 +6,7 @@
 
 import os
 
-from PyQt6 import QtWidgets, QtGui, QtCore
+from PySide6 import QtWidgets, QtGui, QtCore
 
 _current_user_directory = os.path.expanduser('~')
 

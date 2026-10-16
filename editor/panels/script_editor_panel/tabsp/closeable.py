@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import os
-from PyQt6.QtWidgets import QTabWidget, QMenu
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
+from PySide6.QtWidgets import QTabWidget, QMenu
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from ..theme import tab_stylesheet
 
 

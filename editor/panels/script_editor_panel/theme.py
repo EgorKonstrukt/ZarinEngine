@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont
 
 
 def rgb(r: int, g: int, b: int) -> QColor:

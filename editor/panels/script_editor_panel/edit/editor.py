@@ -3,9 +3,9 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QPlainTextEdit, QCompleter
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFontMetrics, QPainter, QPen, QTextCursor, QWheelEvent
+from PySide6.QtWidgets import QPlainTextEdit, QCompleter
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen, QTextCursor, QWheelEvent
 from core.config.editor_scale import scale
 from ..theme import Theme, editor_stylesheet, editor_font
 from ..gutter import LineNumberArea, VcsBlameGutter
@@ -20,11 +20,11 @@ class CodeEditor(HighlightMixin, CompleteMixin, SearchMixin, QPlainTextEdit):
     MIN_FONT = 8
     MAX_FONT = 48
     DEFAULT_FONT = 13
-    cursorMoved = pyqtSignal(int, int)
-    vcs_result_ready = pyqtSignal(object)
-    _vcs_result_ready = pyqtSignal(object)
-    diagnostics_changed = pyqtSignal(int, int)
-    analysis_ready = pyqtSignal(int, object, object, object, object, object)
+    cursorMoved = Signal(int, int)
+    vcs_result_ready = Signal(object)
+    _vcs_result_ready = Signal(object)
+    diagnostics_changed = Signal(int, int)
+    analysis_ready = Signal(int, object, object, object, object, object)
     def __init__(self, parent=None):
         super().__init__(parent)
         self._font_size = self.DEFAULT_FONT

@@ -7,8 +7,8 @@
 #!/usr/bin/python
 from collections import defaultdict
 
-from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import pyqtSignal as Signal
+from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtCore import Signal
 
 from .node_property_factory import NodePropertyWidgetFactory
 from .prop_widgets_base import PropLineEdit

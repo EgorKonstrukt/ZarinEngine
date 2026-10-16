@@ -8,9 +8,9 @@ import os
 import datetime
 import json
 import wave
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QObject, QEvent, QTimer, QPoint
-from PyQt6.QtGui import QPixmap, QPainter, QColor, QCursor, QImageReader
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QObject, QEvent, QTimer, QPoint
+from PySide6.QtGui import QPixmap, QPainter, QColor, QCursor, QImageReader
 from editor.hover.preview import _resolve_path
 from editor.hover.preview import _display_path
 from editor.hover.preview import _fmt_size

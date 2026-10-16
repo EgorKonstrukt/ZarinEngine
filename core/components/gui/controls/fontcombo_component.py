@@ -37,7 +37,7 @@ class FontComboComponent(GuiWidgetComponentBase):
         w = self._widget_ref
         if not w:
             return
-        from PyQt6.QtWidgets import QFontComboBox
+        from PySide6.QtWidgets import QFontComboBox
         ff = QFontComboBox.FontFilter(self._font_filters)
         if w.fontFilters() != ff:
             w.setFontFilters(ff)

@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from PyQt6.QtCore import Qt, QEvent, QPoint
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QKeyEvent, QMouseEvent, QCursor, QGuiApplication
+from PySide6.QtCore import Qt, QEvent, QPoint
+from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QCursor, QGuiApplication
 from core.input.inpsys import Input
 from core.foundation.logger import Logger
 from .viewport_base import _PlayViewportBase

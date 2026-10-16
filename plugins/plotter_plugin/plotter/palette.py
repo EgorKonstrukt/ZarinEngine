@@ -22,7 +22,7 @@
 
 from __future__ import annotations
 from typing import List
-from PyQt6.QtGui import QColor
+from PySide6.QtGui import QColor
 
 _PALETTE: List[str] = [
     "#e74c3c",

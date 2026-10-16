@@ -224,8 +224,8 @@ class ViewportRenderMixin:
             except Exception:
                 tex = None
             if tex is None:
-                from PyQt6.QtCore import Qt
-                from PyQt6.QtGui import QImage, QPainter, QPen, QColor
+                from PySide6.QtCore import Qt
+                from PySide6.QtGui import QImage, QPainter, QPen, QColor
                 S = 96
                 C = S // 2
                 R = 21
@@ -251,7 +251,7 @@ class ViewportRenderMixin:
                 p.setBrush(main)
                 p.drawEllipse(C - 3, C - 3, 6, 6)
                 p.end()
-                rgba = qimg.bits().asstring(S * S * 4)
+                rgba = bytes(qimg.bits()[:S * S * 4])
                 tex = self._renderer.create_icon_texture_from_data(rgba, S, S, cache_key)
                 try:
                     self._renderer._icon_textures[cache_key] = tex
@@ -322,8 +322,8 @@ class ViewportRenderMixin:
             cache_key = f"__gizmo_label_{text}_{font_size}_{int(color[0]*255)}_{int(color[1]*255)}_{int(color[2]*255)}"
             tex = self._renderer._icon_textures.get(cache_key)
             if tex is None:
-                from PyQt6.QtCore import QRect, Qt
-                from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QColor, QImage
+                from PySide6.QtCore import QRect, Qt
+                from PySide6.QtGui import QFont, QFontMetrics, QPainter, QColor, QImage
                 f = QFont("Segoe UI", font_size, QFont.Weight.Bold)
                 f.setStyleStrategy(QFont.StyleStrategy.ForceOutline)
                 fm = QFontMetrics(f)
@@ -339,7 +339,7 @@ class ViewportRenderMixin:
                 p.setPen(QColor(int(color[0]*255), int(color[1]*255), int(color[2]*255)))
                 p.drawText(QRect(0, 0, tex_size, tex_size), Qt.AlignmentFlag.AlignCenter, text)
                 p.end()
-                rgba = qimg.bits().asstring(tex_size * tex_size * 4)
+                rgba = bytes(qimg.bits()[:tex_size * tex_size * 4])
                 tex = self._renderer.create_icon_texture_from_data(rgba, tex_size, tex_size, cache_key)
                 self._renderer._icon_textures[cache_key] = tex
             if tex:
@@ -363,22 +363,24 @@ class ViewportRenderMixin:
                 cache_key = f"__gizmo_icon_tex_{icon['texture_path']}"
                 tex = self._renderer._icon_textures.get(cache_key)
                 if tex is None:
-                    from PyQt6.QtCore import Qt
-                    from PyQt6.QtGui import QImage
+                    from PySide6.QtCore import Qt
+                    from PySide6.QtGui import QImage
                     qimg = QImage(icon["texture_path"])
                     if not qimg.isNull():
                         size = max(qimg.width(), qimg.height())
                         qimg = qimg.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                        rgba = qimg.bits().asstring(size * size * 4)
-                        tex = self._renderer.create_icon_texture_from_data(rgba, size, size, cache_key)
+                        sw = max(1, int(qimg.width()))
+                        sh = max(1, int(qimg.height()))
+                        rgba = bytes(qimg.bits()[:sw * sh * 4])
+                        tex = self._renderer.create_icon_texture_from_data(rgba, sw, sh, cache_key)
                         if tex:
                             self._renderer._icon_textures[cache_key] = tex
             elif text:
                 cache_key = f"__gizmo_icon_text_{text}_{font_size}_{int(color[0]*255)}_{int(color[1]*255)}_{int(color[2]*255)}"
                 tex = self._renderer._icon_textures.get(cache_key)
                 if tex is None:
-                    from PyQt6.QtCore import QRect, Qt
-                    from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QBrush, QColor, QImage
+                    from PySide6.QtCore import QRect, Qt
+                    from PySide6.QtGui import QFont, QFontMetrics, QPainter, QBrush, QColor, QImage
                     f = QFont("Segoe UI", font_size, QFont.Weight.Bold)
                     f.setStyleStrategy(QFont.StyleStrategy.ForceOutline)
                     fm = QFontMetrics(f)
@@ -398,7 +400,7 @@ class ViewportRenderMixin:
                     p.setPen(QColor(255, 255, 255))
                     p.drawText(QRect(0, 0, tex_size, tex_size), Qt.AlignmentFlag.AlignCenter, text)
                     p.end()
-                    rgba = qimg.bits().asstring(tex_size * tex_size * 4)
+                    rgba = bytes(qimg.bits()[:tex_size * tex_size * 4])
                     tex = self._renderer.create_icon_texture_from_data(rgba, tex_size, tex_size, cache_key)
                     self._renderer._icon_textures[cache_key] = tex
             if tex:

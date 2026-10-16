@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from PyQt6.QtGui import QBrush, QColor
+from PySide6.QtGui import QBrush, QColor
 
 _HIGHLIGHT_BRUSH = QBrush(QColor(255, 190, 30, 100))
 _BASE_BRUSH = QBrush(QColor(0, 0, 0, 0))

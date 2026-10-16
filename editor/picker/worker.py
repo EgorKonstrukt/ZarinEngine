@@ -4,10 +4,10 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 import os
 from typing import Optional
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 def _find_engine_root() -> Optional[str]:
     cur = os.path.dirname(os.path.abspath(__file__))
@@ -21,7 +21,7 @@ def _find_engine_root() -> Optional[str]:
     return None
 
 class _PopulateWorker(QThread):
-    batch_ready = pyqtSignal(object)
+    batch_ready = Signal(object)
 
     def __init__(self, project_root: str, extensions: tuple, filter_text: str):
         super().__init__()
@@ -103,7 +103,7 @@ class _PopulateWorker(QThread):
                 rel = full_path
             return (full_path, f, rel, sz)
         if len(pending) > 16:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            with ThreadPoolExecutor(max_workers=8) as ex:
                 for r in ex.map(stat_one, pending):
                     batch.append(r)
         else:

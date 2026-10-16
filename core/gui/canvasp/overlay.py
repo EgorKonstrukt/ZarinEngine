@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 from typing import Optional
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
-from PyQt6.QtWidgets import QWidget, QMdiArea, QMdiSubWindow
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter, QColor, QBrush, QPen
+from PySide6.QtWidgets import QWidget, QMdiArea, QMdiSubWindow
 
 
 class CanvasOverlayMixin:

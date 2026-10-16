@@ -23,7 +23,7 @@ def qimage_to_bytes(img):
         conv = img.convertToFormat(img.Format.Format_RGBA8888)
     except Exception:
         try:
-            from PyQt6.QtGui import QImage as _QI
+            from PySide6.QtGui import QImage as _QI
             conv = img.convertToFormat(_QI.Format.Format_RGBA8888)
         except Exception:
             return (None, 0, 0)

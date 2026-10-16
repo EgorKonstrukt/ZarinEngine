@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 from typing import Optional
-from PyQt6.QtWidgets import QDoubleSpinBox, QLabel, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget, \
+from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget, \
     QListWidgetItem, QPushButton, QDialog, QApplication
-from PyQt6.QtCore import Qt, QTimer, QMimeData
-from PyQt6.QtGui import QPixmap, QFont, QColor, QPainter, QBrush, QPen, QFont as QF, QCursor, QIcon
+from PySide6.QtCore import Qt, QTimer, QMimeData
+from PySide6.QtGui import QPixmap, QFont, QColor, QPainter, QBrush, QPen, QFont as QF, QCursor, QIcon
 from core.config.editor_scale import scale, scale_xy
 from editor.inspector.constants import _accent
 def _get_component_icon_pixmap(cls, size=16):

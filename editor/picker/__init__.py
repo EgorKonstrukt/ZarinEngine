@@ -6,7 +6,7 @@
 
 import os
 from typing import Optional
-from PyQt6.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog
 from editor.picker.dialog import ResourcePickerDialog
 from editor.picker.format import _draw_file_icon, _draw_material_icon, _draw_prefab_icon, _draw_scene_icon, _format_size, _get_material_thumbnail
 from editor.picker.thumbs import _get_thumb_service, _get_thumbnail, _peek_thumb, _thumb_resolution, _thumbnail_cache, _thumbnail_mutex
@@ -19,8 +19,8 @@ def pick_resource(parent, title: str, filter_str: str, current_path: str = "", p
             project_root = eng.project_root
         else:
             project_root = os.getcwd()
-    from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtGui import QCursor
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtGui import QCursor
     dlg = ResourcePickerDialog(title, filter_str, project_root, None)
     dlg.adjustSize()
     screen = QApplication.primaryScreen().availableGeometry()

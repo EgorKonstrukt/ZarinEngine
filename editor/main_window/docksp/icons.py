@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtWidgets import QDockWidget
+from PySide6.QtWidgets import QDockWidget
 
 try:
     import editor.icons as qta
@@ -67,7 +67,7 @@ def _apply_plugin_dock_icon(dock: QDockWidget, info: dict):
         if isinstance(icon, str) and not os.path.isfile(icon):
             dock.setWindowIcon(qta.icon(icon, color="#d4d4d4"))
         else:
-            from PyQt6.QtGui import QIcon
+            from PySide6.QtGui import QIcon
             dock.setWindowIcon(QIcon(str(icon)))
     except Exception as e:
         from core.foundation.logger import Logger

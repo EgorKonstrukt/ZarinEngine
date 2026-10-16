@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 from typing import Any, Optional
-from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 from core.config.config import Config
 from core.config.editor_scale import scale
 from editor.settings.collision import add_collision_layers_editor, build_file_assoc_page, on_layer_name_changed, on_register_assoc, on_unregister_assoc, open_collision_matrix_dialog, refresh_assoc_status
@@ -19,7 +19,7 @@ except ImportError:
     qta = None
 
 class SettingsDialog(QDialog):
-    config_changed = pyqtSignal(str, object)
+    config_changed = Signal(str, object)
     def __init__(self, title: str, config: Config, parent=None):
         super().__init__(parent)
         self._config = config
@@ -92,7 +92,7 @@ class SettingsDialog(QDialog):
         bar_layout.addWidget(close_btn)
         main_layout.addWidget(bottom_bar)
     def eventFilter(self, obj, event):
-        from PyQt6.QtCore import QEvent
+        from PySide6.QtCore import QEvent
         if obj is self._list_widget and event.type() == QEvent.Type.Wheel:
             delta = event.angleDelta().y()
             row = self._list_widget.currentRow()
@@ -252,7 +252,7 @@ class SettingsDialog(QDialog):
                             idx = devs.index(current)
                         else:
                             idx = 0
-                        from PyQt6.QtWidgets import QInputDialog
+                        from PySide6.QtWidgets import QInputDialog
                         item, ok = QInputDialog.getItem(_btn, "Audio Devices", "Select device:", devs, idx, False)
                         if ok:
                             edit.setText(item)

@@ -8,8 +8,8 @@ from __future__ import annotations
 import os
 from typing import Callable
 import editor.icons as qta
-from PyQt6.QtWidgets import QLabel, QWidget, QHBoxLayout, QPushButton, QDialog
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QLabel, QWidget, QHBoxLayout, QPushButton, QDialog
+from PySide6.QtCore import Qt
 from core.config.editor_scale import scale_xy
 from editor.inspector.widgets import _ResourceDropLabel, _EntityDropLabel, EntityPickerDialog
 from editor.hover import attach_resource_hover, attach_entity_hover
@@ -130,8 +130,8 @@ def make_gameobject_picker(entity_id: str, scene, callback: Callable[[str], None
     btn.setToolTip("Pick Entity")
     _style_picker_btn(btn)
     def _pick():
-        from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtGui import QCursor
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QCursor
         dlg = EntityPickerDialog(scene, None)
         dlg.adjustSize()
         screen = QApplication.primaryScreen().availableGeometry()

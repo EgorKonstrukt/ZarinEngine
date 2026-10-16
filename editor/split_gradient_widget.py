@@ -13,9 +13,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QRectF, pyqtSignal
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QFont, QFontMetrics
-from PyQt6.QtWidgets import QWidget, QSizePolicy
+from PySide6.QtCore import Qt, QRectF, Signal
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QFont, QFontMetrics
+from PySide6.QtWidgets import QWidget, QSizePolicy
 
 from core.config.editor_scale import scale
 
@@ -23,7 +23,7 @@ _MAX_HANDLES = 6
 
 
 class SplitGradientWidget(QWidget):
-    valueChanged = pyqtSignal(list)
+    valueChanged = Signal(list)
 
     def __init__(self, value: list[float] | None = None, max_value: float = 1.0,
                  decimals: int = 1, parent=None):

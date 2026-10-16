@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
 
 from core.foundation.logger import Logger
 from editor.project_manager import _get_recent_projects
@@ -32,8 +32,8 @@ def _restore_or_register(mw) -> bool:
 
 def post_init(mw):
     try:
-        from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtGui import QFont
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QFont
         from core.config.config import get_global_config
         cfg = get_global_config()
         scale = cfg.get("editor.ui_scale", 75)

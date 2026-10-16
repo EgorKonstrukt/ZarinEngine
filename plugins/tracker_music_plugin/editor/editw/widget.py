@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, QThread, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QThread, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSplitter, QVBoxLayout, QWidget
 
 from core.foundation.plugins import _zarin_user_dir
 from ...rend import TrackerSoftwareRenderer, load_module

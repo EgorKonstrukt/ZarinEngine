@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import os
 from typing import Optional
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QFileDialog
-from PyQt6.QtCore import pyqtSignal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QFileDialog
+from PySide6.QtCore import Signal
 from ..edit import CodeEditor
 from ..highlighter import PythonHighlighter
 from .closeable import _CloseableTabWidgetBase
@@ -177,7 +177,7 @@ class CloseableTabWidget(_CloseableTabWidgetBase):
 
 
 class ScriptTab(QWidget):
-    closed = pyqtSignal(QWidget)
+    closed = Signal(QWidget)
 
     def __init__(self, git=None, parent=None):
         super().__init__(parent)
@@ -287,7 +287,7 @@ class ScriptTab(QWidget):
             self._editor.document().setModified(False)
             self._update_title()
             try:
-                from PyQt6.QtCore import QTimer as _QT
+                from PySide6.QtCore import QTimer as _QT
                 _ed = self._editor
                 _p = path
                 _QT.singleShot(80, lambda: _ed.vcs_set_file(_p))

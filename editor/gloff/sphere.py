@@ -10,7 +10,7 @@ import os
 import numpy as np
 import moderngl
 from typing import Optional
-from PyQt6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap
 from core.maths.math3d import Mat4, Vec3
 from core.foundation.logger import Logger
 
@@ -82,7 +82,7 @@ def _ensure() -> bool:
     global _ctx, _ready, _safe
     if _ready:
         try:
-            from PyQt6.QtGui import QOpenGLContext
+            from PySide6.QtGui import QOpenGLContext
             try:
                 if QOpenGLContext.currentContext() is not None:
                     return False
@@ -94,7 +94,7 @@ def _ensure() -> bool:
     if not _safe:
         return False
     try:
-        from PyQt6.QtGui import QOpenGLContext
+        from PySide6.QtGui import QOpenGLContext
         try:
             if QOpenGLContext.currentContext() is not None:
                 return False

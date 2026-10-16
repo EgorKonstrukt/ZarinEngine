@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 #!/usr/bin/python
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from editor.NodeGraphQt.constants import Z_VAL_BACKDROP, NodeEnum
 from editor.NodeGraphQt.qgraphics.node_abstract import AbstractNodeItem

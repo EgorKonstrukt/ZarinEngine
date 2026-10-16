@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, shutil, time
-from PyQt6.QtWidgets import QListWidgetItem, QTreeWidgetItem, QMessageBox
-from PyQt6.QtCore import Qt, QMimeData, QUrl, QByteArray
-from PyQt6.QtGui import QDrag, QGuiApplication
+from PySide6.QtWidgets import QListWidgetItem, QTreeWidgetItem, QMessageBox
+from PySide6.QtCore import Qt, QMimeData, QUrl, QByteArray
+from PySide6.QtGui import QDrag, QGuiApplication
 from .icons import _ENTITY_MIME
 _file_clipboard: list[str] = []
 _clipboard_is_cut: bool = False
@@ -209,7 +209,7 @@ class DndMixin:
             self._push_file_undo({"kind": "copy", "items": copied, "label": "Paste copy"})
         self._refresh()
         if errors:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Paste Errors", "\n".join(errors))
     def _duplicate_selected(self):
         paths = self._get_selected_paths()
@@ -236,13 +236,13 @@ class DndMixin:
             self._push_file_undo({"kind": "copy", "items": copied, "label": "Duplicate"})
         self._refresh()
         if errors:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Duplicate Errors", "\n".join(errors))
     def _delete_selected(self):
         paths = self._get_selected_paths()
         if not paths:
             return
-        from PyQt6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
         names = "\n".join(os.path.basename(p) for p in paths[:10])
         if len(paths) > 10:
             names += f"\n... and {len(paths) - 10} more"

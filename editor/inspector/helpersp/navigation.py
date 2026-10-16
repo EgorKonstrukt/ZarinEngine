@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QLabel, QFrame, QGraphicsOpacityEffect
-from PyQt6.QtCore import Qt, QObject, QEvent, QPropertyAnimation, QEasingCurve, QRect
+from PySide6.QtWidgets import QLabel, QFrame, QGraphicsOpacityEffect
+from PySide6.QtCore import Qt, QObject, QEvent, QPropertyAnimation, QEasingCurve, QRect
 
 _PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 

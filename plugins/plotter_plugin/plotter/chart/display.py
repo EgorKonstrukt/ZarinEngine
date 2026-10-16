@@ -22,7 +22,7 @@
 
 from __future__ import annotations
 from typing import Optional
-from PyQt6.QtGui import QFont
+from PySide6.QtGui import QFont
 from ..sidebar import SidebarLabel
 
 class _ChartDisplayMixin:

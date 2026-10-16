@@ -12,8 +12,8 @@ import os
 import re
 from pathlib import Path
 
-from PyQt6 import QtCore, QtWidgets
-from PyQt6.QtCore import pyqtSignal as Signal
+from PySide6 import QtCore, QtWidgets
+from PySide6.QtCore import Signal
 from editor.NodeGraphQt.compat import QUndoCommand, QUndoStack
 
 from editor.NodeGraphQt.base.commands import (NodeAddedCmd, NodeMovedCmd,

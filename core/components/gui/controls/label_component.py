@@ -32,7 +32,7 @@ class LabelComponent(GuiWidgetComponentBase):
         super().sync_to_widget()
         w = self._widget_ref
         if w:
-            from PyQt6.QtCore import Qt
+            from PySide6.QtCore import Qt
             align_map = {"left": Qt.AlignmentFlag.AlignLeft,
                          "center": Qt.AlignmentFlag.AlignCenter,
                          "right": Qt.AlignmentFlag.AlignRight}

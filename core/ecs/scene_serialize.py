@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import uuid
 from .entity import Entity
@@ -26,9 +26,9 @@ def _serialize_inner(scene) -> dict:
         out: dict = {}
         def task(part):
             return [(eid, e.serialize()) for eid, e in part]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
             futs = [ex.submit(task, items[i:i + chunk]) for i in range(0, len(items), chunk)]
-            for fu in concurrent.futures.as_completed(futs):
+            for fu in as_completed(futs):
                 try:
                     for eid, ed in fu.result():
                         out[eid] = ed
@@ -70,9 +70,9 @@ def _deserialize_inner(cls, data: dict, registry: ComponentRegistry):
                 except Exception:
                     pass
             return res
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
             futs = [ex.submit(task, items[i:i + chunk]) for i in range(0, len(items), chunk)]
-            for fu in concurrent.futures.as_completed(futs):
+            for fu in as_completed(futs):
                 try:
                     for eid, e, pid in fu.result():
                         entities[eid] = e

@@ -19,8 +19,8 @@ import urllib.parse
 import webbrowser
 from datetime import datetime, timezone
 
-from PyQt6.QtWidgets import QMessageBox, QApplication
-from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
+from PySide6.QtWidgets import QMessageBox, QApplication
+from PySide6.QtCore import Qt, QObject, QThread, Signal
 
 from core.config.constants import APP_VERSION_DISPLAY
 
@@ -133,7 +133,7 @@ def _submit_issue(title: str, body: str, context: str = "") -> dict:
 
 
 class _SubmitWorker(QObject):
-    finished = pyqtSignal(dict)
+    finished = Signal(dict)
 
     def __init__(self, title: str, body: str, context: str):
         super().__init__()
@@ -206,7 +206,7 @@ def show_bug_report_dialog(parent=None, exc_info: tuple = None):
         default_title = ""
         default_body = ""
 
-    from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QLineEdit, QPushButton
+    from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QLineEdit, QPushButton
 
     dlg = QDialog(parent)
     dlg.setWindowTitle("Report Bug")
@@ -300,7 +300,7 @@ def _auto_report(exc_type, exc_value, exc_tb):
     if app is None:
         return
     try:
-        from PyQt6.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         QTimer.singleShot(200, lambda: _show_auto_report_dialog(exc_type, exc_value, tb_str))
     except Exception:
         pass

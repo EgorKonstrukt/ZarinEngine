@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Optional, Any
-from PyQt6.QtWidgets import QListWidget, QTreeWidget, QTableWidget, QComboBox, QFontComboBox
+from PySide6.QtWidgets import QListWidget, QTreeWidget, QTableWidget, QComboBox, QFontComboBox
 from core.gui.wid.base import ANCHOR_TOP_LEFT, _set_widget_bounds, _update_anchor
 
 class ListWidget(QListWidget):

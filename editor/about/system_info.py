@@ -10,10 +10,10 @@ import sys
 import time
 import datetime
 import json
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QPixmap, QPainter
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPixmap, QPainter
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtSvg import QSvgRenderer
 from core.config.constants import APP_VERSION_DISPLAY
 
 

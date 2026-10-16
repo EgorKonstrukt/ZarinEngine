@@ -109,7 +109,7 @@ def _check_extensions_missing():
 
 def _build_extensions_with_splash(splash):
     import re
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     _dir = os.path.dirname(os.path.abspath(__file__))
     print("[Zarin Engine] Native extensions missing or outdated. Building...", file=sys.stderr)
     splash.set_progress(0, "Building native extensions...")
@@ -200,9 +200,9 @@ def main():
         if send_file_to_running_instance(args.file):
             print(f"[Zarin Engine] Sent '{args.file}' to running editor instance.")
             return
-    from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import Qt, QTimer
-    from PyQt6.QtGui import QSurfaceFormat, QIcon
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import Qt, QTimer
+    from PySide6.QtGui import QSurfaceFormat, QIcon
     fmt = QSurfaceFormat()
     fmt.setDepthBufferSize(24)
     fmt.setVersion(4, 6)

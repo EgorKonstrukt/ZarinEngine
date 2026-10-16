@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 import math
-from PyQt6.QtWidgets import QWidget, QApplication
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPixmap, QPainter, QBrush, QPen, QImage, QPalette
+from PySide6.QtWidgets import QWidget, QApplication
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPixmap, QPainter, QBrush, QPen, QImage, QPalette
 
 
 def _hsv_to_rgb(h, s, v):
@@ -59,8 +59,8 @@ def _screen_angle_to_hue(angle_rad):
 
 
 class _ColorWheelWidget(QWidget):
-    colorChanged = pyqtSignal()
-    hueChanged = pyqtSignal(float)
+    colorChanged = Signal()
+    hueChanged = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)

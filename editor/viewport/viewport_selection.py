@@ -369,6 +369,21 @@ class ViewportSelectionMixin:
         eng = self._engine
         _sel = list(self._selected_entities)
         _play = bool(getattr(eng, "play_mode", False))
+        _errs = getattr(self, "_gizmo_pass_err", None)
+        if _errs is None:
+            _errs = self._gizmo_pass_err = {}
+        def _guarded(name, fn):
+            try:
+                fn()
+            except Exception as e:
+                now = _t.perf_counter()
+                try:
+                    last = float(_errs.get(name, 0.0))
+                except Exception:
+                    last = 0.0
+                if now - last > 5.0:
+                    _errs[name] = now
+                    Logger.error(f"Gizmo pass '{name}' failed: {e}", e)
         _acquired = eng._scene_lock.acquire(blocking=False)
         try:
             _warm = False
@@ -380,30 +395,27 @@ class ViewportSelectionMixin:
                     _warm = False
             if _acquired:
                 if self._gizmo_visible and not _warm:
-                    render_component_gizmos(self, vp_mat)
+                    _guarded("component", lambda: render_component_gizmos(self, vp_mat))
                 if not _play:
-                    render_selection_bounds(self, vp_mat, _t.perf_counter(), self._last_dt)
-                    try:
-                        if self._gizmo_icons_visible:
-                            render_component_icons_gl(self)
-                    except Exception:
-                        pass
-                    self._render_api_gizmos()
+                    _guarded("selection", lambda: render_selection_bounds(self, vp_mat, _t.perf_counter(), self._last_dt))
+                    if self._gizmo_icons_visible:
+                        _guarded("icons", lambda: render_component_icons_gl(self))
+                    _guarded("api", lambda: self._render_api_gizmos())
                     try:
                         render_remote_collaborator_gizmos(self, vp_mat, cam_pos, fw, fh)
                     except Exception:
                         pass
                 else:
-                    self._render_api_gizmos()
+                    _guarded("api", lambda: self._render_api_gizmos())
             elif not _play:
                 if self._gizmo_visible and not _warm:
-                    render_component_gizmos(self, vp_mat)
-                render_selection_bounds(self, vp_mat, _t.perf_counter(), self._last_dt)
+                    _guarded("component", lambda: render_component_gizmos(self, vp_mat))
+                _guarded("selection", lambda: render_selection_bounds(self, vp_mat, _t.perf_counter(), self._last_dt))
         finally:
             if _acquired:
                 eng._scene_lock.release()
         if self._debug_lines and not _play:
-            self._renderer.render_gizmo_lines(self._debug_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0)
+            _guarded("debug", lambda: self._renderer.render_gizmo_lines(self._debug_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.0))
             self._debug_lines.clear()
         elif _play and self._debug_lines:
             self._debug_lines.clear()
@@ -413,19 +425,21 @@ class ViewportSelectionMixin:
             except Exception:
                 pass
         if self._show_bvh_debug and not _play:
-            self._render_bvh_debug()
+            _guarded("bvh", lambda: self._render_bvh_debug())
         if self._pb_scale_gizmo and self._pb_scale_gizmo.active and not _play:
-            self._pb_scale_gizmo.render()
+            _guarded("pbscale", lambda: self._pb_scale_gizmo.render())
         if not _play and self._gizmo.entity is not None and self._gizmo.mode != GizmoMode.NONE:
-            from core.gizmo.core import GizmoMode as _GM
-            gizmo_result = self._gizmo.get_gizmo_arrays(self._cam, fw, fh)
-            if gizmo_result is not None:
-                gs, ge, gcol = gizmo_result
-                self._renderer.render_gizmo_arrays(gs, ge, gcol, vp_mat, fw, fh, thickness_multiplier=1.8, cam_pos=cam_pos)
-            else:
-                gizmo_lines = self._gizmo.get_gizmo_lines(self._cam, fw, fh)
-                if gizmo_lines:
-                    self._renderer.render_gizmo_lines(gizmo_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.8)
+            _guarded("transform", lambda: self._draw_transform_gizmo(vp_mat, fw, fh, cam_pos))
+
+    def _draw_transform_gizmo(self, vp_mat, fw, fh, cam_pos):
+        gizmo_result = self._gizmo.get_gizmo_arrays(self._cam, fw, fh)
+        if gizmo_result is not None:
+            gs, ge, gcol = gizmo_result
+            self._renderer.render_gizmo_arrays(gs, ge, gcol, vp_mat, fw, fh, thickness_multiplier=1.8, cam_pos=cam_pos)
+        else:
+            gizmo_lines = self._gizmo.get_gizmo_lines(self._cam, fw, fh)
+            if gizmo_lines:
+                self._renderer.render_gizmo_lines(gizmo_lines, vp_mat, cam_pos, fw, fh, thickness_multiplier=1.8)
 
 
 __all__ = ["ViewportSelectionMixin"]

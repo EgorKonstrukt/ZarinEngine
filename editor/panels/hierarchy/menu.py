@@ -9,9 +9,9 @@ import time
 import os
 from typing import Optional, TYPE_CHECKING
 import editor.icons as qta
-from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem, QPushButton, QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView, QStyledItemDelegate, QApplication, QHeaderView)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
-from PyQt6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
+from PySide6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem, QPushButton, QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView, QStyledItemDelegate, QApplication, QHeaderView)
+from PySide6.QtCore import Qt, Signal, QTimer, QMimeData
+from PySide6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
 from editor.inspector.helpersp import _flash_overlay
 from core.config.editor_scale import scale, scale_xy
 if TYPE_CHECKING:
@@ -112,7 +112,7 @@ class HierarchyMenuMixin:
         dlg = AddEntityDialog(self, title)
         if pos is not None:
             try:
-                from PyQt6.QtWidgets import QApplication
+                from PySide6.QtWidgets import QApplication
                 screen = QApplication.screenAt(pos) or QApplication.primaryScreen()
                 geo = screen.availableGeometry()
                 x = min(max(pos.x(), geo.left()), max(geo.left(), geo.right() - dlg.width()))
@@ -235,7 +235,7 @@ class HierarchyMenuMixin:
             if item:
                 self._tree.setCurrentItem(item)
     def _save_prefab(self, entity: Entity):
-        from PyQt6.QtWidgets import QFileDialog
+        from PySide6.QtWidgets import QFileDialog
         from core.ecs.prefabp import Prefab
         path, _ = QFileDialog.getSaveFileName(self, "Save Prefab", "prefabs/", "Prefabs (*.zpep)")
         if path:

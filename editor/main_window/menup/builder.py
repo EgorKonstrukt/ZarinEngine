@@ -7,8 +7,8 @@
 from __future__ import annotations
 
 import editor.icons as qta
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QKeySequence
 
 from editor.main_window.handlersp import (
     new_scene, open_scene, save_scene, save_scene_as,

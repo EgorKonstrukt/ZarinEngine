@@ -4,8 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QGridLayout, QStyle
-from PyQt6.QtGui import QGuiApplication
+from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QGridLayout, QStyle
+from PySide6.QtGui import QGuiApplication
 
 COL_SIZE = 4
 

@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -82,7 +83,45 @@ def _find_gcc_under(root: Path, max_depth: int = 4) -> Path | None:
     return None
 
 
+_GCC_CACHE_TTL = 30.0
+_GCC_CACHE_KEY = None
+_GCC_CACHE_VALUE = None
+_GCC_CACHE_AT = 0.0
+
+
 def find_gcc() -> Path | None:
+    global _GCC_CACHE_KEY, _GCC_CACHE_VALUE, _GCC_CACHE_AT
+    try:
+        now = time.monotonic()
+    except Exception:
+        now = 0.0
+    try:
+        key = (os.environ.get(_ENV_DIR), os.environ.get("PATH", ""))
+    except Exception:
+        key = (None, "")
+    if _GCC_CACHE_KEY == key and _GCC_CACHE_VALUE is not None:
+        try:
+            if _GCC_CACHE_VALUE.is_file():
+                return _GCC_CACHE_VALUE
+        except Exception:
+            pass
+        _GCC_CACHE_KEY = None
+        _GCC_CACHE_VALUE = None
+        _GCC_CACHE_AT = 0.0
+    elif _GCC_CACHE_KEY == key and _GCC_CACHE_VALUE is None:
+        try:
+            if (now - _GCC_CACHE_AT) < _GCC_CACHE_TTL:
+                return None
+        except Exception:
+            pass
+    found = _find_gcc_uncached()
+    _GCC_CACHE_KEY = key
+    _GCC_CACHE_VALUE = found
+    _GCC_CACHE_AT = now
+    return found
+
+
+def _find_gcc_uncached() -> Path | None:
     if sys.platform != "win32":
         found = shutil.which("gcc")
         return Path(found) if found else None

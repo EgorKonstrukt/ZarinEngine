@@ -7,9 +7,9 @@
 from __future__ import annotations
 import editor.icons as qta
 from core.config.editor_scale import scale, scale_xy
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QPushButton, QLabel,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QPushButton, QLabel,
                              QSpinBox, QCheckBox, QFileDialog, QMessageBox, QComboBox)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PySide6.QtCore import Qt, Signal
 
 
 def _separator():
@@ -21,17 +21,17 @@ def _separator():
 
 
 class GuiEditorToolbar(QFrame):
-    toggle_grid = pyqtSignal(bool)
-    toggle_snap = pyqtSignal(bool)
-    toggle_auto_align = pyqtSignal(bool)
-    grid_size_changed = pyqtSignal(int)
-    clear_requested = pyqtSignal()
-    save_requested = pyqtSignal()
-    load_requested = pyqtSignal()
-    zoom_changed = pyqtSignal(float)
-    screen_w_changed = pyqtSignal(int)
-    screen_h_changed = pyqtSignal(int)
-    resolution_preset = pyqtSignal(str)
+    toggle_grid = Signal(bool)
+    toggle_snap = Signal(bool)
+    toggle_auto_align = Signal(bool)
+    grid_size_changed = Signal(int)
+    clear_requested = Signal()
+    save_requested = Signal()
+    load_requested = Signal()
+    zoom_changed = Signal(float)
+    screen_w_changed = Signal(int)
+    screen_h_changed = Signal(int)
+    resolution_preset = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

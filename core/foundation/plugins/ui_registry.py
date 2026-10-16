@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -76,7 +77,6 @@ def _hash_file(path: str) -> str:
 
 
 def _hash_files_many(paths: list[str]) -> dict[str, str]:
-    import concurrent.futures
     if len(paths) <= 1:
         out: dict[str, str] = {}
         for p in paths:
@@ -87,9 +87,9 @@ def _hash_files_many(paths: list[str]) -> dict[str, str]:
         return out
     out = {}
     workers = min(8, len(paths))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+    with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {ex.submit(_hash_file, p): p for p in paths}
-        for fu in concurrent.futures.as_completed(futs):
+        for fu in as_completed(futs):
             try:
                 out[futs[fu]] = fu.result()
             except Exception:
@@ -98,14 +98,13 @@ def _hash_files_many(paths: list[str]) -> dict[str, str]:
 
 
 def _fingerprints_many(paths: list[str]) -> dict[str, dict]:
-    import concurrent.futures
     if len(paths) <= 1:
         return {p: _zplugin_fingerprint(p) for p in paths}
     out: dict[str, dict] = {}
     workers = min(8, len(paths))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+    with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {ex.submit(_zplugin_fingerprint, p): p for p in paths}
-        for fu in concurrent.futures.as_completed(futs):
+        for fu in as_completed(futs):
             try:
                 out[futs[fu]] = fu.result()
             except Exception:

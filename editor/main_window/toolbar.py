@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from core.config.editor_scale import scale, scale_xy
-from PyQt6.QtWidgets import (QToolBar, QPushButton, QLabel, QDoubleSpinBox, QComboBox,
+from PySide6.QtWidgets import (QToolBar, QPushButton, QLabel, QDoubleSpinBox, QComboBox,
                              QWidget, QSizePolicy, QHBoxLayout, QVBoxLayout,
                              QFrame, QToolButton, QTabBar)
-from PyQt6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize
 import editor.icons as qta
-from PyQt6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon
 
 from editor.scene_toolbar import SceneToolbar, RenderToolbar
 from editor.main_window.handlersp import toggle_play_stop, reset_camera, on_gizmo_vis_toggled, launch_external_player

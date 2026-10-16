@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from .probe import ENGINE_ROOT, collect_env, run_checks
 RUNS_HEADERS = ["RunID", "Date", "Tester", "Machine", "GPU", "Arch", "Driver", "OS",
-                "CPU", "RAM_GB", "Engine_Commit", "Branch", "Python", "PyQt", "moderngl",
+                "CPU", "RAM_GB", "Engine_Commit", "Branch", "Python", "PySide", "moderngl",
                 "Scene", "FPS_avg", "FPS_1pct", "FPS_min", "Result", "Issues", "Log", "Notes"]
 CHECKS_HEADERS = ["RunID", "Area", "Check", "Expected", "Actual", "Status"]
 GPUS_HEADERS = ["GPU", "Vendor", "Arch", "VRAM", "Machine", "Driver_Pinned", "OS", "Owner", "Status", "Notes"]
@@ -90,7 +90,7 @@ def append_run(path, env, rows):
             run_id = v + 1
     record = [run_id, env["date"], env["tester"], env["machine"], env["gpu"], env["arch"],
               env["driver"], env["os"], env["cpu"], env["ram"], env["commit"], env["branch"],
-              env["python"], env["pyqt"], env["moderngl"], env["scene"], "", "", "",
+              env["python"], env["pyside"], env["moderngl"], env["scene"], "", "", "",
               "FAIL" if any(s == "FAIL" for _, _, _, _, s in rows) else "PASS",
               "", "", ""]
     ws.append(record)

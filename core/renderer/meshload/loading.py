@@ -53,7 +53,7 @@ _ERROR_MESH_PATH = os.path.normpath(os.path.join(os.path.dirname(os.path.dirname
 
 def _deferred_call(cb):
     try:
-        from PyQt6.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         QTimer.singleShot(0, cb)
     except ImportError:
         threading.Thread(target=cb, daemon=True).start()

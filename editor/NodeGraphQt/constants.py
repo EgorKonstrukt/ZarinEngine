@@ -8,7 +8,7 @@
 # -*- coding: utf-8 -*-
 import os
 
-from PyQt6 import QtWidgets
+from PySide6 import QtWidgets
 from enum import Enum
 
 from .pkg_info import __version__ as _v

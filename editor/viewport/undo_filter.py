@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtCore import QObject, QTimer, QEvent, Qt
+from PySide6.QtCore import QObject, QTimer, QEvent, Qt
 
 
 class _UndoFilter(QObject):
@@ -44,7 +44,7 @@ class _UndoFilter(QObject):
 
     def _project_or_text_has_focus(self) -> bool:
         try:
-            from PyQt6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit
+            from PySide6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit
             fw = QApplication.focusWidget()
             if fw is None:
                 return False

@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QGridLayout, QWidget, QSizePolicy
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QGridLayout, QWidget, QSizePolicy
+from PySide6.QtCore import Qt
 from core.ecs import Component, ComponentRegistry
 if TYPE_CHECKING:
     from core.gui.canvasp import GuiCanvas

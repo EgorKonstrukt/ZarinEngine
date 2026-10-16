@@ -44,7 +44,7 @@ class GroupBoxComponent(GuiWidgetComponentBase):
         w.setCheckable(self._checkable)
         w.setChecked(self._checked)
         align_map = {0: 0, 1: 1, 2: 2}
-        from PyQt6.QtCore import Qt
+        from PySide6.QtCore import Qt
         w.setAlignment(align_map.get(self._alignment, Qt.AlignmentFlag.AlignLeft))
 
     def update_from_widget(self):

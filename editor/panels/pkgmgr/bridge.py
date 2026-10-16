@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 class _TaskBridge(QObject):
-    line = pyqtSignal(str)
-    done = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    line = Signal(str)
+    done = Signal(object)
+    failed = Signal(str)

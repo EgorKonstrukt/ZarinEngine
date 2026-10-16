@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 
 #!/usr/bin/python
-from PyQt6 import QtCore
-from PyQt6 import QtCore, QtWidgets
-from PyQt6.QtCore import pyqtSignal as Signal
+from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
+from PySide6.QtCore import Signal
 
 from editor.NodeGraphQt.constants import ViewerEnum, Z_VAL_NODE_WIDGET
 from editor.NodeGraphQt.errors import NodeWidgetError

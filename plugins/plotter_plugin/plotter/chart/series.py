@@ -22,8 +22,8 @@
 
 from __future__ import annotations
 from typing import Optional
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QPen
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPen
 from ..itemsp import _LineItem, _ScatterItem, _FitItem, _InfLine, _FunctionItem, _RulerItem
 from ..palette import next_line_color, next_scatter_color
 from .constants import _AnyItem

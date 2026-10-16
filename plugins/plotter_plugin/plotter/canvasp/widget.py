@@ -7,9 +7,9 @@
 from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
-from PyQt6.QtWidgets import QWidget, QSizePolicy
-from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QFontMetrics, QPainterPath
+from PySide6.QtWidgets import QWidget, QSizePolicy
+from PySide6.QtCore import Qt, QRectF, QPointF
+from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QFontMetrics, QPainterPath
 from ..canvasb import CanvasBase, _COORD_CLAMP, _SCREEN_Y_CLAMP, _TANGENT_HALF_FRAC
 from ..mathx import to_log
 from .paint import _CanvasPaintMixin

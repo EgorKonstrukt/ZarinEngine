@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QWidget
+from PySide6.QtWidgets import QListWidget, QListWidgetItem, QWidget
 
 
 class InstrumentListWidget(QListWidget):

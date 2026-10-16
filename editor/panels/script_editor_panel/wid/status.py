@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPlainTextEdit, QMessageBox
-from PyQt6.QtGui import QFont, QColor
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QPlainTextEdit, QMessageBox
+from PySide6.QtGui import QFont, QColor
 
 from core.config.editor_scale import scale
 
@@ -81,7 +81,7 @@ class StatusMixin:
         if rc != 0:
             QMessageBox.warning(self, "Stage Failed", "Failed to stage file.")
             return
-        from PyQt6.QtWidgets import QInputDialog
+        from PySide6.QtWidgets import QInputDialog
         msg, ok = QInputDialog.getText(self, "Commit", "Commit message:")
         if not ok or not msg.strip():
             self._git.unstage([rel])
@@ -217,7 +217,7 @@ class StatusMixin:
                 self.collab_ops_ready.emit(path, batch)
 
     def apply_remote_ops(self, path: str, ops: list):
-        from PyQt6.QtGui import QTextCursor as _QTC
+        from PySide6.QtGui import QTextCursor as _QTC
         for i in range(self._tabs.count()):
             tab = self._tabs.widget(i)
             if isinstance(tab, ScriptTab) and tab._file_path == path:

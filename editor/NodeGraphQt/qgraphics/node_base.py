@@ -7,7 +7,7 @@
 #!/usr/bin/python
 from collections import OrderedDict
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from editor.NodeGraphQt.constants import (ICON_NODE_BASE, ITEM_CACHE_MODE, Z_VAL_NODE,
                                    LayoutDirectionEnum, NodeEnum, PortEnum,

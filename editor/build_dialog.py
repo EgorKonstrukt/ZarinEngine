@@ -10,20 +10,20 @@ import subprocess
 import threading
 import editor.icons as qta
 from pathlib import Path
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                              QPushButton, QLabel, QLineEdit, QCheckBox,
                              QGroupBox, QTextEdit, QProgressBar, QFileDialog,
                              QMessageBox, QComboBox)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QTextCursor
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QTextCursor
 from core.config.editor_scale import scale
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
 class BuildDialog(QDialog):
-    _log_signal = pyqtSignal(str)
-    _done_signal = pyqtSignal(int)
+    _log_signal = Signal(str)
+    _done_signal = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -281,7 +281,7 @@ def show_build_dialog(parent=None):
 
 
 if __name__ == "__main__":
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     app = QApplication(sys.argv)
     app.setApplicationName("Zarin Engine Builder")
     app.setStyle("Fusion")

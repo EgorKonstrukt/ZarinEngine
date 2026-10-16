@@ -6,9 +6,9 @@
 from __future__ import annotations
 import math
 from typing import Optional
-from PyQt6.QtWidgets import QGraphicsScene, QGraphicsItem, QGraphicsObject, QGraphicsEllipseItem, QGraphicsTextItem, QGraphicsLineItem, QMenu, QInputDialog
-from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF, QLineF
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QAction, QPainterPath, QPolygonF, QTransform
+from PySide6.QtWidgets import QGraphicsScene, QGraphicsItem, QGraphicsObject, QGraphicsEllipseItem, QGraphicsTextItem, QGraphicsLineItem, QMenu, QInputDialog
+from PySide6.QtCore import Qt, Signal, QRectF, QPointF, QLineF
+from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QAction, QPainterPath, QPolygonF, QTransform
 from core.components.animation.animator_controller import AnimatorController, AnimatorState, AnimatorTransition
 _STATE_WIDTH = 160
 _STATE_HEIGHT = 50
@@ -201,10 +201,10 @@ class TransitionArrowItem(QGraphicsObject):
     def transition(self) -> AnimatorTransition:
         return self._transition
 class AnimatorScene(QGraphicsScene):
-    transition_created = pyqtSignal(object, object)
-    node_selected = pyqtSignal(object)
-    transition_selected = pyqtSignal(object)
-    states_changed = pyqtSignal()
+    transition_created = Signal(object, object)
+    node_selected = Signal(object)
+    transition_selected = Signal(object)
+    states_changed = Signal()
     def __init__(self, parent=None):
         super().__init__(parent)
         self._controller: Optional[AnimatorController] = None

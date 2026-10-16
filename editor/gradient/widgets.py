@@ -6,15 +6,15 @@
 
 from __future__ import annotations
 import editor.icons as qta
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QDoubleSpinBox
-from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QPen, QColor, QLinearGradient, QPolygonF, QPalette
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QDoubleSpinBox
+from PySide6.QtCore import Qt, Signal, QRectF, QPointF
+from PySide6.QtGui import QPainter, QPen, QColor, QLinearGradient, QPolygonF, QPalette
 from editor.color import ColorLineEdit
 from .sampling import _default_gradient
 
 
 class GradientPreview(QWidget):
-    clicked = pyqtSignal()
+    clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -52,8 +52,8 @@ class GradientPreview(QWidget):
 
 
 class _GradientBar(QWidget):
-    stopMoved = pyqtSignal()
-    stopAdded = pyqtSignal(float)
+    stopMoved = Signal()
+    stopAdded = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -156,8 +156,8 @@ class _GradientBar(QWidget):
 
 
 class _StopRow(QWidget):
-    removeRequested = pyqtSignal(int)
-    changed = pyqtSignal()
+    removeRequested = Signal(int)
+    changed = Signal()
 
     def __init__(self, index, pos, color, parent=None):
         super().__init__(parent)

@@ -7,9 +7,9 @@
 from __future__ import annotations
 import json
 from typing import Optional, Any
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QWidget, QSizePolicy
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QWidget, QSizePolicy
 from core.gui.wid import Panel, ANCHOR_STRETCH_ALL, WIDGET_REGISTRY, apply_fusion_style
 from core.gui.canvasp.overlay import CanvasOverlayMixin
 from core.gui.canvasp.events import CanvasEventsMixin
@@ -25,12 +25,12 @@ NATIVE_WIDGET_TYPES = {"Button", "Label", "Slider", "TextInput", "Toggle",
 
 
 class GuiCanvas(CanvasEventsMixin, CanvasOverlayMixin, QWidget):
-    widget_selected = pyqtSignal(object)
-    widget_changed = pyqtSignal(object)
-    scene_modified = pyqtSignal()
-    copy_requested = pyqtSignal()
-    paste_requested = pyqtSignal()
-    zoom_changed = pyqtSignal(float)
+    widget_selected = Signal(object)
+    widget_changed = Signal(object)
+    scene_modified = Signal()
+    copy_requested = Signal()
+    paste_requested = Signal()
+    zoom_changed = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)

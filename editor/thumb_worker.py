@@ -24,12 +24,12 @@ import io
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import (
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import (
     QPixmap, QPainter, QColor, QPen, QBrush, QPainterPath,
     QImage, QImageReader, QFont, QFontMetrics,
 )
-from PyQt6.QtCore import Qt, QBuffer, QIODevice, QSize, QRect, QRectF
+from PySide6.QtCore import Qt, QBuffer, QIODevice, QSize, QRect, QRectF
 
 from core.assets.importer import load_mesh
 

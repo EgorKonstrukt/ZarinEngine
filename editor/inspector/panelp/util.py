@@ -4,8 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QLabel
-from PyQt6.QtGui import QFontMetrics
+from PySide6.QtWidgets import QLabel
+from PySide6.QtGui import QFontMetrics
 from core.config.editor_scale import scale
 
 

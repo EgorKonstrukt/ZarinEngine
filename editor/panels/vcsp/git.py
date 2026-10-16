@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import subprocess
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 def _open_url(url: str):
     try:
@@ -43,7 +43,7 @@ def _git_run(git: str, args: list[str], cwd: str | None = None,
 
 
 class _GitProcess(QThread):
-    finished = pyqtSignal(int, str, str)
+    finished = Signal(int, str, str)
 
     def __init__(self, git: str, args: list[str], cwd: str | None = None):
         super().__init__()

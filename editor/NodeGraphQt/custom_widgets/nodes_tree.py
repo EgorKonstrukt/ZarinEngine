@@ -6,7 +6,7 @@
 
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-from PyQt6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore, QtGui
 
 from editor.NodeGraphQt.constants import MIME_TYPE, URN_SCHEME
 

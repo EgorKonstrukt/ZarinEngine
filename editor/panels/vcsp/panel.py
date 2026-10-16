@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 import os, threading
-from PyQt6.QtWidgets import QDialog, QDockWidget, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QProgressBar, QPushButton, QSplitter, QTabWidget, QToolBar, QVBoxLayout, QWidget
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+from PySide6.QtWidgets import QDialog, QDockWidget, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QProgressBar, QPushButton, QSplitter, QTabWidget, QToolBar, QVBoxLayout, QWidget
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from core.config.editor_scale import scale
 from .commit import _CommitPanel, _CreateRepoDialog, _RepoSetupWorker
 from .diff import _DiffView
@@ -15,7 +15,7 @@ from .git import _Git, _parse_porcelain
 from .widgets import _BranchList, _LogTree, _RemoteWidget, _StashList, _StatusTree
 
 class VcsPanel(QDockWidget):
-    _status_result_ready = pyqtSignal(int, str)
+    _status_result_ready = Signal(int, str)
     def __init__(self, parent=None):
         super().__init__("Version Control", parent)
         self.setObjectName("VersionControlDock")

@@ -7,11 +7,11 @@
 from __future__ import annotations
 import os
 from typing import Optional
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
     QListWidget, QListWidgetItem, QPushButton, QStackedWidget,
     QWidget, QAbstractItemView)
-from PyQt6.QtCore import Qt, QSize, QEvent
-from PyQt6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt, QSize, QEvent
+from PySide6.QtGui import QPixmap, QIcon
 import editor.icons as qta
 from core.config.editor_scale import scale
 from editor.inspector.constants import _accent

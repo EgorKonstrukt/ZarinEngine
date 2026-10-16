@@ -7,9 +7,9 @@
 from __future__ import annotations
 import math
 import os
-from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtGui import QMouseEvent, QWheelEvent, QImage
-from PyQt6.QtCore import Qt
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtGui import QMouseEvent, QWheelEvent, QImage
+from PySide6.QtCore import Qt
 from typing import Optional
 
 

@@ -9,8 +9,8 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 
 from core.maths.math3d import (
     Vec3,

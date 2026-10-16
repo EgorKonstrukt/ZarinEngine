@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 import threading
-from PyQt6.QtCore import Qt, QItemSelectionModel, QTimer
-from PyQt6.QtGui import QColor, QFont
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QDockWidget, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QProgressBar, QPlainTextEdit, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QItemSelectionModel, QTimer
+from PySide6.QtGui import QColor, QFont
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDockWidget, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QProgressBar, QPlainTextEdit, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 from editor.panels import pkgcore as core
 from editor.panels.pkgmgr.ops import FILTER_ALL, FILTER_UPDATES, FILTER_UPTODATE, TREE_DEPS, TREE_REVERSE, PackageManagerOpsMixin
 try:
@@ -243,7 +243,7 @@ class PackageManagerPanel(PackageManagerOpsMixin, QDockWidget):
         sb = self._log_view.verticalScrollBar()
         sb.setValue(sb.maximum())
     def _copy_log(self):
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         QApplication.clipboard().setText(self._log_view.toPlainText())
         self._status.setText("Log copied to clipboard")
     def _visible_packages(self) -> list[core.PackageInfo]:

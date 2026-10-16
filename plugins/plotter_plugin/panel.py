@@ -9,8 +9,8 @@ from __future__ import annotations
 import time
 from collections import deque
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
     QLabel,

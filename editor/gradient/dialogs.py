@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QPalette
+from PySide6.QtWidgets import QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QPalette
 from .sampling import _default_gradient, _sample_gradient
 from .widgets import GradientPreview, _GradientBar, _StopRow
 
@@ -130,7 +130,7 @@ class GradientEditorDialog(QDialog):
 
 
 class GradientLineEdit(QWidget):
-    gradientChanged = pyqtSignal(object)
+    gradientChanged = Signal(object)
 
     def __init__(self, stops=None, parent=None):
         super().__init__(parent)
@@ -162,8 +162,8 @@ class GradientLineEdit(QWidget):
         self._edit_btn.clicked.connect(self._open_editor)
 
     def _open_editor(self):
-        from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtGui import QCursor
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QCursor
         dlg = GradientEditorDialog(self._stops, "Edit Gradient", None)
         dlg.adjustSize()
         screen = QApplication.primaryScreen().availableGeometry()

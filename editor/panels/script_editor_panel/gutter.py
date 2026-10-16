@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import QSize
-from PyQt6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QMouseEvent
 
 
 class LineNumberArea(QWidget):

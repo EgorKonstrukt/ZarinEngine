@@ -8,9 +8,9 @@ from __future__ import annotations
 import os
 import uuid
 from typing import Optional
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QDockWidget,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QDockWidget,
                              QSplitter, QFileDialog, QMessageBox)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer
 from core.gui import GuiCanvas, GuiApi
 from core.ecs import ComponentRegistry
 from core.gui.wid import (
@@ -61,7 +61,7 @@ _LAYOUT_ONLY = {"horizontallayout", "verticallayout", "gridlayout", "layouteleme
 
 
 class GuiEditorViewport(QWidget):
-    entity_selected = pyqtSignal(object)
+    entity_selected = Signal(object)
 
     def __init__(self, engine, parent=None):
         super().__init__(parent)
@@ -302,7 +302,7 @@ class GuiEditorViewport(QWidget):
         return self._gui_api
 
     def eventFilter(self, obj, event):
-        from PyQt6.QtCore import QEvent
+        from PySide6.QtCore import QEvent
         if obj is self._canvas and event.type() == QEvent.Type.MouseButtonRelease:
             sel = self._canvas.selected_widget
             if sel and hasattr(sel, '_widget_id') and sel._widget_id:

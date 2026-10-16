@@ -13,8 +13,8 @@ asset actually changes.
 """
 
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 
-import concurrent.futures
 import os
 import xxhash
 
@@ -63,7 +63,7 @@ def thumb_disk_keys_many(items: list[tuple[str, int, float, int, str]]) -> dict[
     if len(items) <= 4:
         return {p: thumb_disk_key(p, s, m, f, mo) for p, s, m, f, mo in items}
     out: dict[str, str] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(items))) as ex:
+    with ThreadPoolExecutor(max_workers=min(8, len(items))) as ex:
         for p, k in ex.map(one, items):
             if k:
                 out[p] = k

@@ -9,9 +9,9 @@ import time
 import os
 from typing import Optional, TYPE_CHECKING
 import editor.icons as qta
-from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem, QPushButton, QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView, QStyledItemDelegate, QApplication, QHeaderView)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData
-from PyQt6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
+from PySide6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem, QPushButton, QMenu, QLineEdit, QLabel, QInputDialog, QAbstractItemView, QStyledItemDelegate, QApplication, QHeaderView)
+from PySide6.QtCore import Qt, Signal, QTimer, QMimeData
+from PySide6.QtGui import QKeySequence, QAction, QDrag, QColor, QKeyEvent, QBrush, QPixmap, QIcon
 from editor.inspector.helpersp import _flash_overlay
 from core.config.editor_scale import scale, scale_xy
 if TYPE_CHECKING:
@@ -21,11 +21,11 @@ from editor.panels.hierarchy.tree import _cached_icon, HierarchyTree
 from editor.panels.hierarchy.dnd import HierarchyDndMixin
 from editor.panels.hierarchy.menu import HierarchyMenuMixin
 class HierarchyPanel(HierarchyDndMixin, HierarchyMenuMixin, QDockWidget):
-    entity_selected = pyqtSignal(object)
-    entities_selected = pyqtSignal(list)
-    entity_double_clicked = pyqtSignal(str)
-    select_prefab_asset = pyqtSignal(str)
-    open_prefab_editor = pyqtSignal(str)
+    entity_selected = Signal(object)
+    entities_selected = Signal(list)
+    entity_double_clicked = Signal(str)
+    select_prefab_asset = Signal(str)
+    open_prefab_editor = Signal(str)
     def __init__(self, engine: Engine, parent=None):
         super().__init__("Hierarchy", parent)
         self._engine = engine

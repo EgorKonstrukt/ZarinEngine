@@ -4,9 +4,9 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QObject, QEvent, QTimer, QPoint
-from PyQt6.QtGui import QCursor
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QObject, QEvent, QTimer, QPoint
+from PySide6.QtGui import QCursor
 from editor.hover.preview import _get_popup
 from editor.hover.preview import _hover_delay
 class _ProjectHover(QObject):

@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import os, subprocess, threading, shutil, time
-from PyQt6.QtWidgets import QApplication, QLineEdit
-from PyQt6.QtGui import QColor, QBrush
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtGui import QColor, QBrush
+from PySide6.QtCore import Qt
 from .icons import _VCS_COLORS, _parse_vcs_status
 class VcsMixin:
     def _refresh_vcs_status(self):
@@ -92,7 +92,7 @@ class VcsMixin:
         if rc == 0:
             self._refresh_vcs_status()
         else:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Git Add Failed", err[:200])
     def _git_unstage_file(self, path: str):
         if not isinstance(path, str) or not path:
@@ -105,7 +105,7 @@ class VcsMixin:
         if rc == 0:
             self._refresh_vcs_status()
         else:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Git Unstage Failed", err[:200])
     def _git_ignore_file(self, path: str):
         if not isinstance(path, str) or not path:
@@ -120,7 +120,7 @@ class VcsMixin:
                 f.write(f"\n/{rel}\n")
             self._refresh_vcs_status()
         except OSError as e:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Error", f"Could not update .gitignore:\n{e}")
 def _undo_file_op_impl(self):
         try:

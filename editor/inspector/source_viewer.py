@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QTextEdit
-from PyQt6.QtGui import QFont, QColor
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QTextEdit
+from PySide6.QtGui import QFont, QColor
 
 _PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 

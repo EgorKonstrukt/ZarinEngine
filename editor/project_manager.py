@@ -11,11 +11,11 @@ import editor.icons as qta
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
                              QListWidgetItem, QPushButton, QLabel, QLineEdit,
                              QFileDialog, QMessageBox, QWidget, QMenu)
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QIcon, QAction
+from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtGui import QFont, QColor, QIcon, QAction
 
 from editor.constants import PROJECTS_DB_PATH
 from core.config.editor_scale import scale, scale_xy
@@ -133,7 +133,7 @@ def _create_project_directory(path: str, name: str) -> bool:
 
 
 class ProjectManagerDialog(QDialog):
-    project_selected = pyqtSignal(str)
+    project_selected = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

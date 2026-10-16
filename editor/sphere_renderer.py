@@ -9,7 +9,7 @@ import math
 import numpy as np
 import moderngl
 from typing import Optional
-from PyQt6.QtGui import QImage
+from PySide6.QtGui import QImage
 from core.maths.math3d import Mat4, Vec3
 
 VSHADER = """

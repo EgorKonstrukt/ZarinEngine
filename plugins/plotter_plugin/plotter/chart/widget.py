@@ -22,9 +22,9 @@
 
 from __future__ import annotations
 from typing import List, Optional, Tuple
-from PyQt6.QtWidgets import QWidget, QSizePolicy, QHBoxLayout, QVBoxLayout
-from PyQt6.QtCore import QTimer, QEasingCurve
-from PyQt6.QtGui import QFont
+from PySide6.QtWidgets import QWidget, QSizePolicy, QHBoxLayout, QVBoxLayout
+from PySide6.QtCore import QTimer, QEasingCurve
+from PySide6.QtGui import QFont
 from ..canvas_backend import make_canvas as _make_canvas
 from ..itemsp import _LineItem, _ScatterItem, _FitItem, _InfLine, _FunctionItem, _RulerItem
 from ..sidebar import SidebarLabel

@@ -4,9 +4,9 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QPushButton, QCheckBox, QTabWidget
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QColor
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QPushButton, QCheckBox, QTabWidget
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QColor
 from core.config.editor_scale import scale
 from .timeline import TimelineOverview, TimelineWidget, _FONT_BOLD, _FONT_SMALL
 from .views import HierarchyView, ProfilerHeader

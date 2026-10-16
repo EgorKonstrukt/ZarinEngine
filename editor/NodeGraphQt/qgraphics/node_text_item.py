@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from PyQt6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore, QtGui
 
 
 class NodeTextItem(QtWidgets.QGraphicsTextItem):

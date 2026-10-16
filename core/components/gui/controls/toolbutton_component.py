@@ -39,14 +39,14 @@ class ToolButtonComponent(GuiWidgetComponentBase):
         w = self._widget_ref
         if not w:
             return
-        from PyQt6.QtWidgets import QToolButton
+        from PySide6.QtWidgets import QToolButton
         popup_map = {0: QToolButton.ToolButtonPopupMode.DelayedPopup,
                      1: QToolButton.ToolButtonPopupMode.MenuButtonPopup,
                      2: QToolButton.ToolButtonPopupMode.InstantPopup}
         new_mode = popup_map.get(self._popup_mode, QToolButton.ToolButtonPopupMode.DelayedPopup)
         if w.popupMode() != new_mode:
             w.setPopupMode(new_mode)
-        from PyQt6.QtCore import Qt
+        from PySide6.QtCore import Qt
         arrow_map = {0: Qt.ArrowType.NoArrow, 1: Qt.ArrowType.UpArrow,
                      2: Qt.ArrowType.DownArrow, 3: Qt.ArrowType.LeftArrow,
                      4: Qt.ArrowType.RightArrow}
@@ -60,12 +60,12 @@ class ToolButtonComponent(GuiWidgetComponentBase):
         super().update_from_widget()
         w = self._widget_ref
         if w:
-            from PyQt6.QtWidgets import QToolButton
+            from PySide6.QtWidgets import QToolButton
             popup_rev = {QToolButton.ToolButtonPopupMode.DelayedPopup: 0,
                          QToolButton.ToolButtonPopupMode.MenuButtonPopup: 1,
                          QToolButton.ToolButtonPopupMode.InstantPopup: 2}
             self._popup_mode = popup_rev.get(w.popupMode(), 0)
-            from PyQt6.QtCore import Qt
+            from PySide6.QtCore import Qt
             arrow_rev = {Qt.ArrowType.NoArrow: 0, Qt.ArrowType.UpArrow: 1,
                          Qt.ArrowType.DownArrow: 2, Qt.ArrowType.LeftArrow: 3,
                          Qt.ArrowType.RightArrow: 4}

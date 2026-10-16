@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 import os
 
-from PyQt6.QtWidgets import QFileDialog
-from PyQt6.QtCore import QTimer
+from PySide6.QtWidgets import QFileDialog
+from PySide6.QtCore import QTimer
 
 from editor.project_manager import ProjectManagerDialog, _add_recent_project, _get_last_scene
 from editor.splash import SplashScreen

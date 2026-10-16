@@ -4,9 +4,9 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QCheckBox, QSpinBox, QSlider, QComboBox, QSizePolicy, QDialog
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QCheckBox, QSpinBox, QSlider, QComboBox, QSizePolicy, QDialog
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from core.config.editor_scale import scale
 from core.maths.math3d import Vec3, Vec4
 from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history

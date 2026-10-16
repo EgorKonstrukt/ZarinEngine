@@ -6,13 +6,13 @@
 from __future__ import annotations
 from typing import Optional
 import editor.icons as qta
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QSplitter, QDialog,
     QDoubleSpinBox, QComboBox, QMenu,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QRectF, QPointF
-from PyQt6.QtGui import (
+from PySide6.QtCore import Qt, Signal, QTimer, QRectF, QPointF
+from PySide6.QtGui import (
     QPainter, QPen, QBrush, QMouseEvent, QWheelEvent,
     QKeyEvent, QPainterPath, QFontMetrics, QPalette,
 )

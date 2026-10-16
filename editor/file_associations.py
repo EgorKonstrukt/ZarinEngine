@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QSize
-from PyQt6.QtGui import QImage, QPainter, QColor
-from PyQt6.QtSvg import QSvgRenderer
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QImage, QPainter, QColor
+from PySide6.QtSvg import QSvgRenderer
 
 from editor.constants import EXTENSIONS
 
@@ -57,7 +57,7 @@ def _write_ico(path: str, images: list[QImage]):
 
 
 def _qimage_to_bgra_png(img: QImage) -> bytes:
-    from PyQt6.QtCore import QBuffer, QIODevice
+    from PySide6.QtCore import QBuffer, QIODevice
     buf = QBuffer()
     buf.open(QIODevice.OpenModeFlag.WriteOnly)
     img.save(buf, "PNG")

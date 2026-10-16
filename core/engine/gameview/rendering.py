@@ -6,8 +6,8 @@
 from __future__ import annotations
 import moderngl
 import time
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPainter, QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter, QFont
 from core.input.inpsys import Input
 from core.foundation.logger import Logger
 from core.engine.frame_pacer import needs_software_pacing, normalize_target_fps, timer_interval_ms

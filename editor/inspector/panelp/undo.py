@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QDialog, QLabel, QDoubleSpinBox, QCheckBox, QComboBox, QPushButton, QLineEdit, QHBoxLayout
+from PySide6.QtWidgets import QDialog, QLabel, QDoubleSpinBox, QCheckBox, QComboBox, QPushButton, QLineEdit, QHBoxLayout
 import editor.icons as qta
 from core.components.animation.animator_controller import AnimatorConditionMode, AnimatorCondition
 from editor.inspector.component_picker import ComponentPickerDialog
@@ -238,8 +238,8 @@ class InspectorUndoMixin:
 
     def _show_add_component_menu(self):
         if not self._entity: return
-        from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtGui import QCursor
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QCursor
         dlg = ComponentPickerDialog(self._entity, None)
         dlg.adjustSize()
         screen = QApplication.primaryScreen().availableGeometry()

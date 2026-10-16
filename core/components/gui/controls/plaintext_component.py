@@ -51,7 +51,7 @@ class PlainTextComponent(GuiWidgetComponentBase):
             w.setPlaceholderText(self._placeholder_text)
         if w.tabStopDistance() != self._tab_stop_width:
             w.setTabStopDistance(self._tab_stop_width)
-        from PyQt6.QtWidgets import QPlainTextEdit
+        from PySide6.QtWidgets import QPlainTextEdit
         target_mode = (QPlainTextEdit.LineWrapMode.WidgetWidth if self._line_wrap
                        else QPlainTextEdit.LineWrapMode.NoWrap)
         if w.lineWrapMode() != target_mode:
@@ -67,7 +67,7 @@ class PlainTextComponent(GuiWidgetComponentBase):
             self._read_only = w.isReadOnly()
             self._placeholder_text = w.placeholderText()
             self._tab_stop_width = w.tabStopDistance()
-            from PyQt6.QtWidgets import QPlainTextEdit
+            from PySide6.QtWidgets import QPlainTextEdit
             self._line_wrap = w.lineWrapMode() == QPlainTextEdit.LineWrapMode.WidgetWidth
 
     def serialize(self) -> dict:

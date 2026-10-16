@@ -24,7 +24,7 @@ def create_skinned_mesh_entity(scene, path: str, name: str, mesh_path: str, worl
 def create_skinned_mesh_entity_async(scene, path: str, name: str, mesh_path: str,
                                      world_pos=None, callback=None):
     from core.assets.importer import load_mesh_future
-    from PyQt6.QtCore import QTimer
+    from PySide6.QtCore import QTimer
 
     fut = load_mesh_future(path)
 

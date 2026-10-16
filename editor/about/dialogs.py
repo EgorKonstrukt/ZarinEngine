@@ -8,9 +8,9 @@ import os
 import platform
 import random
 import sys
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QTextEdit, QApplication
-from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QKeyEvent
-from PyQt6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QTextEdit, QApplication
+from PySide6.QtGui import QFont, QPainter, QColor, QPen, QKeyEvent
+from PySide6.QtCore import Qt, QTimer
 from core.config.constants import APP_VERSION_DISPLAY
 from editor.about.system_info import _read_engine_optimization, _render_logo, _render_icon, _collect_system_info
 MPL_URL = "https://mozilla.org/MPL/2.0/"

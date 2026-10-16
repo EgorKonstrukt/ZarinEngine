@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import json
-from PyQt6.QtWidgets import QWidget, QSpinBox, QDoubleSpinBox, QSlider, QDialog, QPushButton
-from PyQt6.QtCore import Qt, QMimeData
-from PyQt6.QtGui import QDrag, QCursor
+from PySide6.QtWidgets import QWidget, QSpinBox, QDoubleSpinBox, QSlider, QDialog, QPushButton
+from PySide6.QtCore import Qt, QMimeData
+from PySide6.QtGui import QDrag, QCursor
 from core.maths.math3d import Vec2, Vec3, Vec4
 from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
 from core.physics.collision_layers import MAX_LAYERS

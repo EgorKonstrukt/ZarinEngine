@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 import math
-from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QFontMetrics, QPainterPath
+from PySide6.QtCore import Qt, QRectF, QPointF
+from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QFontMetrics, QPainterPath
 from ..canvasb import _fmt_axis, _DECIMATE_THRESHOLD, _RANGE_SEL_ALPHA
 from ..mathx import nice_ticks, nice_log_ticks, to_log, decimated
 

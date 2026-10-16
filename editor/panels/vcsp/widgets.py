@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 import time
-from PyQt6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QHeaderView, QListWidget, QListWidgetItem, QMenu, QPushButton, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
-from PyQt6.QtCore import QPoint, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QHeaderView, QListWidget, QListWidgetItem, QMenu, QPushButton, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QColor, QFont
 from core.config.editor_scale import scale
 
 class _FileItemDelegate(QStyledItemDelegate):
@@ -39,8 +39,8 @@ class _FileItemDelegate(QStyledItemDelegate):
 
 
 class _StatusTree(QTreeWidget):
-    file_selected = pyqtSignal(str, bool)
-    file_action_requested = pyqtSignal(str, str)
+    file_selected = Signal(str, bool)
+    file_action_requested = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -144,7 +144,7 @@ class _StatusTree(QTreeWidget):
 
 
 class _LogTree(QTreeWidget):
-    commit_selected = pyqtSignal(str)
+    commit_selected = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -192,7 +192,7 @@ class _LogTree(QTreeWidget):
 
 
 class _BranchList(QListWidget):
-    branch_selected = pyqtSignal(str)
+    branch_selected = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -246,7 +246,7 @@ class _BranchList(QListWidget):
 
 
 class _StashList(QListWidget):
-    stash_action = pyqtSignal(str, str)
+    stash_action = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -279,9 +279,9 @@ class _StashList(QListWidget):
 
 
 class _RemoteWidget(QWidget):
-    push_requested = pyqtSignal(str, str)
-    pull_requested = pyqtSignal(str, str)
-    fetch_requested = pyqtSignal(str)
+    push_requested = Signal(str, str)
+    pull_requested = Signal(str, str)
+    fetch_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 import editor.icons as qta
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox, QLabel, QLineEdit, QSplitter, QPlainTextEdit, QListWidgetItem, QFrame, QAbstractItemView
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QTextCursor, QIcon
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox, QLabel, QLineEdit, QSplitter, QPlainTextEdit, QListWidgetItem, QFrame, QAbstractItemView
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont, QTextCursor, QIcon
 from core.foundation.logger import Logger, LogLevel, LogEntry
 from editor.panels.console.model import ConsoleGroup, _LEVEL_COLORS, _LEVEL_STD_ICONS, _LogList, _fmt_time
 

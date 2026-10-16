@@ -6,9 +6,9 @@
 from __future__ import annotations
 import hashlib
 from collections import deque
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QFontMetrics, QPalette
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QFontMetrics, QPalette
 from core.config.editor_scale import scale
 
 

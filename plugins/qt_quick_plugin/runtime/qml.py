@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 try:
-    from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import QUrl, QObject, QCoreApplication, QPointF, Qt
-    from PyQt6.QtGui import QImage, QPainter, QColor, QFont, QPen, QBrush, QMouseEvent, QWheelEvent, QKeyEvent
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QUrl, QObject, QCoreApplication, QPointF, Qt
+    from PySide6.QtGui import QImage, QPainter, QColor, QFont, QPen, QBrush, QMouseEvent, QWheelEvent, QKeyEvent
     _HAS_QT = True
 except Exception:
     _HAS_QT = False
@@ -30,8 +30,8 @@ except Exception:
     QKeyEvent = None
 
 try:
-    from PyQt6.QtQml import QQmlEngine, QQmlComponent
-    from PyQt6.QtQuick import QQuickWindow
+    from PySide6.QtQml import QQmlEngine, QQmlComponent
+    from PySide6.QtQuick import QQuickWindow
     _HAS_QUICK = _HAS_QT
 except Exception:
     QQmlEngine = None
@@ -105,7 +105,7 @@ class QmlMixin:
         try:
             eng = QQmlEngine()
             try:
-                from PyQt6.QtQuickControls2 import QQuickStyle
+                from PySide6.QtQuickControls2 import QQuickStyle
 
                 try:
                     QQuickStyle.setStyle("Fusion")

@@ -7,8 +7,8 @@
 from __future__ import annotations
 import math
 from typing import Callable, List, Optional, Tuple, Union, TYPE_CHECKING
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
-from PyQt6.QtGui import QColor, QPen
+from PySide6.QtCore import QThread, Signal, QObject
+from PySide6.QtGui import QColor, QPen
 if TYPE_CHECKING:
     from ..chart import ChartWidget
 
@@ -20,7 +20,7 @@ except ImportError:
     _NP_ITEMS = False
 
 class _FitWorker(QThread):
-    result_ready = pyqtSignal(object, list, list)
+    result_ready = Signal(object, list, list)
 
     def __init__(self, fit_item: "_FitItem", x_lo: float, x_hi: float, n_pts: int):
         super().__init__()
@@ -174,7 +174,7 @@ class _FitItem:
 class _DerivativeItem:
     def __init__(self, chart: "ChartWidget", source: "_LineItem | _ScatterItem",
                  order: int = 1, pen: QPen = None, label: str = ""):
-        from PyQt6.QtGui import QPen as _QPen
+        from PySide6.QtGui import QPen as _QPen
         self._chart = chart
         self.source = source
         self.order = order
@@ -228,7 +228,7 @@ class _DerivativeItem:
 class _IntegralItem:
     def __init__(self, chart: "ChartWidget", source: "_LineItem | _ScatterItem",
                  pen: QPen = None, label: str = ""):
-        from PyQt6.QtGui import QPen as _QPen
+        from PySide6.QtGui import QPen as _QPen
         self._chart = chart
         self.source = source
         self.pen = pen or _QPen()

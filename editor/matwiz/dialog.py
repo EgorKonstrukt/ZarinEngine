@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QDialog
-from PyQt6.QtCore import pyqtSignal
+from PySide6.QtWidgets import QDialog
+from PySide6.QtCore import Signal
 from .shaders import _collect_shaders
 from .dialog_ui import _DialogUiMixin
 from .dialog_tex import _DialogTexturesMixin
@@ -15,7 +15,7 @@ from .dialog_out import _DialogOutputMixin
 
 
 class MaterialWizardDialog(QDialog, _DialogUiMixin, _DialogTexturesMixin, _DialogOutputMixin):
-    materials_created = pyqtSignal(list)
+    materials_created = Signal(list)
 
     def __init__(self, project_root: str = "", parent=None, submesh_names: list[str] | None = None):
         super().__init__(parent)

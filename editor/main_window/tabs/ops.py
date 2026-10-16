@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 
 
 class SceneTabOpsMixin:
     def show_quick_open(self):
         try:
-            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem
             bar = self._tab_bar
             if bar.count() == 0:
                 return

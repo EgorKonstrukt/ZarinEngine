@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 #!/usr/bin/python
-from PyQt6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from editor.NodeGraphQt.constants import (ITEM_CACHE_MODE, Z_VAL_NODE,
                                    LayoutDirectionEnum, NodeEnum)

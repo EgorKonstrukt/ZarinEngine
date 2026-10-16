@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QFileDialog, QMessageBox,
                              QComboBox, QLineEdit, QDialogButtonBox)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QGuiApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 
 from tools.build_zplugin import build_zplugin, load_source_manifest
 

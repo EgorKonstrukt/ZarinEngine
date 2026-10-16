@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
     QLabel,
@@ -62,10 +62,10 @@ class LevelMeter(QWidget):
 
 
 class MixerWidget(QWidget):
-    muteChanged = pyqtSignal(int, bool)
-    gainChanged = pyqtSignal(int, float)
-    masterChanged = pyqtSignal(float)
-    soloChanged = pyqtSignal()
+    muteChanged = Signal(int, bool)
+    gainChanged = Signal(int, float)
+    masterChanged = Signal(float)
+    soloChanged = Signal()
 
     MIN_DB = -60.0
     MAX_DB = 6.0

@@ -4,8 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import base64
-import concurrent.futures
 import hashlib
 import json
 import os
@@ -185,9 +185,9 @@ def embed_scene_resources(data: dict, root: str, existing: Optional[dict] = None
     if len(uniq) > 1:
         workers = min(8, max(2, os.cpu_count() or 4))
         loaded: dict[str, tuple] = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
             futs = {ex.submit(_read_raw_digest, v, root, compress_level): v for v in uniq}
-            for fu in concurrent.futures.as_completed(futs):
+            for fu in as_completed(futs):
                 try:
                     v, av, sz, dg, b64, plen = fu.result()
                 except Exception:

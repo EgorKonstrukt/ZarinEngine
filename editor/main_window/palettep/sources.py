@@ -10,7 +10,7 @@ import ast
 import math
 import os
 
-from PyQt6.QtGui import QIcon
+from PySide6.QtGui import QIcon
 
 try:
     import editor.icons as qta

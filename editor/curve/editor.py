@@ -5,9 +5,9 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDoubleSpinBox, QComboBox, QGridLayout, QGroupBox, QScrollArea, QSizePolicy, QSplitter
-from PyQt6.QtCore import Qt, QPointF, pyqtSignal
-from PyQt6.QtGui import QColor
+from PySide6.QtWidgets import QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDoubleSpinBox, QComboBox, QGridLayout, QGroupBox, QScrollArea, QSizePolicy, QSplitter
+from PySide6.QtCore import Qt, QPointF, Signal
+from PySide6.QtGui import QColor
 from core.foundation.curve import Curve, CurveKey, TangentMode
 from editor.curve_presets import build_preset, PRESET_CATEGORIES
 from editor.curve.view import CurvePreview, CurveViewMixin
@@ -15,7 +15,7 @@ from editor.curve.keys import CurveKeysMixin
 
 
 class CurveWidget(CurveViewMixin, CurveKeysMixin, QWidget):
-    curve_changed = pyqtSignal()
+    curve_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

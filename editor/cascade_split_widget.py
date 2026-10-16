@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QRectF, pyqtSignal
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QFont, QFontMetrics
-from PyQt6.QtWidgets import QWidget, QSizePolicy
+from PySide6.QtCore import Qt, QRectF, Signal
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QFont, QFontMetrics
+from PySide6.QtWidgets import QWidget, QSizePolicy
 
 from core.config.editor_scale import scale
 
@@ -17,7 +17,7 @@ _MAX_CASCADES = 4
 
 
 class CascadeSplitWidget(QWidget):
-    splitsChanged = pyqtSignal(list)
+    splitsChanged = Signal(list)
 
     def __init__(self, cascade_count: int = 4, shadow_distance: float = 50.0,
                  splits: list[float] | None = None, parent=None):

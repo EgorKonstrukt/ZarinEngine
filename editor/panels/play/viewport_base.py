@@ -7,10 +7,10 @@
 from __future__ import annotations
 import moderngl
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QSurfaceFormat
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QSurfaceFormat
 from core.input.inpsys import Input
 from core.foundation.logger import Logger
 from core.engine.frame_pacer import FramePacer, needs_software_pacing, normalize_target_fps, timer_interval_ms
@@ -231,7 +231,7 @@ class _PlayViewportBase(QOpenGLWidget):
                 _cv = 60.0
             self._renderer.render_scene(scene, view, proj, tr.position, rw, rh, self._screen_fbo, None, _cn, _cf, _cv, display_w=pw, display_h=ph)
             if self._overlay_canvas and self._overlay_canvas.edit_mode:
-                from PyQt6.QtGui import QPainter
+                from PySide6.QtGui import QPainter
                 qp = QPainter(self)
                 qp.setRenderHint(QPainter.RenderHint.Antialiasing)
                 self._overlay_canvas._render_overlay(qp)

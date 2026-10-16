@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, QTimer, QEasingCurve
+from PySide6.QtCore import QObject, QTimer, QEasingCurve
 
 
 class SmoothScrollState(QObject):

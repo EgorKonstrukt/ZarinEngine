@@ -4,8 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QCheckBox, QSpinBox, QGroupBox, QFormLayout
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QCheckBox, QSpinBox, QGroupBox, QFormLayout
+from PySide6.QtCore import Qt
 from core.config.editor_scale import scale_xy
 from core.foundation.cmd import SetComponentCommand, get_history
 from editor.inspector.helpersp import make_spinbox, make_clickable_label, get_component_source_path, get_property_line_number, make_resource_picker, make_gameobject_picker, make_resource_type_picker, make_asset_picker
@@ -80,7 +80,7 @@ class FieldsMixin:
             widget.setStyleSheet("")
             widget.setToolTip("")
     def _wire_validation(self):
-        from PyQt6.QtWidgets import QAbstractSpinBox, QSlider
+        from PySide6.QtWidgets import QAbstractSpinBox, QSlider
         for row in self._field_rows:
             f = row.get("field_meta")
             if f is None or f.field_type.value not in ("float", "int", "slider", "int_slider"):

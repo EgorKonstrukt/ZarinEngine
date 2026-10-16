@@ -6,17 +6,17 @@
 from __future__ import annotations
 from typing import Optional
 import editor.icons as qta
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QSplitter, QGraphicsView, QCheckBox, QMenu, QInputDialog, QMessageBox, QSizePolicy
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QAction, QColor
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QSplitter, QGraphicsView, QCheckBox, QMenu, QInputDialog, QMessageBox, QSizePolicy
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPainter, QAction, QColor
 from core.components.animation.animator_controller import AnimatorController, AnimatorState, AnimatorTransition
 from core.config.editor_scale import scale
 from editor.panels.animator.graph import AnimatorScene
 from editor.panels.animator.params import AnimatorParamsMixin
 class AnimatorPanel(AnimatorParamsMixin, QDockWidget):
-    state_selected_signal = pyqtSignal(object, object)
-    transition_selected_signal = pyqtSignal(object, object)
-    selection_cleared = pyqtSignal()
+    state_selected_signal = Signal(object, object)
+    transition_selected_signal = Signal(object, object)
+    selection_cleared = Signal()
     def __init__(self, engine, main_window):
         super().__init__("Animator", main_window)
         self._engine = engine

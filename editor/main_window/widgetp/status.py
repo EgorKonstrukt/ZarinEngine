@@ -6,11 +6,11 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QObject, QTimer, pyqtSignal
+from PySide6.QtCore import Qt, QObject, QTimer, Signal
 
 
 class _HwMonitorWorker(QObject):
-    hw_updated = pyqtSignal(float, float, float, float, float, float)
+    hw_updated = Signal(float, float, float, float, float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)

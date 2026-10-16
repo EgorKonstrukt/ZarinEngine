@@ -13,8 +13,8 @@ import sys
 import threading
 
 import editor.icons as qta
-from PyQt6.QtWidgets import QMessageBox, QFileDialog
-from PyQt6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QMessageBox, QFileDialog
+from PySide6.QtCore import Qt, QTimer
 
 from core.maths.math3d import Vec3
 from core.foundation.logger import Logger
@@ -35,8 +35,8 @@ def on_global_config_changed(mw, key: str, value):
     from core.config.config import get_global_config
     cfg = get_global_config()
     if key == "editor.ui_scale":
-        from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtGui import QFont
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QFont
         base_size = cfg.get("editor.font_size", 12)
         f = QFont()
         f.setPointSizeF(base_size * value / 100.0)

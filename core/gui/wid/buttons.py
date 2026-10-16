@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Optional, Any
-from PyQt6.QtWidgets import QPushButton, QCheckBox, QRadioButton, QToolButton
+from PySide6.QtWidgets import QPushButton, QCheckBox, QRadioButton, QToolButton
 from core.gui.wid.base import ANCHOR_TOP_LEFT, _set_widget_bounds, _update_anchor
 
 class Button(QPushButton):

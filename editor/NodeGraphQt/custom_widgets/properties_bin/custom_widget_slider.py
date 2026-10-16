@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 #!/usr/bin/python
-from PyQt6 import QtWidgets, QtCore
-from PyQt6.QtCore import pyqtSignal as Signal
+from PySide6 import QtWidgets, QtCore
+from PySide6.QtCore import Signal
 
 from .prop_widgets_abstract import BaseProperty
 

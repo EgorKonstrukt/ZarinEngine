@@ -6,14 +6,14 @@
 
 from __future__ import annotations
 import math
-from PyQt6.QtWidgets import QWidget, QSizePolicy
-from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFontMetrics, QPainterPath
+from PySide6.QtWidgets import QWidget, QSizePolicy
+from PySide6.QtCore import Qt, Signal, QRectF, QPointF
+from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QFontMetrics, QPainterPath
 from core.foundation.curve import Curve, CurveKey, TangentMode
 
 
 class CurvePreview(QWidget):
-    clicked = pyqtSignal()
+    clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

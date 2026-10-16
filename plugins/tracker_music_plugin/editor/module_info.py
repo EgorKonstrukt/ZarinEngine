@@ -6,12 +6,12 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget
 
 
 class ModuleInfoWidget(QWidget):
-    metadataEdited = pyqtSignal(str, str)
+    metadataEdited = Signal(str, str)
 
     _EDITABLE_KEYS = ("songname", "artist")
 

@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import numpy as np
 from core.components.mesh_editor.probuilder_mesh import ProBuilderMesh
@@ -140,10 +140,10 @@ def weld_vertices(mesh: ProBuilderMesh, threshold: float = 0.001):
                 if best >= 0:
                     out.append((i, best))
             return out
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
             futs = [ex.submit(find_chunk, s, s + chunk) for s in range(0, n, chunk)]
             pairs: list[tuple[int, int]] = []
-            for fu in concurrent.futures.as_completed(futs):
+            for fu in as_completed(futs):
                 try:
                     pairs.extend(fu.result())
                 except Exception:

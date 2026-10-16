@@ -77,7 +77,7 @@ class QtQuickWorldPluginBase(PluginBase):
         if self._timer is not None:
             return
         try:
-            from PyQt6.QtCore import QTimer as _QTimer
+            from PySide6.QtCore import QTimer as _QTimer
 
             timer = _QTimer()
             try:
@@ -101,7 +101,7 @@ class QtQuickWorldPluginBase(PluginBase):
             if self._pumping or self._kick_pending:
                 return
             self._kick_pending = True
-            from PyQt6.QtCore import QTimer as _QTimer
+            from PySide6.QtCore import QTimer as _QTimer
 
             _QTimer.singleShot(0, self._on_kick)
         except Exception:

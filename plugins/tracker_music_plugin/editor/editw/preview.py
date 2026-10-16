@@ -14,8 +14,8 @@ import threading
 import time
 
 import numpy as np
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from ...rend import _RENDER_VERSION, TrackerSoftwareRenderer, load_module, render_to_wav_file
 
@@ -58,9 +58,9 @@ def _load_peaks_sidecar(wav_path: str):
         return None
 
 class _PreviewJob(QObject):
-    progress = pyqtSignal(float, object)
-    done = pyqtSignal(int, str, float, float, object, object)
-    failed = pyqtSignal(int, str)
+    progress = Signal(float, object)
+    done = Signal(int, str, float, float, object, object)
+    failed = Signal(int, str)
 
     def __init__(self, job_id: int, kind: str, path: str, out_path: str,
                  sample_rate: int, muted: set, gains_db: list,

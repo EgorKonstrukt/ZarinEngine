@@ -5,8 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import json
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QApplication, QFormLayout
-from PyQt6.QtCore import Qt, pyqtSignal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QApplication, QFormLayout
+from PySide6.QtCore import Qt, Signal
 import editor.icons as qta
 from core.config.editor_scale import scale_xy
 from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
@@ -20,10 +20,10 @@ from .scripts import ScriptsMixin
 from .transform_section import TransformMixin
 class ComponentWidget(ClipboardMixin, FieldsMixin, ListsMixin, VectorsMixin, ScriptsMixin, TransformMixin, QWidget):
     """Component inspector widget."""
-    remove_requested = pyqtSignal(str, str)
-    move_up_requested = pyqtSignal(str)
-    move_down_requested = pyqtSignal(str)
-    reorder_requested = pyqtSignal(str, str, str)
+    remove_requested = Signal(str, str)
+    move_up_requested = Signal(str)
+    move_down_requested = Signal(str)
+    reorder_requested = Signal(str, str, str)
     def __init__(self, component, entity=None, selected_entities=None, parent=None, component_key: str = "", overridden_props: set = None):
         super().__init__(parent)
         self._component = component

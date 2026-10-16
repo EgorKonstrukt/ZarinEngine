@@ -5,14 +5,14 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QApplication
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QColor
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QApplication
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QColor
 from .palette import ColorDialog
 
 
 class ColorLineEdit(QWidget):
-    colorChanged = pyqtSignal(object)
+    colorChanged = Signal(object)
 
     def __init__(self, color=None, parent=None):
         super().__init__(parent)
@@ -65,7 +65,7 @@ class ColorLineEdit(QWidget):
         )
 
     def _open_dialog(self):
-        from PyQt6.QtGui import QCursor
+        from PySide6.QtGui import QCursor
         dlg = ColorDialog(self._color, None)
         dlg.adjustSize()
         screen = QApplication.primaryScreen().availableGeometry()

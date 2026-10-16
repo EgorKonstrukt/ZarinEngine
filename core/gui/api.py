@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Optional, Any, Callable
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget
 from core.gui.canvasp import GuiCanvas
 from core.gui.wid import (
     Panel, Label, Button, Slider, TextInput, Image,

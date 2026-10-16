@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QDockWidget
+from PySide6.QtWidgets import QDockWidget
 
 from .panels import register_default_docks
 from .plugins import register_plugin_docks

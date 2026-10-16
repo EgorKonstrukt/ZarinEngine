@@ -3,7 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2026 Zarrakun
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import shutil
@@ -80,7 +80,7 @@ def _scan_scene_assets(scene_path: str) -> set[str]:
                 pass
             return found
         if len(jobs) > 32:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
+            with ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
                 for part in ex.map(scan_comp, jobs):
                     assets.update(part)
         else:
@@ -133,9 +133,9 @@ def _resolve_assets(assets: set[str], project_root: Path) -> set[Path]:
         for a in lst:
             resolved.update(_resolve_one(a, project_root, assets_dir))
         return resolved
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
+    with ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
         futs = [ex.submit(_resolve_one, a, project_root, assets_dir) for a in lst]
-        for fu in concurrent.futures.as_completed(futs):
+        for fu in as_completed(futs):
             try:
                 resolved.update(fu.result())
             except Exception:

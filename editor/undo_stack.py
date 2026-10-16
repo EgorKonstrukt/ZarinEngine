@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 from typing import Callable, Optional
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 class UndoCommand:
     def __init__(self, description: str = ""):
         self.description = description
@@ -30,9 +30,9 @@ class MacroCommand(UndoCommand):
         for cmd in reversed(self._commands):
             cmd.undo()
 class UndoStack(QObject):
-    index_changed = pyqtSignal(int)
-    can_undo_changed = pyqtSignal(bool)
-    can_redo_changed = pyqtSignal(bool)
+    index_changed = Signal(int)
+    can_undo_changed = Signal(bool)
+    can_redo_changed = Signal(bool)
     MAX_STACK: int = 200
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 import os
 import time
 import numpy as np
@@ -244,7 +245,6 @@ class ParticleRenderer:
             return None
 
     def load_textures_many(self, paths: list[str]) -> dict[str, Any]:
-        import concurrent.futures
         import os as _os
         uniq = [p for p in dict.fromkeys(paths) if p and p not in self._textures]
         if not uniq:
@@ -263,7 +263,7 @@ class ParticleRenderer:
             except Exception:
                 return (k, None, None)
         decoded: dict[str, tuple] = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, _os.cpu_count() or 4))) as ex:
+        with ThreadPoolExecutor(max_workers=min(8, max(2, _os.cpu_count() or 4))) as ex:
             for k, sz, raw in ex.map(decode_one, resolved.items()):
                 if sz is not None and raw is not None:
                     decoded[k] = (sz, raw)

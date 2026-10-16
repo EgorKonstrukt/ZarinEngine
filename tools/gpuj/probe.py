@@ -20,10 +20,10 @@ def mod_version(name):
             return v
     except Exception:
         return ""
-    if name == "PyQt6":
+    if name == "PySide6":
         try:
-            from PyQt6.QtCore import QT_VERSION_STR
-            return str(QT_VERSION_STR)
+            from PySide6.QtCore import qVersion
+            return str(qVersion())
         except Exception:
             pass
     return ""
@@ -146,7 +146,7 @@ def collect_env(args):
         "commit": commit,
         "branch": branch,
         "python": platform.python_version(),
-        "pyqt": mod_version("PyQt6"),
+        "pyside": mod_version("PySide6"),
         "moderngl": mod_version("moderngl"),
         "scene": args.scene,
         "gl_error": g.get("error", ""),

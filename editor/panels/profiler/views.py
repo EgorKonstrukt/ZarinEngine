@@ -4,10 +4,10 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem, QHeaderView, QFrame, QStyledItemDelegate, QAbstractItemView, QApplication, QStyle, QHBoxLayout, QLabel
-from PyQt6.QtWidgets import QStyleOptionViewItem
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QFontMetrics, QPalette
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QHeaderView, QFrame, QStyledItemDelegate, QAbstractItemView, QApplication, QStyle, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QStyleOptionViewItem
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QFontMetrics, QPalette
 from core.config.editor_scale import scale
 from .timeline import _name_to_color, _FONT, _FONT_SMALL, _FONT_TINY, _FONT_LARGE, _FONT_MED
 

@@ -7,8 +7,8 @@
 from __future__ import annotations
 
 import editor.icons as qta
-from PyQt6.QtGui import QAction, QKeySequence, QFont
-from PyQt6.QtWidgets import QMenu, QMessageBox, QInputDialog, QDialog, QVBoxLayout, QPlainTextEdit
+from PySide6.QtGui import QAction, QKeySequence, QFont
+from PySide6.QtWidgets import QMenu, QMessageBox, QInputDialog, QDialog, QVBoxLayout, QPlainTextEdit
 
 from editor.panels.vcsp import _Git, _DiffView
 
@@ -188,7 +188,7 @@ def _vcs_async_done(mw, rc, out, err, label):
     if rc == 0:
         if hasattr(mw, "_vcs"):
             mw._vcs._commit_panel.set_status(f"{label} completed")
-            from PyQt6.QtCore import QTimer
+            from PySide6.QtCore import QTimer
             QTimer.singleShot(500, mw._vcs._refresh_all)
         QMessageBox.information(mw, label, f"{label} completed successfully.")
     else:

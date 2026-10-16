@@ -9,7 +9,7 @@ Build Settings вЂ” Unity-style scene list and build configuration.
 First scene in the list is loaded on game startup.
 """
 from __future__ import annotations
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from typing import Optional
@@ -187,7 +187,7 @@ class BuildSettings:
                 return (p, None, e)
         datas: list[dict] = []
         if len(scene_paths) > 1:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(scene_paths))) as ex:
+            with ThreadPoolExecutor(max_workers=min(8, len(scene_paths))) as ex:
                 for p, d, e in ex.map(load_one, scene_paths):
                     if e is not None:
                         Logger.warning(f"BuildSettings: failed to scan {p}: {e}")
@@ -227,7 +227,7 @@ class BuildSettings:
             return (key, value, abs_path)
         resolved: list[tuple[str, str, str | None]] = []
         if len(jobs) > 16:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
+            with ThreadPoolExecutor(max_workers=min(8, max(2, os.cpu_count() or 4))) as ex:
                 for r in ex.map(resolve_one, jobs):
                     resolved.append(r)
         else:
@@ -267,7 +267,7 @@ class BuildSettings:
                     pass
                 return found
             if len(uniq_mats) > 1:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(uniq_mats))) as ex:
+                with ThreadPoolExecutor(max_workers=min(8, len(uniq_mats))) as ex:
                     for lst in ex.map(scan_one, uniq_mats):
                         for p in lst:
                             result.add(p)

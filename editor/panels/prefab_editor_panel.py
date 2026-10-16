@@ -8,11 +8,11 @@ from __future__ import annotations
 import time
 import moderngl
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QLabel, QFrame)
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QSurfaceFormat, QKeyEvent, QMouseEvent, QWheelEvent
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QSurfaceFormat, QKeyEvent, QMouseEvent, QWheelEvent
 from core.maths.math3d import Vec3
 from core.foundation.logger import Logger
 if TYPE_CHECKING:
@@ -256,7 +256,7 @@ class PrefabEditorPanel(QDockWidget):
         self._save_btn.setEnabled(False)
         self._return_btn.setEnabled(False)
         self.hide()
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         for w in QApplication.topLevelWidgets():
             if hasattr(w, '_hierarchy'):
                 w._hierarchy.refresh()

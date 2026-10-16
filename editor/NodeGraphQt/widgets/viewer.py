@@ -7,8 +7,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import math
-from PyQt6 import (QtGui, QtCore, QtWidgets)
-from PyQt6.QtCore import pyqtSignal as Signal
+from PySide6 import (QtGui, QtCore, QtWidgets)
+from PySide6.QtCore import Signal
 
 from editor.NodeGraphQt.base.menu import BaseMenu
 from editor.NodeGraphQt.constants import (

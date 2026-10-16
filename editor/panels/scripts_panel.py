@@ -7,10 +7,10 @@
 from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
-from PyQt6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout,
+from PySide6.QtWidgets import (QDockWidget, QWidget, QVBoxLayout,
                               QToolBar, QToolButton, QLabel, QFileDialog,
                               QMessageBox, QSplitter, QSizePolicy)
-from PyQt6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize
 from core.config.editor_scale import scale
 from editor.panels.node_palette import NodePalette
 if TYPE_CHECKING:
@@ -242,7 +242,7 @@ class _ShaderGraphWidget(QWidget):
         return f"Zarin/{basename}"
 
     def _generate_and_preview(self):
-        from PyQt6.QtWidgets import QPlainTextEdit
+        from PySide6.QtWidgets import QPlainTextEdit
         from editor.shader_graph.code_generator import generate_shader_code
         code = generate_shader_code(self._graph, "Preview/Shader")
         preview = QPlainTextEdit()

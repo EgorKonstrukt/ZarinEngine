@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 import os, threading
-from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QColor, QDesktopServices
-from PyQt6.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox, QTreeWidgetItem
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtWidgets import QDialog, QFileDialog, QMenu, QMessageBox, QTreeWidgetItem
 from editor.panels import pkgcore as core
 from editor.panels.pkgmgr.bridge import _TaskBridge
 from editor.panels.pkgmgr.dialogs import _DownloadDialog, _InstallDialog
@@ -184,7 +184,7 @@ class PackageManagerOpsMixin:
                 walk(item.child(i), depth + 1)
         for i in range(self._tree.topLevelItemCount()):
             walk(self._tree.topLevelItem(i), 0)
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         QApplication.clipboard().setText("\n".join(lines))
         self._status.setText("Dependency tree copied to clipboard")
     def _jump_to_item_package(self, item: QTreeWidgetItem, *_):
@@ -278,7 +278,7 @@ class PackageManagerOpsMixin:
             self._show_on_pypi(self._by_key[keys[0]].name)
         elif chosen is act_copy:
             text = "\n".join(f"{p.name}=={p.version}" for p in self._selected_packages())
-            from PyQt6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
             QApplication.clipboard().setText(text)
             self._status.setText("Copied to clipboard")
         elif chosen is act_loc:

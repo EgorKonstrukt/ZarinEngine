@@ -14,7 +14,7 @@ from core.gizmo.apiv import Gizmos
 from .draw import PhysVizDrawMixin
 from .draw import _TAG
 try:
-    from PyQt6.QtCore import QTimer
+    from PySide6.QtCore import QTimer
     _HAS_QT = True
 except Exception:
     _HAS_QT = False

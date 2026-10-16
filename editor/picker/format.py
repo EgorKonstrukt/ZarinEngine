@@ -7,8 +7,8 @@
 import json
 import math
 import os
-from PyQt6.QtCore import QRect, QRectF, Qt
-from PyQt6.QtGui import QBrush, QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
+from PySide6.QtCore import QRect, QRectF, Qt
+from PySide6.QtGui import QBrush, QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
 
 def _clamp(v, lo, hi):
     return max(lo, min(hi, v))

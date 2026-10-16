@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 from typing import Optional
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QMouseEvent, QWheelEvent, QKeyEvent
 from core.maths.math3d import Vec3
 from core.input.constants import KEY_Q, KEY_W, KEY_E, KEY_R, KEY_F, KEY_DELETE, KEY_SHIFT, KEY_CTRL, KEY_ALT, KEY_SPACE, KEY_S, KEY_D, KEY_A, MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE, MOUSE_L, MOUSE_R, MOUSE_M
 
@@ -327,8 +327,8 @@ class ViewportInputMixin:
     def contextMenuEvent(self, event):
         from core.gizmo.core import GizmoAxis
         if self._gizmo._hover_axis != GizmoAxis.NONE and self._gizmo._is_multigizmo_active():
-            from PyQt6.QtGui import QAction
-            from PyQt6.QtWidgets import QMenu
+            from PySide6.QtGui import QAction
+            from PySide6.QtWidgets import QMenu
             menu = QMenu(self)
             gizmo_menu = menu.addMenu("Gizmo")
             vis_act = gizmo_menu.addAction("Visible")
@@ -353,7 +353,7 @@ class ViewportInputMixin:
             self._populate_viewport_create_menu(create_menu)
             menu.exec(event.globalPos())
             return
-        from PyQt6.QtWidgets import QMenu as _QMenu
+        from PySide6.QtWidgets import QMenu as _QMenu
         from editor.viewport.collaboration import is_collab_locked
         menu = _QMenu(self)
         create_menu = menu.addMenu("Create")

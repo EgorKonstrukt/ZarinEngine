@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QWidget
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from ..tabsp import ScriptTab
 from ..edit import CodeEditor

@@ -7,8 +7,8 @@
 from __future__ import annotations
 import math
 from typing import Callable, List, Optional, Tuple, Union, TYPE_CHECKING
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
-from PyQt6.QtGui import QColor, QPen
+from PySide6.QtCore import QThread, Signal, QObject
+from PySide6.QtGui import QColor, QPen
 if TYPE_CHECKING:
     from ..chart import ChartWidget
 
@@ -22,7 +22,7 @@ except ImportError:
 class _HistogramItem:
     def __init__(self, chart: "ChartWidget", color: QColor = None,
                  bins: int = 20, label: str = ""):
-        from PyQt6.QtGui import QColor as _QColor
+        from PySide6.QtGui import QColor as _QColor
         self._chart = chart
         self.color = color or _QColor(100, 149, 237)
         self.bins = bins
@@ -90,7 +90,7 @@ class _HistogramItem:
 class _SpectrumItem:
     def __init__(self, chart: "ChartWidget", source: "_LineItem | _ScatterItem",
                  pen: QPen = None, label: str = ""):
-        from PyQt6.QtGui import QPen as _QPen
+        from PySide6.QtGui import QPen as _QPen
         self._chart = chart
         self.source = source
         self.pen = pen or _QPen()
@@ -153,7 +153,7 @@ class _SpectrumItem:
 class _ErrorBandItem:
     def __init__(self, chart: "ChartWidget", color: QColor = None,
                  alpha: int = 50, label: str = ""):
-        from PyQt6.QtGui import QColor as _QColor
+        from PySide6.QtGui import QColor as _QColor
         self._chart = chart
         self.color = color or _QColor(100, 180, 255)
         self.alpha = alpha

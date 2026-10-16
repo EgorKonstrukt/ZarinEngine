@@ -4,8 +4,8 @@
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
 import re
-from PyQt6.QtCore import Qt, QStringListModel, QTimer, QPoint
-from PyQt6.QtGui import QColor, QFontMetrics, QKeyEvent, QPainter, QTextCursor
+from PySide6.QtCore import Qt, QStringListModel, QTimer, QPoint
+from PySide6.QtGui import QColor, QFontMetrics, QKeyEvent, QPainter, QTextCursor
 from core.config.editor_scale import scale
 from ..theme import Theme
 from .. import doc_provider as docs

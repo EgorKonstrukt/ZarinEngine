@@ -8,9 +8,9 @@ import os
 import datetime
 import json
 import wave
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication
-from PyQt6.QtCore import Qt, QObject, QEvent, QTimer, QPoint, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QPixmap, QPainter, QColor, QCursor, QImageReader
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication
+from PySide6.QtCore import Qt, QObject, QEvent, QTimer, QPoint, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QPixmap, QPainter, QColor, QCursor, QImageReader
 _PREVIEW_SIZE = 256
 _PREVIEW_SQUARE = 240
 _POPUP_WIDTH = 272

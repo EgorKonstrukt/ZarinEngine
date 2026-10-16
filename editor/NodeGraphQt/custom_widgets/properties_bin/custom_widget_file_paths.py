@@ -6,7 +6,7 @@
 
 #!/usr/bin/python
 import qtawesome as qta
-from PyQt6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore
 
 from editor.NodeGraphQt.widgets.dialogs import FileDialog
 from .prop_widgets_abstract import BaseProperty

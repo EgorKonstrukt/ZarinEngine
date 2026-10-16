@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QDoubleSpinBox, QComboBox, QCheckBox, QSizePolicy
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QDoubleSpinBox, QComboBox, QCheckBox, QSizePolicy
 from core.config.editor_scale import scale
 from editor.inspector.constants import _FUSION_ACCENT_RED, _accent
 from editor.inspector.helpersp import make_resource_picker
@@ -73,16 +73,11 @@ class InspectorClipboardMixin:
         def _update_preview():
             try:
                 try:
-                    from PyQt6 import sip as _sip
-                    if _sip.isdeleted(preview):
+                    import shiboken6 as _shiboken
+                    if not _shiboken.isValid(preview):
                         return
                 except Exception:
-                    try:
-                        import sip as _sip2
-                        if _sip2.isdeleted(preview):
-                            return
-                    except Exception:
-                        pass
+                    pass
                 pv = {}
                 ac = props.get("albedo_color") or props.get("_BaseColor")
                 if ac is not None:

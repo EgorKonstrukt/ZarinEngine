@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import numpy as _np
 
-from PyQt6.QtCore import QRect, Qt
-from PyQt6.QtGui import QBrush, QColor, QPen
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QBrush, QColor, QPen
 
 
 _frame_metrics_cache: dict = {"key": None, "val": None}

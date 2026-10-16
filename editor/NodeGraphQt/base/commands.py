@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 #!/usr/bin/python
-from PyQt6 import QtWidgets
+from PySide6 import QtWidgets
 from editor.NodeGraphQt.compat import QUndoCommand, QUndoStack
 
 from editor.NodeGraphQt.constants import PortTypeEnum

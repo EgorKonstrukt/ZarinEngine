@@ -7,9 +7,9 @@
 from __future__ import annotations
 import math
 import numpy as np
-from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtGui import QMouseEvent, QWheelEvent
-from PyQt6.QtCore import Qt
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtGui import QMouseEvent, QWheelEvent
+from PySide6.QtCore import Qt
 from typing import Optional
 
 _MDL_VSHADER = """

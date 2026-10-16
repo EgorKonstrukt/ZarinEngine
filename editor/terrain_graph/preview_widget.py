@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import numpy as np
-from PyQt6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore, QtGui
 from editor.NodeGraphQt.widgets.node_widgets import NodeBaseWidget
 
 

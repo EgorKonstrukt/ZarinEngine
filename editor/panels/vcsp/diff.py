@@ -8,9 +8,9 @@ from __future__ import annotations
 import json, os, subprocess
 import urllib.error
 import urllib.request
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
-from PyQt6.QtCore import QProcess
-from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextDocument
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
+from PySide6.QtCore import QProcess
+from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextDocument
 from core.config.editor_scale import scale
 from .git import _open_url
 

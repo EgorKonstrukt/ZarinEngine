@@ -7,8 +7,8 @@
 from __future__ import annotations
 import os
 import editor.icons as qta
-from PyQt6.QtWidgets import QComboBox, QPushButton, QFileDialog, QTableWidgetItem, QAbstractItemView
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QComboBox, QPushButton, QFileDialog, QTableWidgetItem, QAbstractItemView
+from PySide6.QtCore import Qt
 from core.config.editor_scale import scale_xy
 from core.assets.matp import _parse_shader_file
 from .naming import _guess_map_type

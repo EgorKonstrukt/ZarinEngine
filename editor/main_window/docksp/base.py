@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QDockWidget
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QDockWidget
+from PySide6.QtCore import Qt
 
 _AREA_MAP = {
     "left": Qt.DockWidgetArea.LeftDockWidgetArea,

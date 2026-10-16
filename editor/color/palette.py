@@ -5,14 +5,14 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from PyQt6.QtWidgets import QDialog, QLineEdit, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox, QDialogButtonBox, QApplication
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QLinearGradient, QPen
+from PySide6.QtWidgets import QDialog, QLineEdit, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox, QDialogButtonBox, QApplication
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QLinearGradient, QPen
 from .wheel import _ColorWheelWidget
 
 
 class _AlphaWidget(QWidget):
-    alphaChanged = pyqtSignal(float)
+    alphaChanged = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -68,7 +68,7 @@ class _AlphaWidget(QWidget):
 
 
 class ColorDialog(QDialog):
-    colorChanged = pyqtSignal(object)
+    colorChanged = Signal(object)
 
     def __init__(self, initial: QColor = None, parent=None):
         super().__init__(parent)
@@ -229,7 +229,7 @@ class ColorDialog(QDialog):
 
     @staticmethod
     def getColor(initial: QColor = None, parent=None, title="") -> QColor:
-        from PyQt6.QtGui import QCursor
+        from PySide6.QtGui import QCursor
         dlg = ColorDialog(initial, None)
         if title:
             dlg.setWindowTitle(title)

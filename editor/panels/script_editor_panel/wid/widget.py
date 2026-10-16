@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QLabel, QComboBox, QMenuBar, QStatusBar
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QFont, QAction, QKeySequence, QColor
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QLabel, QComboBox, QMenuBar, QStatusBar
+from PySide6.QtCore import Qt, Signal, QSize, QTimer
+from PySide6.QtGui import QFont, QAction, QKeySequence, QColor
 
 from core.config.editor_scale import scale, scale_xy
 
@@ -27,13 +27,13 @@ except ImportError:
 
 
 class ScriptEditorWidget(TabsHostMixin, StatusMixin, QWidget):
-    tab_opened = pyqtSignal(str)
-    tab_closed = pyqtSignal(str)
-    tab_switched = pyqtSignal(str)
-    collab_file_opened = pyqtSignal(str, str)
-    collab_file_saved = pyqtSignal(str, str)
-    collab_cursor_changed = pyqtSignal(str, int, int, int)
-    collab_ops_ready = pyqtSignal(str, list)
+    tab_opened = Signal(str)
+    tab_closed = Signal(str)
+    tab_switched = Signal(str)
+    collab_file_opened = Signal(str, str)
+    collab_file_saved = Signal(str, str)
+    collab_cursor_changed = Signal(str, int, int, int)
+    collab_ops_ready = Signal(str, list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -115,7 +115,7 @@ class ScriptEditorWidget(TabsHostMixin, StatusMixin, QWidget):
         toolbar.addSeparator()
         toolbar.addAction(self._act_run)
         toolbar.addAction(self._act_doc)
-        from PyQt6.QtWidgets import QSizePolicy
+        from PySide6.QtWidgets import QSizePolicy
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)

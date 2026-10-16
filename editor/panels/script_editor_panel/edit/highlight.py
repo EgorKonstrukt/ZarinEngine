@@ -3,9 +3,9 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPixmap, QPen, QTextCharFormat, QTextCursor
-from PyQt6.QtWidgets import QTextEdit
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPixmap, QPen, QTextCharFormat, QTextCursor
+from PySide6.QtWidgets import QTextEdit
 from core.config.editor_scale import scale
 from ..theme import Theme
 from .. import blame as blame_mod

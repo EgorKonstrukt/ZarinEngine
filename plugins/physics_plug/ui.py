@@ -26,7 +26,7 @@ class PhysicsUiMixin:
         except Exception: pass
     def _create_physics_panel(self):
         try:
-            from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
+            from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
             w = QWidget(); lay = QVBoxLayout(w); lab = QLabel(str("Physics")); lay.addWidget(lab)
             return w
         except Exception: return None

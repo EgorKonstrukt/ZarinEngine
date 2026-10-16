@@ -7,9 +7,9 @@
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 import editor.icons as qta
-from PyQt6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QLabel, QLineEdit, QPushButton, QCheckBox, QSpinBox, QFrame, QDialog
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFontMetrics
+from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QLabel, QLineEdit, QPushButton, QCheckBox, QSpinBox, QFrame, QDialog
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QFontMetrics
 from core.config.editor_scale import scale, scale_xy
 from core.foundation.logger import Logger
 from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 
 class InspectorPanel(InspectorSectionsMixin, InspectorClipboardMixin, InspectorFilterMixin, InspectorUndoMixin, QDockWidget):
-    open_prefab_editor = pyqtSignal(str)
+    open_prefab_editor = Signal(str)
     def __init__(self, engine: Engine, parent=None):
         super().__init__("Inspector", parent)
         self._engine = engine

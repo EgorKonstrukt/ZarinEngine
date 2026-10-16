@@ -7,8 +7,8 @@
 from __future__ import annotations
 import os
 import re
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QComboBox
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QComboBox
+from PySide6.QtCore import Qt
 from core.assets.matp import Material, _project_root
 from .keywords import (
     _ALBEDO_KEYWORDS,

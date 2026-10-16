@@ -22,8 +22,8 @@
 
 from __future__ import annotations
 import csv
-from PyQt6.QtWidgets import QFileDialog
-from PyQt6.QtGui import QPixmap
+from PySide6.QtWidgets import QFileDialog
+from PySide6.QtGui import QPixmap
 from ..i18n import tr
 
 class _ChartExportMixin:

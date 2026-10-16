@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtCore import QObject, QEvent, Qt
-from PyQt6.QtGui import QMouseEvent
+from PySide6.QtCore import QObject, QEvent, Qt
+from PySide6.QtGui import QMouseEvent
 from core.foundation.plugins import PluginBase
 from core.foundation.logger import Logger
 from core.maths.math3d import Vec3

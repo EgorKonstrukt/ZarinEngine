@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QGraphicsDropShadowEffect
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QGraphicsDropShadowEffect
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont
 
 from .theme import doc_stylesheet
 from . import doc_provider as _docs

@@ -8,7 +8,7 @@ from __future__ import annotations
 import threading
 import time
 from typing import TYPE_CHECKING
-from PyQt6.QtCore import QThread
+from PySide6.QtCore import QThread
 
 if TYPE_CHECKING:
     from core.engine.eng import Engine

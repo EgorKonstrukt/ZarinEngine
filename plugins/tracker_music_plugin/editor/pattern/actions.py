@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import copy
 
-from PyQt6.QtCore import QItemSelection, QItemSelectionModel, Qt, QTimer
-from PyQt6.QtWidgets import QAbstractItemView, QLineEdit, QTableWidgetItem
+from PySide6.QtCore import QItemSelection, QItemSelectionModel, Qt, QTimer
+from PySide6.QtWidgets import QAbstractItemView, QLineEdit, QTableWidgetItem
 
 from .cells import COLUMNS_PER_CHANNEL, _transpose_note
 from .grid import _PatternGridBase

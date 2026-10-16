@@ -6,9 +6,9 @@
 from __future__ import annotations
 import moderngl
 from typing import Optional, TYPE_CHECKING
-from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QSurfaceFormat
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QSurfaceFormat
 from core.input.input_manager import InputManager
 from core.engine.frame_pacer import FramePacer
 from core.engine.gameview.rendering import GameViewportRenderMixin

@@ -9,11 +9,11 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Optional
 
-from PyQt6.QtCore import QCoreApplication, QObject, Qt, pyqtSignal
+from PySide6.QtCore import QCoreApplication, QObject, Qt, Signal
 
 
 class _MainThreadDispatcher(QObject):
-    request = pyqtSignal(object)
+    request = Signal(object)
 
     def __init__(self):
         super().__init__()

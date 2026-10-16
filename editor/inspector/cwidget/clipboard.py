@@ -4,8 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from PyQt6.QtWidgets import QApplication, QMenu, QLineEdit, QPlainTextEdit
-from PyQt6.QtGui import QAction
+from PySide6.QtWidgets import QApplication, QMenu, QLineEdit, QPlainTextEdit
+from PySide6.QtGui import QAction
 from core.foundation.cmd import SetComponentCommand, CompoundCommand, get_history
 from core.foundation.logger import Logger
 from core.config.editor_scale import scale

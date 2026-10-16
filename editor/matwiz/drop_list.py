@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 import os
-from PyQt6.QtWidgets import QListWidget, QAbstractItemView
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtWidgets import QListWidget, QAbstractItemView
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 
 
 class _TextureDropList(QListWidget):
-    files_dropped = pyqtSignal(list)
+    files_dropped = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -7,8 +7,8 @@
 from __future__ import annotations
 import math
 from typing import Callable, List, Optional, Tuple, Union, TYPE_CHECKING
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
-from PyQt6.QtGui import QColor, QPen
+from PySide6.QtCore import QThread, Signal, QObject
+from PySide6.QtGui import QColor, QPen
 if TYPE_CHECKING:
     from ..chart import ChartWidget
 
@@ -119,7 +119,7 @@ class _LineItem:
 
 
 class _ScatterItem(QObject):
-    point_clicked = pyqtSignal(float, float, int)
+    point_clicked = Signal(float, float, int)
 
     def __init__(self, chart: "ChartWidget", size: int, color: QColor, label: str = ""):
         super().__init__()
