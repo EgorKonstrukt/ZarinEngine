@@ -56,7 +56,7 @@ class ConfigStateMixin:
             pass
         try:
             if getattr(self, "_grid", None) is not None:
-                self._grid.show = config.get("rendering.show_grid", self._grid.show)
+                self._grid.show = config.get("toolbar.grid", config.get("rendering.show_grid", self._grid.show))
                 self._grid.grid_size = config.get("rendering.grid_size", self._grid.grid_size)
                 try:
                     self._grid._grid_world_size = float(config.get("rendering.grid_world_size", self._grid._grid_world_size))
@@ -67,7 +67,21 @@ class ConfigStateMixin:
         except Exception:
             pass
         try:
-            self._skybox_enabled = config.get("rendering.show_skybox", self._skybox_enabled)
+            self._skybox_enabled = config.get("toolbar.skybox", config.get("rendering.show_skybox", self._skybox_enabled))
+        except Exception:
+            pass
+        try:
+            self._effects_disabled = not bool(config.get("toolbar.effects", not self._effects_disabled))
+        except Exception:
+            pass
+        try:
+            _rm = str(config.get("toolbar.render_mode", "")).lower()
+            if _rm in ("shaded", "shaded_wireframe", "shaded-wireframe", "flat"):
+                _norm = "shaded_wireframe" if _rm.startswith("shaded_wire") or _rm.startswith("shaded-wire") else _rm
+                for _m in RenderMode:
+                    if _m.value == _norm:
+                        self._render_mode = _m
+                        break
         except Exception:
             pass
         try:
@@ -127,7 +141,7 @@ class ConfigStateMixin:
             return
         if getattr(self, "_grid", None) is not None:
             try:
-                self._grid.show = config.get("rendering.show_grid", self._grid.show)
+                self._grid.show = config.get("toolbar.grid", config.get("rendering.show_grid", self._grid.show))
             except Exception:
                 pass
             try:
@@ -147,7 +161,11 @@ class ConfigStateMixin:
             except Exception:
                 pass
         try:
-            self._skybox_enabled = config.get("rendering.show_skybox", self._skybox_enabled)
+            self._skybox_enabled = config.get("toolbar.skybox", config.get("rendering.show_skybox", self._skybox_enabled))
+        except Exception:
+            pass
+        try:
+            self._effects_disabled = not bool(config.get("toolbar.effects", not self._effects_disabled))
         except Exception:
             pass
 

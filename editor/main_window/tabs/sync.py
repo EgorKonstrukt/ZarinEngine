@@ -293,6 +293,15 @@ class SceneTabSyncMixin:
             cam._fov = cs.get("fov", cam.DEFAULT_FOV)
             cam._near = cs.get("near", cam.DEFAULT_NEAR)
             cam._far = cs.get("far", cam.DEFAULT_FAR)
+            try:
+                tb = getattr(self._mw, "_render_toolbar", None)
+                if tb is not None:
+                    if hasattr(tb, "set_camera_2d"):
+                        tb.set_camera_2d(cam._is_2d_mode)
+                    if hasattr(tb, "set_camera_projection"):
+                        tb.set_camera_projection(cam.is_orthographic)
+            except Exception:
+                pass
         if vp:
             resolved = [info.scene.get_entity(eid) for eid in info.selected_entity_ids if info.scene.get_entity(eid)]
             vp._selected_entities = resolved

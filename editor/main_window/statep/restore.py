@@ -362,6 +362,12 @@ def restore_camera(mw):
                     mw._layout_restored = True
         except Exception as e:
             Logger.error(f"Failed to restore window state: {e}")
+    try:
+        from editor.main_window.toolbar import load_main_toolbar_state, apply_toolbar_runtime_state
+        load_main_toolbar_state(mw)
+        apply_toolbar_runtime_state(mw)
+    except Exception:
+        pass
     cam_data = mw._settings.value("sceneCamera")
     if cam_data:
         try:
@@ -372,6 +378,11 @@ def restore_camera(mw):
             sync_fn = getattr(mw, "_sync_nav_mode_ui", None)
             if callable(sync_fn):
                 sync_fn(mw._viewport.camera.nav_mode)
+        except Exception:
+            pass
+        try:
+            from editor.main_window.toolbar import apply_toolbar_runtime_state as _apply2
+            _apply2(mw)
         except Exception:
             pass
 

@@ -171,6 +171,7 @@ class UiRegistryMixin:
         pairs = (
             ("docks", plugin._docks),
             ("toolbar_actions", plugin._toolbar_actions),
+            ("toolbar_items", plugin._toolbar_items),
             ("menu_items", plugin._menu_items),
             ("file_openers", plugin._file_openers),
         )

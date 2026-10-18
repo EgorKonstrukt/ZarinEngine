@@ -103,8 +103,6 @@ def _do_switch_project(mw, project_path: str):
     audio = AudioSystem.instance()
     if audio:
         audio.apply_project_audio_config()
-
-    # Reload BuildSettings for this project
     from core.config.build_settings import BuildSettings
     bs = BuildSettings.instance() or BuildSettings()
     bs.load(os.path.join(project_path, "BuildSettings.json"))
@@ -121,7 +119,12 @@ def _do_switch_project(mw, project_path: str):
         from editor.main_window.handlersp import on_entity_selected
         on_entity_selected(mw, None)
     mw._engine._project_settings_path = settings_path
-    mw._render_toolbar.load_state()
+    try:
+        from editor.main_window.toolbar import load_main_toolbar_state, apply_toolbar_runtime_state
+        load_main_toolbar_state(mw)
+        apply_toolbar_runtime_state(mw)
+    except Exception:
+        pass
     SplashScreen.hide_splash()
 
 

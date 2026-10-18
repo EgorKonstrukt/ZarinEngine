@@ -86,6 +86,7 @@ class PluginBase:
         self._config_path: Optional[str] = None
         self._docks: list[dict] = []
         self._toolbar_actions: list[dict] = []
+        self._toolbar_items: list[dict] = []
         self._menu_items: list[dict] = []
         self._file_openers: list[dict] = []
         self._components: list[type] = []
@@ -282,6 +283,77 @@ class PluginBase:
         }
         self._toolbar_actions.append(entry)
         self._sync_ui("toolbar_actions", entry)
+        return entry
+
+    def add_toolbar_toggle(self, item_id: str, text: str, default: bool = False,
+                           icon: Optional[str] = None, tooltip: str = "",
+                           config_key: Optional[str] = None, on_toggled: Optional[Callable] = None):
+        try:
+            from editor.toolbar_registry import define_toolbar_item
+            key = config_key or f"toolbar_plugins.{self.NAME}.{item_id}"
+            define_toolbar_item(f"plugin.{self.NAME}.{item_id}", key, bool(default), kind="check")
+        except Exception:
+            key = config_key or f"toolbar_plugins.{self.NAME}.{item_id}"
+        entry = {
+            "item_id": f"plugin.{self.NAME}.{item_id}",
+            "kind": "check",
+            "text": text,
+            "default": bool(default),
+            "config_key": key,
+            "icon": icon,
+            "tooltip": tooltip or text,
+            "callback": on_toggled,
+        }
+        self._toolbar_items.append(entry)
+        self._sync_ui("toolbar_items", entry)
+        return entry
+
+    def add_toolbar_combo(self, item_id: str, options: list, default: Optional[str] = None,
+                          tooltip: str = "", config_key: Optional[str] = None,
+                          on_changed: Optional[Callable] = None):
+        opts = list(options or [])
+        first = opts[0] if opts else ""
+        try:
+            from editor.toolbar_registry import define_toolbar_item
+            key = config_key or f"toolbar_plugins.{self.NAME}.{item_id}"
+            define_toolbar_item(f"plugin.{self.NAME}.{item_id}", key, default if default is not None else first, kind="combo", options=opts)
+        except Exception:
+            key = config_key or f"toolbar_plugins.{self.NAME}.{item_id}"
+        entry = {
+            "item_id": f"plugin.{self.NAME}.{item_id}",
+            "kind": "combo",
+            "options": opts,
+            "default": default if default is not None else first,
+            "config_key": key,
+            "tooltip": tooltip,
+            "callback": on_changed,
+        }
+        self._toolbar_items.append(entry)
+        self._sync_ui("toolbar_items", entry)
+        return entry
+
+    def add_toolbar_spin(self, item_id: str, default: float = 0.0,
+                         minimum: float = 0.0, maximum: float = 100.0,
+                         tooltip: str = "", config_key: Optional[str] = None,
+                         on_changed: Optional[Callable] = None):
+        try:
+            from editor.toolbar_registry import define_toolbar_item
+            key = config_key or f"toolbar_plugins.{self.NAME}.{item_id}"
+            define_toolbar_item(f"plugin.{self.NAME}.{item_id}", key, float(default), kind="spin")
+        except Exception:
+            key = config_key or f"toolbar_plugins.{self.NAME}.{item_id}"
+        entry = {
+            "item_id": f"plugin.{self.NAME}.{item_id}",
+            "kind": "spin",
+            "default": float(default),
+            "minimum": float(minimum),
+            "maximum": float(maximum),
+            "config_key": key,
+            "tooltip": tooltip,
+            "callback": on_changed,
+        }
+        self._toolbar_items.append(entry)
+        self._sync_ui("toolbar_items", entry)
         return entry
 
     def add_menu_item(self, menu_name: str, text: str, callback: Callable,

@@ -42,6 +42,10 @@ class Gizmo(TranslateMixin, RotateMixin, ScaleMixin):
         self._multigizmo_alignment = config.get("gizmo.multigizmo_alignment", "local")
         self._orientation_lock = config.get("gizmo.multigizmo_orientation_lock", False)
         self._multigizmo_visible = config.get("gizmo.multigizmo_visible", True)
+        self._snap_enabled = config.get("toolbar.snap", self._snap_enabled)
+        self._snap_translate = float(config.get("toolbar.snap_translate", self._snap_translate))
+        self._snap_rotate = float(config.get("toolbar.snap_rotate", self._snap_rotate))
+        self._snap_scale = float(config.get("toolbar.snap_scale", self._snap_scale))
 
     def __init__(self):
         self._mode: GizmoMode = GizmoMode.TRANSLATE

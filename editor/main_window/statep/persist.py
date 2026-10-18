@@ -81,6 +81,11 @@ def save_state(mw, include_tabs=True):
             raise
     except Exception as e:
         Logger.error(f"Failed to save window state: {e}")
+    try:
+        from editor.main_window.toolbar import save_main_toolbar_state
+        save_main_toolbar_state(mw)
+    except Exception:
+        pass
     if mw._viewport.camera:
         cam_data = json.dumps(mw._viewport.camera.serialize())
         mw._settings.setValue("sceneCamera", cam_data)

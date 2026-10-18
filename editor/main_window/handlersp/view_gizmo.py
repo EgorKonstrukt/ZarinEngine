@@ -21,6 +21,14 @@ from core.foundation.logger import Logger
 from editor.splash import SplashScreen
 
 
+def _reg(mw):
+    try:
+        from editor.toolbar_registry import get_toolbar_registry
+        return get_toolbar_registry(mw)
+    except Exception:
+        return None
+
+
 def reset_camera(mw):
     cam = mw._viewport.camera
     cam._position = Vec3(0.0, 3.0, 10.0)
@@ -40,13 +48,40 @@ def reset_camera(mw):
 
 def on_gizmo_mode_changed(mw, mode):
     mw._viewport.gizmo.mode = mode
-    if hasattr(mw, '_scene_toolbar') and mw._scene_toolbar:
-        if mode != mw._viewport.gizmo.__class__.__dict__.get('MULTI', None) and getattr(mw._viewport.gizmo, '_multigizmo_enabled', False):
-            pass
+    try:
+        name = mode.value if hasattr(mode, "value") else str(mode).lower()
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("gizmo_mode", str(name).lower())
+    except Exception:
+        pass
+    try:
+        tb = getattr(mw, "_scene_toolbar", None)
+        if tb is not None and hasattr(tb, "set_gizmo_mode"):
+            tb.set_gizmo_mode(mode)
+    except Exception:
+        pass
+    try:
+        mw._viewport.update()
+    except Exception:
+        pass
 
 
 def on_gizmo_space_changed(mw, space):
     mw._viewport.gizmo.space = space
+    try:
+        name = space.value if hasattr(space, "value") else str(space).lower()
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("gizmo_space", str(name).lower())
+    except Exception:
+        pass
+    try:
+        tb = getattr(mw, "_scene_toolbar", None)
+        if tb is not None and hasattr(tb, "set_gizmo_space"):
+            tb.set_gizmo_space(space)
+    except Exception:
+        pass
 
 
 def on_multigizmo_toggled(mw, enabled: bool):
@@ -57,25 +92,34 @@ def on_multigizmo_toggled(mw, enabled: bool):
         mw._viewport.gizmo.multigizmo_visible = True
     else:
         mw._viewport.gizmo.mode = GizmoMode.TRANSLATE
-    from core.config.config import get_global_config
-    get_global_config().set("gizmo.multigizmo_enabled", enabled)
-    get_global_config().save()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("multigizmo_enabled", bool(enabled))
+    except Exception:
+        pass
     mw._viewport.update()
 
 
 def on_multigizmo_align_changed(mw, align: str):
     mw._viewport.gizmo.alignment = align
-    from core.config.config import get_global_config
-    get_global_config().set("gizmo.multigizmo_alignment", align)
-    get_global_config().save()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("multigizmo_alignment", str(align))
+    except Exception:
+        pass
     mw._viewport.update()
 
 
 def on_multigizmo_lock_toggled(mw, locked: bool):
     mw._viewport.gizmo.orientation_lock = locked
-    from core.config.config import get_global_config
-    get_global_config().set("gizmo.multigizmo_orientation_lock", locked)
-    get_global_config().save()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("multigizmo_orientation_lock", bool(locked))
+    except Exception:
+        pass
     if not locked:
         mw._viewport.gizmo._orientation_lock_cache = None
     mw._viewport.update()
@@ -84,48 +128,107 @@ def on_multigizmo_lock_toggled(mw, locked: bool):
 def on_multigizmo_visible_toggled(mw, visible: bool):
     mw._viewport.gizmo.multigizmo_visible = visible
     mw._viewport._gizmo_visible = visible
-    from core.config.config import get_global_config
-    get_global_config().set("gizmo.multigizmo_visible", visible)
-    get_global_config().save()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("multigizmo_visible", bool(visible))
+    except Exception:
+        pass
     mw._viewport.update()
 
 
 def on_grid_toggled(mw, enabled: bool):
     if mw._viewport.renderer:
         mw._viewport.renderer.show_grid = enabled
-    mw._render_toolbar.save_state()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("grid", bool(enabled))
+    except Exception:
+        pass
 
 
 def on_snap_toggled(mw, enabled: bool):
     mw._viewport.gizmo.snap_enabled = enabled
-    mw._render_toolbar.save_state()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("snap", bool(enabled))
+    except Exception:
+        pass
 
 
 def on_gizmo_vis_toggled(mw, checked: bool):
     mw._viewport._gizmo_visible = checked
     mw._viewport._gizmo_icons_visible = checked
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("gizmo_visible", bool(checked))
+    except Exception:
+        pass
+    try:
+        act = getattr(mw, "_gizmo_vis_act", None)
+        if act is not None and act.isChecked() != bool(checked):
+            act.blockSignals(True)
+            act.setChecked(bool(checked))
+            act.blockSignals(False)
+    except Exception:
+        pass
     mw._viewport.update()
 
 
 def on_snap_t_changed(mw, val: float):
     mw._viewport.gizmo.snap_translate = val
     mw._viewport.set_grid_step(val)
-    mw._render_toolbar.save_state()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("snap_translate", float(val))
+    except Exception:
+        pass
 
 
 def on_snap_r_changed(mw, val: float):
     mw._viewport.gizmo.snap_rotate = val
-    mw._render_toolbar.save_state()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("snap_rotate", float(val))
+    except Exception:
+        pass
 
 
 def on_snap_s_changed(mw, val: float):
     mw._viewport.gizmo.snap_scale = val
-    mw._render_toolbar.save_state()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("snap_scale", float(val))
+    except Exception:
+        pass
 
 
 def on_render_mode_changed(mw, mode):
     if mw._viewport.renderer:
         mw._viewport.renderer.render_mode = mode
+    try:
+        name = mode.value if hasattr(mode, "value") else str(mode).lower()
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("render_mode", str(name).lower())
+    except Exception:
+        pass
+    try:
+        tb = getattr(mw, "_render_toolbar", None)
+        if tb is not None and hasattr(tb, "set_render_mode"):
+            tb.set_render_mode(mode)
+    except Exception:
+        pass
+    try:
+        mw._viewport.update()
+    except Exception:
+        pass
 
 
 def on_skybox_toggled(mw, enabled: bool):
@@ -134,7 +237,12 @@ def on_skybox_toggled(mw, enabled: bool):
     play = getattr(mw, '_play_dock', None)
     if play and hasattr(play, '_viewport') and play._viewport._renderer:
         play._viewport._renderer.skybox_enabled = enabled
-    mw._render_toolbar.save_state()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("skybox", bool(enabled))
+    except Exception:
+        pass
 
 
 def on_effects_toggled(mw, enabled: bool):
@@ -143,24 +251,63 @@ def on_effects_toggled(mw, enabled: bool):
     play = getattr(mw, '_play_dock', None)
     if play and hasattr(play, '_viewport') and play._viewport._renderer:
         play._viewport._renderer.set_effects_enabled(enabled)
-    mw._render_toolbar.save_state()
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("effects", bool(enabled))
+    except Exception:
+        pass
 
 
 def on_camera_projection_changed(mw):
     mw._viewport.camera.toggle_projection()
     is_ortho = mw._viewport.camera.is_orthographic
-    mw._render_toolbar._cam_persp_btn.setChecked(not is_ortho)
+    try:
+        tb = getattr(mw, "_render_toolbar", None)
+        if tb is not None and hasattr(tb, "set_camera_projection"):
+            tb.set_camera_projection(is_ortho)
+        else:
+            mw._render_toolbar._cam_persp_btn.setChecked(not is_ortho)
+    except Exception:
+        pass
+    try:
+        on_camera_type_changed(mw)
+    except Exception:
+        pass
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("camera_projection", "orthographic" if is_ortho else "perspective")
+    except Exception:
+        pass
+    try:
+        mw._viewport.update()
+    except Exception:
+        pass
 
 
 def on_camera_type_changed(mw):
     is_ortho = mw._viewport.camera.is_orthographic
-    btn = mw._render_toolbar._cam_persp_btn
-    if is_ortho:
-        btn.setIcon(qta.icon("fa5s.camera-retro", color=chr(35) + "d4d4d4"))
-        btn.setText(" Ortho")
-    else:
-        btn.setIcon(qta.icon("fa5s.camera", color=chr(35) + "d4d4d4"))
-        btn.setText(" Perspective")
+    try:
+        tb = getattr(mw, "_render_toolbar", None)
+        if tb is not None and hasattr(tb, "set_camera_projection"):
+            tb.set_camera_projection(is_ortho)
+        else:
+            btn = mw._render_toolbar._cam_persp_btn
+            if is_ortho:
+                btn.setIcon(qta.icon("fa5s.camera-retro", color=chr(35) + "d4d4d4"))
+                btn.setText(" Ortho")
+            else:
+                btn.setIcon(qta.icon("fa5s.camera", color=chr(35) + "d4d4d4"))
+                btn.setText(" Perspective")
+    except Exception:
+        pass
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("camera_projection", "orthographic" if is_ortho else "perspective")
+    except Exception:
+        pass
 
 
 def on_camera_2d_toggled(mw):
@@ -170,7 +317,18 @@ def on_camera_2d_toggled(mw):
 
 def on_camera_2d_changed(mw):
     is_2d = mw._viewport.camera.is_2d_mode
-    mw._render_toolbar._cam_2d_btn.setChecked(is_2d)
+    try:
+        tb = getattr(mw, "_render_toolbar", None)
+        if tb is not None and hasattr(tb, "set_camera_2d"):
+            tb.set_camera_2d(is_2d)
+        else:
+            mw._render_toolbar._cam_2d_btn.setChecked(is_2d)
+    except Exception:
+        pass
+    try:
+        reg = _reg(mw)
+        if reg is not None:
+            reg.store("camera_2d", bool(is_2d))
+    except Exception:
+        pass
     on_camera_type_changed(mw)
-
-

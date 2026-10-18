@@ -83,14 +83,14 @@ class PluginManager(DiscoveryMixin, LoaderMixin, LifecycleMixin, UiRegistryMixin
         if name in self._load_order:
             self._load_order.remove(name)
         for entries in (plugin._docks, plugin._toolbar_actions,
-                        plugin._menu_items, plugin._file_openers):
+                        plugin._toolbar_items, plugin._menu_items, plugin._file_openers):
             for entry in entries:
                 if isinstance(entry, dict):
                     entry.pop("_synced", None)
         eng = self._engine
         reg = getattr(eng, "plugin_ui_registry", None) if eng is not None else None
         if reg is not None:
-            for kind in ("docks", "toolbar_actions", "menu_items", "file_openers"):
+            for kind in ("docks", "toolbar_actions", "toolbar_items", "menu_items", "file_openers"):
                 try:
                     reg[kind] = [e for e in reg.get(kind, []) if e.get("plugin") != name]
                 except Exception as e:

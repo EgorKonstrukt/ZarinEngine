@@ -55,6 +55,7 @@ class Engine(EngineScenesMixin, EngineLoopMixin, EngineEventsMixin):
         self._plugin_ui_registry: dict[str, list] = {
             "docks": [],
             "toolbar_actions": [],
+            "toolbar_items": [],
             "menu_items": [],
             "file_openers": [],
         }

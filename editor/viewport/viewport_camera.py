@@ -10,6 +10,25 @@ from core.maths.math3d import Vec3
 
 class ViewportCameraMixin:
 
+    def _sync_toolbar_gizmo_mode(self, mode) -> None:
+        try:
+            name = mode.value if hasattr(mode, "value") else str(mode).lower()
+            mw = getattr(self, "_mw", None)
+            if mw is not None:
+                try:
+                    from editor.toolbar_registry import get_toolbar_registry
+                    get_toolbar_registry(mw).store("gizmo_mode", str(name).lower())
+                except Exception:
+                    pass
+                try:
+                    tb = getattr(mw, "_scene_toolbar", None)
+                    if tb is not None and hasattr(tb, "set_gizmo_mode"):
+                        tb.set_gizmo_mode(mode)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def _on_fov_changed(self, value: float):
         self._cam._fov = value
 
@@ -69,18 +88,34 @@ class ViewportCameraMixin:
         if self._focused and self.isActiveWindow():
             if self._im and self._im.key_just_pressed(KEY_Q):
                 self._gizmo.mode = GizmoMode.NONE
+                try:
+                    self._sync_toolbar_gizmo_mode(GizmoMode.NONE)
+                except Exception:
+                    pass
                 from editor.viewport.collaboration import send_collab_gizmo_state
                 send_collab_gizmo_state(self)
             elif self._im and self._im.key_just_pressed(KEY_W):
                 self._gizmo.mode = GizmoMode.TRANSLATE
+                try:
+                    self._sync_toolbar_gizmo_mode(GizmoMode.TRANSLATE)
+                except Exception:
+                    pass
                 from editor.viewport.collaboration import send_collab_gizmo_state
                 send_collab_gizmo_state(self)
             elif self._im and self._im.key_just_pressed(KEY_E):
                 self._gizmo.mode = GizmoMode.ROTATE
+                try:
+                    self._sync_toolbar_gizmo_mode(GizmoMode.ROTATE)
+                except Exception:
+                    pass
                 from editor.viewport.collaboration import send_collab_gizmo_state
                 send_collab_gizmo_state(self)
             elif self._im and self._im.key_just_pressed(KEY_R):
                 self._gizmo.mode = GizmoMode.SCALE
+                try:
+                    self._sync_toolbar_gizmo_mode(GizmoMode.SCALE)
+                except Exception:
+                    pass
                 from editor.viewport.collaboration import send_collab_gizmo_state
                 send_collab_gizmo_state(self)
             elif self._im and self._im.key_just_pressed(KEY_F):

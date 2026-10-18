@@ -204,6 +204,7 @@ def get_global_config() -> Config:
                 "fov": 70.0,
                 "near": 0.01,
                 "far": 1000.0,
+                "nav_mode": "fly",
                 "move_speed": 5.0,
                 "fast_mult": 3.0,
                 "rotate_speed": 0.3,
@@ -355,6 +356,21 @@ def get_global_config() -> Config:
                 "tri": [0.39, 0.63, 0.86, 0.16],
                 "wire": [0.71, 0.82, 0.94, 0.78],
                 "wire_width": 1.0,
+            },
+            "toolbar": {
+                "grid": True,
+                "snap": True,
+                "snap_translate": 0.25,
+                "snap_rotate": 15.0,
+                "snap_scale": 0.25,
+                "skybox": True,
+                "effects": True,
+                "gizmo_visible": True,
+                "render_mode": "shaded",
+                "camera_projection": "perspective",
+                "camera_2d": False,
+                "gizmo_mode": "translate",
+                "gizmo_space": "world",
             }
         })
         _global_config._data.pop("physics", None)
@@ -362,6 +378,17 @@ def get_global_config() -> Config:
                      "engine.python_jit", "engine.python_optimize", "engine.python_unbuffered",
                      "engine.python_no_bytecode"]:
             _global_config.mark_restart(_rk)
+        try:
+            from editor.toolbar_registry import ensure_toolbar_defaults as _ensure_tb
+            _ensure_tb(_global_config)
+        except Exception:
+            pass
+    else:
+        try:
+            from editor.toolbar_registry import ensure_toolbar_defaults as _ensure_tb2
+            _ensure_tb2(_global_config)
+        except Exception:
+            pass
     return _global_config
 def get_project_config(project_path: str) -> Config:
     global _project_config

@@ -31,6 +31,49 @@ def open_global_settings(mw):
     dlg.show()
 
 
+def _mirror_toolbar_key(cfg, key: str, value) -> None:
+    try:
+        from editor.toolbar_registry import get_toolbar_defs
+        for entry in get_toolbar_defs():
+            try:
+                primary = entry.get("config_key", "")
+                mirrors = list(entry.get("mirror_keys", []) or [])
+                if key == primary:
+                    for mirror in mirrors:
+                        try:
+                            cfg.set(mirror, value, notify=False)
+                        except Exception:
+                            pass
+                    cfg.save()
+                    return
+                if key in mirrors:
+                    try:
+                        cfg.set(primary, value, notify=False)
+                    except Exception:
+                        pass
+                    cfg.save()
+                    return
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _is_toolbar_related(key: str) -> bool:
+    try:
+        from editor.toolbar_registry import get_toolbar_defs
+        for entry in get_toolbar_defs():
+            try:
+                keys = [entry.get("config_key")] + list(entry.get("mirror_keys", []) or [])
+                if key in keys:
+                    return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return False
+
+
 def on_global_config_changed(mw, key: str, value):
     from core.config.config import get_global_config
     cfg = get_global_config()
@@ -42,6 +85,10 @@ def on_global_config_changed(mw, key: str, value):
         f.setPointSizeF(base_size * value / 100.0)
         QApplication.setFont(f)
         return
+    try:
+        _mirror_toolbar_key(cfg, key, value)
+    except Exception:
+        pass
     try:
         mw._viewport.load_config(cfg)
     except Exception:
@@ -66,6 +113,13 @@ def on_global_config_changed(mw, key: str, value):
     mw._project.load_config(cfg)
     if hasattr(mw, '_terminal'):
         mw._terminal.load_config(cfg)
+    try:
+        if _is_toolbar_related(key):
+            from editor.toolbar_registry import get_toolbar_registry
+            reg = get_toolbar_registry(mw)
+            reg.sync_key(key, mw)
+    except Exception:
+        pass
 
 
 def open_project_settings(mw):
@@ -92,5 +146,3 @@ def show_about(mw):
     from editor.about import AboutDialog
     dlg = AboutDialog(mw)
     dlg.exec()
-
-
