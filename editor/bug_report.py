@@ -194,12 +194,15 @@ _last_body = ""
 _last_context = ""
 
 
-def show_bug_report_dialog(parent=None, exc_info: tuple = None):
+def show_bug_report_dialog(parent=None, exc_info: tuple = None, tb_text: str = ""):
     global _last_title, _last_body, _last_context
 
     if exc_info is not None:
         exc_type, exc_value, exc_tb = exc_info
-        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        if tb_text:
+            tb_str = tb_text
+        else:
+            tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         default_title = f"{exc_type.__name__}: {exc_value}"
         default_body = f"```\n{tb_str}\n```"
     else:
@@ -293,7 +296,16 @@ def install_hooks():
 def _auto_report(exc_type, exc_value, exc_tb):
     if exc_type is KeyboardInterrupt or exc_type is SystemExit:
         return
-    tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    try:
+        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    except Exception:
+        tb_str = ""
+    if exc_tb is None or not tb_str.strip() or tb_str.strip() == exc_type.__name__:
+        try:
+            stack = traceback.format_stack()
+            tb_str = (tb_str + "\n[no traceback captured; current stack:]\n" + "".join(stack[-15:])).strip() + "\n"
+        except Exception:
+            pass
     _log_crash_file(exc_type, exc_value, tb_str)
 
     app = QApplication.instance()
@@ -310,18 +322,52 @@ def _log_crash_file(exc_type, exc_value, tb_str):
     try:
         log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "crash_logs")
         os.makedirs(log_dir, exist_ok=True)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         fname = f"crash_{ts}_{os.getpid()}.txt"
         fpath = os.path.join(log_dir, fname)
+        try:
+            value_repr = repr(exc_value)
+        except Exception:
+            value_repr = ""
+        try:
+            cur = threading.current_thread()
+            thread_info = f"{cur.name} ({cur.ident})"
+        except Exception:
+            thread_info = ""
+        try:
+            all_threads = sorted([(t.name, t.ident, t.is_alive()) for t in threading.enumerate()], key=lambda x: str(x[0]))
+        except Exception:
+            all_threads = []
+        try:
+            from core.foundation.logger import Logger
+            recent = Logger.get_entries()[-50:]
+            log_tail = "\n".join(f"{e.formatted_time()} {e.level_str()} {e.message}" for e in recent)
+        except Exception:
+            log_tail = ""
+        if len(tb_str) > 65536:
+            tb_str = tb_str[-65536:]
         with open(fpath, "w", encoding="utf-8") as f:
             f.write(f"Zarin Engine Crash Log\n")
             f.write(f"{'=' * 60}\n")
             f.write(f"Time: {datetime.now().isoformat()}\n")
             f.write(f"Version: {APP_VERSION_DISPLAY}\n")
+            f.write(f"OS: {platform.system()} {platform.release()} ({platform.version()})\n")
+            f.write(f"Machine: {platform.machine()}\n")
+            f.write(f"Python: {sys.version.split()[0]}\n")
             f.write(f"GPU: {_get_gpu_name()}\n")
+            f.write(f"Thread: {thread_info}\n")
             f.write(f"{'=' * 60}\n\n")
-            f.write(f"{exc_type.__name__}: {exc_value}\n\n")
+            f.write(f"{exc_type.__name__}: {exc_value}\n")
+            f.write(f"repr: {value_repr}\n\n")
             f.write(tb_str)
+            if not tb_str.endswith("\n"):
+                f.write("\n")
+            if all_threads:
+                f.write(f"\nThreads:\n")
+                for name, ident, alive in all_threads:
+                    f.write(f"  {name} ident={ident} alive={alive}\n")
+            if log_tail:
+                f.write(f"\nRecent log:\n{log_tail}\n")
     except Exception:
         pass
 
@@ -344,4 +390,5 @@ def _show_auto_report_dialog(exc_type, exc_value, tb_str):
     if result == QMessageBox.StandardButton.Yes:
         show_bug_report_dialog(
             exc_info=(exc_type, exc_value, None),
+            tb_text=tb_str,
         )

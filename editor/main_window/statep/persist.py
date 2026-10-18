@@ -10,6 +10,7 @@ import base64
 import json
 import os
 import pickle
+import tempfile
 
 from core.foundation.logger import Logger
 
@@ -21,7 +22,7 @@ def save_state(mw, include_tabs=True):
     previous: dict = {}
     if os.path.exists(path):
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 stored = json.load(f)
             if isinstance(stored, dict):
                 previous = stored
@@ -59,9 +60,25 @@ def save_state(mw, include_tabs=True):
                     data[key] = previous[key]
             if "v" not in data and "v" in previous:
                 data["v"] = previous["v"]
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(data, f)
+        parent = os.path.dirname(path) or "."
+        os.makedirs(parent, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".session_", suffix=".tmp", dir=parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+                try:
+                    f.flush()
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+            raise
     except Exception as e:
         Logger.error(f"Failed to save window state: {e}")
     if mw._viewport.camera:

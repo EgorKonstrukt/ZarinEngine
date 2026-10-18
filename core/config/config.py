@@ -5,78 +5,103 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import copy
 import json
 import os
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Optional
 from core.foundation.logger import Logger
 class Config:
     def __init__(self, path: str, defaults: Optional[dict] = None):
         self._path = path
-        self._data: dict = dict(defaults or {})
-        self._defaults: dict = dict(defaults or {})
+        self._data: dict = copy.deepcopy(defaults or {})
+        self._defaults: dict = copy.deepcopy(defaults or {})
         self._restart_keys: set = set()
         self._listeners: list = []
+        self._lock: threading.RLock = threading.RLock()
         self._load()
     @property
     def path(self) -> str: return self._path
     def mark_restart(self, key: str):
-        self._restart_keys.add(key)
+        with self._lock:
+            self._restart_keys.add(key)
     def is_restart_key(self, key: str) -> bool:
-        return key in self._restart_keys
+        with self._lock:
+            return key in self._restart_keys
     def on_changed(self, callback):
-        self._listeners.append(callback)
+        with self._lock:
+            self._listeners.append(callback)
     def _notify(self, key: str, value: Any):
-        for cb in self._listeners:
+        with self._lock:
+            listeners = list(self._listeners)
+        for cb in listeners:
             try:
                 cb(key, value)
             except Exception:
                 pass
     def get(self, key: str, default: Any = None) -> Any:
-        keys = key.split(".")
-        d = self._data
-        for k in keys:
-            if isinstance(d, dict):
-                d = d.get(k)
-            else:
+        with self._lock:
+            keys = key.split(".")
+            d = self._data
+            for k in keys:
+                if isinstance(d, dict):
+                    d = d.get(k)
+                else:
+                    return default
+            if d is None:
                 return default
-        return d if d is not None else default
+            if isinstance(d, dict):
+                return copy.deepcopy(d)
+            if isinstance(d, list):
+                return list(d)
+            return d
     def set(self, key: str, value: Any, notify: bool = True):
-        keys = key.split(".")
-        d = self._data
-        for k in keys[:-1]:
-            if k not in d or not isinstance(d[k], dict):
-                d[k] = {}
-            d = d[k]
-        d[keys[-1]] = value
+        with self._lock:
+            keys = key.split(".")
+            d = self._data
+            for k in keys[:-1]:
+                if k not in d or not isinstance(d[k], dict):
+                    d[k] = {}
+                d = d[k]
+            d[keys[-1]] = copy.deepcopy(value)
         if notify:
             self._notify(key, value)
     def has(self, key: str) -> bool:
         return self.get(key, self) is not self
     def reset(self, key: Optional[str] = None):
         if key is None:
-            self._data = dict(self._defaults)
+            with self._lock:
+                self._data = copy.deepcopy(self._defaults)
             return
-        keys = key.split(".")
-        d = self._data
-        dd = self._defaults
-        for k in keys[:-1]:
-            if isinstance(d, dict):
-                d = d.get(k, {})
-            else:
-                return
-            if isinstance(dd, dict):
-                dd = dd.get(k, {})
-            else:
-                dd = {}
-        if keys[-1] in dd:
-            d[keys[-1]] = dd[keys[-1]]
-        elif keys[-1] in d:
-            del d[keys[-1]]
+        with self._lock:
+            keys = key.split(".")
+            d = self._data
+            dd = self._defaults
+            for k in keys[:-1]:
+                if isinstance(d, dict):
+                    nxt = d.get(k)
+                    if not isinstance(nxt, dict):
+                        return
+                    d = nxt
+                else:
+                    return
+                if isinstance(dd, dict):
+                    nxtd = dd.get(k, {})
+                    dd = nxtd if isinstance(nxtd, dict) else {}
+                else:
+                    dd = {}
+            if keys[-1] in dd:
+                d[keys[-1]] = copy.deepcopy(dd[keys[-1]])
+            elif keys[-1] in d:
+                del d[keys[-1]]
     def to_dict(self) -> dict:
-        return dict(self._data)
+        with self._lock:
+            return copy.deepcopy(self._data)
     def update(self, data: dict):
-        self._deep_update(self._data, data)
+        with self._lock:
+            self._deep_update(self._data, copy.deepcopy(data))
     def _deep_update(self, target: dict, source: dict):
         for k, v in source.items():
             if k in target and isinstance(target[k], dict) and isinstance(v, dict):
@@ -84,19 +109,42 @@ class Config:
             else:
                 target[k] = v
     def save(self):
+        with self._lock:
+            snapshot = copy.deepcopy(self._data)
+            path = self._path
         try:
-            Path(self._path).parent.mkdir(parents=True, exist_ok=True)
-            with open(self._path, "w") as f:
-                json.dump(self._data, f, indent=2)
+            parent = Path(path).parent
+            parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(prefix=".config_", suffix=".tmp", dir=str(parent))
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(snapshot, f, indent=2)
+                    try:
+                        f.flush()
+                        os.fsync(f.fileno())
+                    except Exception:
+                        pass
+                os.replace(tmp, path)
+            except Exception:
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except Exception:
+                    pass
+                raise
         except Exception as e:
-            Logger.error(f"Failed to save config to {self._path}: {e}")
+            Logger.error(f"Failed to save config to {path}: {e}")
     def _load(self):
         try:
             if os.path.exists(self._path):
-                with open(self._path) as f:
+                with open(self._path, encoding="utf-8") as f:
                     loaded = json.load(f)
-                    self._deep_update(self._data, loaded)
-                    self._cleanup_old_keys()
+                    if isinstance(loaded, dict):
+                        with self._lock:
+                            self._deep_update(self._data, loaded)
+                            self._cleanup_old_keys()
+                    else:
+                        Logger.warning(f"Config {self._path} root is not an object, using defaults")
         except Exception as e:
             Logger.warning(f"Failed to load config from {self._path}: {e}")
     _DEPRECATED_KEYS: set = {
