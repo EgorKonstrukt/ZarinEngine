@@ -243,7 +243,10 @@ class CreationMixin:
                     act = QAction("Instantiate Prefab", self)
                     act.triggered.connect(lambda: self._instantiate_prefab(path))
                     menu.addAction(act)
-                elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
+                elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".dae", ".blend", ".3ds", ".x", ".lwo", ".stp", ".step"):
+                    open_act = QAction("Open As Scene", self)
+                    open_act.triggered.connect(lambda p=path: self.file_double_clicked.emit(p))
+                    menu.addAction(open_act)
                     act = QAction("Add to Scene", self)
                     act.triggered.connect(lambda p=path: self.import_model_requested.emit(p))
                     menu.addAction(act)
@@ -333,7 +336,8 @@ class CreationMixin:
                 actions.append(("Open Scene", lambda: self._open_scene_file(path)))
             elif ext == ".zpep":
                 actions.append(("Instantiate Prefab", lambda: self._instantiate_prefab(path)))
-            elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
+            elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".dae", ".blend", ".3ds", ".x", ".lwo", ".stp", ".step"):
+                actions.append(("Open As Scene", lambda: self.file_double_clicked.emit(path)))
                 actions.append(("Add to Scene", lambda p=path: self.import_model_requested.emit(p)))
             elif ext == ".py":
                 actions.append(("Open Script", lambda: self.file_double_clicked.emit(path)))

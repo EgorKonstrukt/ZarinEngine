@@ -19,7 +19,7 @@ class Range:
 
 
 RESOURCE_TYPE_FILTERS = {
-    "mesh": "Models (*.obj *.fbx *.stl *.gltf *.glb *.usdz *.dae *.3ds *.blend)",
+    "mesh": "Models (*.obj *.fbx *.stl *.gltf *.glb *.usdz *.dae *.3ds *.blend *.stp *.step)",
     "material": "Materials (*.zpem *.mat)",
     "texture": "Images (*.png *.jpg *.jpeg *.bmp *.tga *.tif *.tiff *.webp *.hdr *.exr *.dds *.svg)",
     "audio": "Audio (*.wav *.mp3 *.ogg *.flac *.aiff *.m4a)",

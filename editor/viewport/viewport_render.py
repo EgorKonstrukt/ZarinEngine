@@ -43,7 +43,7 @@ class ViewportRenderMixin:
             self.update()
 
     def _report_block(self, gap_raw, now):
-        if gap_raw <= 0.012:
+        if gap_raw <= 0.025:
             return
         if now - getattr(self, "_last_block_log", 0.0) < 2.0:
             return
@@ -52,7 +52,7 @@ class ViewportRenderMixin:
             total, top = self._block_watch.heaviest(gap_raw)
         except Exception:
             return
-        if total <= 0 or not top:
+        if total <= 1 or not top:
             return
         parts = []
         for stack, pct in top:

@@ -34,7 +34,7 @@ from PySide6.QtCore import Qt, QBuffer, QIODevice, QSize, QRect, QRectF
 from core.assets.importer import load_mesh
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".tga", ".tif", ".tiff", ".webp", ".hdr")
-MESH_EXTS = (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb")
+MESH_EXTS = (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".stp", ".step")
 AUDIO_EXTS = (".wav", ".mp3", ".ogg", ".flac", ".aiff", ".m4a")
 FONT_EXTS = (".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2")
 MATERIAL_EXTS = (".mat", ".zpem")

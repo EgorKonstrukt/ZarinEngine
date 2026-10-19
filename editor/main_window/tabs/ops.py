@@ -127,6 +127,11 @@ class SceneTabOpsMixin:
                 info = self._tabs.get(nm)
                 if info is None or info.prefab_path or info.pinned:
                     continue
+                try:
+                    if getattr(info, "model_path", "") or "":
+                        continue
+                except Exception:
+                    pass
                 if not info.path:
                     indices.append(i)
             indices.sort(reverse=True)

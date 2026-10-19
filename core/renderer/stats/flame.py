@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as _np
 
 from PySide6.QtCore import QRect, Qt
-from PySide6.QtGui import QBrush, QColor, QPen
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 
 
 _frame_metrics_cache: dict = {"key": None, "val": None}
@@ -102,6 +102,11 @@ def _draw_bar_chart(painter, values, x: int, y: int, w: int, h: int,
     painter.drawRect(chart_rect)
     vals = [float(v) for v in (values or []) if v]
     n_bars = min(len(vals), chart_rect.width() - 4)
+    try:
+        prev_aa = painter.testRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+    except Exception:
+        prev_aa = None
     if n_bars > 1:
         stride = max(1, (n_bars + 119) // 120)
         n_draw = (n_bars + stride - 1) // stride
@@ -127,6 +132,11 @@ def _draw_bar_chart(painter, values, x: int, y: int, w: int, h: int,
         ref_y = chart_rect.bottom() - 2 - int((ref_ms / max_ft) * (h - 4))
         if ref_y > chart_rect.y() + 2:
             painter.drawLine(chart_rect.x() + 2, ref_y, chart_rect.right() - 2, ref_y)
+    try:
+        if prev_aa is not None:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, prev_aa)
+    except Exception:
+        pass
     if caption:
         painter.setPen(QColor(140, 140, 140))
         painter.drawText(QRect(chart_rect.x() + 4, chart_rect.y() + 1,

@@ -22,7 +22,7 @@ class SkinnedMeshRenderer(Component):
         return [
             InspectorField("", "Mesh", FieldType.HEADER),
             InspectorField("mesh_name", "Mesh", FieldType.STRING),
-            InspectorField("mesh_path", "Source", FieldType.RESOURCE_PATH, file_filter="Models (*.obj *.fbx *.glb *.gltf)"),
+            InspectorField("mesh_path", "Source", FieldType.RESOURCE_PATH, file_filter="Models (*.obj *.fbx *.glb *.gltf *.stp *.step)"),
             InspectorField("", "Skinned Mesh Renderer", FieldType.HEADER),
             InspectorField("materials", "Materials", FieldType.LIST, element_fields=[
                 ListElementField("path", "Material", FieldType.RESOURCE_PATH, file_filter="Material (*.mat)"),

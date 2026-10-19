@@ -146,7 +146,7 @@ class ViewportOverlayMixin:
             pass
         now_overlay = time.perf_counter()
         if self._stats_enabled:
-            if now_overlay - self._last_overlay_update >= 0.5:
+            if now_overlay - self._last_overlay_update >= 1.0:
                 self._last_overlay_update = now_overlay
                 self._overlay_widget.update()
         else:

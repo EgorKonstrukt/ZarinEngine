@@ -208,17 +208,17 @@ class _MeshLoaderLoading:
                         if os.path.exists(c):
                             return c.replace("\\", "/")
             for base in ["", "assets/", "assets/models/"]:
-                for ext in [".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz",
-                            ".OBJ", ".FBX", ".STL", ".GLTF", ".GLB", ".USDZ"]:
+                for ext in [".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz", ".stp", ".step",
+                            ".OBJ", ".FBX", ".STL", ".GLTF", ".GLB", ".USDZ", ".STP", ".STEP"]:
                     candidate = os.path.join(base, key + ext)
                     if os.path.exists(candidate):
                         return candidate
-                if file_path.endswith((".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz",
-                                       ".OBJ", ".FBX", ".STL", ".GLTF", ".GLB", ".USDZ")) and os.path.exists(file_path):
+                if file_path.endswith((".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz", ".stp", ".step",
+                                        ".OBJ", ".FBX", ".STL", ".GLTF", ".GLB", ".USDZ", ".STP", ".STEP")) and os.path.exists(file_path):
                     return file_path
         else:
-            for ext in [".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz",
-                        ".OBJ", ".FBX", ".STL", ".GLTF", ".GLB", ".USDZ"]:
+            for ext in [".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz", ".stp", ".step",
+                        ".OBJ", ".FBX", ".STL", ".GLTF", ".GLB", ".USDZ", ".STP", ".STEP"]:
                 for base in ["assets/models/", "assets/"]:
                     candidate = os.path.join(base, key + ext)
                     if os.path.exists(candidate):

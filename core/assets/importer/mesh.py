@@ -106,6 +106,31 @@ def _obj_weld(varr: np.ndarray, tarr: np.ndarray, narr: np.ndarray, fp: np.ndarr
     else:
         uvs_out = np.zeros((verts.shape[0] // 3) * 2, dtype=np.float32)
     return verts, norms_out, uvs_out, idx, has_uv, has_nrm
+def _load_step_cached(path: str, import_settings: Optional[dict], sig):
+    from core.assets.importer.stepp import load_step
+    eng = None
+    try:
+        from core.engine.eng import Engine
+        eng = Engine.instance()
+    except Exception:
+        pass
+    prof = eng._profiler if eng and hasattr(eng, "_profiler") else None
+    if prof:
+        prof.start("load_mesh")
+    try:
+        settings = import_settings if import_settings is not None else _read_mesh_import(path)
+        data = load_step(path, settings)
+    except Exception:
+        data = None
+    finally:
+        if prof:
+            prof.stop("load_mesh")
+    if data is not None and len(data.vertices) > 0:
+        with _mem_cache_lock:
+            _mem_cache_store(path, (sig, data))
+    return data
+
+
 def load_mesh(path: str, import_settings: Optional[dict] = None) -> Optional[MeshImportData]:
     _sig = _import_meta_signature(path)
     with _mem_cache_lock:
@@ -113,6 +138,11 @@ def load_mesh(path: str, import_settings: Optional[dict] = None) -> Optional[Mes
         if cached is not None and cached[0] == _sig:
             _mem_cache_touch(path)
             return cached[1]
+    try:
+        if os.path.splitext(path)[1].lower() in (".stp", ".step"):
+            return _load_step_cached(path, import_settings, _sig)
+    except (TypeError, ValueError, AttributeError):
+        pass
     eng = None
     try:
         from core.engine.eng import Engine

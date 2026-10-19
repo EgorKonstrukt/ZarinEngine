@@ -161,6 +161,7 @@ A full immediate-mode-like UI that lives as ECS components:
 ### Asset Import
 
 - **Assimp integration** via C FFI — imports `.obj`, `.fbx`, `.stl`, `.gltf`, `.glb`, `.usdz`, `.dae`, `.blend`, `.3ds`, `.x`, `.lwo`, and many more
+- **STEP integration** (`.stp`, `.step`) via built-in importer — analytic BREP (planes, cylinders, cones, spheres, tori, NURBS) and tessellated data
 - Mesh data (vertices, normals, UVs, tangents, colors, weights) imported via ctypes into numpy arrays
 - OBJ parser (fallback for material groups)
 - GIF flipbook importer (splits into individual frames)

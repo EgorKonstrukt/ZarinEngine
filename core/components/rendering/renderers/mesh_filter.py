@@ -20,7 +20,7 @@ class MeshFilter(Component):
         return [
             InspectorField("", "Mesh Filter", FieldType.HEADER),
             InspectorField("mesh_name", "Mesh", FieldType.STRING),
-            InspectorField("mesh_path", "Source", FieldType.RESOURCE_PATH, file_filter="Models (*.obj *.fbx)"),
+            InspectorField("mesh_path", "Source", FieldType.RESOURCE_PATH, file_filter="Models (*.obj *.fbx *.stp *.step)"),
         ]
 
     def __init__(self):

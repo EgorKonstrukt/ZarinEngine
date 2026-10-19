@@ -95,7 +95,7 @@ def update_resource_icon(icon_lbl: QLabel, path: str, size: int):
     icon_lbl.clear()
     icon_lbl.setText("")
 
-_COMMON_EXT = (".fbx", ".obj", ".stl", ".gltf", ".glb", ".usdz",
+_COMMON_EXT = (".fbx", ".obj", ".stl", ".gltf", ".glb", ".usdz", ".stp", ".step",
                ".png", ".jpg", ".jpeg", ".bmp", ".tga",
                ".wav", ".mp3", ".ogg", ".flac",
                ".py",

@@ -382,7 +382,7 @@ class ResourcePickerDialog(QDialog):
         ext = os.path.splitext(path)[1].lower()
         size_str = _format_size(os.path.getsize(path))
         type_map = {
-            ".obj": "3D Model", ".fbx": "3D Model", ".stl": "3D Model", ".usdz": "3D Model", ".gltf": "3D Model", ".glb": "3D Model",
+            ".obj": "3D Model", ".fbx": "3D Model", ".stl": "3D Model", ".usdz": "3D Model", ".gltf": "3D Model", ".glb": "3D Model", ".stp": "3D Model", ".step": "3D Model",
             ".wav": "Audio", ".mp3": "Audio", ".ogg": "Audio",
             ".py": "Python Script",
             ".png": "Image", ".jpg": "Image", ".jpeg": "Image",

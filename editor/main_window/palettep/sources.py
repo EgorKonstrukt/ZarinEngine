@@ -20,7 +20,7 @@ except ImportError:
 _ASSET_EXTS = {
     ".zpes", ".zterr", ".py", ".pyx", ".mat", ".zpem",
     ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".fbx", ".obj",
-    ".gltf", ".glb", ".wav", ".mp3", ".ogg", ".glsl", ".json",
+    ".gltf", ".glb", ".stp", ".step", ".wav", ".mp3", ".ogg", ".glsl", ".json",
     ".txt", ".md", ".shader", ".prefab",
 }
 _SKIP_DIRS = {
@@ -57,7 +57,7 @@ _ASSET_ICONS = {
     ".png": "fa5s.file-image", ".jpg": "fa5s.file-image", ".jpeg": "fa5s.file-image",
     ".tga": "fa5s.file-image", ".bmp": "fa5s.file-image",
     ".wav": "fa5s.file-audio", ".mp3": "fa5s.file-audio", ".ogg": "fa5s.file-audio",
-    ".fbx": "fa5s.cube", ".obj": "fa5s.cube", ".gltf": "fa5s.cube", ".glb": "fa5s.cube",
+    ".fbx": "fa5s.cube", ".obj": "fa5s.cube", ".gltf": "fa5s.cube", ".glb": "fa5s.cube", ".stp": "fa5s.cube", ".step": "fa5s.cube",
     ".prefab": "fa5s.cube",
     ".py": "fa5b.python", ".pyx": "fa5b.python",
     ".mat": "fa5s.brush", ".zpem": "fa5s.brush",

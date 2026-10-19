@@ -16,9 +16,9 @@ class SceneTabInfo:
     __slots__ = ("name", "path", "scene", "dirty", "camera_state",
                  "selected_entity_ids", "play_mode", "scene_snapshot",
                  "prefab_path", "origin_tab", "pending_snapshot",
-                 "restored_snapshot", "history", "pinned")
+                 "restored_snapshot", "history", "pinned", "model_path")
 
-    def __init__(self, name: str = "Scene", path: Optional[str] = None, scene: Optional[Scene] = None):
+    def __init__(self, name: str = "Scene", path: Optional[str] = None, scene: Optional[Scene] = None, model_path: str = ""):
         self.name = name
         self.path = path
         self.scene = scene
@@ -33,3 +33,4 @@ class SceneTabInfo:
         self.restored_snapshot: str = ""
         self.history = CommandHistory()
         self.pinned: bool = False
+        self.model_path: str = model_path or ""

@@ -195,7 +195,8 @@ def main():
     parser = argparse.ArgumentParser(description="Zarin Engine")
     parser.add_argument("file", nargs="?", default=None, help="Scene file to open")
     args, _ = parser.parse_known_args()
-    if args.file and args.file.endswith(".zpes"):
+    _openable_exts = (".zpes", ".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz", ".dae", ".blend", ".3ds", ".x", ".lwo", ".stp", ".step")
+    if args.file and args.file.lower().endswith(_openable_exts):
         from editor.ipc_server import send_file_to_running_instance
         if send_file_to_running_instance(args.file):
             print(f"[Zarin Engine] Sent '{args.file}' to running editor instance.")
@@ -278,6 +279,9 @@ def main():
 
     if args.file and os.path.exists(args.file):
         if args.file.endswith(".zpes"):
+            from editor.main_window.handlersp import open_scene_by_path
+            open_scene_by_path(window, args.file)
+        elif args.file.lower().endswith((".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz", ".dae", ".blend", ".3ds", ".x", ".lwo", ".stp", ".step")):
             from editor.main_window.handlersp import open_scene_by_path
             open_scene_by_path(window, args.file)
         elif args.file.endswith(".zterr"):

@@ -202,7 +202,7 @@ def _draw_vector_placeholder(path: str, size: int) -> Optional[QPixmap]:
     if ext in (".png", ".jpg", ".jpeg", ".bmp", ".tga", ".tif", ".tiff",
                ".webp", ".hdr"):
         return _draw_image_icon(size)
-    if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
+    if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".stp", ".step"):
         return _draw_mesh_icon(size)
     if ext in (".wav", ".mp3", ".ogg", ".flac", ".aiff", ".m4a"):
         return _draw_audio_icon(size)

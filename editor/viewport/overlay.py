@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+import time
 
 import numpy as np
 from PySide6.QtCore import QRect, Qt
@@ -56,27 +57,40 @@ def draw_stats_overlay(vp, painter):
         if prof is not None and getattr(prof, 'enabled', False):
             log_spike(vp._frame_times_ms[-1], prof)
 
-    m = compute_frame_metrics(vp._frame_times_ms)
-    live_fps = getattr(vp, '_fps', 0.0) or 0.0
-    if live_fps > 0:
-        m['fps'] = live_fps
-        m['avg_fps'] = live_fps
-    st = collect_render_stats(vp._engine, vp._renderer)
-    fw, fh = vp._get_physical_dims()
-    timings = {
-        'cpu_ms': paint_dt * 1000.0,
-        'render_ms': getattr(vp, '_last_render_ms', 0.0) or 0.0,
-        'gizmo_ms': getattr(vp, '_last_gizmo_ms', 0.0) or 0.0,
-        'overlay_ms': getattr(vp, '_last_overlay_ms', 0.0) or 0.0,
-        'paint_ms': getattr(vp, '_last_paint_full_ms', 0.0) or 0.0,
-        'res': f"{fw}x{fh}",
-        'dpr': float(getattr(vp, 'devicePixelRatio', lambda: 1.0)() or 1.0),
-    }
-    rows = build_stats_rows(m, st, timings)
-    try:
-        tick_ms = [float(d) * 1000.0 for d in (st.get('tick_dts') or [])]
-    except Exception:
-        tick_ms = None
+    now_s = time.perf_counter()
+    cached = getattr(vp, '_stats_rows_cache', None)
+    if cached is not None and now_s - cached[0] < 0.4 and cached[1] is not None:
+        m, rows, tick_ms = cached[1], cached[2], cached[3]
+        live_fps = getattr(vp, '_fps', 0.0) or 0.0
+        if live_fps > 0:
+            m['fps'] = live_fps
+            m['avg_fps'] = live_fps
+    else:
+        m = compute_frame_metrics(vp._frame_times_ms)
+        live_fps = getattr(vp, '_fps', 0.0) or 0.0
+        if live_fps > 0:
+            m['fps'] = live_fps
+            m['avg_fps'] = live_fps
+        st = collect_render_stats(vp._engine, vp._renderer)
+        fw, fh = vp._get_physical_dims()
+        timings = {
+            'cpu_ms': paint_dt * 1000.0,
+            'render_ms': getattr(vp, '_last_render_ms', 0.0) or 0.0,
+            'gizmo_ms': getattr(vp, '_last_gizmo_ms', 0.0) or 0.0,
+            'overlay_ms': getattr(vp, '_last_overlay_ms', 0.0) or 0.0,
+            'paint_ms': getattr(vp, '_last_paint_full_ms', 0.0) or 0.0,
+            'res': f"{fw}x{fh}",
+            'dpr': float(getattr(vp, 'devicePixelRatio', lambda: 1.0)() or 1.0),
+        }
+        rows = build_stats_rows(m, st, timings)
+        try:
+            tick_ms = [float(d) * 1000.0 for d in (st.get('tick_dts') or [])]
+        except Exception:
+            tick_ms = None
+        try:
+            vp._stats_rows_cache = (now_s, m, rows, tick_ms)
+        except Exception:
+            pass
     draw_stats_panel(painter, rows, vp._frame_times_ms, _SPIKE_LOG, tick_ms)
     painter.restore()
 

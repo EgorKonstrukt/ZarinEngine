@@ -50,7 +50,7 @@ def _type_name(path: str, is_dir: bool) -> str:
     ext = os.path.splitext(path)[1].lower()
     if ext in (".png", ".jpg", ".jpeg", ".bmp", ".tga", ".tif", ".tiff", ".webp", ".hdr"):
         return "Image"
-    if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
+    if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".stp", ".step"):
         return "3D Model"
     if ext in (".wav", ".mp3", ".ogg", ".flac", ".aiff", ".m4a"):
         return "Audio"

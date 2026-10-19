@@ -39,8 +39,8 @@ class OpenersMixin:
                 self._open_scene_file(path)
             elif ext == ".zpep":
                 self.file_double_clicked.emit(path)
-            elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
-                self.import_model_requested.emit(path)
+            elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".dae", ".blend", ".3ds", ".x", ".lwo", ".stp", ".step"):
+                self.file_double_clicked.emit(path)
             elif ext in (".animclip", ".animcontroller"):
                 self.file_double_clicked.emit(path)
             else:
@@ -67,8 +67,8 @@ class OpenersMixin:
             self._open_scene_file(path)
         elif ext == ".zpep":
             self.file_double_clicked.emit(path)
-        elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
-            self.import_model_requested.emit(path)
+        elif ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".dae", ".blend", ".3ds", ".x", ".lwo", ".stp", ".step"):
+            self.file_double_clicked.emit(path)
         elif ext in (".animclip", ".animcontroller"):
             self.file_double_clicked.emit(path)
         elif ext == ".zterr":

@@ -29,7 +29,7 @@ class InspectorSectionsMixin:
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         self._add_asset_widget(sep)
-        if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
+        if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".stp", ".step"):
             self._build_mesh_import_settings()
         elif ext in (".png", ".jpg", ".jpeg", ".svg"):
             self._build_texture_import_settings()
@@ -386,7 +386,7 @@ class InspectorSectionsMixin:
                 json.dump(settings, f, indent=2)
         except Exception: pass
         ext = os.path.splitext(self._asset_path)[1].lower()
-        if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
+        if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".stp", ".step"):
             if getattr(self, "_mesh_preview", None) is not None:
                 from PySide6.QtCore import QTimer
                 QTimer.singleShot(0, self._reload_mesh_preview)

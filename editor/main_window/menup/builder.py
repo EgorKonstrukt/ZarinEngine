@@ -15,7 +15,9 @@ from editor.main_window.handlersp import (
     toggle_play_stop, launch_external_player,
     undo, redo,
     open_global_settings, open_project_settings,
-    show_build_dialog, show_about,
+    show_about, show_build_dialog,
+    open_model_via_dialog, convert_selected_to_editable,
+    export_selected_to_obj,
 )
 from editor.main_window.project import open_project_manager, open_project_browse
 from editor.main_window.statep import reset_layout
@@ -40,6 +42,9 @@ def setup_menu(mw):
     open_act.setShortcut(QKeySequence("Ctrl+O"))
     open_act.triggered.connect(lambda: open_scene(mw))
     file_menu.addAction(open_act)
+    open_model_act = QAction(_qta("fa5s.cube"), "Open Model As Scene...", mw)
+    open_model_act.triggered.connect(lambda: open_model_via_dialog(mw))
+    file_menu.addAction(open_model_act)
     save_act = QAction(_qta("fa5s.save"), "Save Scene", mw)
     save_act.setShortcut(QKeySequence("Ctrl+S"))
     save_act.triggered.connect(lambda: save_scene(mw))
@@ -154,6 +159,12 @@ def setup_menu(mw):
     mesh_editor_act.setShortcut(QKeySequence("Ctrl+Shift+M"))
     mesh_editor_act.triggered.connect(lambda: _show_mesh_editor(mw))
     tools_menu.addAction(mesh_editor_act)
+    convert_act = QAction(_qta("fa5s.cube"), "Convert Model To Editable Mesh", mw)
+    convert_act.triggered.connect(lambda: convert_selected_to_editable(mw))
+    tools_menu.addAction(convert_act)
+    export_obj_act = QAction(_qta("fa5s.file-export"), "Export Editable Mesh To OBJ...", mw)
+    export_obj_act.triggered.connect(lambda: export_selected_to_obj(mw))
+    tools_menu.addAction(export_obj_act)
     terrain_editor_act = QAction(_qta("fa5s.mountain"), "Terrain Editor", mw)
     terrain_editor_act.setShortcut(QKeySequence("Ctrl+Shift+T"))
     terrain_editor_act.triggered.connect(lambda: _show_terrain_editor(mw))

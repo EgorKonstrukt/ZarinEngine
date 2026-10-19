@@ -120,6 +120,14 @@ def _open_asset(mw, path: str) -> None:
             from editor.main_window.handlersp import open_scene_in_tab
             open_scene_in_tab(mw, path)
             return
+        try:
+            from core.assets.modelp import is_model_file
+            if is_model_file(path):
+                from editor.main_window.handlersp import on_open_model_as_scene
+                on_open_model_as_scene(mw, path)
+                return
+        except Exception:
+            pass
         if ext in (".py", ".pyx", ".txt", ".md", ".json", ".glsl", ".shader"):
             try:
                 mw._script_editor._script_widget.open_script(path)

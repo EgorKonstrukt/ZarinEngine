@@ -190,15 +190,7 @@ class FlatMixin:
         return res
     def _finish_flat_maps(self, renderable_shadow: list, n: int):
         try:
-            ids = self._flat_mesh_ids[:n]; uniq, first = np.unique(ids, return_index=True); mesh_map: dict = {}
-            for u, fi in zip(uniq.tolist(), first.tolist()):
-                try:
-                    mesh_map[int(u)] = renderable_shadow[int(fi)][0]
-                except Exception:
-                    pass
-            self._flat_mesh_map = mesh_map
-        except Exception:
-            mesh_map = {}; ids = self._flat_mesh_ids
+            mesh_map: dict = {}; ids = self._flat_mesh_ids
             for i in range(n):
                 mid = int(ids[i])
                 if mid not in mesh_map:
@@ -206,6 +198,9 @@ class FlatMixin:
                         mesh_map[mid] = renderable_shadow[i][0]
                     except Exception:
                         pass
+            self._flat_mesh_map = mesh_map
+        except Exception:
+            mesh_map = {}
             self._flat_mesh_map = mesh_map
     def _prepare_flat_numpy(self, renderable_shadow: list, n: int):
         centers = self._flat_centers; radii = self._flat_radii; mats = self._flat_mats

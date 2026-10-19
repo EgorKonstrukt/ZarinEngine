@@ -104,6 +104,12 @@ class SceneTabSyncMixin:
         try:
             base = info.path if info.path else "Unsaved scene (no file yet)"
             parts = [base]
+            try:
+                mp = getattr(info, "model_path", "") or ""
+                if mp:
+                    parts.append("Model: " + mp)
+            except Exception:
+                pass
             if info.pinned:
                 parts.append("Pinned")
             idx, total = self._dup_position(info.name)

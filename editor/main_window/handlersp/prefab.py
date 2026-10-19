@@ -26,7 +26,19 @@ def on_project_file_double_clicked(mw, path: str):
     ext = os.path.splitext(path)[1].lower()
     if ext == ".zpep":
         instantiate_prefab(mw, path)
-    elif ext == ".zterr":
+        return
+    try:
+        from core.assets.modelp import is_model_file
+        if is_model_file(path):
+            try:
+                from editor.main_window.handlersp.model_scene import on_open_model_as_scene
+                on_open_model_as_scene(mw, path)
+            except Exception:
+                pass
+            return
+    except Exception:
+        pass
+    if ext == ".zterr":
         if hasattr(mw, '_terrain_editor') and mw._terrain_editor is not None:
             mw._terrain_editor.load_graph(path)
             mw._terrain_editor.show()

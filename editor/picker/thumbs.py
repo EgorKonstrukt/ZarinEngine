@@ -22,7 +22,7 @@ _placeholder_icon: Optional[QIcon] = None
 _MAX_PROCESS_INFLIGHT = 12
 _PROCESS_EXTS = (
     ".png", ".jpg", ".jpeg", ".bmp", ".tga", ".tif", ".tiff", ".webp", ".hdr",
-    ".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb",
+    ".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".stp", ".step",
     ".wav", ".mp3", ".ogg", ".flac", ".aiff", ".m4a",
     ".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2",
     ".mat", ".zpem",
@@ -288,7 +288,7 @@ def _get_thumbnail_raw(path: str, size: int, enqueue_mesh: bool = True) -> QPixm
                 return cached
             _get_thumb_service().enqueue(path, size)
         return _draw_image_icon(size)
-    if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb"):
+    if ext in (".obj", ".fbx", ".stl", ".usdz", ".gltf", ".glb", ".stp", ".step"):
         if _is_process_thumb(path):
             cache_key = f"thumb:{path}:{size}"
             _thumbnail_mutex.lock()

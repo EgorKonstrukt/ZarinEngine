@@ -174,22 +174,21 @@ def _try_fast_colliders(scene):
             return None
         out.append((shape, buf, int(n)))
         shapes.append([shape, own, int(n), rows, tids])
-    if shapes:
-        try:
-            if len(_FAST_COL_CACHE) >= _FAST_COL_CACHE_MAX:
-                _FAST_COL_CACHE.clear()
-            idx = {}
-            for _si, _sh in enumerate(shapes):
-                _tids = _sh[4]
-                for _ri, _tid in enumerate(_tids):
-                    _lst = idx.get(_tid)
-                    if _lst is None:
-                        idx[_tid] = [(_si, _ri)]
-                    else:
-                        _lst.append((_si, _ri))
-            _FAST_COL_CACHE[sid] = (scene, rv, shapes, idx, list(out))
-        except Exception:
-            pass
+    try:
+        if len(_FAST_COL_CACHE) >= _FAST_COL_CACHE_MAX:
+            _FAST_COL_CACHE.clear()
+        idx = {}
+        for _si, _sh in enumerate(shapes):
+            _tids = _sh[4]
+            for _ri, _tid in enumerate(_tids):
+                _lst = idx.get(_tid)
+                if _lst is None:
+                    idx[_tid] = [(_si, _ri)]
+                else:
+                    _lst.append((_si, _ri))
+        _FAST_COL_CACHE[sid] = (scene, rv, shapes, idx, list(out))
+    except Exception:
+        pass
     return out
 def render_component_gizmos(vp, vp_mat: Mat4, fw: int = None, fh: int = None):
     scene = vp._engine.scene if vp._engine else None

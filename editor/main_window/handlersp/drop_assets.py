@@ -42,7 +42,7 @@ def on_entity_dropped(mw, path_or_type: str, world_pos, entity_under_cursor=None
 
     image_exts = {".png", ".jpg", ".jpeg", ".bmp", ".tga", ".tiff", ".webp"}
     audio_exts = {".wav", ".mp3", ".ogg", ".flac"}
-    model_exts = {".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz"}
+    model_exts = {".obj", ".fbx", ".stl", ".gltf", ".glb", ".usdz", ".stp", ".step"}
 
     if ext in image_exts:
         _drop_image_asset(mw, path_or_type, world_pos, entity_under_cursor)

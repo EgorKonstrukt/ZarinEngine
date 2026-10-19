@@ -45,12 +45,33 @@ def new_scene(mw):
 
 
 def open_scene(mw):
-    path, _ = QFileDialog.getOpenFileName(mw, "Open Scene", "scenes/", "Scenes (*.zpes)")
+    try:
+        from core.assets.modelp import MODEL_FILE_FILTER
+        filt = "Scenes (*.zpes);;" + MODEL_FILE_FILTER + ";;All Files (*)"
+    except Exception:
+        filt = "Scenes (*.zpes)"
+    path, _ = QFileDialog.getOpenFileName(mw, "Open Scene", "scenes/", filt)
     if path:
+        try:
+            from core.assets.modelp import is_model_file
+            if is_model_file(path):
+                from editor.main_window.handlersp.model_scene import on_open_model_as_scene
+                on_open_model_as_scene(mw, path)
+                return
+        except Exception:
+            pass
         _do_open_scene(mw, path)
 
 
 def open_scene_in_tab(mw, path: str):
+    try:
+        from core.assets.modelp import is_model_file
+        if is_model_file(path):
+            from editor.main_window.handlersp.model_scene import on_open_model_as_scene
+            on_open_model_as_scene(mw, path)
+            return
+    except Exception:
+        pass
     mgr = getattr(mw, '_scene_tab_manager', None)
     if mgr is not None and path:
         want = os.path.normcase(os.path.normpath(path))
@@ -191,7 +212,27 @@ def save_scene(mw):
 def save_scene_as(mw):
     if not mw._engine.scene:
         return
-    path, _ = QFileDialog.getSaveFileName(mw, "Save Scene", "scenes/", "Scenes (*.zpes)")
+    start_dir = "scenes/"
+    start_name = ""
+    try:
+        mgr = getattr(mw, "_scene_tab_manager", None)
+        info = mgr.get_tab_info(mgr.active_tab) if mgr is not None and getattr(mgr, "active_tab", "") else None
+        mp = (getattr(info, "model_path", "") or "") if info is not None else ""
+        if mp:
+            try:
+                from core.assets.modelp import default_scene_path_for_model
+                cand = default_scene_path_for_model(mp)
+                if cand:
+                    start_dir = os.path.dirname(cand)
+                    start_name = cand
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if start_name:
+        path, _ = QFileDialog.getSaveFileName(mw, "Save Scene", start_name, "Scenes (*.zpes)")
+    else:
+        path, _ = QFileDialog.getSaveFileName(mw, "Save Scene", start_dir, "Scenes (*.zpes)")
     if path:
         if not path.endswith(".zpes"):
             path += ".zpes"
@@ -207,6 +248,14 @@ def save_scene_as(mw):
 def open_scene_by_path(mw, path: str):
     if not os.path.exists(path):
         return
+    try:
+        from core.assets.modelp import is_model_file
+        if is_model_file(path):
+            from editor.main_window.handlersp.model_scene import on_open_model_as_scene
+            on_open_model_as_scene(mw, path)
+            return
+    except Exception:
+        pass
     _do_open_scene(mw, path)
 
 
