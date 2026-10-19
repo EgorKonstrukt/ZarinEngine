@@ -8,7 +8,6 @@ from core.components.physics.sphere_collider import SphereCollider
 from core.components.physics.box_collider import BoxCollider
 from core.components.physics.capsule_collider import CapsuleCollider
 from core.components.physics.rigidbody import Rigidbody
-from core.maths.math3d import Vec3
 class InteractorsMixin:
     def _collect_interactors(self, snap, scene):
         try:
@@ -35,7 +34,7 @@ class InteractorsMixin:
             if not tr:
                 continue
             rb = ent.get_component(Rigidbody)
-            vel = rb.velocity if rb else Vec3.zero()
+            vel = rb.velocity if rb else None
             center = tr.position + c.scaled_center
             interactors.append((ent, center, c.scaled_radius, vel, c.scaled_radius))
         for ent in scene.get_entities_with_component(BoxCollider):
@@ -46,7 +45,7 @@ class InteractorsMixin:
             if not tr:
                 continue
             rb = ent.get_component(Rigidbody)
-            vel = rb.velocity if rb else Vec3.zero()
+            vel = rb.velocity if rb else None
             center = tr.position + c.scaled_center
             hsize = c.scaled_size * 0.5
             radius = max(hsize.x, hsize.z)
@@ -61,7 +60,7 @@ class InteractorsMixin:
             if not tr:
                 continue
             rb = ent.get_component(Rigidbody)
-            vel = rb.velocity if rb else Vec3.zero()
+            vel = rb.velocity if rb else None
             center = tr.position + c.scaled_center
             interactors.append((ent, center, c.scaled_radius, vel, c.scaled_radius))
         capped = sorted(interactors, key=lambda it: abs(it[1].y), reverse=False)[:64]

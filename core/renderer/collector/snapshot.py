@@ -38,8 +38,16 @@ class SnapshotCoreMixin:
             self._refresh_snapshot_world_matrices(scene)
             self._collect_interactors(self._snap_cache, scene)
             self._select_sky_component(scene, self._snap_cache)
+            try:
+                self._snap_cache.transform_version = scene._transform_version
+            except Exception:
+                pass
             return self._snap_cache
         snap = _RenderSnapshot()
+        try:
+            snap.transform_version = scene._transform_version
+        except Exception:
+            pass
         if not self._import_meta_cache:
             self._preload_import_meta(scene)
         for ent in scene.get_entities_with_component(Light):
@@ -94,7 +102,48 @@ class SnapshotCoreMixin:
                         break
         get_mesh = self.get_or_create_mesh
         sync_meta = self._sync_import_meta
-        find_fx = self._find_object_effect
+        try:
+            from core.components.rendering.effects.object_effect import ObjectEffect as _OE
+            from core.ecs.registry import ComponentRegistry as _CR
+            _fx_map: dict[str, list] = {}
+            try:
+                _idx = scene._component_indices
+                _eids: set[str] = set()
+                _on = _OE.__name__
+                _s0 = _idx.get(_on)
+                if _s0:
+                    _eids.update(_s0)
+                for _rn, _rc in _CR._registry.items():
+                    try:
+                        if _rn != _on and issubclass(_rc, _OE):
+                            _ss = _idx.get(_rn)
+                            if _ss:
+                                _eids.update(_ss)
+                    except Exception:
+                        continue
+                _ents = scene._entities
+                for _eid in _eids:
+                    _e = _ents.get(_eid)
+                    if _e is None or not _e._active:
+                        continue
+                    _lst: list = []
+                    for _ct, _cl in _e._type_map.items():
+                        try:
+                            if issubclass(_ct, _OE):
+                                for _c in _cl:
+                                    if _c.enabled:
+                                        _lst.append(_c)
+                        except Exception:
+                            continue
+                    if _lst:
+                        _fx_map[_eid] = _lst
+            except Exception:
+                _fx_map = {}
+            _fx_get = _fx_map.get
+            def find_fx(ent):
+                return _fx_get(ent._id, [])
+        except Exception:
+            find_fx = self._find_object_effect
         renderable = snap.renderable
         cull_entries = snap.cull_entries
         cull_offsets = snap.cull_offsets
@@ -154,6 +203,11 @@ class SnapshotCoreMixin:
                 wm = tr.world_matrix
                 sub_ranges = mesh.sub_mesh_ranges
                 fx_list = find_fx(ent)
+                try:
+                    if fx_list:
+                        snap.has_fx = True
+                except Exception:
+                    pass
                 block_start = len(renderable)
                 if sub_ranges:
                     for sub_idx in range(len(sub_ranges)):
@@ -360,6 +414,10 @@ class SnapshotCoreMixin:
             pass
         try:
             self._snap_refresh_tv = scene._transform_version
+        except Exception:
+            pass
+        try:
+            snap.transform_version = scene._transform_version
         except Exception:
             pass
         return snap

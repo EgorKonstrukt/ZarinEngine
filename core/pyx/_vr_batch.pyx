@@ -1,4 +1,6 @@
 # distutils: language = c
+# distutils: extra_compile_args = -O3 -ffast-math -march=native -fopenmp
+# distutils: extra_link_args = -fopenmp
 # cython: boundscheck = False
 # cython: wraparound = False
 # cython: cdivision = True

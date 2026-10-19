@@ -4,10 +4,90 @@
 import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt
+from libc.stdlib cimport malloc, free
 from cython.parallel import prange
 
 DTYPE = np.float64
 ctypedef np.float64_t DTYPE_t
+
+cdef int _PAR_MIN = 2048
+
+
+cdef bint _gather_mat_ptrs(list matrices, double** ptrs, int n):
+    cdef int i
+    cdef object wm
+    cdef DTYPE_t[:, :] d
+    for i in range(n):
+        wm = matrices[i]
+        d = wm._d
+        if d.strides[0] != 32 or d.strides[1] != 8:
+            return False
+        ptrs[i] = &d[0, 0]
+    return True
+
+
+cdef void _pack_flat_nogil(double** ptrs, np.float32_t* op, int n) noexcept nogil:
+    cdef int i
+    cdef double* p
+    cdef np.float32_t* o
+    for i in prange(n, schedule='static', nogil=True):
+        p = ptrs[i]
+        o = op + i * 16
+        o[0] = <np.float32_t>p[0]
+        o[1] = <np.float32_t>p[1]
+        o[2] = <np.float32_t>p[2]
+        o[3] = <np.float32_t>p[3]
+        o[4] = <np.float32_t>p[4]
+        o[5] = <np.float32_t>p[5]
+        o[6] = <np.float32_t>p[6]
+        o[7] = <np.float32_t>p[7]
+        o[8] = <np.float32_t>p[8]
+        o[9] = <np.float32_t>p[9]
+        o[10] = <np.float32_t>p[10]
+        o[11] = <np.float32_t>p[11]
+        o[12] = <np.float32_t>p[12]
+        o[13] = <np.float32_t>p[13]
+        o[14] = <np.float32_t>p[14]
+        o[15] = <np.float32_t>p[15]
+
+
+cdef void _pack_flat_origin_nogil(double** ptrs, np.float32_t* op, int n,
+                                  double ox, double oy, double oz) noexcept nogil:
+    cdef int i
+    cdef double* p
+    cdef np.float32_t* o
+    for i in prange(n, schedule='static', nogil=True):
+        p = ptrs[i]
+        o = op + i * 16
+        o[0] = <np.float32_t>p[0]
+        o[1] = <np.float32_t>p[1]
+        o[2] = <np.float32_t>p[2]
+        o[3] = <np.float32_t>p[3]
+        o[4] = <np.float32_t>p[4]
+        o[5] = <np.float32_t>p[5]
+        o[6] = <np.float32_t>p[6]
+        o[7] = <np.float32_t>p[7]
+        o[8] = <np.float32_t>p[8]
+        o[9] = <np.float32_t>p[9]
+        o[10] = <np.float32_t>p[10]
+        o[11] = <np.float32_t>p[11]
+        o[12] = <np.float32_t>(p[12] - ox)
+        o[13] = <np.float32_t>(p[13] - oy)
+        o[14] = <np.float32_t>(p[14] - oz)
+        o[15] = <np.float32_t>p[15]
+
+
+cdef void _pack_spheres_nogil(double** ptrs, double* rp, np.float32_t* op, int n) noexcept nogil:
+    cdef int i
+    cdef double* p
+    cdef np.float32_t* o
+    for i in prange(n, schedule='static', nogil=True):
+        p = ptrs[i]
+        o = op + i * 4
+        o[0] = <np.float32_t>p[12]
+        o[1] = <np.float32_t>p[13]
+        o[2] = <np.float32_t>p[14]
+        o[3] = <np.float32_t>rp[i]
 
 
 def compute_bounding_spheres(list matrices, np.ndarray[DTYPE_t, ndim=1] bounding_radii):
@@ -23,6 +103,27 @@ def compute_bounding_spheres(list matrices, np.ndarray[DTYPE_t, ndim=1] bounding
     cdef int i
     cdef object wm
     cdef DTYPE_t[:, :] d
+    cdef DTYPE_t[::1] rv
+    cdef double** ptrs
+    cdef bint contiguous
+    cdef bint ok
+
+    if n >= _PAR_MIN:
+        contiguous = False
+        try:
+            rv = bounding_radii
+            contiguous = rv.strides[0] == 8
+        except Exception:
+            contiguous = False
+        if contiguous:
+            ptrs = <double**>malloc(n * sizeof(double*))
+            if ptrs != NULL:
+                ok = _gather_mat_ptrs(matrices, ptrs, n)
+                if ok:
+                    _pack_spheres_nogil(ptrs, &rv[0], &spheres[0, 0], n)
+                    free(ptrs)
+                    return spheres
+                free(ptrs)
 
     for i in range(n):
         wm = matrices[i]
@@ -105,6 +206,17 @@ def batch_mat4_to_f32_flat(list matrices):
     cdef int i, r, c, idx
     cdef object wm
     cdef DTYPE_t[:, :] d
+    cdef double** ptrs
+    cdef bint ok
+    if n >= _PAR_MIN:
+        ptrs = <double**>malloc(n * sizeof(double*))
+        if ptrs != NULL:
+            ok = _gather_mat_ptrs(matrices, ptrs, n)
+            if ok:
+                _pack_flat_nogil(ptrs, &out[0, 0], n)
+                free(ptrs)
+                return out
+            free(ptrs)
     for i in range(n):
         wm = matrices[i]
         d = wm._d
@@ -124,6 +236,17 @@ def batch_mat4_to_f32_flat_origin(list matrices, double ox, double oy, double oz
     cdef int i, r, c, idx
     cdef object wm
     cdef DTYPE_t[:, :] d
+    cdef double** ptrs
+    cdef bint ok
+    if n >= _PAR_MIN:
+        ptrs = <double**>malloc(n * sizeof(double*))
+        if ptrs != NULL:
+            ok = _gather_mat_ptrs(matrices, ptrs, n)
+            if ok:
+                _pack_flat_origin_nogil(ptrs, &out[0, 0], n, ox, oy, oz)
+                free(ptrs)
+                return out
+            free(ptrs)
     for i in range(n):
         wm = matrices[i]
         d = wm._d

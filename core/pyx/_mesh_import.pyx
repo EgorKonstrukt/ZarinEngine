@@ -1,4 +1,6 @@
 # cython: boundscheck=False, wraparound=False, cdivision=True, nonecheck=False
+# distutils: extra_compile_args = -O3 -ffast-math -march=native -fopenmp
+# distutils: extra_link_args = -fopenmp
 # cython: language_level=3
 from libc.stdint cimport uint32_t, uintptr_t
 from libc.string cimport memcpy

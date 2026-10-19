@@ -17,6 +17,11 @@ try:
 
     def cpu_frustum_cull(centers: np.ndarray, radii: np.ndarray,
                          view_proj: np.ndarray) -> np.ndarray:
+        try:
+            from core._culling import cull_fast
+            return cull_fast(centers, radii, view_proj)
+        except Exception:
+            pass
         c = np.ascontiguousarray(centers, dtype=np.float64)
         r = np.ascontiguousarray(radii, dtype=np.float64)
         vp = np.ascontiguousarray(view_proj, dtype=np.float64)

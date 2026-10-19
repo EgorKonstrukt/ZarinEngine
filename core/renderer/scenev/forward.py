@@ -16,7 +16,7 @@ from core.renderer.origin import origin_for, relativize_model_f32
 
 
 class ScenevForwardMixin:
-    def _scenev_render_forward_phases(self, opaque_entries, transparent_entries, view_f32, proj_f32, cam_pos, lights, dynamic_cubemaps, sky_component, selected_entities, outline_queue, rw, rh):
+    def _scenev_render_forward_phases(self, opaque_entries, transparent_entries, view_f32, proj_f32, cam_pos, lights, dynamic_cubemaps, sky_component, selected_entities, outline_queue, rw, rh, snap=None):
         try:
             self._materials._transmission_bg = None
         except Exception:
@@ -31,6 +31,36 @@ class ScenevForwardMixin:
             sel = selected_entities or set()
         except Exception:
             sel = set()
+        try:
+            _tv = snap.transform_version if snap is not None else None
+        except Exception:
+            _tv = None
+        try:
+            _org = origin_for(cam_pos)
+            _orgkey = None if _org is None else (float(_org[0]), float(_org[1]), float(_org[2]))
+        except Exception:
+            _orgkey = None
+        _seen = getattr(self, "_fwd_seen_frames", None)
+        if not isinstance(_seen, set):
+            _seen = set()
+            self._fwd_seen_frames = _seen
+        if _tv != getattr(self, "_fwd_seen_tv", None):
+            _seen.clear()
+            self._fwd_seen_tv = _tv
+        _fkey = (_tv, _orgkey)
+        _static_frame = bool(_tv is not None and _fkey in _seen)
+        _seen.add(_fkey)
+        if len(_seen) > 32:
+            _seen.clear()
+            _seen.add(_fkey)
+        try:
+            _has_fx = bool(snap.has_fx) if snap is not None else True
+        except Exception:
+            _has_fx = True
+        try:
+            self._fwd_stats_groups = []
+        except Exception:
+            pass
         phases = ((False, opaque_entries), (True, transparent_entries))
         for is_trans, phase_entries in phases:
             if not phase_entries:
@@ -90,7 +120,10 @@ class ScenevForwardMixin:
                             pass
                 except Exception:
                     pass
-            fx_list = [e for e in phase_entries if len(e) > 6 and e[6]]
+            if _has_fx:
+                fx_list = [e for e in phase_entries if len(e) > 6 and e[6]]
+            else:
+                fx_list = []
             if fx_list:
                 try:
                     self._render_object_effects(fx_list, view_f32, proj_f32, cam_pos, lights, selected_entities, outline_queue)
@@ -105,11 +138,22 @@ class ScenevForwardMixin:
                 except Exception:
                     groups = {}
                 try:
+                    self._fwd_stats_groups.append(groups)
+                except Exception:
+                    pass
+                try:
                     all_vis = self._culled_visible == self._culled_total
                 except Exception:
                     all_vis = False
                 try:
-                    self._batcher.render_groups(groups, view_f32, proj_f32, cam_pos, lights, False, self._set_scene_uniforms, self._materials.apply_material, self._normal_cache, sel, outline_queue, gpu_storage=self._gpu_storage, dynamic_cubemaps=dynamic_cubemaps, sky_ibl=sky_ibl, skip_cull=bool(all_vis), sort_groups=not is_trans, transparent_pass=bool(is_trans), transmission_hook=refresh_hook)
+                    if _static_frame and all_vis and not is_trans and groups:
+                        _gskip = set(groups.keys())
+                    else:
+                        _gskip = None
+                except Exception:
+                    _gskip = None
+                try:
+                    self._batcher.render_groups(groups, view_f32, proj_f32, cam_pos, lights, False, self._set_scene_uniforms, self._materials.apply_material, self._normal_cache, sel, outline_queue, gpu_storage=self._gpu_storage, dynamic_cubemaps=dynamic_cubemaps, sky_ibl=sky_ibl, skip_cull=bool(all_vis), sort_groups=not is_trans, transparent_pass=bool(is_trans), transmission_hook=refresh_hook, group_skip=_gskip)
                 except Exception:
                     pass
                 try:

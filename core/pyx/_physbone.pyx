@@ -4,6 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 
+# distutils: extra_compile_args = -O3 -ffast-math -march=native -fopenmp
+# distutils: extra_link_args = -fopenmp
 import numpy as np
 cimport numpy as cnp
 from libc.math cimport sqrt, acos, sin, cos, exp, fabs, atan2

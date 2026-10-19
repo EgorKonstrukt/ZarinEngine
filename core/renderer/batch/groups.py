@@ -78,6 +78,79 @@ class GroupsMixin:
 
     _MAT_NONE = object()
 
+    def _validate_topology(self, renderables, ck_keys, get_mat, get_prog, default_prog, none_id, mpath_cache):
+        for _i, entry in enumerate(renderables):
+            mr = entry[3]
+            mesh = entry[2]
+            sub_idx = entry[5]
+            try:
+                mats = mr.materials
+            except Exception:
+                mats = None
+            if mats:
+                try:
+                    if sub_idx < len(mats):
+                        mpath = mats[sub_idx].get("path", "")
+                    else:
+                        mpath = mats[-1].get("path", "")
+                except Exception:
+                    mpath = ""
+            else:
+                mpath = ""
+            cached = mpath_cache.get(mpath)
+            if cached is None:
+                try:
+                    mat = get_mat(mpath)
+                except Exception:
+                    mat = None
+                try:
+                    if mat is not None:
+                        shader_path = mat.shader_path
+                    else:
+                        shader_path = ""
+                except Exception:
+                    shader_path = ""
+                try:
+                    if shader_path:
+                        prog = get_prog(shader_path)
+                    else:
+                        prog = None
+                except Exception:
+                    prog = None
+                if prog is None:
+                    prog = default_prog
+                cached = (mat, prog)
+                mpath_cache[mpath] = cached
+            else:
+                mat, prog = cached
+            if mat is not None:
+                mat_key = id(mat)
+            else:
+                mat_key = none_id
+            try:
+                _uv = mr.uv_scale
+                _usx = _uv._x
+                _usy = _uv._y
+                _uo = mr.uv_offset
+                _uox = _uo._x
+                _uoy = _uo._y
+                _uw = mr.uv_scale_by_transform
+                _sp = mr.sprite_texture
+                if not _sp:
+                    _sp = ""
+                _rs = mr.receive_shadows
+                _dr = mr.dynamic_reflections
+            except Exception:
+                return False
+            if _usx == 1.0 and _usy == 1.0 and _uox == 0.0 and _uoy == 0.0 and not _uw and _sp == "":
+                uv_key = 0
+            else:
+                uv_key = (_usx, _usy, _uox, _uoy, _uw, _sp)
+            _t = ck_keys[_i]
+            if _t[0] != id(prog) or _t[1] != mat_key or _t[2] != id(mesh) or _t[3] != _rs or _t[4] != sub_idx or _t[5] != _dr or _t[6] != uv_key:
+                return False
+        return True
+
     def collect_groups(self, renderables, materials, shaders):
         groups: dict = {}
         get_mat = materials.load_material
@@ -86,6 +159,19 @@ class GroupsMixin:
         none_id = id(self._MAT_NONE)
         mpath_cache: dict = {}
         get_cached = mpath_cache.get
+        try:
+            _tc = self._groups_topology
+        except Exception:
+            _tc = None
+        _n = len(renderables)
+        if _tc is not None and _tc[0] == _n:
+            try:
+                _hit = self._validate_topology(renderables, _tc[1], get_mat, get_prog, default_prog, none_id, mpath_cache)
+            except Exception:
+                _hit = False
+            if _hit:
+                return _tc[2]
+        keys: list = []
         for entry in renderables:
             mr = entry[3]
             mesh = entry[2]
@@ -137,46 +223,55 @@ class GroupsMixin:
                 mat_key = none_id
             try:
                 _uv = mr.uv_scale
-                _usx = float(_uv.x)
-                _usy = float(_uv.y)
+                _usx = _uv._x
+                _usy = _uv._y
+                _uo = mr.uv_offset
+                _uox = _uo._x
+                _uoy = _uo._y
+                _uw = mr.uv_scale_by_transform
+                _sp = mr.sprite_texture
+                if not _sp:
+                    _sp = ""
+                _rs = mr.receive_shadows
+                _dr = mr.dynamic_reflections
             except Exception:
                 _usx = 1.0
                 _usy = 1.0
-            try:
-                _uo = mr.uv_offset
-                _uox = float(_uo.x)
-                _uoy = float(_uo.y)
-            except Exception:
                 _uox = 0.0
                 _uoy = 0.0
-            try:
-                _uw = mr.uv_scale_by_transform
-            except Exception:
-                _uw = False
-            try:
-                _sp = mr.sprite_texture
-            except Exception:
-                _sp = ""
-            if not _sp:
-                _sp = ""
+                _uw = getattr(mr, "uv_scale_by_transform", False)
+                _sp = getattr(mr, "sprite_texture", "") or ""
+                _rs = bool(getattr(mr, "receive_shadows", False))
+                _dr = bool(getattr(mr, "dynamic_reflections", False))
+                try:
+                    _uv2 = getattr(mr, "uv_scale", None)
+                    if _uv2 is not None:
+                        _usx = float(_uv2.x)
+                        _usy = float(_uv2.y)
+                except Exception:
+                    pass
+                try:
+                    _uo2 = getattr(mr, "uv_offset", None)
+                    if _uo2 is not None:
+                        _uox = float(_uo2.x)
+                        _uoy = float(_uo2.y)
+                except Exception:
+                    pass
             if _usx == 1.0 and _usy == 1.0 and _uox == 0.0 and _uoy == 0.0 and not _uw and _sp == "":
                 uv_key = 0
             else:
                 uv_key = (_usx, _usy, _uox, _uoy, _uw, _sp)
-            try:
-                _rs = mr.receive_shadows
-            except Exception:
-                _rs = False
-            try:
-                _dr = mr.dynamic_reflections
-            except Exception:
-                _dr = False
             key = (id(prog), mat_key, id(mesh), _rs, sub_idx, _dr, uv_key)
+            keys.append(key)
             lst = groups.get(key)
             if lst is None:
                 groups[key] = [(entry[0], entry[1], mesh, mr, mat, prog, wm, sub_idx)]
             else:
                 lst.append((entry[0], entry[1], mesh, mr, mat, prog, wm, sub_idx))
+        try:
+            self._groups_topology = (_n, keys, groups)
+        except Exception:
+            pass
         return groups
 
     def _get_frustum_planes(self, view_f32, proj_f32):

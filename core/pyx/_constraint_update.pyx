@@ -4,6 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 
+# distutils: extra_compile_args = -O3 -ffast-math -march=native -fopenmp
+# distutils: extra_link_args = -fopenmp
 from libc.math cimport fabs, sqrt, atan2, asin, sin, cos, acos, fmin, fmax
 
 cdef inline double _clamp(double v, double lo, double hi):

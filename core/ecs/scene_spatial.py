@@ -4,6 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
+import math
 from core.spatial import AABB
 from .query import _batch_flat, _batch_from_transforms, _collect_dirty, _batch_flat_soa, _batch_from_soa
 
@@ -271,7 +272,7 @@ def rebuild_spatial(scene):
                                 ms = sy
                             if sz > ms:
                                 ms = sz
-                            ms = ms ** 0.5
+                            ms = math.sqrt(ms)
                             rad = r0 * ms + 0.5
                 if spatial.update_xyz(eid, cx, cy, cz, rad):
                     done_add(eid)
@@ -320,7 +321,7 @@ def rebuild_spatial(scene):
                                 ms = sy
                             if sz > ms:
                                 ms = sz
-                            ms = ms ** 0.5
+                            ms = math.sqrt(ms)
                             rad = r0 * ms + 0.5
                 if spatial.update_xyz(eid, cx, cy, cz, rad):
                     continue
@@ -373,7 +374,7 @@ def rebuild_spatial(scene):
                             ms = sy
                         if sz > ms:
                             ms = sz
-                        ms = ms ** 0.5
+                        ms = math.sqrt(ms)
                     except Exception:
                         ms = 1.0
                     rad = r0 * ms + 0.5

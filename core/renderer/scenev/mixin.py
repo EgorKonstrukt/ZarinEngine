@@ -206,7 +206,7 @@ class SceneRendererMixin(ScenevCollectMixin, ScenevLightsMixin, ScenevForwardMix
             opaque_entries = renderable if renderable else []
             transparent_entries = []
         try:
-            self._scenev_render_forward_phases(opaque_entries, transparent_entries, view_f32, proj_f32, cam_pos, lights, dynamic_cubemaps, sky_component, selected_entities, outline_queue, rw, rh)
+            self._scenev_render_forward_phases(opaque_entries, transparent_entries, view_f32, proj_f32, cam_pos, lights, dynamic_cubemaps, sky_component, selected_entities, outline_queue, rw, rh, snap)
         except Exception:
             pass
         if prof:
@@ -287,7 +287,7 @@ class SceneRendererMixin(ScenevCollectMixin, ScenevLightsMixin, ScenevForwardMix
         except Exception:
             pass
         try:
-            self._scenev_present_composite(snap, scene, renderable, transparent_entries, view_mat, proj_mat, cam_pos, rw, rh, viewport_w, viewport_h, display_w, display_h, fbo, outline_queue, unjit_proj, stats_groups=None)
+            self._scenev_present_composite(snap, scene, renderable, transparent_entries, view_mat, proj_mat, cam_pos, rw, rh, viewport_w, viewport_h, display_w, display_h, fbo, outline_queue, unjit_proj, stats_groups=getattr(self, "_fwd_stats_groups", None))
         except Exception:
             pass
         try:

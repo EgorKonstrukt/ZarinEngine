@@ -66,6 +66,7 @@ class RenderBatcher(GroupsMixin, InstanceMixin):
         self._frustum_cache_key = None
         self._groups_cache_key = None
         self._groups_cache_val = None
+        self._groups_topology = None
         self._group_vbos: dict = {}
         self._group_upload_state: dict = {}
         self._last_view_f32 = None
@@ -165,20 +166,24 @@ class RenderBatcher(GroupsMixin, InstanceMixin):
                 _st = self._group_upload_state.get(group_key)
             except Exception:
                 _st = None
+            try:
+                _fkey = (_ng, _org_key, id(group[0][6]), id(group[-1][6]))
+            except Exception:
+                _fkey = (_ng, _org_key, 0, 0)
             if group_patches:
                 _vbo = self._ensure_group_vbo(group_key, _ng)
                 if self.patch_group_vbo(group_key, group_patches, _org):
                     try:
-                        self._group_upload_state[group_key] = (id(group), _ng, _org_key)
+                        self._group_upload_state[group_key] = _fkey
                     except Exception:
                         pass
                 else:
                     _vbo = self._write_group_vbo(group_key, [item[6] for item in group], _org)
                     try:
-                        self._group_upload_state[group_key] = (id(group), _ng, _org_key)
+                        self._group_upload_state[group_key] = _fkey
                     except Exception:
                         pass
-            elif group_skip and _st is not None and _st == (id(group), _ng, _org_key):
+            elif group_skip and _st is not None and _st == _fkey:
                 try:
                     _vbo = self._group_vbos[group_key][0]
                 except Exception:
@@ -186,13 +191,13 @@ class RenderBatcher(GroupsMixin, InstanceMixin):
                 if _vbo is None:
                     _vbo = self._write_group_vbo(group_key, [item[6] for item in group], _org)
                     try:
-                        self._group_upload_state[group_key] = (id(group), _ng, _org_key)
+                        self._group_upload_state[group_key] = _fkey
                     except Exception:
                         pass
             else:
                 _vbo = self._write_group_vbo(group_key, [item[6] for item in group], _org)
                 try:
-                    self._group_upload_state[group_key] = (id(group), _ng, _org_key)
+                    self._group_upload_state[group_key] = _fkey
                 except Exception:
                     pass
             if _vbo is None:
@@ -296,8 +301,8 @@ class RenderBatcher(GroupsMixin, InstanceMixin):
         model_f32 = relativize_model_f32(model, origin_for(cam_pos))
         if "u_model" in names:
             prog["u_model"].write(model_f32)
-        nm = resolve_normal_matrix(normal_cache, ent._id, model._d)
         if "u_normal_matrix" in names:
+            nm = resolve_normal_matrix(normal_cache, ent._id, model._d)
             prog["u_normal_matrix"].write(nm.tobytes())
         if mesh.is_error_mesh:
             apply_material_fn(None, prog)

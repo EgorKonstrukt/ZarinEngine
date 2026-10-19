@@ -66,7 +66,7 @@ def _compile_args():
     if _USING_MINGW:
         # GCC-style flags for MinGW-w64. OpenMP comes from the per-file
         # `# distutils: extra_*` directives in core/pyx/*.pyx.
-        return ["-O2", "-DNDEBUG", "-march=x86-64", "-mtune=generic"]
+        return ["-DNDEBUG"]
     if platform.system() == "Windows":
         return ["/O2", "/fp:fast", "/arch:AVX2", "/GL", "/DNDEBUG"]
     else:

@@ -1,4 +1,6 @@
 # cython: language_level=3
+# distutils: extra_compile_args = -O3 -ffast-math -march=native -fopenmp
+# distutils: extra_link_args = -fopenmp
 import numpy as np
 cimport numpy as cnp
 from libc.math cimport cos, sin, log10, sqrt, pow, M_PI

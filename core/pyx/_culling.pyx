@@ -4,10 +4,13 @@
 import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt, fabs
+from libc.stdlib cimport malloc, free
 from cython.parallel import prange
 
 DTYPE = np.float64
 ctypedef np.float64_t DTYPE_t
+
+cdef int _PAR_MIN = 1024
 
 
 cdef inline void _extract_frustum_planes(
@@ -56,6 +59,34 @@ cdef inline void _extract_frustum_planes(
         planes_out[i, 3] *= inv_norm
 
 
+cdef np.ndarray[np.intp_t, ndim=1] _cull_core(DTYPE_t[:, ::1] centers,
+                                                        DTYPE_t[::1] radii,
+                                                        DTYPE_t[:, ::1] planes):
+    cdef int n = centers.shape[0]
+    if n == 0:
+        return np.zeros(0, dtype=np.intp)
+    if n >= _PAR_MIN:
+        return cpu_frustum_cull_parallel(np.asarray(centers), np.asarray(radii),
+                                         np.asarray(planes))
+    cdef np.ndarray[np.intp_t, ndim=1] visible = np.empty(n, dtype=np.intp)
+    cdef int count = 0, i, j
+    cdef DTYPE_t dist
+    cdef bint inside
+    with nogil:
+        for i in range(n):
+            inside = True
+            for j in range(6):
+                dist = (planes[j, 0] * centers[i, 0] + planes[j, 1] * centers[i, 1]
+                        + planes[j, 2] * centers[i, 2] + planes[j, 3])
+                if dist < -radii[i]:
+                    inside = False
+                    break
+            if inside:
+                visible[count] = i
+                count += 1
+    return visible[:count]
+
+
 def cpu_frustum_cull(
     np.ndarray[DTYPE_t, ndim=2] centers,
     np.ndarray[DTYPE_t, ndim=1] radii,
@@ -94,6 +125,16 @@ def cpu_frustum_cull(
     return visible[:count]
 
 
+def cull_fast(centers, radii, view_proj):
+    cdef DTYPE_t[:, ::1] c_v = centers
+    cdef DTYPE_t[::1] r_v = radii
+    cdef DTYPE_t[:, ::1] vp_v = view_proj
+    cdef np.ndarray[DTYPE_t, ndim=2] planes = np.empty((6, 4), dtype=DTYPE)
+    _extract_frustum_planes(vp_v, planes)
+    cdef DTYPE_t[:, ::1] p_v = planes
+    return _cull_core(c_v, r_v, p_v)
+
+
 def cpu_frustum_cull_parallel(
     np.ndarray[DTYPE_t, ndim=2] centers,
     np.ndarray[DTYPE_t, ndim=1] radii,
@@ -129,8 +170,27 @@ def extract_frustum_planes_c(np.ndarray[DTYPE_t, ndim=2] view_proj):
     return planes
 
 
+cdef inline bint _cull_one_nogil(double* p, float* pl, double mesh_radius) noexcept nogil:
+    cdef double sx, sy, sz, ms, dist
+    cdef int j
+    sx = sqrt(p[0] * p[0] + p[4] * p[4] + p[8] * p[8])
+    sy = sqrt(p[1] * p[1] + p[5] * p[5] + p[9] * p[9])
+    sz = sqrt(p[2] * p[2] + p[6] * p[6] + p[10] * p[10])
+    ms = sx
+    if sy > ms:
+        ms = sy
+    if sz > ms:
+        ms = sz
+    ms = ms * mesh_radius
+    for j in range(6):
+        dist = pl[j * 4] * p[12] + pl[j * 4 + 1] * p[13] + pl[j * 4 + 2] * p[14] + pl[j * 4 + 3]
+        if dist <= -ms:
+            return False
+    return True
+
+
 def cull_group_instances(list group, np.ndarray[np.float32_t, ndim=2] planes,
-                         double mesh_radius):
+                          double mesh_radius):
     cdef int n = len(group)
     if n == 0:
         return []
@@ -140,6 +200,11 @@ def cull_group_instances(list group, np.ndarray[np.float32_t, ndim=2] planes,
     cdef bint inside
     cdef object item, wm
     cdef DTYPE_t[:, :] d
+    if n >= _PAR_MIN:
+        try:
+            return _cgi_parallel(group, planes, mesh_radius, n)
+        except Exception:
+            pass
     for i in range(n):
         item = group[i]
         wm = item[6]
@@ -161,4 +226,50 @@ def cull_group_instances(list group, np.ndarray[np.float32_t, ndim=2] planes,
                 break
         if inside:
             visible.append(item)
+    return visible
+
+
+cdef list _cgi_parallel(list group, np.ndarray[np.float32_t, ndim=2] planes,
+                        double mesh_radius, int n):
+    cdef float pl[24]
+    cdef int j
+    for j in range(6):
+        pl[j * 4] = planes[j, 0]
+        pl[j * 4 + 1] = planes[j, 1]
+        pl[j * 4 + 2] = planes[j, 2]
+        pl[j * 4 + 3] = planes[j, 3]
+    cdef double** ptrs = <double**>malloc(n * sizeof(double*))
+    if ptrs == NULL:
+        raise MemoryError()
+    cdef unsigned char* mask = <unsigned char*>malloc(n * sizeof(unsigned char))
+    if mask == NULL:
+        free(ptrs)
+        raise MemoryError()
+    cdef int i
+    cdef object item, wm
+    cdef DTYPE_t[:, :] d
+    try:
+        for i in range(n):
+            item = group[i]
+            wm = item[6]
+            d = wm._d
+            if d.strides[0] != 32 or d.strides[1] != 8:
+                raise ValueError()
+            ptrs[i] = &d[0, 0]
+    except Exception:
+        free(ptrs)
+        free(mask)
+        raise
+    cdef int k
+    with nogil:
+        for k in prange(n, schedule='static'):
+            mask[k] = 1 if _cull_one_nogil(ptrs[k], pl, mesh_radius) else 0
+    free(ptrs)
+    cdef list visible = []
+    try:
+        for i in range(n):
+            if mask[i]:
+                visible.append(group[i])
+    finally:
+        free(mask)
     return visible

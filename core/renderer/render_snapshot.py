@@ -19,6 +19,7 @@ class _RenderSnapshot:
         'interactors', 'gaussian_splats', 'dynamic_cubemaps',
         'dynamic_cubemaps_pos', 'dynamic_cubemaps_entity',
         'cull_entries', 'cull_offsets', 'cull_counts', '_cull_counts_np',
+        'transform_version', 'has_fx',
     )
     def __init__(self):
         self.lights: list = []
@@ -49,3 +50,5 @@ class _RenderSnapshot:
         self.cull_offsets: list = []
         self.cull_counts: list = []
         self._cull_counts_np = None
+        self.transform_version: int = 0
+        self.has_fx: bool = False

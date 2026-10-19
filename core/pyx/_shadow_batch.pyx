@@ -1,4 +1,6 @@
 # cython: boundscheck=False, wraparound=False, cdivision=True, nonecheck=False, initializedcheck=False
+# distutils: extra_compile_args = -O3 -ffast-math -march=native -fopenmp
+# distutils: extra_link_args = -fopenmp
 import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt, tan, floor, ceil, cos, sin, fabs

@@ -4,6 +4,8 @@
 #
 # Copyright (c) 2026 Zarrakun
 # cython: boundscheck=False, wraparound=False, cdivision=True, nonecheck=False, initializedcheck=False, overflowcheck=False, infer_types=True
+# distutils: extra_compile_args = -O3 -ffast-math -march=native -fopenmp
+# distutils: extra_link_args = -fopenmp
 import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt, fabs, ceil

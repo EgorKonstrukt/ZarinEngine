@@ -57,10 +57,64 @@ class ScenevCollectMixin:
         visible = None
         try:
             vp = proj_mat._d.T @ view_mat._d.T
+        except Exception:
+            vp = None
+        try:
+            _vpb = vp.tobytes() if vp is not None else None
+        except Exception:
+            _vpb = None
+        try:
+            _mgen = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+        except Exception:
+            _mgen = 0
+        try:
+            _tv = snap.transform_version
+        except Exception:
+            _tv = None
+        _vkey = None
+        try:
+            if _vpb is not None and _tv is not None:
+                _vkey = (id(snap), _tv, _mgen, _vpb)
+        except Exception:
+            _vkey = None
+        try:
+            _vc = self._cull_vis_cache
+        except Exception:
+            _vc = None
+        if _vkey is not None and _vc is not None and _vc[0] == _vkey:
+            try:
+                self._culled_visible = _vc[3]
+            except Exception:
+                pass
+            return _vc[1], _vc[2]
+        try:
+            if vp is None:
+                vp = proj_mat._d.T @ view_mat._d.T
             cull_entries = snap.cull_entries
             n_ent = len(cull_entries) if cull_entries is not None else 0
             if n_ent:
-                centers, radii = _bfci(cull_entries)
+                try:
+                    _mgen = self._mesh_loader._loaded_generation if self._mesh_loader else 0
+                except Exception:
+                    _mgen = 0
+                try:
+                    _tv = snap.transform_version
+                except Exception:
+                    _tv = None
+                try:
+                    _ckey = (id(snap), _tv, _mgen)
+                    _cc = self._cull_inputs_cache
+                except Exception:
+                    _ckey = None
+                    _cc = None
+                if _ckey is not None and _cc is not None and _cc[0] == _ckey:
+                    centers, radii = _cc[1], _cc[2]
+                else:
+                    centers, radii = _bfci(cull_entries)
+                    try:
+                        self._cull_inputs_cache = (_ckey, centers, radii)
+                    except Exception:
+                        pass
                 visible = cpu_frustum_cull(centers, radii, vp)
                 offsets = snap.cull_offsets
                 counts = snap.cull_counts
@@ -112,6 +166,11 @@ class ScenevCollectMixin:
         except Exception:
             import traceback
             traceback.print_exc()
+        try:
+            if _vkey is not None and visible is not None:
+                self._cull_vis_cache = (_vkey, renderable, visible, self._culled_visible)
+        except Exception:
+            pass
         return renderable, visible
 
     def _scenev_partition_and_sort(self, renderable, cam_pos, scene=None):
