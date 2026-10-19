@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import math
 import time
 import numpy as np
 import moderngl
@@ -30,9 +31,9 @@ class VolumetricSmokeRenderingMixin:
                 wm = tr.world_matrix
                 inv_model = wm.inverted()
                 d = wm._d
-                sx = float(np.linalg.norm(d[0, :3]))
-                sy = float(np.linalg.norm(d[1, :3]))
-                sz = float(np.linalg.norm(d[2, :3]))
+                sx = math.sqrt(float(d[0, 0] * d[0, 0] + d[0, 1] * d[0, 1] + d[0, 2] * d[0, 2]))
+                sy = math.sqrt(float(d[1, 0] * d[1, 0] + d[1, 1] * d[1, 1] + d[1, 2] * d[1, 2]))
+                sz = math.sqrt(float(d[2, 0] * d[2, 0] + d[2, 1] * d[2, 1] + d[2, 2] * d[2, 2]))
                 radius = max(sx, sy, sz)
                 if not (radius > 1e-6):
                     bypass = 1.0

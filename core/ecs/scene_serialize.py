@@ -11,6 +11,9 @@ from .entity import Entity
 from .registry import ComponentRegistry
 
 
+_SERIAL_PARALLEL_THRESHOLD = 1024
+
+
 def _rebind_armatures(entities: list, id_map: dict) -> None:
     for e in entities:
         arm = e.get_component_by_name("Armature")
@@ -20,7 +23,7 @@ def _rebind_armatures(entities: list, id_map: dict) -> None:
 
 def _serialize_inner(scene) -> dict:
     items = list(scene._entities.items())
-    if len(items) > 64:
+    if len(items) > _SERIAL_PARALLEL_THRESHOLD:
         workers = min(8, max(2, (os.cpu_count() or 4)))
         chunk = (len(items) + workers - 1) // workers
         out: dict = {}
@@ -58,7 +61,7 @@ def _deserialize_inner(cls, data: dict, registry: ComponentRegistry):
     entities: dict[str, Entity] = {}
     parent_map: dict[str, str | None] = {}
     items = list(raw.items())
-    if len(items) > 64:
+    if len(items) > _SERIAL_PARALLEL_THRESHOLD:
         workers = min(8, max(2, (os.cpu_count() or 4)))
         chunk = (len(items) + workers - 1) // workers
         def task(part):
@@ -184,6 +187,7 @@ def _duplicate_entity_inner(scene, entity: Entity, new_name: str = ""):
     scene._render_version += 1
     scene._entities_cache_valid = False
     scene._roots_cache_valid = False
+    scene._name_index_valid = False
     scene._spatial_dirty = True
     _rebind_armatures(new_entities, id_map)
     if new_name:
@@ -254,6 +258,7 @@ def _paste_entities_inner(scene, clipboard_data: list, registry) -> list:
     scene._render_version += 1
     scene._entities_cache_valid = False
     scene._roots_cache_valid = False
+    scene._name_index_valid = False
     scene._spatial_dirty = True
     _rebind_armatures(spawned, id_map)
     return spawned

@@ -20,6 +20,38 @@ def _get_mh():
     return _mh
 
 
+_MUL_FAST = None
+_MUL_FAST_TRIED = False
+_INV_FAST = None
+_INV_FAST_TRIED = False
+
+
+def _ensure_mul_fast():
+    global _MUL_FAST, _MUL_FAST_TRIED
+    if _MUL_FAST_TRIED:
+        return _MUL_FAST
+    _MUL_FAST_TRIED = True
+    try:
+        from core.math_helpers import mat4_mul_fast as _f
+        _MUL_FAST = _f
+    except Exception:
+        _MUL_FAST = None
+    return _MUL_FAST
+
+
+def _ensure_inv_fast():
+    global _INV_FAST, _INV_FAST_TRIED
+    if _INV_FAST_TRIED:
+        return _INV_FAST
+    _INV_FAST_TRIED = True
+    try:
+        from core.math_helpers import mat4_inv_fast as _g
+        _INV_FAST = _g
+    except Exception:
+        _INV_FAST = None
+    return _INV_FAST
+
+
 class Mat4:
     __slots__ = ("_d",)
     def __init__(self, data: np.ndarray = None):
@@ -69,10 +101,17 @@ class Mat4:
         m[3,0]=-r.dot(eye); m[3,1]=-u.dot(eye); m[3,2]=f.dot(eye)
         return Mat4(m)
 
-    def __mul__(self, o): return Mat4(self._d @ o._d)
+    def __mul__(self, o):
+        f = _ensure_mul_fast()
+        if f is not None:
+            return Mat4(f(self._d, o._d))
+        return Mat4(self._d @ o._d)
     def __matmul__(self, o): return self.__mul__(o)
     def transposed(self): return Mat4(self._d.T)
     def inverted(self):
+        g = _ensure_inv_fast()
+        if g is not None:
+            return Mat4(g(self._d))
         try:
             return Mat4(np.linalg.inv(self._d))
         except np.linalg.LinAlgError:
@@ -92,10 +131,11 @@ class Mat4:
     def to_list(self): return self._d.tolist()
     def get_translation(self): return Vec3(float(self._d[3,0]), float(self._d[3,1]), float(self._d[3,2]))
     def decompose(self) -> tuple[Vec3, Quat, Vec3]:
-        pos = Vec3(float(self._d[3,0]), float(self._d[3,1]), float(self._d[3,2]))
-        sx = float(np.linalg.norm(self._d[0,:3]))
-        sy = float(np.linalg.norm(self._d[1,:3]))
-        sz = float(np.linalg.norm(self._d[2,:3]))
+        d = self._d
+        pos = Vec3(float(d[3,0]), float(d[3,1]), float(d[3,2]))
+        sx = math.sqrt(float(d[0,0]*d[0,0] + d[0,1]*d[0,1] + d[0,2]*d[0,2]))
+        sy = math.sqrt(float(d[1,0]*d[1,0] + d[1,1]*d[1,1] + d[1,2]*d[1,2]))
+        sz = math.sqrt(float(d[2,0]*d[2,0] + d[2,1]*d[2,1] + d[2,2]*d[2,2]))
         scale = Vec3(sx, sy, sz)
         rm = np.array(self._d[:3,:3], dtype=FLOAT_TYPE)
         if sx > 1e-10: rm[0,:] /= sx

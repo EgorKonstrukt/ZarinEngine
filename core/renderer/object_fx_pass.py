@@ -7,6 +7,7 @@
 """Per-object graphics effects."""
 
 from __future__ import annotations
+import math
 import time
 import numpy as np
 from core.foundation.logger import Logger
@@ -84,21 +85,23 @@ void main() {
                     nm = np.eye(3, dtype=np.float32).T
                     try:
                         m3 = wm._d[:3, :3].copy()
-                        m3[:, 0] /= max(1e-10, float(np.linalg.norm(m3[:, 0])))
-                        m3[:, 1] /= max(1e-10, float(np.linalg.norm(m3[:, 1])))
-                        m3[:, 2] /= max(1e-10, float(np.linalg.norm(m3[:, 2])))
+                        n0 = math.sqrt(float(m3[0, 0] * m3[0, 0] + m3[1, 0] * m3[1, 0] + m3[2, 0] * m3[2, 0]))
+                        n1 = math.sqrt(float(m3[0, 1] * m3[0, 1] + m3[1, 1] * m3[1, 1] + m3[2, 1] * m3[2, 1]))
+                        n2 = math.sqrt(float(m3[0, 2] * m3[0, 2] + m3[1, 2] * m3[1, 2] + m3[2, 2] * m3[2, 2]))
+                        m3[:, 0] /= max(1e-10, n0)
+                        m3[:, 1] /= max(1e-10, n1)
+                        m3[:, 2] /= max(1e-10, n2)
                         nm = m3.T.astype(np.float32)
                     except Exception:
                         pass
                     if "u_normal_matrix" in prog:
                         prog["u_normal_matrix"].write(nm.tobytes())
                     center = [wm._d[0, 3], wm._d[1, 3], wm._d[2, 3]]
-                    scale = max(
-                        float(np.linalg.norm(wm._d[:3, 0])),
-                        float(np.linalg.norm(wm._d[:3, 1])),
-                        float(np.linalg.norm(wm._d[:3, 2])),
-                        1e-4,
-                    )
+                    d = wm._d
+                    s0 = math.sqrt(float(d[0, 0] * d[0, 0] + d[1, 0] * d[1, 0] + d[2, 0] * d[2, 0]))
+                    s1 = math.sqrt(float(d[0, 1] * d[0, 1] + d[1, 1] * d[1, 1] + d[2, 1] * d[2, 1]))
+                    s2 = math.sqrt(float(d[0, 2] * d[0, 2] + d[1, 2] * d[1, 2] + d[2, 2] * d[2, 2]))
+                    scale = max(s0, s1, s2, 1e-4,)
                     if "u_obj_center" in prog:
                         prog["u_obj_center"].write(np.array(center, dtype=np.float32).tobytes())
                     if "u_obj_scale" in prog:

@@ -57,6 +57,8 @@ class Scene:
         self._spatial_known_entities: set[str] = set()
         self._roots_cache: list[Entity] = []
         self._roots_cache_valid: bool = False
+        self._name_index: dict[str, list[str]] = {}
+        self._name_index_valid: bool = False
         self._soa_world = np.zeros((0, 4, 4), dtype=np.float64)
         self._soa_cap: int = 0
         self._soa_free: list = []
@@ -176,6 +178,7 @@ class Scene:
                                 afc.add(comp)
         self._entities_cache_valid = False
         self._roots_cache_valid = False
+        self._name_index_valid = False
         self._spatial_dirty = True
         self._spatial_dirty_entities.update(entities.keys())
         self._invalidate_update_cache()
@@ -201,6 +204,20 @@ class Scene:
             self._entities_cache = list(self._entities.values())
             self._entities_cache_valid = True
         return self._entities_cache
+    def _ensure_name_index(self):
+        if self._name_index_valid:
+            return self._name_index
+        index: dict[str, list[str]] = {}
+        for eid, e in self._entities.items():
+            nm = e._name
+            lst = index.get(nm)
+            if lst is None:
+                index[nm] = [eid]
+            else:
+                lst.append(eid)
+        self._name_index = index
+        self._name_index_valid = True
+        return index
     @property
     def name(self) -> str: return self._name
     @name.setter
@@ -234,6 +251,7 @@ class Scene:
         self._render_version += 1
         self._entities_cache_valid = False
         self._roots_cache_valid = False
+        self._name_index_valid = False
         self._spatial_dirty = True
         self._spatial_dirty_entities.add(e.id)
         return e
@@ -263,6 +281,7 @@ class Scene:
         self._render_version += 1
         self._entities_cache_valid = False
         self._roots_cache_valid = False
+        self._name_index_valid = False
         self._spatial_dirty = True
         self._spatial_dirty_entities.add(eid)
         self._spatial_known_entities.discard(eid)
@@ -299,6 +318,7 @@ class Scene:
         self._render_version += 1
         self._entities_cache_valid = False
         self._roots_cache_valid = False
+        self._name_index_valid = False
         self._spatial_dirty = True
     def duplicate_entity(self, entity: Entity, new_name: str = "") -> Entity:
         return _serial._duplicate_entity_inner(self, entity, new_name)
@@ -309,6 +329,14 @@ class Scene:
     def get_entity(self, eid: str) -> Optional[Entity]:
         return self._entities.get(eid)
     def get_entity_by_name(self, name: str) -> Optional[Entity]:
+        index = self._ensure_name_index()
+        lst = index.get(name)
+        if lst:
+            ents = self._entities
+            for eid in lst:
+                e = ents.get(eid)
+                if e is not None and e._name == name:
+                    return e
         for e in self._entities.values():
             if e._name == name:
                 return e

@@ -17,6 +17,23 @@ if TYPE_CHECKING:
     from core.physics.physics_solver import IPhysicsSolver
 
 
+_INV_FAST = None
+_INV_TRIED = False
+
+
+def _ensure_inv_fast():
+    global _INV_FAST, _INV_TRIED
+    if _INV_TRIED:
+        return _INV_FAST
+    _INV_TRIED = True
+    try:
+        from core.math_helpers import mat4_inv_fast as _f
+        _INV_FAST = _f
+    except Exception:
+        _INV_FAST = None
+    return _INV_FAST
+
+
 class PhysicsScene(BodiesMixin, CollidersMixin, JointsMixin, EventsMixin, ThreadpoolMixin):
     _ZERO_VEC3 = None
     _ZERO_VEC2 = None
@@ -281,10 +298,12 @@ class PhysicsScene(BodiesMixin, CollidersMixin, JointsMixin, EventsMixin, Thread
             m = np.asarray(wm._d, dtype=np.float64)
             if m.shape != (4, 4):
                 raise ValueError("bad world matrix shape")
+            f = _ensure_inv_fast()
+            if f is not None:
+                return f(np.ascontiguousarray(m, dtype=np.float64))
             return np.linalg.inv(m)
         except Exception:
             pass
-        import numpy as np
         try:
             p = tr.local_position
             q = tr.local_rotation
@@ -305,6 +324,9 @@ class PhysicsScene(BodiesMixin, CollidersMixin, JointsMixin, EventsMixin, Thread
             F[:3, :3] = R.T
             F[3, :3] = [p.x, p.y, p.z]
             try:
+                g = _ensure_inv_fast()
+                if g is not None:
+                    return g(np.ascontiguousarray(F, dtype=np.float64))
                 return np.linalg.inv(F)
             except Exception:
                 return None

@@ -64,7 +64,10 @@ class Entity:
     @property
     def name(self) -> str: return self._name
     @name.setter
-    def name(self, v: str): self._name = v
+    def name(self, v: str):
+        if self._name == v: return
+        self._name = v
+        if self._scene is not None: self._scene._name_index_valid = False
     @property
     def active(self) -> bool: return self._active
     @active.setter
@@ -164,14 +167,14 @@ class Entity:
     def _make_component_key(self, comp: Component) -> str:
         t = type(comp); base = t.__name__
         if t._allow_multiple:
-            return base + "." + str(uuid.uuid4())[:8]
+            return base + "." + str(id(comp))
         return base
     def add_component(self, comp: Component, key: Optional[str] = None) -> Component:
         if key is None:
             t = type(comp)
             base = t.__name__
             if t._allow_multiple:
-                key = base + "." + str(uuid.uuid4())[:8]
+                key = base + "." + str(id(comp))
             else:
                 key = base
         comp._entity = self; comp._key = key

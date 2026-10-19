@@ -5,6 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
+import math
 import numpy as np
 import moderngl
 from typing import Optional
@@ -58,7 +59,14 @@ class _SplatSortMixin:
         mv = np.ascontiguousarray(fused.T, dtype=np.float32)
         a = mv[:3, :3]
         t = mv[3, :3]
-        ms = float(np.linalg.norm(a.astype(np.float64), axis=0).max())
+        c0 = math.sqrt(float(a[0, 0] * a[0, 0] + a[1, 0] * a[1, 0] + a[2, 0] * a[2, 0]))
+        c1 = math.sqrt(float(a[0, 1] * a[0, 1] + a[1, 1] * a[1, 1] + a[2, 1] * a[2, 1]))
+        c2 = math.sqrt(float(a[0, 2] * a[0, 2] + a[1, 2] * a[1, 2] + a[2, 2] * a[2, 2]))
+        ms = c0
+        if c1 > ms:
+            ms = c1
+        if c2 > ms:
+            ms = c2
         if not np.isfinite(ms) or ms <= 0.0:
             return None
         up = np.ascontiguousarray(proj_f32.reshape(4, 4).T, dtype=np.float32)
