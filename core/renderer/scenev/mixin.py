@@ -29,6 +29,10 @@ class SceneRendererMixin(ScenevCollectMixin, ScenevLightsMixin, ScenevForwardMix
         rh = max(1, int(round(viewport_h * scale)))
         eng = Engine.instance()
         prof = eng._profiler if eng and hasattr(eng, "_profiler") else None
+        try:
+            self._active_prof = prof
+        except Exception:
+            pass
         if prof:
             prof.start("render_scene")
         try:
@@ -190,10 +194,14 @@ class SceneRendererMixin(ScenevCollectMixin, ScenevLightsMixin, ScenevForwardMix
             pass
         if prof:
             prof.start("render_meshes")
+        if prof:
+            prof.start("cull")
         try:
             renderable, _vis = self._scenev_cull_renderable(snap, renderable, view_mat, proj_mat)
         except Exception:
             pass
+        if prof:
+            prof.stop("cull")
         outline_queue = []
         try:
             if selected_entities is not None and len(selected_entities) > 256:
@@ -201,7 +209,11 @@ class SceneRendererMixin(ScenevCollectMixin, ScenevLightsMixin, ScenevForwardMix
         except Exception:
             pass
         try:
+            if prof:
+                prof.start("partition_sort")
             opaque_entries, transparent_entries = self._scenev_partition_and_sort(renderable, cam_pos, scene)
+            if prof:
+                prof.stop("partition_sort")
         except Exception:
             opaque_entries = renderable if renderable else []
             transparent_entries = []
@@ -301,3 +313,7 @@ class SceneRendererMixin(ScenevCollectMixin, ScenevLightsMixin, ScenevForwardMix
                 prof.stop("render_scene")
             except Exception:
                 pass
+        try:
+            self._active_prof = None
+        except Exception:
+            pass

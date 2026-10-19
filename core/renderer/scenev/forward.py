@@ -133,10 +133,15 @@ class ScenevForwardMixin:
                 if not phase_entries:
                     continue
             if self._batcher is not None:
+                _ap = getattr(self, "_active_prof", None)
+                if _ap:
+                    _ap.start("collect_groups")
                 try:
                     groups = self._scenev_collect_groups(phase_entries)
                 except Exception:
                     groups = {}
+                if _ap:
+                    _ap.stop("collect_groups")
                 try:
                     self._fwd_stats_groups.append(groups)
                 except Exception:
@@ -153,7 +158,11 @@ class ScenevForwardMixin:
                 except Exception:
                     _gskip = None
                 try:
+                    if _ap:
+                        _ap.start("render_groups_batch")
                     self._batcher.render_groups(groups, view_f32, proj_f32, cam_pos, lights, False, self._set_scene_uniforms, self._materials.apply_material, self._normal_cache, sel, outline_queue, gpu_storage=self._gpu_storage, dynamic_cubemaps=dynamic_cubemaps, sky_ibl=sky_ibl, skip_cull=bool(all_vis), sort_groups=not is_trans, transparent_pass=bool(is_trans), transmission_hook=refresh_hook, group_skip=_gskip)
+                    if _ap:
+                        _ap.stop("render_groups_batch")
                 except Exception:
                     pass
                 try:
