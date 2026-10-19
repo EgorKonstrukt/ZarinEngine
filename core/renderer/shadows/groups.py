@@ -89,6 +89,12 @@ class GroupsMixin:
         key = id(renderable_shadow)
         if key == self._shadow_groups_key and self._shadow_groups_cache is not None:
             return self._shadow_groups_cache
+        try:
+            _reuse = bool(self._flat_ids_same) and renderable_shadow is self._flat_prepared_list and self._shadow_groups_cache is not None
+        except Exception:
+            _reuse = False
+        if _reuse:
+            return self._shadow_groups_cache
         if cy_build_shadow_groups is not None:
             groups = cy_build_shadow_groups(renderable_shadow)
         else:
@@ -100,6 +106,17 @@ class GroupsMixin:
         self._shadow_groups_ref = renderable_shadow
         return groups
     def _rebuild_shadow_index(self, renderable_shadow, n):
+        try:
+            _keep = bool(self._flat_ids_same) and renderable_shadow is self._flat_prepared_list
+            _keep = _keep and self._flat_row_base is not None and len(self._flat_row_base) == n and self._flat_index_n == n
+        except Exception:
+            _keep = False
+        if _keep:
+            try:
+                self._flat_index_src = renderable_shadow
+            except Exception:
+                pass
+            return
         try:
             if n <= 0:
                 try:

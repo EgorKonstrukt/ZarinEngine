@@ -55,9 +55,24 @@ class FlatMixin:
             self._prepare_flat_numpy(renderable_shadow, n)
         self._flat_n = n
         try:
-            self._flat_prep_ver += 1; self._refresh_flat_order(n)
+            _ids = self._flat_mesh_ids
+            _fp = (n, int(_ids[0]), int(_ids[n - 1]), int(np.sum(_ids[:n]))) if n > 0 else (0, 0, 0, 0)
+            _same = _fp == getattr(self, "_flat_ids_sig", None)
+            self._flat_ids_sig = _fp
+            self._flat_ids_same = bool(_same)
+            self._flat_prepared_list = renderable_shadow
+            self._flat_prep_ver += 1
+            if _same:
+                self._flat_order_n = n
+                self._flat_order_ver = self._flat_prep_ver
+            else:
+                self._refresh_flat_order(n)
         except Exception:
-            pass
+            try:
+                self._flat_prep_ver += 1
+                self._refresh_flat_order(n)
+            except Exception:
+                pass
         try:
             self._flat_max_radius = float(np.max(self._flat_radii[:n]))
         except Exception:

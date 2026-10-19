@@ -72,6 +72,7 @@ class ShadowRenderer(GroupsMixin, FlatMixin, InstancingMixin, CsmMixin, PointSpo
         self._import_cache: dict[str, tuple] = {}; self._import_cache_mtime: dict[str, float] = {}
         self._shadow_cache_valid: bool = False; self._type_flags: dict = {'directional': True, 'point': True, 'spot': True, 'area': True}
         self._flat_cap: int = 0; self._flat_n: int = 0; self._flat_sig: Any = None; self._flat_src_list: Any = None
+        self._flat_ids_sig: Any = None; self._flat_ids_same: bool = False; self._flat_prepared_list: Any = None
         self._flat_centers = np.zeros((0, 3), dtype=np.float64); self._flat_radii = np.zeros(0, dtype=np.float64)
         self._flat_mats = np.zeros((0, 16), dtype=np.float32); self._flat_mats_f64 = np.zeros((0, 4, 4), dtype=np.float64)
         self._flat_mesh_ids = np.zeros(0, dtype=np.uint64); self._flat_out = np.zeros(0, dtype=np.intp); self._flat_mesh_map: dict = {}
