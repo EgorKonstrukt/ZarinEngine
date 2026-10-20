@@ -192,7 +192,8 @@ def build():
         print(f"  ... and {len(resolved_assets) - 10} more")
     print("\nAnalyzing dependencies...")
     from .build_analyzer import analyze
-    analysis = analyze(verbose=False)
+    plugin_modules = [n if n.startswith("plugins.") else "plugins." + n for n in build_plugins]
+    analysis = analyze(verbose=False, extra_modules=plugin_modules)
     module_nofollow = analysis["module_nofollow"]
     package_nofollow = analysis["package_nofollow"]
     print(f"Auto-excluded: {len(module_nofollow)} modules, {len(package_nofollow)} packages")

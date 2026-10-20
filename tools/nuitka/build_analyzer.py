@@ -85,23 +85,39 @@ def _chosen_solver() -> str:
     return _normalize_solver(solver)
 
 
-def analyze(verbose=False) -> dict:
+def analyze(verbose=False, extra_modules=None) -> dict:
     chosen = _chosen_solver()
     try:
         from .config import BUILD_EDITOR
     except Exception:
         BUILD_EDITOR = False
     modules = list(_DEV_MODULES)
-    if not BUILD_EDITOR:
-        modules.append("qtawesome")
     packages = ["tests", "tools"]
     packages.extend(_QT_UNUSED)
-    for solver in _SOLVERS:
-        if solver == chosen:
-            continue
-        packages.append("physics_solvers." + solver + "_solver")
-        for native in _SOLVER_NATIVES.get(solver, ()):
-            packages.append(native)
+    if not BUILD_EDITOR:
+        modules.append("qtawesome")
+        for solver in _SOLVERS:
+            if solver == chosen:
+                continue
+            packages.append("physics_solvers." + solver + "_solver")
+            for native in _SOLVER_NATIVES.get(solver, ()):
+                packages.append(native)
+        seeds = ["player", "physics_solvers." + chosen + "_solver"]
+        if isinstance(extra_modules, str):
+            extra_modules = [extra_modules]
+        try:
+            for extra in extra_modules or ():
+                if extra and extra not in seeds:
+                    seeds.append(extra)
+        except Exception:
+            pass
+        try:
+            from .reachability import dead_editor_modules
+            dead = dead_editor_modules(seeds)
+        except Exception as exc:
+            print(f"analyzer: reachability scan failed ({exc}); editor modules kept")
+            dead = []
+        modules.extend(dead)
     if verbose:
         print(f"analyzer: solver={chosen} modules={len(modules)} packages={len(packages)}")
     return {"module_nofollow": modules, "package_nofollow": packages}
