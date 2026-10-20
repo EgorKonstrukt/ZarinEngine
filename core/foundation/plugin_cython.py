@@ -1,5 +1,6 @@
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures import as_completed
 import importlib.machinery
 import importlib.util
 import os

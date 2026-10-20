@@ -245,7 +245,8 @@ def fetch_latest_versions(names: Iterable[str],
                           client: PyPiClient | None = None,
                           workers: int = 10,
                           on_result: Callable[[str, str], None] | None = None) -> dict[str, str]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures.thread import ThreadPoolExecutor
+    from concurrent.futures import as_completed
     client = client or PyPiClient()
     names = [n for n in dict.fromkeys(names) if n]
     out: dict[str, str] = {}

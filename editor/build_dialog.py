@@ -170,6 +170,14 @@ class BuildDialog(QDialog):
 
     def _collect_args(self):
         args = [sys.executable, str(ROOT / "build_nuitka.py")]
+        try:
+            from core.engine.eng import Engine
+            eng = Engine.instance()
+            pr = eng.project_root if eng is not None else ""
+        except Exception:
+            pr = ""
+        if pr:
+            args.append(f"--project-dir={pr}")
         if self._target_combo.currentData() == "editor":
             args.append("--editor")
         args.append(f"--output-dir={self._output_dir_edit.text().strip()}")

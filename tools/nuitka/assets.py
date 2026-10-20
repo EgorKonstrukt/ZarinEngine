@@ -3,7 +3,8 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2026 Zarrakun
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures import as_completed
 import json
 import os
 import shutil

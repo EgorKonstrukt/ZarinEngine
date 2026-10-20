@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 import os
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures.process import ProcessPoolExecutor
 
 _NUM_WORKERS = min(8, max(2, (os.cpu_count() or 4)))
 

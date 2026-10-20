@@ -14,6 +14,9 @@ import time
 from datetime import datetime
 
 from PySide6.QtGui import QSurfaceFormat
+from player_chrome import apply_window_options as _apply_window_options
+from player_chrome import format_title as _format_title
+from player_chrome import player_options as _player_options
 
 try:
     if __compiled__:
@@ -282,11 +285,14 @@ def main():
 
     splash = SplashScreen(show_tip=False, footer="Powered by Zarin Engine")
     splash.set_total_steps(6)
-    splash.show()
+    code_root = os.path.dirname(os.path.abspath(__file__))
+    opts = _player_options(code_root)
+    _log(f"Player options: {opts}")
+    if opts.get("show_splash", True):
+        splash.show()
     app.processEvents()
     _log(f"Splash shown in {(time.perf_counter() - _t_start) * 1000:.0f}ms")
 
-    code_root = os.path.dirname(os.path.abspath(__file__))
     _log(f"__file__ = {__file__}")
     _log(f"sys.executable = {sys.executable}")
     _log(f"project_root = {code_root}")
@@ -364,7 +370,7 @@ def main():
     splash.advance("Building window...")
     app.processEvents()
     window = QMainWindow()
-    window.setWindowTitle("Zarin Player")
+    window.setWindowTitle(_format_title(opts))
     container = QWidget()
     window.setCentralWidget(container)
     layout = QVBoxLayout(container)
@@ -373,12 +379,10 @@ def main():
     viewport = GameViewport(engine, window)
     engine.viewport = viewport
     layout.addWidget(viewport)
-
-    screen = app.primaryScreen()
-    if screen:
-        window.resize(screen.size() * 0.8)
-    else:
-        window.resize(1280, 720)
+    try:
+        _chrome_keeper = _apply_window_options(app, window, viewport, opts)
+    except Exception:
+        _chrome_keeper = None
 
     splash.advance("Loading scene...")
     app.processEvents()
@@ -403,7 +407,10 @@ def main():
         if physics:
             _log(f"After start_play: physics_scene={physics._physics_scene is not None}, bodies_loaded={len(physics._physics_scene._entity_to_body) if physics._physics_scene else 0}")
 
-    window.show()
+    if opts.get("fullscreen", False):
+        window.showFullScreen()
+    else:
+        window.show()
     SplashScreen.hide_splash()
 
     if deferred:

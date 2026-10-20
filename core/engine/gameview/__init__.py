@@ -42,6 +42,7 @@ class GameViewport(GameViewportRenderMixin, GameViewportInteractionMixin, QOpenG
         self._pacer = FramePacer()
         engine.on("play_stop", self._on_play_stop)
         self._stats_enabled: bool = False
+        self._debug_shift_f3: bool = True
         self._fps: float = 0.0
         self._fps_accum: float = 0.0
         self._fps_frames: int = 0

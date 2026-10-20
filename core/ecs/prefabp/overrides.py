@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures.thread import ThreadPoolExecutor
 import copy
 import uuid
 from core.ecs import Entity, ComponentRegistry

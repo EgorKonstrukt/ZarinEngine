@@ -9,7 +9,7 @@ Build Settings вЂ” Unity-style scene list and build configuration.
 First scene in the list is loaded on game startup.
 """
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures.thread import ThreadPoolExecutor
 import json
 import os
 from typing import Optional
@@ -26,6 +26,18 @@ _DEFAULT_BUILD_SETTINGS = {
 }
 
 
+_DEFAULT_PLAYER = {
+    "game_title": "",
+    "version": "1.0.0",
+    "show_splash": True,
+    "window_width": 1280,
+    "window_height": 720,
+    "fullscreen": False,
+    "show_fps_in_title": False,
+    "debug_shift_f3": True,
+}
+
+
 class BuildSettings:
     _instance: Optional["BuildSettings"] = None
 
@@ -35,6 +47,7 @@ class BuildSettings:
         self._active_scene_index: int = 0
         self._build_plugins: list[str] = []
         self._build_options: dict = dict(_DEFAULT_BUILD_SETTINGS["build_options"])
+        self._player: dict = dict(_DEFAULT_PLAYER)
         BuildSettings._instance = self
 
     @classmethod
@@ -107,6 +120,20 @@ class BuildSettings:
         if name in self._build_plugins:
             self._build_plugins.remove(name)
 
+    def player_option(self, key: str, default=None):
+        try:
+            if key in self._player:
+                return self._player[key]
+        except Exception:
+            pass
+        return _DEFAULT_PLAYER.get(key, default)
+
+    def set_player_option(self, key: str, value):
+        try:
+            self._player[key] = value
+        except Exception:
+            pass
+
     def save(self, path: Optional[str] = None):
         save_path = path or self._path
         if not save_path:
@@ -117,6 +144,7 @@ class BuildSettings:
             "active_scene_index": self._active_scene_index,
             "build_options": self._build_options,
             "build_plugins": self._build_plugins,
+            "player": self._player,
         }
         os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
         with open(save_path, "w", encoding="utf-8") as f:
@@ -135,6 +163,12 @@ class BuildSettings:
             self._active_scene_index = data.get("active_scene_index", 0)
             self._build_plugins = list(data.get("build_plugins", []))
             self._build_options = data.get("build_options", _DEFAULT_BUILD_SETTINGS["build_options"])
+            try:
+                _pd = dict(_DEFAULT_PLAYER)
+                _pd.update(data.get("player", {}) or {})
+                self._player = _pd
+            except Exception:
+                pass
             Logger.info(f"BuildSettings loaded: {len(self._scenes)} scenes, {len(self._build_plugins)} plugins")
         except Exception as e:
             Logger.error(f"BuildSettings load failed: {e}")

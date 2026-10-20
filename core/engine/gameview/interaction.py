@@ -57,7 +57,12 @@ class GameViewportInteractionMixin:
             if event.key() == Qt.Key.Key_Escape and self._mouse_captured:
                 self._release_mouse()
             if event.key() == Qt.Key.Key_F3 and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
-                self._stats_enabled = not self._stats_enabled
+                try:
+                    _dbg = self._debug_shift_f3
+                except Exception:
+                    _dbg = True
+                if _dbg:
+                    self._stats_enabled = not self._stats_enabled
                 event.accept()
                 return
             event.accept()

@@ -5,7 +5,8 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures import as_completed
 import os
 import numpy as np
 from core.components.mesh_editor.probuilder_mesh import ProBuilderMesh

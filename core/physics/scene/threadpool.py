@@ -6,7 +6,8 @@
 from __future__ import annotations
 import threading
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures import Future
 from core.foundation.logger import Logger
 
 

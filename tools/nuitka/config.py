@@ -28,8 +28,11 @@ parser.add_argument("--compiler", choices=("auto", "mingw", "msvc"), default="au
                     help="C compiler for Nuitka (default: auto = MinGW-w64, auto-downloaded; "
                          "no heavy MSVC install needed). Use 'msvc' to force Visual Studio.")
 parser.add_argument("--physics", choices=("culverin", "pybullet", "physx"), default=None,
-                    help="Physics solver baked into the build (default: from ProjectSettings.json, "
-                         "fallback: culverin (Jolt Physics))")
+                     help="Physics solver baked into the build (default: from ProjectSettings.json, "
+                          "fallback: culverin (Jolt Physics))")
+parser.add_argument("--project-dir", default=None,
+                    help="Project root whose BuildSettings.json, scenes and assets are packaged "
+                         "(default: engine root)")
 
 _args, remaining = parser.parse_known_args()
 
@@ -43,6 +46,7 @@ CLI_NO_STRIP = _args.no_strip
 NO_WINRT = _args.no_winrt
 COMPILER_CHOICE = _args.compiler
 PHYSICS_CHOICE = _args.physics
+PROJECT_DIR = Path(_args.project_dir) if _args.project_dir else None
 
 print("=== " + ("EDITOR BUILD" if BUILD_EDITOR else "PLAYER BUILD") + " ===")
 
@@ -89,16 +93,29 @@ def _setup_compiler() -> tuple[str, list[str], dict]:
 
 
 def _load_build_settings() -> dict:
-    bs_path = ROOT / "BuildSettings.json"
-    if bs_path.exists():
-        with open(bs_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+    for bs_path in ([PROJECT_DIR / "BuildSettings.json"] if PROJECT_DIR is not None else []) + [ROOT / "BuildSettings.json"]:
+        if bs_path.exists():
+            with open(bs_path, "r", encoding="utf-8") as f:
+                return json.load(f)
     return {}
 
 
-def _get_included_scenes(bs: dict) -> list[str]:
+def _resolve_scene_path(s: str, base: Path) -> Path | None:
+    try:
+        if os.path.isabs(s):
+            full = Path(s)
+            return full if full.exists() else None
+        for cand in (base / s, base / "scenes" / s):
+            if cand.exists():
+                return cand
+    except Exception:
+        pass
+    return None
+
+
+def _get_included_scenes(bs: dict, base=None) -> list[str]:
     scenes = bs.get("scenes", [])
-    scenes_dir = ROOT / "scenes"
+    root = base or ROOT
     included = []
     for s in scenes:
         if os.path.isabs(s):
@@ -109,7 +126,10 @@ def _get_included_scenes(bs: dict) -> list[str]:
                 if s_stripped.startswith(prefix):
                     s_stripped = s_stripped[len(prefix):]
                     break
-            full = scenes_dir / s_stripped
+            probe = _resolve_scene_path(s, root)
+            if probe is None:
+                probe = _resolve_scene_path(s_stripped, root)
+            full = probe if probe is not None else root / "scenes" / s_stripped
         if full.exists():
             included.append(str(full))
         else:

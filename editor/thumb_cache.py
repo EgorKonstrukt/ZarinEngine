@@ -13,7 +13,7 @@ asset actually changes.
 """
 
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures.thread import ThreadPoolExecutor
 
 import os
 import xxhash

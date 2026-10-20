@@ -8,6 +8,13 @@ from __future__ import annotations
 
 
 class TransparencySortMixin:
+    def _remember_parts(self, renderable, opaque, transparent, all_opaque):
+        try:
+            self._part_lists = (id(renderable), opaque, transparent, bool(all_opaque))
+        except Exception:
+            pass
+        return opaque, transparent
+
     def _partition_transparent(self, renderable):
         opaque = []
         transparent = []
@@ -17,7 +24,7 @@ class TransparencySortMixin:
                 self._last_has_sprite = False
             except Exception:
                 pass
-            return list(renderable), transparent
+            return self._remember_parts(renderable, list(renderable), transparent, True)
         try:
             ism = mm.mesh_transparency
             lm = mm.load_material
@@ -26,7 +33,7 @@ class TransparencySortMixin:
                 self._last_has_sprite = False
             except Exception:
                 pass
-            return list(renderable), transparent
+            return self._remember_parts(renderable, list(renderable), transparent, True)
         try:
             _pc = self._part_cache
         except Exception:
@@ -87,7 +94,7 @@ class TransparencySortMixin:
                         opaque.append(e)
                 except Exception:
                     opaque.append(e)
-            return opaque, transparent
+            return self._remember_parts(renderable, opaque, transparent, False)
         trans_set = set()
         for p in uniq:
             try:
@@ -108,7 +115,7 @@ class TransparencySortMixin:
                     self._part_cache = (len(renderable), _rec_mp, bytearray(len(renderable)), frozenset(uniq), frozenset(trans_set))
             except Exception:
                 pass
-            return list(renderable), transparent
+            return self._remember_parts(renderable, list(renderable), transparent, True)
         for e in renderable:
             mr = e[3]
             if mr is None:
@@ -132,7 +139,7 @@ class TransparencySortMixin:
                 self._part_cache = (len(renderable), _rec_mp, bytearray(len(renderable)), frozenset(uniq), frozenset(trans_set))
         except Exception:
             pass
-        return opaque, transparent
+        return self._remember_parts(renderable, opaque, transparent, not transparent)
 
     def _partition_cached(self, renderable, n, pc, ism, lm):
         cached_mpaths = pc[1]
@@ -182,7 +189,13 @@ class TransparencySortMixin:
         except Exception:
             pass
         if not trans_set:
-            return list(renderable), []
+            try:
+                _pl = self._part_lists
+                if _pl is not None and _pl[0] == id(renderable) and _pl[3]:
+                    return _pl[1], _pl[2]
+            except Exception:
+                pass
+            return self._remember_parts(renderable, list(renderable), [], True)
         opaque = []
         transparent = []
         for i in range(n):
@@ -194,7 +207,7 @@ class TransparencySortMixin:
                 transparent.append(e)
             else:
                 opaque.append(e)
-        return opaque, transparent
+        return self._remember_parts(renderable, opaque, transparent, not transparent)
 
     def _sort_transparent_far_first(self, entries, cam_pos):
         try:

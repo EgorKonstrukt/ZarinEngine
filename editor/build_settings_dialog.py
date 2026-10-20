@@ -15,7 +15,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QPushButton, QLabel, QFileDialog, QMessageBox, QAbstractItemView,
-    QGroupBox, QCheckBox, QScrollArea, QWidget,
+    QGroupBox, QCheckBox, QScrollArea, QWidget, QLineEdit, QSpinBox,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -91,6 +91,43 @@ class BuildSettingsDialog(QDialog):
         scroll.setWidget(self._plugin_container)
         layout.addWidget(scroll)
 
+        player_group = QGroupBox("Player Settings")
+        player_layout = QVBoxLayout()
+        title_row = QHBoxLayout()
+        title_row.addWidget(QLabel("Game title:"))
+        self._title_edit = QLineEdit()
+        self._title_edit.setPlaceholderText("Zarin Player")
+        title_row.addWidget(self._title_edit)
+        title_row.addWidget(QLabel("Version:"))
+        self._version_edit = QLineEdit()
+        self._version_edit.setMaximumWidth(90)
+        title_row.addWidget(self._version_edit)
+        player_layout.addLayout(title_row)
+        size_row = QHBoxLayout()
+        size_row.addWidget(QLabel("Window:"))
+        self._width_spin = QSpinBox()
+        self._width_spin.setRange(320, 7680)
+        self._width_spin.setSuffix(" px")
+        size_row.addWidget(self._width_spin)
+        size_row.addWidget(QLabel("x"))
+        self._height_spin = QSpinBox()
+        self._height_spin.setRange(240, 4320)
+        self._height_spin.setSuffix(" px")
+        size_row.addWidget(self._height_spin)
+        size_row.addStretch()
+        player_layout.addLayout(size_row)
+        self._splash_check = QCheckBox("Show splash screen")
+        player_layout.addWidget(self._splash_check)
+        self._fullscreen_check = QCheckBox("Start fullscreen")
+        player_layout.addWidget(self._fullscreen_check)
+        self._fps_check = QCheckBox("Show FPS in title (updates twice a second)")
+        player_layout.addWidget(self._fps_check)
+        self._debug_check = QCheckBox("Enable debug overlay on Shift+F3")
+        player_layout.addWidget(self._debug_check)
+        player_group.setLayout(player_layout)
+        layout.addWidget(player_group)
+        self._load_player_options()
+
         # в”Ђв”Ђ Build Options в”Ђв”Ђ
         options_group = QGroupBox("Build Options")
         options_layout = QVBoxLayout()
@@ -110,6 +147,23 @@ class BuildSettingsDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         bottom_layout.addWidget(cancel_btn)
         layout.addLayout(bottom_layout)
+
+    def _load_player_options(self):
+        try:
+            get = self._settings.player_option
+        except Exception:
+            return
+        try:
+            self._title_edit.setText(str(get("game_title", "") or ""))
+            self._version_edit.setText(str(get("version", "1.0.0") or "1.0.0"))
+            self._width_spin.setValue(int(get("window_width", 1280) or 1280))
+            self._height_spin.setValue(int(get("window_height", 720) or 720))
+            self._splash_check.setChecked(bool(get("show_splash", True)))
+            self._fullscreen_check.setChecked(bool(get("fullscreen", False)))
+            self._fps_check.setChecked(bool(get("show_fps_in_title", False)))
+            self._debug_check.setChecked(bool(get("debug_shift_f3", True)))
+        except Exception:
+            pass
 
     def _refresh_scene_list(self):
         self._scene_list.clear()
@@ -210,6 +264,17 @@ class BuildSettingsDialog(QDialog):
         self._settings._build_options["strip_unused_assets"] = self._strip_check.isChecked()
         selected = [name for name, cb in self._plugin_checkboxes.items() if cb.isChecked()]
         self._settings.set_plugins(selected)
+        try:
+            self._settings.set_player_option("game_title", self._title_edit.text().strip())
+            self._settings.set_player_option("version", self._version_edit.text().strip() or "1.0.0")
+            self._settings.set_player_option("window_width", int(self._width_spin.value()))
+            self._settings.set_player_option("window_height", int(self._height_spin.value()))
+            self._settings.set_player_option("show_splash", bool(self._splash_check.isChecked()))
+            self._settings.set_player_option("fullscreen", bool(self._fullscreen_check.isChecked()))
+            self._settings.set_player_option("show_fps_in_title", bool(self._fps_check.isChecked()))
+            self._settings.set_player_option("debug_shift_f3", bool(self._debug_check.isChecked()))
+        except Exception:
+            pass
         save_path = os.path.join(self._project_root, "BuildSettings.json")
         self._settings.save(save_path)
         self.build_settings_changed.emit()

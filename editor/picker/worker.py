@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2026 Zarrakun
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures.thread import ThreadPoolExecutor
 import os
 from typing import Optional
 from PySide6.QtCore import QThread, Signal

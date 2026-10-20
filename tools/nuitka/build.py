@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 from .assets import _plugin_include_options, _resolve_assets, _rmtree_robust, _scan_scene_assets
-from .config import BUILD_EDITOR, CLI_NO_STRIP, CLI_STRIP, ENTRY, NO_CONSOLE, NO_WINRT, ONEFILE, OUTPUT_DIR, ROOT, _ASSIMP_SRC, _get_included_scenes, _load_build_settings, _resolve_physics_solver, _setup_compiler
+from .config import BUILD_EDITOR, CLI_NO_STRIP, CLI_STRIP, ENTRY, NO_CONSOLE, NO_WINRT, ONEFILE, OUTPUT_DIR, PROJECT_DIR, ROOT, _ASSIMP_SRC, _get_included_scenes, _load_build_settings, _resolve_physics_solver, _setup_compiler
 
 
 def _minify_pil():
@@ -47,13 +47,22 @@ def _restore_pil():
         print("  PIL restored")
 
 
+def _data_opt(src: Path, dst: str) -> str:
+    if PROJECT_DIR is not None:
+        return "--include-data-dir=" + str(src) + "=" + dst
+    return "--include-data-dir=" + dst + "=" + dst
+
+
 def build():
     print("=== Zarin Engine Nuitka Build ===")
     print(f"Python: {sys.executable}")
     print(f"Root: {ROOT}")
     print()
     bs = _load_build_settings()
-    included_scenes = _get_included_scenes(bs)
+    base = PROJECT_DIR if PROJECT_DIR is not None else ROOT
+    if PROJECT_DIR is not None:
+        print(f"Project dir: {base}")
+    included_scenes = _get_included_scenes(bs, base)
     build_options = bs.get("build_options", {})
     strip_unused = build_options.get("strip_unused_assets", True)
     if CLI_STRIP:
@@ -84,12 +93,18 @@ def build():
         print(f"Build plugins (auto): {build_plugins}")
     else:
         print(f"Build plugins (config): {build_plugins}")
+    _build_bs = dict(bs)
+    _build_bs["scenes"] = ["scenes/" + Path(s).name for s in included_scenes]
+    _build_bs["build_plugins"] = build_plugins
+    _build_bs_path = ROOT / "_build_BuildSettings.json"
+    with open(_build_bs_path, "w", encoding="utf-8") as f:
+        json.dump(_build_bs, f, indent=2)
     all_asset_refs: set[str] = set()
     for scene in included_scenes:
         refs = _scan_scene_assets(scene)
         all_asset_refs.update(refs)
         print(f"  Scene: {Path(scene).name} -> {len(refs)} asset refs")
-    resolved_assets = _resolve_assets(all_asset_refs, ROOT)
+    resolved_assets = _resolve_assets(all_asset_refs, base) | _resolve_assets(all_asset_refs, ROOT)
     print(f"Total referenced assets: {len(resolved_assets)}")
     print(f"strip_unused_assets: {strip_unused}")
     for a in list(resolved_assets)[:10]:
@@ -97,7 +112,7 @@ def build():
     if len(resolved_assets) > 10:
         print(f"  ... and {len(resolved_assets) - 10} more")
     print("\nAnalyzing dependencies...")
-    from build_analyzer import analyze
+    from .build_analyzer import analyze
     analysis = analyze(verbose=False)
     module_nofollow = analysis["module_nofollow"]
     package_nofollow = analysis["package_nofollow"]
@@ -137,7 +152,7 @@ def build():
         *_plugin_include_options(build_plugins),
         f"--include-package=physics_solvers.{physics_solver}_solver",
         "--include-data-file=" + _ASSIMP_SRC + "=" + _ASSIMP_SRC,
-        "--include-data-file=" + ("_build_BuildSettings.json" if build_plugins != bs.get("build_plugins") else "BuildSettings.json") + "=BuildSettings.json",
+        "--include-data-file=_build_BuildSettings.json=BuildSettings.json",
         *[f"--nofollow-import-to={m}" for m in module_nofollow],
         *[f"--nofollow-import-to={m}" for m in package_nofollow],
         "--remove-output",
@@ -172,7 +187,7 @@ def build():
         _rmtree_robust(temp_assets)
     if strip_unused:
         temp_assets.mkdir(parents=True, exist_ok=True)
-        assets_dir = ROOT / "assets"
+        assets_dir = base / "assets"
         copied = 0
         for asset_path in resolved_assets:
             try:
@@ -211,13 +226,13 @@ def build():
         print(f"Assets: {copied} referenced files copied (of {len(resolved_assets)} refs)")
         print(f"  _build_assets contents: {[str(p.relative_to(temp_assets)) for p in temp_assets.rglob('*') if p.is_file()]}")
     else:
-        if (ROOT / "assets").exists():
-            NUITKA_OPTIONS.append("--include-data-dir=assets=assets")
+        if (base / "assets").exists():
+            NUITKA_OPTIONS.append(_data_opt(base / "assets", "assets"))
             print("Assets: including ALL (no filtering)")
-    if (ROOT / "materials").exists():
-        NUITKA_OPTIONS.append("--include-data-dir=materials=materials")
-    if (ROOT / "prefabs").exists():
-        NUITKA_OPTIONS.append("--include-data-dir=prefabs=prefabs")
+    if (base / "materials").exists():
+        NUITKA_OPTIONS.append(_data_opt(base / "materials", "materials"))
+    if (base / "prefabs").exists():
+        NUITKA_OPTIONS.append(_data_opt(base / "prefabs", "prefabs"))
     if (ROOT / "core" / "shaders").exists():
         NUITKA_OPTIONS.append("--include-data-dir=core/shaders=core/shaders")
     NUITKA_OPTIONS.append(ENTRY)

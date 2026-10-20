@@ -5,7 +5,7 @@
 # Copyright (c) 2026 Zarrakun
 
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures.thread import ThreadPoolExecutor
 import os
 import time
 import numpy as np

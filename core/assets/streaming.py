@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Callable, Optional
 
 _PREFETCH_CHUNK = 4 << 20

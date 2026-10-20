@@ -159,10 +159,7 @@ class GroupsMixin:
         none_id = id(self._MAT_NONE)
         mpath_cache: dict = {}
         get_cached = mpath_cache.get
-        try:
-            _tc = self._groups_topology
-        except Exception:
-            _tc = None
+        _tc = getattr(self, "_groups_topology", None)
         _n = len(renderables)
         if _tc is not None and _tc[0] == _n:
             try:
