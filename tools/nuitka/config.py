@@ -24,6 +24,7 @@ parser.add_argument("--onefile", action="store_true", help="Single file build")
 parser.add_argument("--strip-unused", action="store_true", default=None, help="Strip unused assets (scans scenes)")
 parser.add_argument("--no-strip-unused", action="store_true", dest="no_strip", help="Include all assets")
 parser.add_argument("--no-winrt", action="store_true", help="Disable Windows Runtime DLL inclusion (smaller distributable)")
+parser.add_argument("--no-upx", action="store_true", help="Skip UPX packing of player binaries (faster build, larger distributable)")
 parser.add_argument("--compiler", choices=("auto", "mingw", "msvc"), default="auto",
                     help="C compiler for Nuitka (default: auto = MinGW-w64, auto-downloaded; "
                          "no heavy MSVC install needed). Use 'msvc' to force Visual Studio.")
@@ -44,6 +45,7 @@ ONEFILE = _args.onefile
 CLI_STRIP = _args.strip_unused
 CLI_NO_STRIP = _args.no_strip
 NO_WINRT = _args.no_winrt
+NO_UPX = _args.no_upx
 COMPILER_CHOICE = _args.compiler
 PHYSICS_CHOICE = _args.physics
 PROJECT_DIR = Path(_args.project_dir) if _args.project_dir else None

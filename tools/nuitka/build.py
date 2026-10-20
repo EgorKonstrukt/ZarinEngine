@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 from .assets import _plugin_include_options, _resolve_assets, _rmtree_robust, _scan_scene_assets
-from .config import BUILD_EDITOR, CLI_NO_STRIP, CLI_STRIP, ENTRY, NO_CONSOLE, NO_WINRT, ONEFILE, OUTPUT_DIR, PROJECT_DIR, ROOT, _ASSIMP_SRC, _get_included_scenes, _load_build_settings, _resolve_physics_solver, _setup_compiler
+from .config import BUILD_EDITOR, CLI_NO_STRIP, CLI_STRIP, ENTRY, NO_CONSOLE, NO_UPX, NO_WINRT, ONEFILE, OUTPUT_DIR, PROJECT_DIR, ROOT, _ASSIMP_SRC, _get_included_scenes, _load_build_settings, _resolve_physics_solver, _setup_compiler
 
 
 _PRUNE_FILES = (
@@ -30,8 +30,75 @@ _PRUNE_FILES = (
     "PySide6/qt-plugins/imageformats/qtiff.dll",
     "PIL/_imagingft*.pyd",
     "PIL/_imagingcms*.pyd",
+    "PySide6/qt-plugins/imageformats/qwebp.dll",
+    "PySide6/qt-plugins/imageformats/qgif.dll",
+    "PySide6/qt-plugins/imageformats/qicns.dll",
+    "PySide6/qt-plugins/imageformats/qtga.dll",
+    "PySide6/qt-plugins/imageformats/qwbmp.dll",
+    "PySide6/qt-plugins/platforms/qminimal.dll",
 )
 _PRUNE_DIRS = ("qtawesome",)
+
+_MODEL_EXTS = (".fbx", ".obj", ".dae", ".gltf", ".glb", ".blend", ".3ds", ".stl", ".ply", ".x", ".x3d", ".3mf", ".usdz", ".bvh", ".md5mesh", ".md5anim")
+_SCRIPT_EXTS = (".py",)
+
+
+def _needs_assimp(refs) -> bool:
+    try:
+        for ref in refs or ():
+            low = str(ref).lower()
+            if low.endswith(_MODEL_EXTS) or low.endswith(_SCRIPT_EXTS):
+                return True
+    except Exception:
+        return True
+    return False
+
+
+def _find_upx():
+    try:
+        cand = ROOT / "tools" / "upx" / "upx.exe"
+        if cand.is_file():
+            return str(cand)
+    except Exception:
+        pass
+    try:
+        found = shutil.which("upx")
+        if found:
+            return found
+    except Exception:
+        pass
+    return None
+
+
+def _upx_pack(dist_dir) -> tuple:
+    before = 0
+    try:
+        before = sum(p.stat().st_size for p in dist_dir.rglob("*") if p.is_file())
+    except Exception:
+        pass
+    upx = _find_upx()
+    if upx is None:
+        print("UPX: binary not found (tools/upx/upx.exe or PATH), skipping pack")
+        return 0, 0
+    targets = []
+    try:
+        for pat in ("*.exe", "*.dll", "*.pyd"):
+            targets.extend(str(p) for p in dist_dir.rglob(pat) if p.is_file())
+    except Exception:
+        return 0, 0
+    if not targets:
+        return 0, 0
+    try:
+        subprocess.run([upx, "--lzma", "--no-progress"] + targets, cwd=str(ROOT))
+    except Exception as e:
+        print(f"UPX: pack run failed: {e}")
+        return 0, 0
+    after = before
+    try:
+        after = sum(p.stat().st_size for p in dist_dir.rglob("*") if p.is_file())
+    except Exception:
+        pass
+    return len(targets), max(0, before - after)
 
 
 def _prune_dist(dist_dir, editor_build: bool) -> tuple:
@@ -231,14 +298,19 @@ def build():
         "--include-package=core",
         *_plugin_include_options(build_plugins),
         f"--include-package=physics_solvers.{physics_solver}_solver",
-        "--include-data-file=" + _ASSIMP_SRC + "=" + _ASSIMP_SRC,
         "--include-data-file=_build_BuildSettings.json=BuildSettings.json",
         *[f"--nofollow-import-to={m}" for m in module_nofollow],
         *[f"--nofollow-import-to={m}" for m in package_nofollow],
+        "--lto=yes",
         "--remove-output",
         "--clean-cache=all",
         "--warn-unusual-code",
     ]
+    if _needs_assimp(all_asset_refs):
+        NUITKA_OPTIONS.append("--include-data-file=" + _ASSIMP_SRC + "=" + _ASSIMP_SRC)
+        print("Assimp: model/script refs found, including " + _ASSIMP_SRC)
+    else:
+        print("Assimp: no model/script refs, skipping " + _ASSIMP_SRC)
     if ONEFILE:
         NUITKA_OPTIONS.append("--onefile")
     if NO_CONSOLE:
@@ -349,6 +421,12 @@ def build():
             print(f"\nPruned dist: {pruned} files, {freed / (1024 * 1024):.1f}MB removed")
         except Exception as e:
             print(f"\nPrune skipped: {e}")
+        if not BUILD_EDITOR and not NO_UPX:
+            try:
+                packed, saved = _upx_pack(dist_dir)
+                print(f"UPX packed: {packed} binaries, {saved / (1024 * 1024):.1f}MB saved")
+            except Exception as e:
+                print(f"UPX skipped: {e}")
         bs_in_dist = dist_dir / "BuildSettings.json"
         print(f"\nVerifying dist: {dist_dir}")
         print(f"  BuildSettings.json: {'EXISTS' if bs_in_dist.exists() else 'MISSING!'}")
