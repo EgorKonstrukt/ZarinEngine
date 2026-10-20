@@ -3,6 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2026 Zarrakun
+import fnmatch
 import json
 import os
 import shutil
@@ -11,6 +12,65 @@ import sys
 from pathlib import Path
 from .assets import _plugin_include_options, _resolve_assets, _rmtree_robust, _scan_scene_assets
 from .config import BUILD_EDITOR, CLI_NO_STRIP, CLI_STRIP, ENTRY, NO_CONSOLE, NO_WINRT, ONEFILE, OUTPUT_DIR, PROJECT_DIR, ROOT, _ASSIMP_SRC, _get_included_scenes, _load_build_settings, _resolve_physics_solver, _setup_compiler
+
+
+_PRUNE_FILES = (
+    "PySide6/QtNetwork.pyd",
+    "qt6network.dll",
+    "PySide6/QtOpenGL.pyd",
+    "PySide6/QtDataVisualization.pyd",
+    "qt6datavisualization.dll",
+    "qt6pdf.dll",
+    "PySide6/qt-plugins/tls/qcertonlybackend.dll",
+    "PySide6/qt-plugins/tls/qopensslbackend.dll",
+    "PySide6/qt-plugins/tls/qschannelbackend.dll",
+    "PySide6/qt-plugins/imageformats/qpdf.dll",
+    "PySide6/qt-plugins/platforms/qdirect2d.dll",
+    "PySide6/qt-plugins/imageformats/qtiff.dll",
+    "PIL/_imagingft*.pyd",
+    "PIL/_imagingcms*.pyd",
+)
+_PRUNE_DIRS = ("qtawesome",)
+
+
+def _prune_dist(dist_dir, editor_build: bool) -> tuple:
+    removed = 0
+    freed = 0
+    try:
+        all_files = [p for p in dist_dir.rglob("*") if p.is_file()]
+    except Exception:
+        return removed, freed
+
+    def rel(p):
+        try:
+            return str(p.relative_to(dist_dir)).replace("\\", "/")
+        except Exception:
+            return ""
+
+    targets: set = set()
+    for pat in _PRUNE_FILES:
+        for p in all_files:
+            try:
+                if fnmatch.fnmatchcase(rel(p), pat):
+                    targets.add(p)
+            except Exception:
+                continue
+    if not editor_build:
+        for dirname in _PRUNE_DIRS:
+            for p in all_files:
+                try:
+                    if rel(p) == dirname or rel(p).startswith(dirname + "/"):
+                        targets.add(p)
+                except Exception:
+                    continue
+    for t in sorted(targets):
+        try:
+            freed += t.stat().st_size
+            t.unlink()
+            removed += 1
+        except Exception:
+            pass
+    return removed, freed
 
 
 def _minify_pil():
@@ -225,6 +285,9 @@ def build():
         NUITKA_OPTIONS.append("--include-data-dir=_build_assets=assets")
         print(f"Assets: {copied} referenced files copied (of {len(resolved_assets)} refs)")
         print(f"  _build_assets contents: {[str(p.relative_to(temp_assets)) for p in temp_assets.rglob('*') if p.is_file()]}")
+        if copied == 0:
+            NUITKA_OPTIONS.remove("--include-data-dir=_build_assets=assets")
+            _rmtree_robust(temp_assets)
     else:
         if (base / "assets").exists():
             NUITKA_OPTIONS.append(_data_opt(base / "assets", "assets"))
@@ -261,6 +324,11 @@ def build():
     dist_dirs = list(OUTPUT_DIR.glob("*.dist"))
     if dist_dirs:
         dist_dir = dist_dirs[0]
+        try:
+            pruned, freed = _prune_dist(dist_dir, BUILD_EDITOR)
+            print(f"\nPruned dist: {pruned} files, {freed / (1024 * 1024):.1f}MB removed")
+        except Exception as e:
+            print(f"\nPrune skipped: {e}")
         bs_in_dist = dist_dir / "BuildSettings.json"
         print(f"\nVerifying dist: {dist_dir}")
         print(f"  BuildSettings.json: {'EXISTS' if bs_in_dist.exists() else 'MISSING!'}")

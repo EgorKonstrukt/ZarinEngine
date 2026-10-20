@@ -87,7 +87,13 @@ def _chosen_solver() -> str:
 
 def analyze(verbose=False) -> dict:
     chosen = _chosen_solver()
+    try:
+        from .config import BUILD_EDITOR
+    except Exception:
+        BUILD_EDITOR = False
     modules = list(_DEV_MODULES)
+    if not BUILD_EDITOR:
+        modules.append("qtawesome")
     packages = ["tests", "tools"]
     packages.extend(_QT_UNUSED)
     for solver in _SOLVERS:

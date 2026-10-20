@@ -23,8 +23,18 @@ def icon(name: str, color=None):
     key = (name, _key(color))
     ic = _cache.get(key)
     if ic is None:
-        import qtawesome as _qta
-        ic = _qta.icon(name, color=color) if color is not None else _qta.icon(name)
+        try:
+            import qtawesome as _qta
+        except Exception:
+            _qta = None
+        if _qta is None:
+            try:
+                from PySide6.QtGui import QIcon
+                ic = QIcon()
+            except Exception:
+                ic = None
+        else:
+            ic = _qta.icon(name, color=color) if color is not None else _qta.icon(name)
         _cache[key] = ic
     return ic
 
