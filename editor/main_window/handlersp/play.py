@@ -243,6 +243,17 @@ def _resolve_player_command(scene_path: str):
                 cand = os.path.join(exe_dir, name)
                 if os.path.isfile(cand):
                     return [cand, scene_path]
+            try:
+                import json
+                with open(os.path.join(exe_dir, "BuildSettings.json")) as f:
+                    title = (json.load(f).get("player", {}) or {}).get("game_title", "")
+                safe = "".join("_" if c in '<>:"/\\|?*' else c for c in str(title)).strip().strip(".")
+                if safe:
+                    cand = os.path.join(exe_dir, safe + ".exe")
+                    if os.path.isfile(cand):
+                        return [cand, scene_path]
+            except Exception:
+                pass
             exe_base = os.path.splitext(os.path.basename(sys.executable))[0].lower()
             if "player" in exe_base:
                 return [sys.executable, scene_path]

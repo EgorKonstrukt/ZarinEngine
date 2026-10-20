@@ -371,6 +371,25 @@ def main():
     app.processEvents()
     window = QMainWindow()
     window.setWindowTitle(_format_title(opts))
+    try:
+        from PySide6.QtGui import QIcon
+        _icon_file = ""
+        for _cand in ("game_icon.ico", "game_icon.svg", "game_icon.png", "game_icon.bmp", "game_icon.jpg"):
+            if os.path.isfile(os.path.join(code_root, _cand)):
+                _icon_file = _cand
+                break
+        if _icon_file:
+            _icon = QIcon(os.path.join(code_root, _icon_file))
+            if not _icon.isNull():
+                app.setWindowIcon(_icon)
+                window.setWindowIcon(_icon)
+                _log(f"Window icon set: {_icon_file}")
+            else:
+                _log(f"Window icon null: {_icon_file}")
+        else:
+            _log("Window icon: none bundled")
+    except Exception as e:
+        _log(f"Window icon failed: {e}")
     container = QWidget()
     window.setCentralWidget(container)
     layout = QVBoxLayout(container)

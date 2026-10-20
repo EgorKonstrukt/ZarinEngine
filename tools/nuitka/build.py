@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from .assets import _plugin_include_options, _resolve_assets, _rmtree_robust, _scan_scene_assets
 from .config import BUILD_EDITOR, CLI_NO_STRIP, CLI_STRIP, ENTRY, NO_CONSOLE, NO_UPX, NO_WINRT, ONEFILE, OUTPUT_DIR, PROJECT_DIR, ROOT, _ASSIMP_SRC, _get_included_scenes, _load_build_settings, _resolve_physics_solver, _setup_compiler
+from .game_icon import exe_name as _game_exe_name, prepare_game_icon
 
 
 _PRUNE_FILES = (
@@ -213,6 +214,11 @@ def build():
     if CLI_NO_STRIP:
         strip_unused = False
     print(f"BuildSettings loaded: {bool(bs)}")
+    player_opts = bs.get("player", {}) or {}
+    game_title = player_opts.get("game_title", "")
+    icon_ico, icon_data = prepare_game_icon(player_opts.get("icon", ""), base, ROOT)
+    print(f"Game title: {game_title or '(none)'} -> exe: {_game_exe_name(game_title)}")
+    print(f"Game icon: {icon_data[0] if icon_data else '(none)'}" + ("" if icon_ico else " (exe icon skipped)"))
     print(f"Scenes in BuildSettings: {bs.get('scenes', [])}")
     print(f"Included scenes: {len(included_scenes)}")
     for s in included_scenes:
@@ -291,7 +297,7 @@ def build():
         sys.executable, "-m", "nuitka",
         "--standalone",
         "--output-dir=" + str(OUTPUT_DIR),
-        "--output-filename=" + ("ZarinEditor" if BUILD_EDITOR else "ZarinPlayer"),
+        "--output-filename=" + ("ZarinEditor" if BUILD_EDITOR else _game_exe_name(game_title)),
         "--enable-plugin=pyside6",
         "--disable-ccache",
         *COMPILER_FLAGS,
@@ -384,6 +390,10 @@ def build():
         if (base / "assets").exists():
             NUITKA_OPTIONS.append(_data_opt(base / "assets", "assets"))
             print("Assets: including ALL (no filtering)")
+    if icon_data:
+        NUITKA_OPTIONS.append("--include-data-file=" + icon_data[0] + "=" + icon_data[1])
+    if icon_ico and sys.platform == "win32":
+        NUITKA_OPTIONS.append("--windows-icon-from-ico=" + icon_ico)
     if (base / "materials").exists():
         NUITKA_OPTIONS.append(_data_opt(base / "materials", "materials"))
     if (base / "prefabs").exists():
@@ -406,6 +416,9 @@ def build():
     temp_bs = ROOT / "_build_BuildSettings.json"
     if temp_bs.exists():
         temp_bs.unlink()
+    temp_ico = ROOT / "_build_game.ico"
+    if temp_ico.exists():
+        temp_ico.unlink()
     for d in ["_build_scenes", "_build_assets"]:
         p = ROOT / d
         if p.exists():

@@ -103,6 +103,15 @@ class BuildSettingsDialog(QDialog):
         self._version_edit.setMaximumWidth(90)
         title_row.addWidget(self._version_edit)
         player_layout.addLayout(title_row)
+        icon_row = QHBoxLayout()
+        icon_row.addWidget(QLabel("Icon:"))
+        self._icon_edit = QLineEdit()
+        self._icon_edit.setPlaceholderText("zarin_logo.svg (default)")
+        icon_row.addWidget(self._icon_edit)
+        icon_btn = QPushButton("Browse...")
+        icon_btn.clicked.connect(self._browse_icon)
+        icon_row.addWidget(icon_btn)
+        player_layout.addLayout(icon_row)
         size_row = QHBoxLayout()
         size_row.addWidget(QLabel("Window:"))
         self._width_spin = QSpinBox()
@@ -155,6 +164,7 @@ class BuildSettingsDialog(QDialog):
             return
         try:
             self._title_edit.setText(str(get("game_title", "") or ""))
+            self._icon_edit.setText(str(get("icon", "") or ""))
             self._version_edit.setText(str(get("version", "1.0.0") or "1.0.0"))
             self._width_spin.setValue(int(get("window_width", 1280) or 1280))
             self._height_spin.setValue(int(get("window_height", 720) or 720))
@@ -260,12 +270,28 @@ class BuildSettingsDialog(QDialog):
             scenes.append(item.data(Qt.ItemDataRole.UserRole))
         self._settings.set_scenes(scenes)
 
+    def _browse_icon(self):
+        try:
+            start = self._project_root
+            picked, _ = QFileDialog.getOpenFileName(
+                self, "Game Icon", start,
+                "Images (*.svg *.png *.ico *.bmp *.jpg);;All Files (*)"
+            )
+        except Exception:
+            return
+        if picked:
+            try:
+                self._icon_edit.setText(os.path.relpath(picked, self._project_root))
+            except Exception:
+                self._icon_edit.setText(picked)
+
     def _save_and_close(self):
         self._settings._build_options["strip_unused_assets"] = self._strip_check.isChecked()
         selected = [name for name, cb in self._plugin_checkboxes.items() if cb.isChecked()]
         self._settings.set_plugins(selected)
         try:
             self._settings.set_player_option("game_title", self._title_edit.text().strip())
+            self._settings.set_player_option("icon", self._icon_edit.text().strip())
             self._settings.set_player_option("version", self._version_edit.text().strip() or "1.0.0")
             self._settings.set_player_option("window_width", int(self._width_spin.value()))
             self._settings.set_player_option("window_height", int(self._height_spin.value()))

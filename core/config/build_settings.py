@@ -28,6 +28,7 @@ _DEFAULT_BUILD_SETTINGS = {
 
 _DEFAULT_PLAYER = {
     "game_title": "",
+    "icon": "",
     "version": "1.0.0",
     "show_splash": True,
     "window_width": 1280,
