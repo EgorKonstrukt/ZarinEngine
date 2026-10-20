@@ -307,6 +307,15 @@ class SceneViewport(ViewportCameraMixin, ViewportOverlayMixin, ViewportSelection
             self._ctx.viewport = (0, 0, pw, ph)
 
     def paintGL(self):
+        try:
+            if type(self)._render_suspended:
+                try:
+                    self._last_paint_enter = time.perf_counter()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
         self._refresh_no_qt_overlay()
         _p0 = time.perf_counter()
         _paint_gap = _p0 - getattr(self, "_last_paint_enter", _p0)

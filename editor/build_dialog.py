@@ -208,6 +208,12 @@ class BuildDialog(QDialog):
         self._open_output_btn.setEnabled(False)
         self._progress_bar.show()
         self._cancelled = False
+        try:
+            from editor.viewport.viewport_render import ViewportRenderMixin
+            ViewportRenderMixin._render_suspended = True
+            self._append_log("Viewport rendering suspended for the build.\n")
+        except Exception:
+            pass
 
         self._append_log(f">>> {' '.join(args)}\n\n")
 
@@ -243,6 +249,12 @@ class BuildDialog(QDialog):
         self._build_btn.setEnabled(True)
         self._cancel_btn.setEnabled(False)
         self._progress_bar.hide()
+        try:
+            from editor.viewport.viewport_render import ViewportRenderMixin
+            ViewportRenderMixin._render_suspended = False
+            self._append_log("Viewport rendering resumed.\n")
+        except Exception:
+            pass
 
         if self._cancelled:
             self._append_log("\n=== BUILD CANCELLED ===\n")

@@ -6,6 +6,7 @@
 import fnmatch
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -107,6 +108,21 @@ def _restore_pil():
         print("  PIL restored")
 
 
+_PHYSICS_TYPES = ("Rigidbody", "Joint", "SoftBody", "Motor", "Buoyancy", "CharacterMoveBase")
+_PHYSICS_RE = re.compile("\"type\"\\s*:\\s*\"(?:Rigidbody|Joint|SoftBody|Motor|Buoyancy|CharacterMoveBase)\"")
+
+
+def _scenes_need_physics(scene_paths) -> bool:
+    for sp in scene_paths:
+        try:
+            with open(sp, "r", encoding="utf-8") as f:
+                if _PHYSICS_RE.search(f.read()):
+                    return True
+        except Exception:
+            continue
+    return False
+
+
 def _data_opt(src: Path, dst: str) -> str:
     if PROJECT_DIR is not None:
         return "--include-data-dir=" + str(src) + "=" + dst
@@ -153,6 +169,9 @@ def build():
         print(f"Build plugins (auto): {build_plugins}")
     else:
         print(f"Build plugins (config): {build_plugins}")
+    if "physics_plug.plugin" not in build_plugins and _scenes_need_physics(included_scenes):
+        build_plugins = build_plugins + ["physics_plug.plugin"]
+        print("Physics: simulated bodies referenced, adding physics_plug.plugin")
     _build_bs = dict(bs)
     _build_bs["scenes"] = ["scenes/" + Path(s).name for s in included_scenes]
     _build_bs["build_plugins"] = build_plugins

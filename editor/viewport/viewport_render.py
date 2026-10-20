@@ -14,7 +14,14 @@ from core.foundation.logger import Logger
 
 class ViewportRenderMixin:
 
+    _render_suspended = False
+
     def _on_render_tick(self):
+        try:
+            if type(self)._render_suspended:
+                return
+        except Exception:
+            pass
         if not self._vsync_enabled and self.isVisible():
             if not self._pacer.should_run():
                 return
